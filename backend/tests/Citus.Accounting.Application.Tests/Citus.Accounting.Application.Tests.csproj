@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Citus.Accounting.Domain\Citus.Accounting.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Citus.Accounting.Application\Citus.Accounting.Application.csproj" />
+  </ItemGroup>
+</Project>

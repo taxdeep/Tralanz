@@ -1,0 +1,1453 @@
+using Citus.Accounting.Application.Repositories;
+using Citus.Accounting.Domain.Common;
+using Citus.Accounting.Domain.Currencies;
+using Citus.Accounting.Domain.Documents;
+using Citus.Accounting.Infrastructure;
+
+namespace Citus.Accounting.Infrastructure.Persistence;
+
+public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocumentRepository
+{
+    private readonly PostgresConnectionFactory _connections;
+    private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+
+    public PostgresFxRevaluationDocumentRepository(
+        PostgresConnectionFactory connections,
+        PostgresExecutionContextAccessor executionContextAccessor)
+    {
+        _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+        _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+    }
+
+    public Task<FxRevaluationDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        return GetForPostingCoreAsync(companyId, documentId, cancellationToken);
+    }
+
+    public Task<FxRevaluationCascadeUnwindPlanResult> GetCascadeUnwindPlanAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        return GetCascadeUnwindPlanCoreAsync(companyId, documentId, cancellationToken);
+    }
+
+    public Task<FxRevaluationDraftPreparationResult> PrepareDraftAsync(
+        FxRevaluationDraftPreparation request,
+        CancellationToken cancellationToken)
+    {
+        return PrepareDraftCoreAsync(request, cancellationToken);
+    }
+
+    public Task<FxRevaluationDraftPreparationResult> PrepareNextPeriodUnwindDraftAsync(
+        FxRevaluationUnwindPreparation request,
+        CancellationToken cancellationToken)
+    {
+        return PrepareNextPeriodUnwindDraftCoreAsync(request, cancellationToken);
+    }
+
+    private async Task<FxRevaluationDocument?> GetForPostingCoreAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        Guid id;
+        string entityNumber;
+        string displayNumber;
+        string status;
+        string batchKind;
+        Guid? reversalOfDocumentId;
+        DateOnly revaluationDate;
+        string transactionCurrencyCode;
+        string baseCurrencyCode;
+        Guid? fxSnapshotId;
+        decimal fxRate;
+        DateOnly fxRequestedDate;
+        DateOnly fxEffectiveDate;
+        string fxSource;
+        string? memo;
+
+        await using (var headerCommand = scope.CreateCommand(
+                         """
+                         select
+                           b.id,
+                           b.entity_number,
+                           b.display_number,
+                           b.status,
+                           b.batch_kind,
+                           b.reversal_of_fx_revaluation_batch_id,
+                           b.revaluation_date,
+                           b.transaction_currency_code,
+                           b.base_currency_code,
+                           b.fx_rate_snapshot_id,
+                           b.fx_rate,
+                           b.fx_requested_date,
+                           b.fx_effective_date,
+                           b.fx_source,
+                           b.memo
+                         from fx_revaluation_batches b
+                         where b.company_id = @company_id
+                           and b.id = @document_id
+                         limit 1;
+                         """))
+        {
+            headerCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            headerCommand.Parameters.AddWithValue("document_id", documentId);
+
+            await using var reader = await headerCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            id = reader.GetGuid(reader.GetOrdinal("id"));
+            entityNumber = reader.GetString(reader.GetOrdinal("entity_number"));
+            displayNumber = reader.GetString(reader.GetOrdinal("display_number"));
+            status = reader.GetString(reader.GetOrdinal("status"));
+            batchKind = reader.GetString(reader.GetOrdinal("batch_kind"));
+            reversalOfDocumentId = reader.IsDBNull(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id"));
+            revaluationDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("revaluation_date"));
+            transactionCurrencyCode = reader.GetString(reader.GetOrdinal("transaction_currency_code"));
+            baseCurrencyCode = reader.GetString(reader.GetOrdinal("base_currency_code"));
+            fxSnapshotId = reader.IsDBNull(reader.GetOrdinal("fx_rate_snapshot_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("fx_rate_snapshot_id"));
+            fxRate = reader.GetDecimal(reader.GetOrdinal("fx_rate"));
+            fxRequestedDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_requested_date"));
+            fxEffectiveDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_effective_date"));
+            fxSource = reader.GetString(reader.GetOrdinal("fx_source"));
+            memo = reader.IsDBNull(reader.GetOrdinal("memo"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("memo"));
+        }
+
+        var unrealizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+            scope,
+            companyId.Value,
+            cancellationToken,
+            "unrealized_fx_gain",
+            "fx_gain_unrealized");
+        var unrealizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+            scope,
+            companyId.Value,
+            cancellationToken,
+            "unrealized_fx_loss",
+            "fx_loss_unrealized");
+
+        if (!unrealizedFxGainAccountId.HasValue || !unrealizedFxLossAccountId.HasValue)
+        {
+            throw new InvalidOperationException(
+                "FX revaluation routing could not resolve active unrealized FX gain/loss accounts. Configure accounts.system_role or accounts.system_key with 'unrealized_fx_gain' and 'unrealized_fx_loss'.");
+        }
+
+        var lineRows = new List<FxRevaluationLineRow>();
+        await using (var linesCommand = scope.CreateCommand(
+                         """
+                         select
+                           l.line_number,
+                           l.target_open_item_type,
+                           l.target_open_item_id,
+                           l.target_balance_side,
+                           l.target_control_account_id,
+                           l.offset_account_id,
+                           l.party_id,
+                           l.description,
+                           l.open_amount_tx,
+                           l.carrying_amount_base,
+                           l.revalued_amount_base,
+                           l.unrealized_fx_amount,
+                           l.applied_at
+                         from fx_revaluation_batch_lines l
+                         where l.company_id = @company_id
+                           and l.fx_revaluation_batch_id = @document_id
+                         order by l.line_number asc;
+                         """))
+        {
+            linesCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            linesCommand.Parameters.AddWithValue("document_id", documentId);
+
+            await using var reader = await linesCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                lineRows.Add(new FxRevaluationLineRow(
+                    reader.GetInt32(reader.GetOrdinal("line_number")),
+                    reader.GetString(reader.GetOrdinal("target_open_item_type")),
+                    reader.GetGuid(reader.GetOrdinal("target_open_item_id")),
+                    reader.GetString(reader.GetOrdinal("target_balance_side")),
+                    reader.GetGuid(reader.GetOrdinal("target_control_account_id")),
+                    reader.GetGuid(reader.GetOrdinal("offset_account_id")),
+                    reader.GetGuid(reader.GetOrdinal("party_id")),
+                    reader.GetString(reader.GetOrdinal("description")),
+                    reader.GetDecimal(reader.GetOrdinal("open_amount_tx")),
+                    reader.GetDecimal(reader.GetOrdinal("carrying_amount_base")),
+                    reader.GetDecimal(reader.GetOrdinal("revalued_amount_base")),
+                    reader.GetDecimal(reader.GetOrdinal("unrealized_fx_amount")),
+                    reader.IsDBNull(reader.GetOrdinal("applied_at"))
+                        ? (DateTimeOffset?)null
+                        : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("applied_at"))));
+            }
+        }
+
+        if (lineRows.Count == 0)
+        {
+            throw new InvalidOperationException("FX revaluation batch does not contain any lines.");
+        }
+
+        if (status == "draft")
+        {
+            foreach (var lineRow in lineRows)
+            {
+                var currentOpenItem = await LoadCurrentOpenItemAsync(
+                    scope,
+                    companyId.Value,
+                    lineRow.TargetOpenItemType,
+                    lineRow.TargetOpenItemId,
+                    cancellationToken);
+
+                if (currentOpenItem.PartyId != lineRow.PartyId)
+                {
+                    throw new InvalidOperationException(
+                        $"FX revaluation batch line {lineRow.LineNumber} no longer matches the target party.");
+                }
+
+                if (!string.Equals(currentOpenItem.BalanceSide, lineRow.TargetBalanceSide, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"FX revaluation batch line {lineRow.LineNumber} is stale because the target open item balance side changed after preparation.");
+                }
+
+                if (currentOpenItem.Status is not ("open" or "partially_applied"))
+                {
+                    throw new InvalidOperationException(
+                        $"FX revaluation batch line {lineRow.LineNumber} targets an open item that is no longer open.");
+                }
+
+                if (Round6(currentOpenItem.OpenAmountTx) != Round6(lineRow.OpenAmountTx) ||
+                    Round6(currentOpenItem.OpenAmountBase) != Round6(lineRow.CarryingAmountBase))
+                {
+                    throw new InvalidOperationException(
+                        $"FX revaluation batch line {lineRow.LineNumber} is stale because the target open item balance changed after preparation.");
+                }
+            }
+        }
+
+        var lines = lineRows
+            .Select(line => new FxRevaluationDocumentLine(
+                line.LineNumber,
+                line.TargetOpenItemType,
+                line.TargetOpenItemId,
+                line.TargetBalanceSide,
+                line.TargetControlAccountId,
+                line.OffsetAccountId,
+                line.PartyId,
+                line.Description,
+                line.OpenAmountTx,
+                line.CarryingAmountBase,
+                line.RevaluedAmountBase,
+                line.UnrealizedFxAmount))
+            .ToArray();
+
+        return new FxRevaluationDocument(
+            id,
+            companyId,
+            new EntityNumber(entityNumber),
+            new DocumentNumber(displayNumber),
+            status,
+            revaluationDate,
+            new CurrencyCode(transactionCurrencyCode),
+            new CurrencyCode(baseCurrencyCode),
+            new FxSnapshotRef(
+                fxSnapshotId ?? Guid.Empty,
+                new CurrencyCode(baseCurrencyCode),
+                new CurrencyCode(transactionCurrencyCode),
+                fxRate,
+                fxRequestedDate,
+                fxEffectiveDate,
+                fxSource),
+            unrealizedFxGainAccountId.Value,
+            unrealizedFxLossAccountId.Value,
+            lines,
+            memo,
+            batchKind,
+            reversalOfDocumentId);
+    }
+
+    private async Task<FxRevaluationCascadeUnwindPlanResult> GetCascadeUnwindPlanCoreAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var sourceBatch = await LoadSourceBatchForUnwindAsync(
+            scope,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (sourceBatch.Status != "posted")
+        {
+            throw new InvalidOperationException("Cascade unwind plan requires a posted FX revaluation batch.");
+        }
+
+        if (sourceBatch.BatchKind != "revaluation")
+        {
+            throw new InvalidOperationException("Cascade unwind plan can only start from an original FX revaluation batch.");
+        }
+
+        var activeChain = await LoadActiveRevaluationChainAsync(
+            scope,
+            companyId.Value,
+            sourceBatch,
+            cancellationToken);
+
+        return FxRevaluationCascadePlanner.BuildPlan(
+            sourceBatch.Id,
+            sourceBatch.DisplayNumber,
+            activeChain);
+    }
+
+    private async Task<FxRevaluationDraftPreparationResult> PrepareDraftCoreAsync(
+        FxRevaluationDraftPreparation request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!request.IncludeAccountsReceivable && !request.IncludeAccountsPayable)
+        {
+            throw new InvalidOperationException("FX revaluation preparation requires at least one of AR or AP to be included.");
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(scope, request.CompanyId.Value, cancellationToken);
+        if (string.Equals(baseCurrencyCode, request.TransactionCurrencyCode.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("FX revaluation preparation requires a foreign transaction currency.");
+        }
+
+        var fxSnapshot = await LoadAcceptedFxSnapshotAsync(
+            scope,
+            request.CompanyId.Value,
+            baseCurrencyCode,
+            request.TransactionCurrencyCode.Value,
+            request.RevaluationDate,
+            request.AcceptedFxSnapshotId,
+            cancellationToken);
+        if (fxSnapshot is null)
+        {
+            throw new InvalidOperationException("No acceptable local FX snapshot was found for the requested revaluation date.");
+        }
+
+        var unrealizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+            scope,
+            request.CompanyId.Value,
+            cancellationToken,
+            "unrealized_fx_gain",
+            "fx_gain_unrealized");
+        var unrealizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+            scope,
+            request.CompanyId.Value,
+            cancellationToken,
+            "unrealized_fx_loss",
+            "fx_loss_unrealized");
+
+        if (!unrealizedFxGainAccountId.HasValue || !unrealizedFxLossAccountId.HasValue)
+        {
+            throw new InvalidOperationException(
+                "FX revaluation preparation could not resolve active unrealized FX gain/loss accounts. Configure accounts.system_role or accounts.system_key with 'unrealized_fx_gain' and 'unrealized_fx_loss'.");
+        }
+
+        var candidateLines = new List<FxRevaluationPreparedLine>();
+        if (request.IncludeAccountsReceivable)
+        {
+            candidateLines.AddRange(await LoadPreparedArLinesAsync(
+                scope,
+                request.CompanyId.Value,
+                baseCurrencyCode,
+                request.TransactionCurrencyCode.Value,
+                fxSnapshot,
+                unrealizedFxGainAccountId.Value,
+                unrealizedFxLossAccountId.Value,
+                cancellationToken));
+        }
+
+        if (request.IncludeAccountsPayable)
+        {
+            candidateLines.AddRange(await LoadPreparedApLinesAsync(
+                scope,
+                request.CompanyId.Value,
+                baseCurrencyCode,
+                request.TransactionCurrencyCode.Value,
+                fxSnapshot,
+                unrealizedFxGainAccountId.Value,
+                unrealizedFxLossAccountId.Value,
+                cancellationToken));
+        }
+
+        var preparedLines = candidateLines
+            .Where(static line => line.UnrealizedFxAmount != 0m)
+            .OrderBy(static line => line.TargetOpenItemType)
+            .ThenBy(static line => line.Description, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (preparedLines.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "No open foreign-currency AP/AR items required revaluation for the selected date and currency.");
+        }
+
+        var batchId = Guid.NewGuid();
+        var entityNumber = await PostgresNumberingSequences.ReserveAsync(
+            scope,
+            request.CompanyId.Value,
+            $"entity-number:fx-revaluation:{request.RevaluationDate:yyyy}",
+            $"EN{request.RevaluationDate:yyyy}",
+            padding: 8,
+            cancellationToken);
+        var displayNumber = await PostgresNumberingSequences.ReserveAsync(
+            scope,
+            request.CompanyId.Value,
+            "fx-revaluation-display",
+            "FXRV-",
+            padding: 6,
+            cancellationToken);
+
+        await InsertBatchHeaderAsync(
+            scope,
+            batchId,
+            request.CompanyId.Value,
+            request.UserId.Value,
+            entityNumber,
+            displayNumber,
+            "revaluation",
+            null,
+            request.RevaluationDate,
+            request.TransactionCurrencyCode.Value,
+            baseCurrencyCode,
+            fxSnapshot,
+            request.Memo,
+            cancellationToken);
+        await InsertBatchLinesAsync(scope, request.CompanyId.Value, batchId, preparedLines, cancellationToken);
+
+        return new FxRevaluationDraftPreparationResult(
+            batchId,
+            entityNumber,
+            displayNumber,
+            preparedLines.Length,
+            "draft");
+    }
+
+    private async Task<FxRevaluationDraftPreparationResult> PrepareNextPeriodUnwindDraftCoreAsync(
+        FxRevaluationUnwindPreparation request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var sourceBatch = await LoadSourceBatchForUnwindAsync(
+            scope,
+            request.CompanyId.Value,
+            request.ReversalOfDocumentId,
+            cancellationToken);
+
+        if (sourceBatch.Status != "posted")
+        {
+            throw new InvalidOperationException("Next-period unwind requires a posted FX revaluation batch.");
+        }
+
+        if (sourceBatch.BatchKind != "revaluation")
+        {
+            throw new InvalidOperationException("Next-period unwind can only be prepared from an original FX revaluation batch.");
+        }
+
+        if (request.UnwindDate <= sourceBatch.RevaluationDate)
+        {
+            throw new InvalidOperationException("Next-period unwind date must be later than the source revaluation date.");
+        }
+
+        FxRevaluationChainGuard.EnsureNoActiveDescendantRevaluation(
+            sourceBatch.DisplayNumber,
+            await FindActiveDescendantRevaluationAsync(
+                scope,
+                request.CompanyId.Value,
+                sourceBatch,
+                cancellationToken));
+
+        await EnsureNoActiveUnwindAsync(
+            scope,
+            request.CompanyId.Value,
+            request.ReversalOfDocumentId,
+            cancellationToken);
+
+        var preparedLines = await LoadPreparedUnwindLinesAsync(
+            scope,
+            request.CompanyId.Value,
+            sourceBatch,
+            cancellationToken);
+
+        if (preparedLines.Count == 0)
+        {
+            throw new InvalidOperationException("FX revaluation unwind could not find any source lines to reverse.");
+        }
+
+        var batchId = Guid.NewGuid();
+        var entityNumber = await PostgresNumberingSequences.ReserveAsync(
+            scope,
+            request.CompanyId.Value,
+            $"entity-number:fx-revaluation:{request.UnwindDate:yyyy}",
+            $"EN{request.UnwindDate:yyyy}",
+            padding: 8,
+            cancellationToken);
+        var displayNumber = await PostgresNumberingSequences.ReserveAsync(
+            scope,
+            request.CompanyId.Value,
+            "fx-revaluation-unwind-display",
+            "FXUN-",
+            padding: 6,
+            cancellationToken);
+
+        var memo = string.IsNullOrWhiteSpace(request.Memo)
+            ? $"Next-period unwind of {sourceBatch.DisplayNumber}"
+            : request.Memo.Trim();
+
+        await InsertBatchHeaderAsync(
+            scope,
+            batchId,
+            request.CompanyId.Value,
+            request.UserId.Value,
+            entityNumber,
+            displayNumber,
+            "next_period_unwind",
+            sourceBatch.Id,
+            request.UnwindDate,
+            sourceBatch.TransactionCurrencyCode,
+            sourceBatch.BaseCurrencyCode,
+            sourceBatch.FxSnapshot,
+            memo,
+            cancellationToken);
+        await InsertBatchLinesAsync(scope, request.CompanyId.Value, batchId, preparedLines, cancellationToken);
+
+        return new FxRevaluationDraftPreparationResult(
+            batchId,
+            entityNumber,
+            displayNumber,
+            preparedLines.Count,
+            "draft");
+    }
+
+    private static async Task InsertBatchHeaderAsync(
+        PostgresCommandScope scope,
+        Guid batchId,
+        Guid companyId,
+        Guid createdByUserId,
+        string entityNumber,
+        string displayNumber,
+        string batchKind,
+        Guid? reversalOfDocumentId,
+        DateOnly revaluationDate,
+        string transactionCurrencyCode,
+        string baseCurrencyCode,
+        FxSnapshotRef fxSnapshot,
+        string? memo,
+        CancellationToken cancellationToken)
+    {
+        await using var headerCommand = scope.CreateCommand(
+            """
+            insert into fx_revaluation_batches (
+              id,
+              company_id,
+              entity_number,
+              display_number,
+              status,
+              batch_kind,
+              reversal_of_fx_revaluation_batch_id,
+              revaluation_date,
+              transaction_currency_code,
+              base_currency_code,
+              fx_rate_snapshot_id,
+              fx_rate,
+              fx_requested_date,
+              fx_effective_date,
+              fx_source,
+              memo,
+              created_by_user_id,
+              created_at,
+              updated_at
+            )
+            values (
+              @id,
+              @company_id,
+              @entity_number,
+              @display_number,
+              'draft',
+              @batch_kind,
+              @reversal_of_fx_revaluation_batch_id,
+              @revaluation_date,
+              @transaction_currency_code,
+              @base_currency_code,
+              @fx_rate_snapshot_id,
+              @fx_rate,
+              @fx_requested_date,
+              @fx_effective_date,
+              @fx_source,
+              @memo,
+              @created_by_user_id,
+              now(),
+              now()
+            );
+            """);
+
+        headerCommand.Parameters.AddWithValue("id", batchId);
+        headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
+        headerCommand.Parameters.AddWithValue("display_number", displayNumber);
+        headerCommand.Parameters.AddWithValue("batch_kind", batchKind);
+        headerCommand.Parameters.AddWithValue(
+            "reversal_of_fx_revaluation_batch_id",
+            reversalOfDocumentId.HasValue ? reversalOfDocumentId.Value : DBNull.Value);
+        headerCommand.Parameters.AddWithValue("revaluation_date", revaluationDate);
+        headerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        headerCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        headerCommand.Parameters.AddWithValue(
+            "fx_rate_snapshot_id",
+            fxSnapshot.SnapshotId == Guid.Empty ? DBNull.Value : (object)fxSnapshot.SnapshotId);
+        headerCommand.Parameters.AddWithValue("fx_rate", fxSnapshot.Rate);
+        headerCommand.Parameters.AddWithValue("fx_requested_date", fxSnapshot.RequestedDate);
+        headerCommand.Parameters.AddWithValue("fx_effective_date", fxSnapshot.EffectiveDate);
+        headerCommand.Parameters.AddWithValue("fx_source", fxSnapshot.SourceSemantics);
+        headerCommand.Parameters.AddWithValue(
+            "memo",
+            string.IsNullOrWhiteSpace(memo)
+                ? DBNull.Value
+                : (object)memo.Trim());
+        headerCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+        await headerCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertBatchLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid batchId,
+        IReadOnlyList<FxRevaluationPreparedLine> preparedLines,
+        CancellationToken cancellationToken)
+    {
+        for (var index = 0; index < preparedLines.Count; index++)
+        {
+            var line = preparedLines[index];
+            await using var lineCommand = scope.CreateCommand(
+                """
+                insert into fx_revaluation_batch_lines (
+                  id,
+                  company_id,
+                  fx_revaluation_batch_id,
+                  line_number,
+                  target_open_item_type,
+                  target_open_item_id,
+                  target_balance_side,
+                  target_control_account_id,
+                  offset_account_id,
+                  party_id,
+                  description,
+                  open_amount_tx,
+                  carrying_amount_base,
+                  revalued_amount_base,
+                  unrealized_fx_amount,
+                  created_at,
+                  updated_at
+                )
+                values (
+                  @id,
+                  @company_id,
+                  @fx_revaluation_batch_id,
+                  @line_number,
+                  @target_open_item_type,
+                  @target_open_item_id,
+                  @target_balance_side,
+                  @target_control_account_id,
+                  @offset_account_id,
+                  @party_id,
+                  @description,
+                  @open_amount_tx,
+                  @carrying_amount_base,
+                  @revalued_amount_base,
+                  @unrealized_fx_amount,
+                  now(),
+                  now()
+                );
+                """);
+
+            lineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+            lineCommand.Parameters.AddWithValue("company_id", companyId);
+            lineCommand.Parameters.AddWithValue("fx_revaluation_batch_id", batchId);
+            lineCommand.Parameters.AddWithValue("line_number", index + 1);
+            lineCommand.Parameters.AddWithValue("target_open_item_type", line.TargetOpenItemType);
+            lineCommand.Parameters.AddWithValue("target_open_item_id", line.TargetOpenItemId);
+            lineCommand.Parameters.AddWithValue("target_balance_side", line.TargetBalanceSide);
+            lineCommand.Parameters.AddWithValue("target_control_account_id", line.TargetControlAccountId);
+            lineCommand.Parameters.AddWithValue("offset_account_id", line.OffsetAccountId);
+            lineCommand.Parameters.AddWithValue("party_id", line.PartyId);
+            lineCommand.Parameters.AddWithValue("description", line.Description);
+            lineCommand.Parameters.AddWithValue("open_amount_tx", line.OpenAmountTx);
+            lineCommand.Parameters.AddWithValue("carrying_amount_base", line.CarryingAmountBase);
+            lineCommand.Parameters.AddWithValue("revalued_amount_base", line.RevaluedAmountBase);
+            lineCommand.Parameters.AddWithValue("unrealized_fx_amount", line.UnrealizedFxAmount);
+            await lineCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select base_currency_code
+            from companies
+            where id = @company_id
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        if (value is not string baseCurrencyCode)
+        {
+            throw new InvalidOperationException("Active company base currency was not found.");
+        }
+
+        return baseCurrencyCode;
+    }
+
+    private static async Task<FxSnapshotRef?> LoadAcceptedFxSnapshotAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        string baseCurrencyCode,
+        string transactionCurrencyCode,
+        DateOnly requestedDate,
+        Guid? snapshotId,
+        CancellationToken cancellationToken)
+    {
+        var sql = snapshotId is { } resolvedSnapshotId && resolvedSnapshotId != Guid.Empty
+            ? """
+              select
+                s.id,
+                s.base_currency_code,
+                s.quote_currency_code,
+                s.rate,
+                s.requested_date,
+                s.effective_date,
+                s.snapshot_semantics
+              from company_fx_rate_snapshots s
+              where s.company_id = @company_id
+                and s.id = @snapshot_id
+                and s.base_currency_code = @base_currency_code
+                and s.quote_currency_code = @transaction_currency_code
+              limit 1;
+              """
+            : """
+              select
+                s.id,
+                s.base_currency_code,
+                s.quote_currency_code,
+                s.rate,
+                s.requested_date,
+                s.effective_date,
+                s.snapshot_semantics
+              from company_fx_rate_snapshots s
+              where s.company_id = @company_id
+                and s.base_currency_code = @base_currency_code
+                and s.quote_currency_code = @transaction_currency_code
+                and s.requested_date <= @requested_date
+                and s.effective_date <= @requested_date
+              order by s.requested_date desc, s.effective_date desc, s.created_at desc
+              limit 1;
+              """;
+
+        await using var command = scope.CreateCommand(sql);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        command.Parameters.AddWithValue("requested_date", requestedDate);
+
+        if (snapshotId is { } explicitSnapshotId && explicitSnapshotId != Guid.Empty)
+        {
+            command.Parameters.AddWithValue("snapshot_id", explicitSnapshotId);
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new FxSnapshotRef(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            new CurrencyCode(reader.GetString(reader.GetOrdinal("base_currency_code"))),
+            new CurrencyCode(reader.GetString(reader.GetOrdinal("quote_currency_code"))),
+            reader.GetDecimal(reader.GetOrdinal("rate")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("requested_date")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("effective_date")),
+            reader.GetString(reader.GetOrdinal("snapshot_semantics")));
+    }
+
+    private static async Task<SourceFxRevaluationBatch> LoadSourceBatchForUnwindAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              b.id,
+              b.display_number,
+              b.status,
+              b.batch_kind,
+              b.posted_at,
+              b.revaluation_date,
+              b.transaction_currency_code,
+              b.base_currency_code,
+              b.fx_rate_snapshot_id,
+              b.fx_rate,
+              b.fx_requested_date,
+              b.fx_effective_date,
+              b.fx_source
+            from fx_revaluation_batches b
+            where b.company_id = @company_id
+              and b.id = @document_id
+            for update;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("FX revaluation batch was not found in the active company context.");
+        }
+
+        return new SourceFxRevaluationBatch(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("display_number")),
+            reader.GetString(reader.GetOrdinal("status")),
+            reader.GetString(reader.GetOrdinal("batch_kind")),
+            reader.IsDBNull(reader.GetOrdinal("posted_at"))
+                ? (DateTimeOffset?)null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("revaluation_date")),
+            reader.GetString(reader.GetOrdinal("transaction_currency_code")),
+            reader.GetString(reader.GetOrdinal("base_currency_code")),
+            new FxSnapshotRef(
+                reader.IsDBNull(reader.GetOrdinal("fx_rate_snapshot_id"))
+                    ? Guid.Empty
+                    : reader.GetGuid(reader.GetOrdinal("fx_rate_snapshot_id")),
+                new CurrencyCode(reader.GetString(reader.GetOrdinal("base_currency_code"))),
+                new CurrencyCode(reader.GetString(reader.GetOrdinal("transaction_currency_code"))),
+                reader.GetDecimal(reader.GetOrdinal("fx_rate")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_requested_date")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_effective_date")),
+                reader.GetString(reader.GetOrdinal("fx_source"))));
+    }
+
+    private static async Task EnsureNoActiveUnwindAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid sourceBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select display_number, status
+            from fx_revaluation_batches
+            where company_id = @company_id
+              and reversal_of_fx_revaluation_batch_id = @source_batch_id
+              and status in ('draft', 'posted')
+            order by created_at desc
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("source_batch_id", sourceBatchId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"FX revaluation batch already has an active next-period unwind draft or posting ({reader.GetString(reader.GetOrdinal("display_number"))}, status {reader.GetString(reader.GetOrdinal("status"))}).");
+        }
+    }
+
+    private static async Task<IReadOnlyList<FxRevaluationCascadePlanner.ActiveRevaluationBatch>> LoadActiveRevaluationChainAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        SourceFxRevaluationBatch sourceBatch,
+        CancellationToken cancellationToken)
+    {
+        var postedAt = sourceBatch.PostedAt ?? throw new InvalidOperationException(
+            "Posted FX revaluation batch is missing posted_at.");
+        var activeBatches = new List<FxRevaluationCascadePlanner.ActiveRevaluationBatch>();
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              descendant.id,
+              descendant.display_number,
+              descendant.revaluation_date,
+              descendant.posted_at,
+              descendant.created_at
+            from fx_revaluation_batch_lines source_line
+            join fx_revaluation_batch_lines descendant_line
+              on descendant_line.company_id = source_line.company_id
+             and descendant_line.target_open_item_type = source_line.target_open_item_type
+             and descendant_line.target_open_item_id = source_line.target_open_item_id
+            join fx_revaluation_batches descendant
+              on descendant.company_id = descendant_line.company_id
+             and descendant.id = descendant_line.fx_revaluation_batch_id
+            where source_line.company_id = @company_id
+              and source_line.fx_revaluation_batch_id = @source_batch_id
+              and descendant.batch_kind = 'revaluation'
+              and descendant.status = 'posted'
+              and descendant.posted_at >= @source_posted_at
+              and not exists (
+                select 1
+                from fx_revaluation_batches unwind
+                where unwind.company_id = descendant.company_id
+                  and unwind.batch_kind = 'next_period_unwind'
+                  and unwind.reversal_of_fx_revaluation_batch_id = descendant.id
+                  and unwind.status = 'posted'
+              )
+            group by
+              descendant.id,
+              descendant.display_number,
+              descendant.revaluation_date,
+              descendant.posted_at,
+              descendant.created_at
+            order by descendant.posted_at desc, descendant.created_at desc, descendant.id desc;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("source_batch_id", sourceBatch.Id);
+        command.Parameters.AddWithValue("source_posted_at", postedAt);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            activeBatches.Add(new FxRevaluationCascadePlanner.ActiveRevaluationBatch(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("display_number")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("revaluation_date")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+
+        return activeBatches;
+    }
+
+    private static async Task<FxRevaluationChainGuard.ActiveDescendantRevaluation?> FindActiveDescendantRevaluationAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        SourceFxRevaluationBatch sourceBatch,
+        CancellationToken cancellationToken)
+    {
+        var activeChain = await LoadActiveRevaluationChainAsync(
+            scope,
+            companyId,
+            sourceBatch,
+            cancellationToken);
+        var descendantBatch = activeChain.FirstOrDefault(batch => batch.DocumentId != sourceBatch.Id);
+        if (descendantBatch is null)
+        {
+            return null;
+        }
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              l.target_open_item_type,
+              l.target_open_item_id
+            from fx_revaluation_batch_lines l
+            where l.company_id = @company_id
+              and l.fx_revaluation_batch_id = @batch_id
+            order by l.line_number asc
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("batch_id", descendantBatch.DocumentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"FX revaluation batch {descendantBatch.DisplayNumber} does not contain any lines.");
+        }
+
+        return new FxRevaluationChainGuard.ActiveDescendantRevaluation(
+            descendantBatch.DocumentId,
+            descendantBatch.DisplayNumber,
+            reader.GetString(reader.GetOrdinal("target_open_item_type")),
+            reader.GetGuid(reader.GetOrdinal("target_open_item_id")));
+    }
+
+    private static async Task<IReadOnlyList<FxRevaluationPreparedLine>> LoadPreparedUnwindLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        SourceFxRevaluationBatch sourceBatch,
+        CancellationToken cancellationToken)
+    {
+        var lines = new List<FxRevaluationPreparedLine>();
+        await using var command = scope.CreateCommand(
+            """
+            select
+              l.line_number,
+              l.target_open_item_type,
+              l.target_open_item_id,
+              l.target_balance_side,
+              l.target_control_account_id,
+              l.offset_account_id,
+              l.party_id,
+              l.description,
+              l.open_amount_tx,
+              l.carrying_amount_base,
+              l.revalued_amount_base,
+              l.unrealized_fx_amount
+            from fx_revaluation_batch_lines l
+            where l.company_id = @company_id
+              and l.fx_revaluation_batch_id = @document_id
+            order by l.line_number asc;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("document_id", sourceBatch.Id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var lineNumber = reader.GetInt32(reader.GetOrdinal("line_number"));
+            var description = reader.GetString(reader.GetOrdinal("description"));
+            var targetOpenItemType = reader.GetString(reader.GetOrdinal("target_open_item_type"));
+            var targetOpenItemId = reader.GetGuid(reader.GetOrdinal("target_open_item_id"));
+            var currentOpenItem = await LoadCurrentOpenItemAsync(
+                scope,
+                companyId,
+                targetOpenItemType,
+                targetOpenItemId,
+                cancellationToken);
+
+            if (currentOpenItem.PartyId != reader.GetGuid(reader.GetOrdinal("party_id")))
+            {
+                throw new InvalidOperationException(
+                    $"FX revaluation unwind line {lineNumber} no longer matches the target party.");
+            }
+
+            var targetBalanceSide = reader.GetString(reader.GetOrdinal("target_balance_side"));
+            if (!string.Equals(currentOpenItem.BalanceSide, targetBalanceSide, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"FX revaluation unwind line {lineNumber} cannot be prepared because the target balance side changed outside the supported flow.");
+            }
+
+            if (currentOpenItem.Status == "voided")
+            {
+                throw new InvalidOperationException(
+                    $"FX revaluation unwind line {lineNumber} targets an open item that is voided.");
+            }
+
+            var originalOpenAmountTx = reader.GetDecimal(reader.GetOrdinal("open_amount_tx"));
+            var sourceCarryingAmountBase = reader.GetDecimal(reader.GetOrdinal("carrying_amount_base"));
+            var sourceRevaluedAmountBase = reader.GetDecimal(reader.GetOrdinal("revalued_amount_base"));
+            var settlementSequence = await LoadSettlementSequenceAsync(
+                scope,
+                companyId,
+                targetOpenItemType,
+                targetOpenItemId,
+                sourceBatch.PostedAt ?? throw new InvalidOperationException(
+                    "Posted FX revaluation batch is missing posted_at."),
+                cancellationToken);
+            var expectedRemainingRevalued = FxRevaluationUnwindMath.ReplayRemainingState(
+                originalOpenAmountTx,
+                sourceRevaluedAmountBase,
+                settlementSequence);
+            var expectedRemainingCarrying = FxRevaluationUnwindMath.ReplayRemainingState(
+                originalOpenAmountTx,
+                sourceCarryingAmountBase,
+                settlementSequence);
+
+            if (Round6(currentOpenItem.OpenAmountTx) != Round6(expectedRemainingRevalued.OpenAmountTx))
+            {
+                throw new InvalidOperationException(
+                    $"FX revaluation unwind line {lineNumber} cannot be prepared because the target open amount changed outside the supported settlement flow.");
+            }
+
+            if (Round6(currentOpenItem.OpenAmountBase) != Round6(expectedRemainingRevalued.OpenAmountBase))
+            {
+                throw new InvalidOperationException(
+                    $"FX revaluation unwind line {lineNumber} cannot be prepared because the target carrying base changed outside the supported settlement flow.");
+            }
+
+            if (currentOpenItem.OpenAmountTx == 0m || currentOpenItem.Status == "closed")
+            {
+                continue;
+            }
+
+            var unwindAmountBase = Round6(
+                expectedRemainingCarrying.OpenAmountBase - expectedRemainingRevalued.OpenAmountBase);
+            if (unwindAmountBase == 0m)
+            {
+                continue;
+            }
+
+            lines.Add(new FxRevaluationPreparedLine(
+                lineNumber,
+                targetOpenItemType,
+                targetOpenItemId,
+                targetBalanceSide,
+                reader.GetGuid(reader.GetOrdinal("target_control_account_id")),
+                reader.GetGuid(reader.GetOrdinal("offset_account_id")),
+                reader.GetGuid(reader.GetOrdinal("party_id")),
+                $"Next-period unwind of {sourceBatch.DisplayNumber} line {lineNumber}: {description}",
+                expectedRemainingRevalued.OpenAmountTx,
+                expectedRemainingRevalued.OpenAmountBase,
+                expectedRemainingCarrying.OpenAmountBase,
+                unwindAmountBase));
+        }
+
+        return lines;
+    }
+
+    private static async Task<IReadOnlyList<decimal>> LoadSettlementSequenceAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        string targetOpenItemType,
+        Guid targetOpenItemId,
+        DateTimeOffset postedAt,
+        CancellationToken cancellationToken)
+    {
+        var appliedAmountsTx = new List<decimal>();
+        await using var command = scope.CreateCommand(
+            """
+            select applied_amount_tx
+            from settlement_applications
+            where company_id = @company_id
+              and target_open_item_type = @target_open_item_type
+              and target_open_item_id = @target_open_item_id
+              and created_at >= @posted_at
+            order by created_at asc, id asc;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("target_open_item_type", targetOpenItemType);
+        command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
+        command.Parameters.AddWithValue("posted_at", postedAt);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            appliedAmountsTx.Add(reader.GetDecimal(reader.GetOrdinal("applied_amount_tx")));
+        }
+
+        return appliedAmountsTx;
+    }
+
+    private static async Task<IReadOnlyList<FxRevaluationPreparedLine>> LoadPreparedArLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        string baseCurrencyCode,
+        string transactionCurrencyCode,
+        FxSnapshotRef fxSnapshot,
+        Guid unrealizedFxGainAccountId,
+        Guid unrealizedFxLossAccountId,
+        CancellationToken cancellationToken)
+    {
+        var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
+            scope,
+            companyId,
+            "accounts_receivable",
+            transactionCurrencyCode,
+            baseCurrencyCode,
+            cancellationToken);
+        if (!controlAccountId.HasValue)
+        {
+            throw new InvalidOperationException(
+                "FX revaluation could not resolve an active foreign-currency Accounts Receivable control account.");
+        }
+
+        var lines = new List<FxRevaluationPreparedLine>();
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              customer_id,
+              source_type,
+              source_id,
+              balance_side,
+              open_amount_tx,
+              open_amount_base
+            from ar_open_items
+            where company_id = @company_id
+              and document_currency_code = @transaction_currency_code
+              and base_currency_code = @base_currency_code
+              and status in ('open', 'partially_applied')
+              and open_amount_tx > 0
+              and open_amount_base > 0
+            order by due_date asc nulls first, created_at asc, id asc;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var openAmountTx = reader.GetDecimal(reader.GetOrdinal("open_amount_tx"));
+            var carryingAmountBase = reader.GetDecimal(reader.GetOrdinal("open_amount_base"));
+            var revaluedAmountBase = SettlementAmountMath.RoundBase(openAmountTx * fxSnapshot.Rate);
+            var unrealizedAmountBase = SettlementAmountMath.RoundBase(revaluedAmountBase - carryingAmountBase);
+            if (unrealizedAmountBase == 0m)
+            {
+                continue;
+            }
+
+            var sourceType = reader.GetString(reader.GetOrdinal("source_type"));
+            var sourceId = reader.GetGuid(reader.GetOrdinal("source_id"));
+            var balanceSide = reader.GetString(reader.GetOrdinal("balance_side"));
+            lines.Add(new FxRevaluationPreparedLine(
+                lines.Count + 1,
+                "ar_open_item",
+                reader.GetGuid(reader.GetOrdinal("id")),
+                balanceSide,
+                controlAccountId.Value,
+                ResolveOffsetAccountId(
+                    balanceSide,
+                    unrealizedAmountBase,
+                    unrealizedFxGainAccountId,
+                    unrealizedFxLossAccountId),
+                reader.GetGuid(reader.GetOrdinal("customer_id")),
+                $"AR FX revaluation for {sourceType} {sourceId}",
+                openAmountTx,
+                carryingAmountBase,
+                revaluedAmountBase,
+                unrealizedAmountBase));
+        }
+
+        return lines;
+    }
+
+    private static async Task<IReadOnlyList<FxRevaluationPreparedLine>> LoadPreparedApLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        string baseCurrencyCode,
+        string transactionCurrencyCode,
+        FxSnapshotRef fxSnapshot,
+        Guid unrealizedFxGainAccountId,
+        Guid unrealizedFxLossAccountId,
+        CancellationToken cancellationToken)
+    {
+        var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
+            scope,
+            companyId,
+            "accounts_payable",
+            transactionCurrencyCode,
+            baseCurrencyCode,
+            cancellationToken);
+        if (!controlAccountId.HasValue)
+        {
+            throw new InvalidOperationException(
+                "FX revaluation could not resolve an active foreign-currency Accounts Payable control account.");
+        }
+
+        var lines = new List<FxRevaluationPreparedLine>();
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              vendor_id,
+              source_type,
+              source_id,
+              balance_side,
+              open_amount_tx,
+              open_amount_base
+            from ap_open_items
+            where company_id = @company_id
+              and document_currency_code = @transaction_currency_code
+              and base_currency_code = @base_currency_code
+              and status in ('open', 'partially_applied')
+              and open_amount_tx > 0
+              and open_amount_base > 0
+            order by due_date asc nulls first, created_at asc, id asc;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var openAmountTx = reader.GetDecimal(reader.GetOrdinal("open_amount_tx"));
+            var carryingAmountBase = reader.GetDecimal(reader.GetOrdinal("open_amount_base"));
+            var revaluedAmountBase = SettlementAmountMath.RoundBase(openAmountTx * fxSnapshot.Rate);
+            var unrealizedAmountBase = SettlementAmountMath.RoundBase(revaluedAmountBase - carryingAmountBase);
+            if (unrealizedAmountBase == 0m)
+            {
+                continue;
+            }
+
+            var sourceType = reader.GetString(reader.GetOrdinal("source_type"));
+            var sourceId = reader.GetGuid(reader.GetOrdinal("source_id"));
+            var balanceSide = reader.GetString(reader.GetOrdinal("balance_side"));
+            lines.Add(new FxRevaluationPreparedLine(
+                lines.Count + 1,
+                "ap_open_item",
+                reader.GetGuid(reader.GetOrdinal("id")),
+                balanceSide,
+                controlAccountId.Value,
+                ResolveOffsetAccountId(
+                    balanceSide,
+                    unrealizedAmountBase,
+                    unrealizedFxGainAccountId,
+                    unrealizedFxLossAccountId),
+                reader.GetGuid(reader.GetOrdinal("vendor_id")),
+                $"AP FX revaluation for {sourceType} {sourceId}",
+                openAmountTx,
+                carryingAmountBase,
+                revaluedAmountBase,
+                unrealizedAmountBase));
+        }
+
+        return lines;
+    }
+
+    private static async Task<CurrentOpenItemState> LoadCurrentOpenItemAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        string targetOpenItemType,
+        Guid targetOpenItemId,
+        CancellationToken cancellationToken)
+    {
+        var (tableName, partyColumn) = targetOpenItemType switch
+        {
+            "ar_open_item" => ("ar_open_items", "customer_id"),
+            "ap_open_item" => ("ap_open_items", "vendor_id"),
+            _ => throw new InvalidOperationException(
+                $"FX revaluation line target type '{targetOpenItemType}' is not supported.")
+        };
+
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              {partyColumn},
+              balance_side,
+              open_amount_tx,
+              open_amount_base,
+              status
+            from {tableName}
+            where company_id = @company_id
+              and id = @target_open_item_id
+            for update;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("FX revaluation batch references an open item that does not exist.");
+        }
+
+        return new CurrentOpenItemState(
+            reader.GetGuid(reader.GetOrdinal(partyColumn)),
+            reader.GetString(reader.GetOrdinal("balance_side")),
+            reader.GetDecimal(reader.GetOrdinal("open_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("open_amount_base")),
+            reader.GetString(reader.GetOrdinal("status")));
+    }
+
+    private static decimal Round6(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static Guid ResolveOffsetAccountId(
+        string targetBalanceSide,
+        decimal unrealizedAmountBase,
+        Guid unrealizedFxGainAccountId,
+        Guid unrealizedFxLossAccountId) =>
+        targetBalanceSide switch
+        {
+            "debit" when unrealizedAmountBase > 0m => unrealizedFxGainAccountId,
+            "debit" => unrealizedFxLossAccountId,
+            "credit" when unrealizedAmountBase > 0m => unrealizedFxLossAccountId,
+            "credit" => unrealizedFxGainAccountId,
+            _ => throw new InvalidOperationException(
+                $"FX revaluation line balance side '{targetBalanceSide}' is not supported.")
+        };
+
+    private sealed record FxRevaluationLineRow(
+        int LineNumber,
+        string TargetOpenItemType,
+        Guid TargetOpenItemId,
+        string TargetBalanceSide,
+        Guid TargetControlAccountId,
+        Guid OffsetAccountId,
+        Guid PartyId,
+        string Description,
+        decimal OpenAmountTx,
+        decimal CarryingAmountBase,
+        decimal RevaluedAmountBase,
+        decimal UnrealizedFxAmount,
+        DateTimeOffset? AppliedAt);
+
+    private sealed record FxRevaluationPreparedLine(
+        int LineNumber,
+        string TargetOpenItemType,
+        Guid TargetOpenItemId,
+        string TargetBalanceSide,
+        Guid TargetControlAccountId,
+        Guid OffsetAccountId,
+        Guid PartyId,
+        string Description,
+        decimal OpenAmountTx,
+        decimal CarryingAmountBase,
+        decimal RevaluedAmountBase,
+        decimal UnrealizedFxAmount);
+
+    private sealed record CurrentOpenItemState(
+        Guid PartyId,
+        string BalanceSide,
+        decimal OpenAmountTx,
+        decimal OpenAmountBase,
+        string Status);
+
+    private sealed record SourceFxRevaluationBatch(
+        Guid Id,
+        string DisplayNumber,
+        string Status,
+        string BatchKind,
+        DateTimeOffset? PostedAt,
+        DateOnly RevaluationDate,
+        string TransactionCurrencyCode,
+        string BaseCurrencyCode,
+        FxSnapshotRef FxSnapshot);
+}

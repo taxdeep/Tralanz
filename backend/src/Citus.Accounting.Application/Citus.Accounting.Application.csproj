@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Citus.Accounting.Domain\Citus.Accounting.Domain.csproj" />
+  </ItemGroup>
+</Project>

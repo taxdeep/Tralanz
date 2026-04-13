@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Citus.Accounting.Application\Citus.Accounting.Application.csproj" />
+    <ProjectReference Include="..\Citus.Accounting.Infrastructure\Citus.Accounting.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
