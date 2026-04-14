@@ -1,0 +1,19 @@
+@using Web.Business.GL.JournalEntry
+@using Web.Business.Reports.ReportType
+
+<Router AppAssembly="@typeof(Program).Assembly"
+        AdditionalAssemblies="_additionalAssemblies">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(ShellLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+</Router>
+
+@code
+{
+    private readonly Assembly[] _additionalAssemblies =
+    [
+        typeof(JournalEntryEditorPage).Assembly,
+        typeof(ReportTypeSelectorState).Assembly
+    ];
+}

@@ -1,0 +1,61 @@
+@page "/invoices"
+@page "/bills"
+@page "/customers"
+@page "/receive-payment"
+@page "/vendors"
+@page "/pay-bills"
+@page "/chart-of-accounts"
+@page "/reconciliation"
+
+@inject NavigationManager NavigationManager
+
+<PageTitle>@($"{CurrentTitle} | Citus Business")</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<CitusEmptyState
+    Title="@($"{CurrentTitle} is staged next")"
+    Message="This route exists to lock in the official business navigation while we continue migrating read-first, engine-safe screens into Blazor."
+    ActionLabel="Return to dashboard"
+    ActionHref="dashboard" />
+
+<MudPaper Class="pa-4 mt-6">
+    <MudText Typo="Typo.h6" Class="mb-2">Why this page is still a placeholder</MudText>
+    <MudText Typo="Typo.body2" Class="text-secondary">
+        The authority requires that formal accounting keeps flowing through backend engines. This shell will add review and command
+        surfaces incrementally instead of shipping a generic CRUD form that could blur posting truth.
+    </MudText>
+</MudPaper>
+
+@code
+{
+    private PageHeaderModel _header = new();
+
+    private string CurrentTitle => ResolveTitle(NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Split('?', '#')[0]);
+
+    protected override void OnParametersSet()
+    {
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Planned",
+            Title = CurrentTitle,
+            Subtitle = "Business-first navigation is in place; transactional surfaces will be merged in controlled slices."
+        };
+    }
+
+    private static string ResolveTitle(string relativePath) => relativePath.Trim('/').ToLowerInvariant() switch
+    {
+        "journal-entry" => "Journal Entry",
+        "invoices" => "Invoices",
+        "bills" => "Bills",
+        "customers" => "Customers",
+        "receive-payment" => "Receive Payment",
+        "vendors" => "Vendors",
+        "pay-bills" => "Pay Bills",
+        "chart-of-accounts" => "Chart of Accounts",
+        "reconciliation" => "Reconciliation",
+        "reports" => "Reports",
+        "settings" => "Company Settings",
+        _ => "Business"
+    };
+}

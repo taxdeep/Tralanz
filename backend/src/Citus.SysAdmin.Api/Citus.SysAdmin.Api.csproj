@@ -1,2 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Citus.Platform.Core\Citus.Platform.Core.csproj" />
+    <ProjectReference Include="..\Citus.Platform.Infrastructure\Citus.Platform.Infrastructure.csproj" />
+    <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
+  </ItemGroup>
 </Project>

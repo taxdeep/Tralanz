@@ -1,0 +1,76 @@
+@page "/users"
+
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Users | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+}
+
+@if (_users.Count == 0)
+{
+    <CitusEmptyState
+        Title="No managed users"
+        Message="The SysAdmin control directory has not returned any users yet."
+        ActionLabel="Open companies"
+        ActionHref="companies" />
+}
+else
+{
+    <MudPaper Class="pa-4">
+        <MudTable Items="_users" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>User</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>System Role</MudTh>
+                <MudTh>Roles</MudTh>
+                <MudTh>Companies</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="User">
+                    <MudText Typo="Typo.body1">@context.DisplayName</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Username · @context.Email</MudText>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(context.IsActive ? Color.Success : Color.Default)">
+                        @(context.IsActive ? "Active" : "Disabled")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="System Role">
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(context.IsSysAdmin ? Color.Info : Color.Default)">
+                        @(context.IsSysAdmin ? "SysAdmin" : "Business")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Roles">@string.Join(", ", context.Roles)</MudTd>
+                <MudTd DataLabel="Companies">@string.Join(", ", context.CompanyCodes)</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Users",
+        Subtitle = "Managed principals and company memberships visible to SysAdmin."
+    };
+
+    private bool _isLoading = true;
+    private IReadOnlyList<ManagedUserSummary> _users = Array.Empty<ManagedUserSummary>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await SysAdminControlClient.ListUsersAsync();
+        _isLoading = false;
+    }
+}

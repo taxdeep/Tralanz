@@ -1,0 +1,99 @@
+@page "/companies"
+
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Companies | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+}
+
+@if (_companies.Count == 0)
+{
+    <CitusEmptyState
+        Title="No managed companies"
+        Message="SysAdmin control context did not return any companies. Check the control-state seed or company provisioning flow."
+        ActionLabel="Back to overview"
+        ActionHref="overview" />
+}
+else
+{
+    <MudPaper Class="pa-4">
+        <MudTable Items="_companies" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Company</MudTh>
+                <MudTh>Base Currency</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Multi-Currency</MudTh>
+                <MudTh>Members</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Company">
+                    <MudText Typo="Typo.body1">@context.CompanyName</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.CompanyCode</MudText>
+                </MudTd>
+                <MudTd DataLabel="Base Currency">@context.BaseCurrencyCode</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(string.Equals(context.Status, "active", StringComparison.OrdinalIgnoreCase) ? Color.Success : Color.Warning)">
+                        @context.Status
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Multi-Currency">@(context.MultiCurrencyEnabled ? "Enabled" : "Base only")</MudTd>
+                <MudTd DataLabel="Members">@context.MemberCount</MudTd>
+                <MudTd DataLabel="Actions">
+                    @if (ShellState.ActiveCompany.CompanyId == context.Id)
+                    {
+                        <MudChip T="string" Color="Color.Info" Variant="Variant.Filled">Active</MudChip>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => SwitchCompanyAsync(context.Id))">
+                            Switch here
+                        </MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Companies",
+        Subtitle = "SysAdmin-managed company workspaces and active company control."
+    };
+
+    private bool _isLoading = true;
+    private IReadOnlyList<CompanyWorkspaceSummary> _companies = Array.Empty<CompanyWorkspaceSummary>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _companies = await SysAdminControlClient.ListCompaniesAsync();
+        _isLoading = false;
+    }
+
+    private async Task SwitchCompanyAsync(Guid companyId)
+    {
+        var context = await SysAdminControlClient.SetActiveCompanyAsync(companyId);
+
+        if (context is null)
+        {
+            Snackbar.Add("Unable to switch the active company context.", Severity.Warning);
+            return;
+        }
+
+        ShellState.ApplyControlContext(context);
+        Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+    }
+}

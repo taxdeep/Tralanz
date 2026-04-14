@@ -1,0 +1,60 @@
+@inject NavigationManager NavigationManager
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
+@inject SysAdminControlClient SysAdminControlClient
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+    <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">
+        @PrimaryRole
+    </MudChip>
+
+    <MudStack Spacing="0">
+        <MudText Typo="Typo.caption" Class="text-secondary">Operator</MudText>
+        <MudText Typo="Typo.body2">@ShellState.Operator.DisplayName</MudText>
+    </MudStack>
+
+    <MudStack Spacing="0" Style="min-width: 240px;">
+        <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
+        <MudSelect T="Guid"
+                   Dense="true"
+                   Disabled="@IsCompanySwitcherDisabled"
+                   Value="@SelectedCompanyId"
+                   ValueChanged="OnCompanyChangedAsync">
+            @foreach (var company in ShellState.AvailableCompanies)
+            {
+                <MudSelectItem T="Guid" Value="@company.Id">
+                    @company.CompanyName (@company.CompanyCode)
+                </MudSelectItem>
+            }
+        </MudSelect>
+    </MudStack>
+</MudStack>
+
+@code
+{
+    private string PrimaryRole => ShellState.Operator.Roles.FirstOrDefault() ?? "sysadmin";
+
+    private Guid SelectedCompanyId => ShellState.ActiveCompany.CompanyId ?? Guid.Empty;
+
+    private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count == 0;
+
+    private async Task OnCompanyChangedAsync(Guid companyId)
+    {
+        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.CompanyId)
+        {
+            return;
+        }
+
+        var context = await SysAdminControlClient.SetActiveCompanyAsync(companyId);
+
+        if (context is null)
+        {
+            Snackbar.Add("Unable to switch the active company context.", Severity.Warning);
+            return;
+        }
+
+        ShellState.ApplyControlContext(context);
+        Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+        NavigationManager.NavigateTo("overview");
+    }
+}

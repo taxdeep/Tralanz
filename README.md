@@ -7,6 +7,8 @@ QuickBooks-like accounting MVP scaffold using:
 - Prisma
 - SQLite
 
+The current backend direction also includes a `.NET 10` + PostgreSQL platform core that registers system modules and entity metadata for the accounting backend.
+
 ## Product Authority
 
 The highest-priority product and engineering authority is:
@@ -26,6 +28,9 @@ Related architecture/design documents:
 - [UI_NAVIGATION_AND_DESIGN_SYSTEM_SPEC.md](./UI_NAVIGATION_AND_DESIGN_SYSTEM_SPEC.md)
 - [POSTGRESQL_CORE_SCHEMA_SPEC.md](./POSTGRESQL_CORE_SCHEMA_SPEC.md)
 - [CSHARP_DOMAIN_AND_APPLICATION_SKELETON.md](./CSHARP_DOMAIN_AND_APPLICATION_SKELETON.md)
+- [WEBVELLA_CORE_ADAPTATION.md](./WEBVELLA_CORE_ADAPTATION.md)
+- [WEBVELLA_CONSOLEAPP_ADAPTATION.md](./WEBVELLA_CONSOLEAPP_ADAPTATION.md)
+- [BLAZOR_PHASE1_MERGE_PLAN.md](./BLAZOR_PHASE1_MERGE_PLAN.md)
 
 ## Migration Drafts
 

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Connectors\FX\Connectors.FX.csproj" />
+    <ProjectReference Include="..\..\Engines\FX\Engines.FX.csproj" />
+    <ProjectReference Include="..\..\Engines\Numbering\Engines.Numbering.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
+    <ProjectReference Include="..\Business\GL\Web.Business.GL.csproj" />
+    <ProjectReference Include="..\Business\Reports\Web.Business.Reports.csproj" />
+  </ItemGroup>
+
+</Project>

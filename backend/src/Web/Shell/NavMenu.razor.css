@@ -1,0 +1,26 @@
+.ws-nav {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.85rem 0.75rem;
+}
+
+.ws-nav__link {
+    display: block;
+    padding: 0.72rem 0.85rem;
+    border-radius: 12px;
+    color: #ced9e2;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.ws-nav__link:hover {
+    background: rgba(122, 182, 217, 0.12);
+    color: #f4f8fb;
+}
+
+.ws-nav__link.active {
+    background: linear-gradient(180deg, rgba(122, 182, 217, 0.18), rgba(111, 207, 151, 0.12));
+    color: #f4f8fb;
+}

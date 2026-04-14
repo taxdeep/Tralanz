@@ -1,0 +1,37 @@
+<MudCard Class="citus-stat-card">
+    <MudCardContent>
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+            <MudStack Spacing="1">
+                <MudText Typo="Typo.overline" Class="text-secondary">@Label</MudText>
+                <MudText Typo="Typo.h4">@Value</MudText>
+
+                @if (!string.IsNullOrWhiteSpace(Description))
+                {
+                    <MudText Typo="Typo.body2" Class="text-secondary">@Description</MudText>
+                }
+            </MudStack>
+
+            <MudAvatar Size="Size.Large" Color="@Color" Variant="Variant.Filled">
+                <MudIcon Icon="@Icon" />
+            </MudAvatar>
+        </MudStack>
+    </MudCardContent>
+</MudCard>
+
+@code
+{
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Value { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Description { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Icon { get; set; } = Icons.Material.Filled.Insights;
+
+    [Parameter]
+    public Color Color { get; set; } = Color.Primary;
+}

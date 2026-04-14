@@ -27,6 +27,8 @@ public sealed record PostManualJournalHttpRequest(
 
 public sealed record ManualJournalLookupQuery(Guid CompanyId);
 
+public sealed record DocumentReviewLookupQuery(Guid CompanyId);
+
 public sealed record PostInvoiceHttpRequest(
     Guid CompanyId,
     Guid UserId,

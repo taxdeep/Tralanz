@@ -22,6 +22,10 @@ prisma/dev.db-journal
 # misc
 .DS_Store
 *.tsbuildinfo
+backend/.tmp/
+backend/src/Web/Shell/*.stdout.log
+backend/src/Web/Shell/*.stderr.log
+backend/src/Web/Shell/je-page.html
 
 # .NET
 **/bin

@@ -1,0 +1,131 @@
+@page "/maintenance"
+
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Maintenance | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudPaper Class="pa-4 mb-6">
+    <MudText Typo="Typo.h6" Class="mb-4">Current maintenance state</MudText>
+
+    <MudStack Spacing="3">
+        <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Warning">
+            @( _enabled ? "Maintenance enabled" : "Maintenance disabled")
+        </MudSwitch>
+
+        <MudTextField T="string"
+                      Label="Operator message"
+                      HelperText="This message is shown across the SysAdmin shell when maintenance mode is active."
+                      Lines="3"
+                      Variant="Variant.Outlined"
+                      @bind-Value="_message" />
+
+        <MudTextField T="string"
+                      Label="Planned until (UTC, optional)"
+                      HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z."
+                      Variant="Variant.Outlined"
+                      @bind-Value="_scheduledUntilInput" />
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSaving" OnClick="SaveAsync">
+                @(_isSaving ? "Saving..." : "Save maintenance state")
+            </MudButton>
+
+            <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@_isSaving" OnClick="ResetFromShellState">
+                Reset
+            </MudButton>
+        </MudStack>
+    </MudStack>
+</MudPaper>
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.h6" Class="mb-2">Control rule</MudText>
+    <MudText Typo="Typo.body2" Class="text-secondary">
+        This maintenance switch lives on the SysAdmin control plane and is intentionally separated from business posting flows.
+        The next backend slice will wire the same state into business-login and write guards.
+    </MudText>
+</MudPaper>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Maintenance",
+        Subtitle = "Platform maintenance state and operator messaging."
+    };
+
+    private bool _enabled;
+    private bool _isSaving;
+    private string _message = string.Empty;
+    private string _scheduledUntilInput = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        ResetFromShellState();
+    }
+
+    private void ResetFromShellState()
+    {
+        _enabled = ShellState.MaintenanceState.Enabled;
+        _message = ShellState.MaintenanceState.Message;
+        _scheduledUntilInput = ShellState.MaintenanceState.ScheduledUntilUtc?.ToString("u") ?? string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!TryParseScheduledUntil(out var scheduledUntilUtc))
+        {
+            Snackbar.Add("Planned until must be empty or parseable as a UTC date/time.", Severity.Warning);
+            return;
+        }
+
+        _isSaving = true;
+
+        try
+        {
+            var state = await SysAdminControlClient.UpdateMaintenanceAsync(
+                new MaintenanceUpdateRequest
+                {
+                    Enabled = _enabled,
+                    Message = _message,
+                    ScheduledUntilUtc = scheduledUntilUtc
+                });
+
+            if (state is null)
+            {
+                Snackbar.Add("Unable to update maintenance state.", Severity.Warning);
+                return;
+            }
+
+            ShellState.SetMaintenanceState(state);
+            ResetFromShellState();
+            Snackbar.Add("Maintenance state updated.", Severity.Success);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private bool TryParseScheduledUntil(out DateTimeOffset? scheduledUntilUtc)
+    {
+        if (string.IsNullOrWhiteSpace(_scheduledUntilInput))
+        {
+            scheduledUntilUtc = null;
+            return true;
+        }
+
+        if (DateTimeOffset.TryParse(_scheduledUntilInput, out var parsed))
+        {
+            scheduledUntilUtc = parsed;
+            return true;
+        }
+
+        scheduledUntilUtc = null;
+        return false;
+    }
+}

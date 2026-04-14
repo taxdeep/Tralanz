@@ -11,8 +11,6 @@ $projectPath = Join-Path $backendRoot "src/Citus.Accounting.Api/Citus.Accounting
 $dotnet = Join-Path $env:ProgramFiles "dotnet\dotnet.exe"
 $stateDir = Join-Path $env:TEMP "citus-accounting-api"
 $pidFile = Join-Path $stateDir "accounting-api-$Port.pid"
-$stdoutLog = Join-Path $stateDir "accounting-api-$Port.stdout.log"
-$stderrLog = Join-Path $stateDir "accounting-api-$Port.stderr.log"
 $healthUrl = "http://127.0.0.1:$Port/health"
 $rootUrl = "http://127.0.0.1:$Port/"
 
@@ -22,6 +20,11 @@ if (-not (Test-Path $projectPath)) {
 
 if (-not (Test-Path $dotnet)) {
     $dotnet = "dotnet"
+}
+
+$powershellHost = Join-Path $PSHOME "powershell.exe"
+if (-not (Test-Path $powershellHost)) {
+    $powershellHost = "powershell.exe"
 }
 
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
@@ -46,48 +49,63 @@ function Get-RunningProcessFromPidFile {
     return $process
 }
 
+function Get-AccountingApiProcesses {
+    Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -eq "dotnet.exe" -and $_.CommandLine -like "*Citus.Accounting.Api*"
+    }
+}
+
 $existingProcess = Get-RunningProcessFromPidFile
 if ($null -ne $existingProcess) {
     Write-Host "Accounting API is already running at http://127.0.0.1:$Port (PID $($existingProcess.Id))."
     Write-Host "Health: $healthUrl"
-    exit 0
+    return
 }
-
-Remove-Item -Path $stdoutLog, $stderrLog -ErrorAction SilentlyContinue
 
 $arguments = @(
     "run",
     "--project",
-    $projectPath
+    "`"$projectPath`""
 )
 
 if ($NoBuild) {
     $arguments += "--no-build"
 }
 
+$arguments += @(
+    "--",
+    "--urls",
+    "http://127.0.0.1:$Port"
+)
+
 if ($Foreground) {
-    $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
     & $dotnet @arguments
-    exit $LASTEXITCODE
+    if ($LASTEXITCODE -ne 0) {
+        throw "Accounting API exited with code $LASTEXITCODE."
+    }
+
+    return
 }
 
+$argumentLine = [string]::Join(" ", $arguments)
+
+$childScript = @"
+Set-Location '$backendRoot'
+& '$dotnet' $argumentLine
+"@
+
+$encodedChildScript = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($childScript))
+
 $process = Start-Process `
-    -FilePath $dotnet `
-    -ArgumentList $arguments `
+    -FilePath $powershellHost `
+    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedChildScript" `
     -WorkingDirectory $backendRoot `
     -PassThru `
-    -RedirectStandardOutput $stdoutLog `
-    -RedirectStandardError $stderrLog
-
-$process.Id | Set-Content -Path $pidFile -NoNewline
+    -WindowStyle Hidden
 
 $healthy = $false
 for ($attempt = 0; $attempt -lt 60; $attempt++) {
     Start-Sleep -Milliseconds 500
-
-    if ($process.HasExited) {
-        break
-    }
 
     try {
         $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
@@ -105,27 +123,34 @@ if (-not $healthy) {
         Stop-Process -Id $process.Id -Force
     }
 
+    foreach ($apiProcess in Get-AccountingApiProcesses) {
+        if ($apiProcess.ProcessId -ne $process.Id) {
+            Stop-Process -Id $apiProcess.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Remove-Item -Path $pidFile -ErrorAction SilentlyContinue
 
     Write-Host "Accounting API failed to start."
-    if (Test-Path $stdoutLog) {
-        Write-Host ""
-        Write-Host "STDOUT:"
-        Get-Content -Path $stdoutLog
-    }
+    Write-Host "The process did not become healthy at $healthUrl."
 
-    if (Test-Path $stderrLog) {
-        Write-Host ""
-        Write-Host "STDERR:"
-        Get-Content -Path $stderrLog
-    }
+    throw "Accounting API failed to start."
+}
 
-    exit 1
+$resolvedProcess =
+    Get-AccountingApiProcesses |
+    Sort-Object ProcessId -Descending |
+    Select-Object -First 1
+
+if ($null -ne $resolvedProcess) {
+    $resolvedProcess.ProcessId | Set-Content -Path $pidFile -NoNewline
+}
+else {
+    $process.Id | Set-Content -Path $pidFile -NoNewline
 }
 
 Write-Host "Accounting API started."
 Write-Host "Root:   $rootUrl"
 Write-Host "Health: $healthUrl"
-Write-Host "PID:    $($process.Id)"
-Write-Host "Logs:   $stdoutLog"
+Write-Host "PID:    $(if ($null -ne $resolvedProcess) { $resolvedProcess.ProcessId } else { $process.Id })"
 Write-Host "Stop:   & '$backendRoot\\stop-accounting-api.ps1' -Port $Port"

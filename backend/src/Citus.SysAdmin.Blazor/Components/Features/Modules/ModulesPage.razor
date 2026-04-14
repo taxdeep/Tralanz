@@ -1,0 +1,64 @@
+@page "/modules"
+
+@inject PlatformCoreClient PlatformCoreClient
+
+<PageTitle>Modules | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+}
+
+@if (_modules.Count == 0)
+{
+    <CitusEmptyState
+        Title="No modules available"
+        Message="Bootstrap the platform core to register modules in the metadata catalog."
+        ActionLabel="Return to overview"
+        ActionHref="overview" />
+}
+else
+{
+    <MudPaper Class="pa-4">
+        <MudTable Items="_modules" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Key</MudTh>
+                <MudTh>Name</MudTh>
+                <MudTh>Route</MudTh>
+                <MudTh>Capabilities</MudTh>
+                <MudTh>Entity Count</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Key"><span class="citus-inline-code">@context.Key</span></MudTd>
+                <MudTd DataLabel="Name">
+                    <MudText Typo="Typo.body1">@context.Name</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Description</MudText>
+                </MudTd>
+                <MudTd DataLabel="Route"><span class="citus-inline-code">@context.RoutePrefix</span></MudTd>
+                <MudTd DataLabel="Capabilities">@string.Join(", ", context.Capabilities)</MudTd>
+                <MudTd DataLabel="Entity Count">@context.EntityNames.Count</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Metadata",
+        Title = "Modules",
+        Subtitle = "Registered platform modules surfaced through Citus.Platform.Core."
+    };
+
+    private bool _isLoading = true;
+    private IReadOnlyList<PlatformModuleSummary> _modules = Array.Empty<PlatformModuleSummary>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _modules = await PlatformCoreClient.ListModulesAsync();
+        _isLoading = false;
+    }
+}

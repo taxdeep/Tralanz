@@ -1,0 +1,36 @@
+@page "/error"
+@using System.Diagnostics
+
+<PageTitle>Error | Citus SysAdmin</PageTitle>
+
+<MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="mb-6">
+    The SysAdmin shell encountered an unhandled error.
+</MudAlert>
+
+@if (ShowRequestId)
+{
+    <MudText Typo="Typo.body2" Class="mb-4">
+        Request ID: <code>@RequestId</code>
+    </MudText>
+}
+
+<CitusEmptyState
+    Title="Runtime error"
+    Message="Switch to Development locally for diagnostic detail. Production deployments should keep the hardened error surface."
+    ActionLabel="Return to overview"
+    ActionHref="overview" />
+
+@code
+{
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized()
+    {
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+    }
+}

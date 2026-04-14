@@ -1,0 +1,1185 @@
+@page "/reports"
+
+@inject BusinessShellState ShellState
+@inject AccountingHealthClient AccountingHealthClient
+@inject TrialBalanceClient TrialBalanceClient
+@inject IncomeStatementClient IncomeStatementClient
+@inject BalanceSheetClient BalanceSheetClient
+@inject ArAgingClient ArAgingClient
+@inject ApAgingClient ApAgingClient
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<PageTitle>Reports | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudGrid Class="mb-6">
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Report home"
+            Value="Five reports + CSV"
+            Description="Reports remain the safest early business surface to migrate into Blazor, with backend-owned CSV export and read-only source drill-down."
+            Icon="@Icons.Material.Filled.Assessment"
+            Color="Color.Primary" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Company"
+            Value="@ShellState.ActiveCompany.CompanyCode"
+            Description="@ShellState.ActiveCompany.CompanyName"
+            Icon="@Icons.Material.Filled.Domain"
+            Color="Color.Info" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Base currency"
+            Value="@ShellState.ActiveCompany.BaseCurrencyCode"
+            Description="Report totals remain grounded in company base-currency truth."
+            Icon="@Icons.Material.Filled.AttachMoney"
+            Color="Color.Success" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Accounting API"
+            Value="@(_health?.Status ?? "Unavailable")"
+            Description="Trial Balance, Income Statement, Balance Sheet, A/R Aging, and A/P Aging now support both live HTML reads and CSV export from backend report endpoints."
+            Icon="@Icons.Material.Filled.MonitorHeart"
+            Color="Color.Secondary" />
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">Trial Balance</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Success">Backend-owned report</MudChip>
+    </MudStack>
+
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudDatePicker Label="As of date" @bind-Date="_asOfDate" Editable="true" />
+        <MudCheckBox T="bool" @bind-Value="_includeZeroBalances" Label="Include zero-balance accounts" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isTrialBalanceLoading" OnClick="LoadTrialBalanceAsync">
+            Run Trial Balance
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_isTrialBalanceLoading || _isTrialBalanceExporting)" OnClick="ExportTrialBalanceAsync">
+            Export CSV
+        </MudButton>
+    </MudStack>
+
+    @if (_isTrialBalanceLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_trialBalanceError))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            @_trialBalanceError
+        </MudAlert>
+    }
+
+    @if (_trialBalance is not null)
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="As of"
+                    Value="@_trialBalance.AsOfDate.ToString("yyyy-MM-dd")"
+                    Description="Trial Balance stays pinned to one backend-owned cut-off date."
+                    Icon="@Icons.Material.Filled.Event"
+                    Color="Color.Info" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Accounts"
+                    Value="@_trialBalance.AccountCount.ToString()"
+                    Description="Only active-company accounts participate in this report."
+                    Icon="@Icons.Material.Filled.AccountTree"
+                    Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Debit total"
+                    Value="@FormatAmount(_trialBalance.TotalBalanceDebit)"
+                    Description="@($"Base currency {_trialBalance.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.CallReceived"
+                    Color="Color.Success" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Balance check"
+                    Value="@(_trialBalance.IsBalanced ? "Balanced" : "Out of balance")"
+                    Description="@($"Credit total {FormatAmount(_trialBalance.TotalBalanceCredit)} {_trialBalance.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.Balance"
+                    Color="@(_trialBalance.IsBalanced ? Color.Success : Color.Error)" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_trialBalance.Rows.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No ledger-backed account balances were found for this company as of @_trialBalance.AsOfDate.ToString("yyyy-MM-dd").
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_trialBalance.Rows" Dense="true" Hover="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Code</MudTh>
+                    <MudTh>Account</MudTh>
+                    <MudTh>Root type</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Debit balance</MudTh>
+                    <MudTh>Credit balance</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Code"><span class="citus-inline-code">@context.Code</span></MudTd>
+                    <MudTd DataLabel="Account">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.Name</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@context.DetailType</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Root type">@context.RootType</MudTd>
+                    <MudTd DataLabel="Status">
+                        @(context.IsActive ? "Active" : "Inactive")
+                        @if (context.IsSystem)
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">System</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Debit balance">@FormatAmount(context.BalanceDebit)</MudTd>
+                    <MudTd DataLabel="Credit balance">@FormatAmount(context.BalanceCredit)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">Income Statement</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Date-range report</MudChip>
+    </MudStack>
+
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudDatePicker Label="From" @bind-Date="_incomeStatementDateFrom" Editable="true" />
+        <MudDatePicker Label="To" @bind-Date="_incomeStatementDateTo" Editable="true" />
+        <MudCheckBox T="bool" @bind-Value="_includeZeroIncomeStatementRows" Label="Include zero-balance accounts" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isIncomeStatementLoading" OnClick="LoadIncomeStatementAsync">
+            Run Income Statement
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_isIncomeStatementLoading || _isIncomeStatementExporting)" OnClick="ExportIncomeStatementAsync">
+            Export CSV
+        </MudButton>
+    </MudStack>
+
+    @if (_isIncomeStatementLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_incomeStatementError))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            @_incomeStatementError
+        </MudAlert>
+    }
+
+    @if (_incomeStatement is not null)
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Revenue"
+                    Value="@FormatAmount(_incomeStatement.TotalRevenue)"
+                    Description="@($"Range {_incomeStatement.DateFrom:yyyy-MM-dd} to {_incomeStatement.DateTo:yyyy-MM-dd}")"
+                    Icon="@Icons.Material.Filled.TrendingUp"
+                    Color="Color.Success" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Gross profit"
+                    Value="@FormatAmount(_incomeStatement.GrossProfit)"
+                    Description="@($"After cost of sales in {_incomeStatement.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.ShowChart"
+                    Color="Color.Info" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Expenses"
+                    Value="@FormatAmount(_incomeStatement.TotalExpenses)"
+                    Description="Operating expense accounts in the selected range."
+                    Icon="@Icons.Material.Filled.MoneyOff"
+                    Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Net income"
+                    Value="@FormatAmount(_incomeStatement.NetIncome)"
+                    Description="@($"Company base currency {_incomeStatement.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.AccountBalance"
+                    Color="@(_incomeStatement.NetIncome >= 0m ? Color.Success : Color.Error)" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_incomeStatement.AccountCount == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No income-statement activity was found for this company between @_incomeStatement.DateFrom.ToString("yyyy-MM-dd") and @_incomeStatement.DateTo.ToString("yyyy-MM-dd").
+            </MudAlert>
+        }
+        else
+        {
+            @foreach (var reportSection in GetIncomeSections())
+            {
+                <MudPaper Outlined="true" Class="pa-4 mb-4">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                        <MudText Typo="Typo.subtitle1">@reportSection.Title</MudText>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="@reportSection.Color">
+                            @FormatAmount(reportSection.Total)
+                        </MudChip>
+                    </MudStack>
+
+                    @if (reportSection.Rows.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="text-secondary">No accounts in this section for the selected range.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="@reportSection.Rows" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh>Code</MudTh>
+                                <MudTh>Account</MudTh>
+                                <MudTh>Amount</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Code"><span class="citus-inline-code">@context.Code</span></MudTd>
+                                <MudTd DataLabel="Account">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@context.Name</MudText>
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@context.DetailType</MudText>
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Amount">@FormatAmount(context.DisplayAmount)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+            }
+        }
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">Balance Sheet</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">As-of report</MudChip>
+    </MudStack>
+
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudDatePicker Label="As of date" @bind-Date="_balanceSheetAsOfDate" Editable="true" />
+        <MudCheckBox T="bool" @bind-Value="_includeZeroBalanceSheetRows" Label="Include zero-balance accounts" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isBalanceSheetLoading" OnClick="LoadBalanceSheetAsync">
+            Run Balance Sheet
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_isBalanceSheetLoading || _isBalanceSheetExporting)" OnClick="ExportBalanceSheetAsync">
+            Export CSV
+        </MudButton>
+    </MudStack>
+
+    @if (_isBalanceSheetLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_balanceSheetError))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            @_balanceSheetError
+        </MudAlert>
+    }
+
+    @if (_balanceSheet is not null)
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Assets"
+                    Value="@FormatAmount(_balanceSheet.TotalAssets)"
+                    Description="@($"As of {_balanceSheet.AsOfDate:yyyy-MM-dd}")"
+                    Icon="@Icons.Material.Filled.AccountBalance"
+                    Color="Color.Info" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Liabilities"
+                    Value="@FormatAmount(_balanceSheet.TotalLiabilities)"
+                    Description="@($"Base currency {_balanceSheet.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.RequestQuote"
+                    Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Equity"
+                    Value="@FormatAmount(_balanceSheet.TotalEquity)"
+                    Description="@($"Includes current earnings {FormatAmount(_balanceSheet.CurrentEarnings)}")"
+                    Icon="@Icons.Material.Filled.PieChart"
+                    Color="Color.Success" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Balance check"
+                    Value="@(_balanceSheet.IsBalanced ? "Balanced" : "Out of balance")"
+                    Description="@($"Liabilities + equity {FormatAmount(_balanceSheet.TotalLiabilitiesAndEquity)}")"
+                    Icon="@Icons.Material.Filled.Balance"
+                    Color="@(_balanceSheet.IsBalanced ? Color.Success : Color.Error)" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_balanceSheet.AccountCount == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No balance-sheet accounts were found for this company as of @_balanceSheet.AsOfDate.ToString("yyyy-MM-dd").
+            </MudAlert>
+        }
+        else
+        {
+            @foreach (var balanceSection in GetBalanceSections())
+            {
+                <MudPaper Outlined="true" Class="pa-4 mb-4">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                        <MudText Typo="Typo.subtitle1">@balanceSection.Title</MudText>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="@balanceSection.Color">
+                            @FormatAmount(balanceSection.Total)
+                        </MudChip>
+                    </MudStack>
+
+                    @if (balanceSection.Rows.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="text-secondary">No accounts in this section for the selected date.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="@balanceSection.Rows" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh>Code</MudTh>
+                                <MudTh>Account</MudTh>
+                                <MudTh>Amount</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Code"><span class="citus-inline-code">@context.Code</span></MudTd>
+                                <MudTd DataLabel="Account">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@context.Name</MudText>
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@context.DetailType</MudText>
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Amount">@FormatAmount(context.DisplayAmount)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+            }
+        }
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">A/R Aging</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Warning">Open-item report</MudChip>
+    </MudStack>
+
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudDatePicker Label="As of date" @bind-Date="_arAgingAsOfDate" Editable="true" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isArAgingLoading" OnClick="LoadArAgingAsync">
+            Run A/R Aging
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_isArAgingLoading || _isArAgingExporting)" OnClick="ExportArAgingAsync">
+            Export CSV
+        </MudButton>
+    </MudStack>
+
+    @if (_isArAgingLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_arAgingError))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            @_arAgingError
+        </MudAlert>
+    }
+
+    @if (_arAging is not null)
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Outstanding"
+                    Value="@FormatAmount(_arAging.TotalOutstandingAmountBase)"
+                    Description="@($"As of {_arAging.AsOfDate:yyyy-MM-dd} in {_arAging.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.RequestQuote"
+                    Color="Color.Info" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Customers"
+                    Value="@_arAging.CustomerCount.ToString()"
+                    Description="@($"{_arAging.OpenItemCount} open items in scope")"
+                    Icon="@Icons.Material.Filled.Groups"
+                    Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Overdue"
+                    Value="@FormatAmount(_arAging.TotalOverdueAmountBase)"
+                    Description="Total receivable value already past due."
+                    Icon="@Icons.Material.Filled.WarningAmber"
+                    Color="@(_arAging.TotalOverdueAmountBase > 0m ? Color.Warning : Color.Success)" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="> 90 days"
+                    Value="@FormatAmount(_arAging.DaysOver90AmountBase)"
+                    Description="The oldest overdue bucket stays visible for control review."
+                    Icon="@Icons.Material.Filled.Schedule"
+                    Color="@(_arAging.DaysOver90AmountBase > 0m ? Color.Error : Color.Success)" />
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="Current" Value="@FormatAmount(_arAging.CurrentAmountBase)" Description="Not yet due" Icon="@Icons.Material.Filled.Today" Color="Color.Success" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="1-30" Value="@FormatAmount(_arAging.Days1To30AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksOne" Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="31-60" Value="@FormatAmount(_arAging.Days31To60AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksTwo" Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="61-90" Value="@FormatAmount(_arAging.Days61To90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.Looks3" Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="> 90" Value="@FormatAmount(_arAging.DaysOver90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.PriorityHigh" Color="Color.Error" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="Total" Value="@FormatAmount(_arAging.TotalOutstandingAmountBase)" Description="Net open receivables" Icon="@Icons.Material.Filled.Summarize" Color="Color.Info" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_arAging.OpenItemCount == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No open receivable items were found for this company as of @_arAging.AsOfDate.ToString("yyyy-MM-dd").
+            </MudAlert>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Customer summary</MudText>
+                <MudTable Items="@_arAging.CustomerRows" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Customer</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Current</MudTh>
+                        <MudTh>1-30</MudTh>
+                        <MudTh>31-60</MudTh>
+                        <MudTh>61-90</MudTh>
+                        <MudTh>&gt; 90</MudTh>
+                        <MudTh>Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Customer">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@context.CustomerDisplayName</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    <span class="citus-inline-code">@context.CustomerEntityNumber</span>
+                                    @if (context.OldestDueDate is not null)
+                                    {
+                                        <span> | oldest due @context.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
+                                    }
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Status">@(context.CustomerIsActive ? "Active" : "Inactive")</MudTd>
+                        <MudTd DataLabel="Current">@FormatAmount(context.CurrentAmountBase)</MudTd>
+                        <MudTd DataLabel="1-30">@FormatAmount(context.Days1To30AmountBase)</MudTd>
+                        <MudTd DataLabel="31-60">@FormatAmount(context.Days31To60AmountBase)</MudTd>
+                        <MudTd DataLabel="61-90">@FormatAmount(context.Days61To90AmountBase)</MudTd>
+                        <MudTd DataLabel="> 90">@FormatAmount(context.DaysOver90AmountBase)</MudTd>
+                        <MudTd DataLabel="Total">@FormatAmount(context.TotalOutstandingAmountBase)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Open-item detail</MudText>
+                <MudTable Items="@_arAging.DetailRows" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Customer</MudTh>
+                        <MudTh>Document</MudTh>
+                        <MudTh>Due date</MudTh>
+                        <MudTh>Bucket</MudTh>
+                        <MudTh>Open amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Customer">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@context.CustomerDisplayName</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary"><span class="citus-inline-code">@context.CustomerEntityNumber</span></MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Document">
+                            <MudStack Spacing="0">
+                                @if (TryBuildDocumentHref(context.SourceType, context.SourceDocumentId) is { } arDocumentHref)
+                                {
+                                    <MudLink Href="@arDocumentHref" Typo="Typo.body2" Underline="Underline.Always">
+                                        @context.DisplayNumber
+                                    </MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@context.DisplayNumber</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    @context.SourceType | @context.DocumentDate.ToString("yyyy-MM-dd")
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Due date">
+                            @if (context.DueDate is null)
+                            {
+                                <MudText Typo="Typo.body2">No due date</MudText>
+                            }
+                            else
+                            {
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.body2">@context.DueDate.Value.ToString("yyyy-MM-dd")</MudText>
+                                    <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.DaysPastDue} days past due")</MudText>
+                                </MudStack>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Bucket">@FormatAgingBucket(context.AgingBucket)</MudTd>
+                        <MudTd DataLabel="Open amount">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@FormatAmount(context.SignedOpenAmountBase)</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    @FormatAmount(context.SignedOpenAmountTx) @context.DocumentCurrencyCode
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">A/P Aging</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Warning">Open-item report</MudChip>
+    </MudStack>
+
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudDatePicker Label="As of date" @bind-Date="_apAgingAsOfDate" Editable="true" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isApAgingLoading" OnClick="LoadApAgingAsync">
+            Run A/P Aging
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_isApAgingLoading || _isApAgingExporting)" OnClick="ExportApAgingAsync">
+            Export CSV
+        </MudButton>
+    </MudStack>
+
+    @if (_isApAgingLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_apAgingError))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            @_apAgingError
+        </MudAlert>
+    }
+
+    @if (_apAging is not null)
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Outstanding"
+                    Value="@FormatAmount(_apAging.TotalOutstandingAmountBase)"
+                    Description="@($"As of {_apAging.AsOfDate:yyyy-MM-dd} in {_apAging.BaseCurrencyCode}")"
+                    Icon="@Icons.Material.Filled.RequestQuote"
+                    Color="Color.Info" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Vendors"
+                    Value="@_apAging.VendorCount.ToString()"
+                    Description="@($"{_apAging.OpenItemCount} open items in scope")"
+                    Icon="@Icons.Material.Filled.Store"
+                    Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="Overdue"
+                    Value="@FormatAmount(_apAging.TotalOverdueAmountBase)"
+                    Description="Total payable value already past due."
+                    Icon="@Icons.Material.Filled.WarningAmber"
+                    Color="@(_apAging.TotalOverdueAmountBase > 0m ? Color.Warning : Color.Success)" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="3">
+                <CitusStatCard
+                    Label="> 90 days"
+                    Value="@FormatAmount(_apAging.DaysOver90AmountBase)"
+                    Description="The oldest overdue bucket stays visible for payment control."
+                    Icon="@Icons.Material.Filled.Schedule"
+                    Color="@(_apAging.DaysOver90AmountBase > 0m ? Color.Error : Color.Success)" />
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="Current" Value="@FormatAmount(_apAging.CurrentAmountBase)" Description="Not yet due" Icon="@Icons.Material.Filled.Today" Color="Color.Success" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="1-30" Value="@FormatAmount(_apAging.Days1To30AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksOne" Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="31-60" Value="@FormatAmount(_apAging.Days31To60AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksTwo" Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="61-90" Value="@FormatAmount(_apAging.Days61To90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.Looks3" Color="Color.Warning" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="> 90" Value="@FormatAmount(_apAging.DaysOver90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.PriorityHigh" Color="Color.Error" />
+            </MudItem>
+            <MudItem xs="12" md="6" lg="2">
+                <CitusStatCard Label="Total" Value="@FormatAmount(_apAging.TotalOutstandingAmountBase)" Description="Net open payables" Icon="@Icons.Material.Filled.Summarize" Color="Color.Info" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_apAging.OpenItemCount == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No open payable items were found for this company as of @_apAging.AsOfDate.ToString("yyyy-MM-dd").
+            </MudAlert>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Vendor summary</MudText>
+                <MudTable Items="@_apAging.VendorRows" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Vendor</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Current</MudTh>
+                        <MudTh>1-30</MudTh>
+                        <MudTh>31-60</MudTh>
+                        <MudTh>61-90</MudTh>
+                        <MudTh>&gt; 90</MudTh>
+                        <MudTh>Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Vendor">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@context.VendorDisplayName</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    <span class="citus-inline-code">@context.VendorEntityNumber</span>
+                                    @if (context.OldestDueDate is not null)
+                                    {
+                                        <span> | oldest due @context.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
+                                    }
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Status">@(context.VendorIsActive ? "Active" : "Inactive")</MudTd>
+                        <MudTd DataLabel="Current">@FormatAmount(context.CurrentAmountBase)</MudTd>
+                        <MudTd DataLabel="1-30">@FormatAmount(context.Days1To30AmountBase)</MudTd>
+                        <MudTd DataLabel="31-60">@FormatAmount(context.Days31To60AmountBase)</MudTd>
+                        <MudTd DataLabel="61-90">@FormatAmount(context.Days61To90AmountBase)</MudTd>
+                        <MudTd DataLabel="> 90">@FormatAmount(context.DaysOver90AmountBase)</MudTd>
+                        <MudTd DataLabel="Total">@FormatAmount(context.TotalOutstandingAmountBase)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Open-item detail</MudText>
+                <MudTable Items="@_apAging.DetailRows" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Vendor</MudTh>
+                        <MudTh>Document</MudTh>
+                        <MudTh>Due date</MudTh>
+                        <MudTh>Bucket</MudTh>
+                        <MudTh>Open amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Vendor">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@context.VendorDisplayName</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary"><span class="citus-inline-code">@context.VendorEntityNumber</span></MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Document">
+                            <MudStack Spacing="0">
+                                @if (TryBuildDocumentHref(context.SourceType, context.SourceDocumentId) is { } apDocumentHref)
+                                {
+                                    <MudLink Href="@apDocumentHref" Typo="Typo.body2" Underline="Underline.Always">
+                                        @context.DisplayNumber
+                                    </MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@context.DisplayNumber</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    @context.SourceType | @context.DocumentDate.ToString("yyyy-MM-dd")
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Due date">
+                            @if (context.DueDate is null)
+                            {
+                                <MudText Typo="Typo.body2">No due date</MudText>
+                            }
+                            else
+                            {
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.body2">@context.DueDate.Value.ToString("yyyy-MM-dd")</MudText>
+                                    <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.DaysPastDue} days past due")</MudText>
+                                </MudStack>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Bucket">@FormatAgingBucket(context.AgingBucket)</MudTd>
+                        <MudTd DataLabel="Open amount">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@FormatAmount(context.SignedOpenAmountBase)</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    @FormatAmount(context.SignedOpenAmountTx) @context.DocumentCurrencyCode
+                                </MudText>
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudText Typo="Typo.h6" Class="mb-4">Formal report set</MudText>
+    <MudGrid>
+        @foreach (var report in _reports)
+        {
+            <MudItem xs="12" md="6" lg="4">
+                <MudPaper Outlined="true" Class="pa-4 mb-4">
+                    <MudStack Spacing="2">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle1">@report.Title</MudText>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="@report.Color">@report.Status</MudChip>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@report.Description</MudText>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+</MudPaper>
+
+<MudGrid>
+    <MudItem xs="12" lg="7">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Rules for the reports surface</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem>Report meaning stays backend-owned across HTML, print, and export.</MudListItem>
+                <MudListItem>Acceleration is allowed later, but never becomes report truth.</MudListItem>
+                <MudListItem>Company context must be obvious before any report is run.</MudListItem>
+                <MudListItem>Read-first pages should arrive before transactional compose screens.</MudListItem>
+            </MudList>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="5">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">What should merge next</MudText>
+            <MudTable Items="_nextRows" Dense="true">
+                <RowTemplate>
+                    <MudTd DataLabel="Target">@context.Target</MudTd>
+                    <MudTd DataLabel="Reason">@context.Reason</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Accounting",
+        Title = "Reports home",
+        Subtitle = "The reporting surface is now anchored by real Trial Balance, Income Statement, Balance Sheet, A/R Aging, and A/P Aging endpoints backed by ledger and open-item truth, with matching backend-owned CSV export and read-only source drill-down."
+    };
+
+    private readonly IReadOnlyList<ReportCardRow> _reports =
+    [
+        new("Trial Balance", "Live now", "Reads from PostgreSQL ledger truth and returns debit/credit balances per account.", Color.Success),
+        new("Income Statement", "Live now", "Returns revenue, cost of sales, expense, and net income across a backend-owned date range.", Color.Success),
+        new("Balance Sheet", "Live now", "Returns assets, liabilities, equity, and synthetic current earnings as of a backend-owned cut-off date.", Color.Success),
+        new("A/R Aging", "Live now", "Returns customer-level and open-item aging buckets from backend-owned receivable truth.", Color.Success),
+        new("A/P Aging", "Live now", "Returns vendor-level and open-item aging buckets from backend-owned payable truth.", Color.Success),
+        new("Exports", "Live now", "CSV export now follows the same backend-owned totals, ordering, and company scope as the HTML surface.", Color.Success)
+    ];
+
+    private readonly IReadOnlyList<NextRow> _nextRows =
+    [
+        new("Company provisioning flow", "Business session companies should also exist as accounting-core companies in PostgreSQL."),
+        new("Print alignment", "Print-friendly layouts should reuse the same backend-owned report payloads and ordering as HTML and CSV."),
+        new("Journal Entry review", "The next read path should expose journal-entry detail with the same backend-owned, read-only posture.")
+    ];
+
+    private ServiceHealthStatus? _health;
+    private TrialBalanceReportSummary? _trialBalance;
+    private IncomeStatementReportSummary? _incomeStatement;
+    private BalanceSheetReportSummary? _balanceSheet;
+    private ArAgingReportSummary? _arAging;
+    private ApAgingReportSummary? _apAging;
+    private bool _isTrialBalanceLoading;
+    private bool _isIncomeStatementLoading;
+    private bool _isBalanceSheetLoading;
+    private bool _isArAgingLoading;
+    private bool _isApAgingLoading;
+    private bool _isTrialBalanceExporting;
+    private bool _isIncomeStatementExporting;
+    private bool _isBalanceSheetExporting;
+    private bool _isArAgingExporting;
+    private bool _isApAgingExporting;
+    private bool _includeZeroBalances;
+    private bool _includeZeroIncomeStatementRows;
+    private bool _includeZeroBalanceSheetRows;
+    private string? _trialBalanceError;
+    private string? _incomeStatementError;
+    private string? _balanceSheetError;
+    private string? _arAgingError;
+    private string? _apAgingError;
+    private DateTime? _asOfDate = DateTime.Today;
+    private DateTime? _incomeStatementDateFrom = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime? _incomeStatementDateTo = DateTime.Today;
+    private DateTime? _balanceSheetAsOfDate = DateTime.Today;
+    private DateTime? _arAgingAsOfDate = DateTime.Today;
+    private DateTime? _apAgingAsOfDate = DateTime.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _health = await AccountingHealthClient.GetHealthAsync();
+        await LoadTrialBalanceAsync();
+        await LoadIncomeStatementAsync();
+        await LoadBalanceSheetAsync();
+        await LoadArAgingAsync();
+        await LoadApAgingAsync();
+    }
+
+    private async Task LoadTrialBalanceAsync()
+    {
+        _isTrialBalanceLoading = true;
+        _trialBalanceError = null;
+
+        var report = await TrialBalanceClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date),
+            _includeZeroBalances);
+
+        if (report is null)
+        {
+            _trialBalance = null;
+            _trialBalanceError = "Trial Balance is unavailable until the active company is provisioned in the accounting core and ledger data exists.";
+        }
+        else
+        {
+            _trialBalance = report;
+        }
+
+        _isTrialBalanceLoading = false;
+    }
+
+    private async Task LoadIncomeStatementAsync()
+    {
+        _isIncomeStatementLoading = true;
+        _incomeStatementError = null;
+
+        var dateFrom = DateOnly.FromDateTime((_incomeStatementDateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date);
+        var dateTo = DateOnly.FromDateTime((_incomeStatementDateTo ?? DateTime.Today).Date);
+
+        if (dateFrom > dateTo)
+        {
+            _incomeStatement = null;
+            _incomeStatementError = "Income Statement date range is invalid. The start date must be on or before the end date.";
+            _isIncomeStatementLoading = false;
+            return;
+        }
+
+        var report = await IncomeStatementClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            dateFrom,
+            dateTo,
+            _includeZeroIncomeStatementRows);
+
+        if (report is null)
+        {
+            _incomeStatement = null;
+            _incomeStatementError = "Income Statement is unavailable until the active company is provisioned in the accounting core and date-range report data exists.";
+        }
+        else
+        {
+            _incomeStatement = report;
+        }
+
+        _isIncomeStatementLoading = false;
+    }
+
+    private async Task LoadBalanceSheetAsync()
+    {
+        _isBalanceSheetLoading = true;
+        _balanceSheetError = null;
+
+        var report = await BalanceSheetClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_balanceSheetAsOfDate ?? DateTime.Today).Date),
+            _includeZeroBalanceSheetRows);
+
+        if (report is null)
+        {
+            _balanceSheet = null;
+            _balanceSheetError = "Balance Sheet is unavailable until the active company is provisioned in the accounting core and as-of ledger data exists.";
+        }
+        else
+        {
+            _balanceSheet = report;
+        }
+
+        _isBalanceSheetLoading = false;
+    }
+
+    private async Task LoadArAgingAsync()
+    {
+        _isArAgingLoading = true;
+        _arAgingError = null;
+
+        var report = await ArAgingClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_arAgingAsOfDate ?? DateTime.Today).Date));
+
+        if (report is null)
+        {
+            _arAging = null;
+            _arAgingError = "A/R Aging is unavailable until the active company is provisioned in the accounting core and receivable open-item data exists.";
+        }
+        else
+        {
+            _arAging = report;
+        }
+
+        _isArAgingLoading = false;
+    }
+
+    private async Task LoadApAgingAsync()
+    {
+        _isApAgingLoading = true;
+        _apAgingError = null;
+
+        var report = await ApAgingClient.GetReportAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_apAgingAsOfDate ?? DateTime.Today).Date));
+
+        if (report is null)
+        {
+            _apAging = null;
+            _apAgingError = "A/P Aging is unavailable until the active company is provisioned in the accounting core and payable open-item data exists.";
+        }
+        else
+        {
+            _apAging = report;
+        }
+
+        _isApAgingLoading = false;
+    }
+
+    private async Task ExportTrialBalanceAsync()
+    {
+        _isTrialBalanceExporting = true;
+        _trialBalanceError = null;
+
+        var file = await TrialBalanceClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_asOfDate ?? DateTime.Today).Date),
+            _includeZeroBalances);
+
+        await SaveCsvAsync(
+            file,
+            "Trial Balance CSV is unavailable until the active company is provisioned in the accounting core and ledger data exists.",
+            message => _trialBalanceError = message);
+
+        _isTrialBalanceExporting = false;
+    }
+
+    private async Task ExportIncomeStatementAsync()
+    {
+        _isIncomeStatementExporting = true;
+        _incomeStatementError = null;
+
+        var dateFrom = DateOnly.FromDateTime((_incomeStatementDateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date);
+        var dateTo = DateOnly.FromDateTime((_incomeStatementDateTo ?? DateTime.Today).Date);
+
+        if (dateFrom > dateTo)
+        {
+            _incomeStatementError = "Income Statement date range is invalid. The start date must be on or before the end date.";
+            _isIncomeStatementExporting = false;
+            return;
+        }
+
+        var file = await IncomeStatementClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            dateFrom,
+            dateTo,
+            _includeZeroIncomeStatementRows);
+
+        await SaveCsvAsync(
+            file,
+            "Income Statement CSV is unavailable until the active company is provisioned in the accounting core and date-range report data exists.",
+            message => _incomeStatementError = message);
+
+        _isIncomeStatementExporting = false;
+    }
+
+    private async Task ExportBalanceSheetAsync()
+    {
+        _isBalanceSheetExporting = true;
+        _balanceSheetError = null;
+
+        var file = await BalanceSheetClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_balanceSheetAsOfDate ?? DateTime.Today).Date),
+            _includeZeroBalanceSheetRows);
+
+        await SaveCsvAsync(
+            file,
+            "Balance Sheet CSV is unavailable until the active company is provisioned in the accounting core and as-of ledger data exists.",
+            message => _balanceSheetError = message);
+
+        _isBalanceSheetExporting = false;
+    }
+
+    private async Task ExportArAgingAsync()
+    {
+        _isArAgingExporting = true;
+        _arAgingError = null;
+
+        var file = await ArAgingClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_arAgingAsOfDate ?? DateTime.Today).Date));
+
+        await SaveCsvAsync(
+            file,
+            "A/R Aging CSV is unavailable until the active company is provisioned in the accounting core and receivable open-item data exists.",
+            message => _arAgingError = message);
+
+        _isArAgingExporting = false;
+    }
+
+    private async Task ExportApAgingAsync()
+    {
+        _isApAgingExporting = true;
+        _apAgingError = null;
+
+        var file = await ApAgingClient.ExportCsvAsync(
+            ShellState.ActiveCompany.Id,
+            DateOnly.FromDateTime((_apAgingAsOfDate ?? DateTime.Today).Date));
+
+        await SaveCsvAsync(
+            file,
+            "A/P Aging CSV is unavailable until the active company is provisioned in the accounting core and payable open-item data exists.",
+            message => _apAgingError = message);
+
+        _isApAgingExporting = false;
+    }
+
+    private async Task SaveCsvAsync(
+        ReportCsvDownload? file,
+        string unavailableMessage,
+        Action<string?> setError)
+    {
+        if (file is null)
+        {
+            setError(unavailableMessage);
+            return;
+        }
+
+        await JSRuntime.InvokeVoidAsync(
+            "citusDownloads.saveTextFile",
+            file.FileName,
+            file.Content,
+            file.ContentType);
+    }
+
+    private sealed record class ReportCardRow(string Title, string Status, string Description, Color Color);
+
+    private sealed record class NextRow(string Target, string Reason);
+
+    private sealed record class IncomeSectionBlock(string Title, Color Color, decimal Total, IReadOnlyList<IncomeStatementAccountSummary> Rows);
+
+    private sealed record class BalanceSectionBlock(string Title, Color Color, decimal Total, IReadOnlyList<BalanceSheetAccountSummary> Rows);
+
+    private IEnumerable<IncomeSectionBlock> GetIncomeSections()
+    {
+        if (_incomeStatement is null)
+        {
+            return Array.Empty<IncomeSectionBlock>();
+        }
+
+        return
+        [
+            new IncomeSectionBlock("Revenue", Color.Success, _incomeStatement.TotalRevenue, _incomeStatement.RevenueRows),
+            new IncomeSectionBlock("Cost Of Sales", Color.Warning, _incomeStatement.TotalCostOfSales, _incomeStatement.CostOfSalesRows),
+            new IncomeSectionBlock("Expenses", Color.Info, _incomeStatement.TotalExpenses, _incomeStatement.ExpenseRows)
+        ];
+    }
+
+    private IEnumerable<BalanceSectionBlock> GetBalanceSections()
+    {
+        if (_balanceSheet is null)
+        {
+            return Array.Empty<BalanceSectionBlock>();
+        }
+
+        return
+        [
+            new BalanceSectionBlock("Assets", Color.Info, _balanceSheet.TotalAssets, _balanceSheet.AssetRows),
+            new BalanceSectionBlock("Liabilities", Color.Warning, _balanceSheet.TotalLiabilities, _balanceSheet.LiabilityRows),
+            new BalanceSectionBlock("Equity", Color.Success, _balanceSheet.TotalEquity, _balanceSheet.EquityRows)
+        ];
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string? TryBuildDocumentHref(string sourceType, Guid documentId) =>
+        AccountingDocumentReviewRouteCatalog.TryBuildReviewHref(sourceType, documentId, out var href)
+            ? href
+            : null;
+
+    private static string FormatAgingBucket(string bucket) =>
+        bucket switch
+        {
+            "current" => "Current",
+            "1_30" => "1-30",
+            "31_60" => "31-60",
+            "61_90" => "61-90",
+            "over_90" => "> 90",
+            _ => bucket
+        };
+}

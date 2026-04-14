@@ -1,0 +1,32 @@
+html,
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    margin: 0;
+    color: #0f172a;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.text-secondary {
+    color: #64748b;
+}
+
+.citus-stat-card {
+    height: 100%;
+    border: 1px solid rgba(14, 116, 144, 0.12);
+    box-shadow: none;
+}
+
+.citus-empty-state {
+    border: 1px dashed rgba(14, 116, 144, 0.25);
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.citus-inline-code {
+    font-family: Consolas, "Courier New", monospace;
+}

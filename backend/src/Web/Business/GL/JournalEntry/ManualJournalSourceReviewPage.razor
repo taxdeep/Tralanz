@@ -1,0 +1,260 @@
+@page "/gl/journal-entry/source/{DocumentId:guid}"
+@using Microsoft.AspNetCore.Components.Web
+@using Modules.GL.JournalEntry
+@using MudBlazor
+@inject IManualJournalSourceReviewStore ManualJournalSourceReviewStore
+@inject NavigationManager Navigation
+
+<PageTitle>@(_review?.Title ?? "Manual journal source review")</PageTitle>
+
+<div class="mjs-review">
+    <div class="mjs-review-shell">
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+        }
+        else if (!string.IsNullOrWhiteSpace(_errorText))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                @_errorText
+            </MudAlert>
+        }
+        else if (_review is not null)
+        {
+            <div class="mjs-review-title">
+                <div class="mjs-review-title__text">
+                    <MudIcon Icon="@Icons.Material.Outlined.Description" Size="Size.Small" />
+                    <span>@_review.Title</span>
+                </div>
+                <div class="mjs-review-title__meta">
+                    <MudChip T="string" Variant="Variant.Text" Color="Color.Info">Source review</MudChip>
+                    <MudChip T="string" Variant="Variant.Text" Color="@GetStatusColor(_review.Status)">@_review.Status</MudChip>
+                </div>
+            </div>
+
+            <div class="mjs-review-summary-grid">
+                <div class="mjs-review-card">
+                    <div class="mjs-review-card__label">Source document</div>
+                    <div class="mjs-review-card__value">@_review.DisplayNumber</div>
+                    <div class="mjs-review-card__hint">@_review.EntityNumber</div>
+                </div>
+
+                <div class="mjs-review-card">
+                    <div class="mjs-review-card__label">Entry date</div>
+                    <div class="mjs-review-card__value">@_review.EntryDate.ToString("yyyy-MM-dd")</div>
+                    <div class="mjs-review-card__hint">Journal request date</div>
+                </div>
+
+                <div class="mjs-review-card">
+                    <div class="mjs-review-card__label">Transaction currency</div>
+                    <div class="mjs-review-card__value">@_review.TransactionCurrencyCode</div>
+                    <div class="mjs-review-card__hint">Base @_review.BaseCurrencyCode</div>
+                </div>
+
+                <div class="mjs-review-card">
+                    <div class="mjs-review-card__label">Latest linked JE</div>
+                    <div class="mjs-review-card__value">@(_review.LinkedJournalDisplayNumber ?? "Not posted")</div>
+                    <div class="mjs-review-card__hint">@(_review.LinkedJournalEntryId?.ToString("D") ?? "No linked journal entry")</div>
+                </div>
+            </div>
+
+            <div class="mjs-review-layout">
+                <div class="mjs-review-stack">
+                    <div class="mjs-review-panel">
+                        <div class="mjs-review-panel__header">
+                            <div>
+                                <div class="mjs-review-panel__title">FX request</div>
+                                <div class="mjs-review-panel__caption">This is the source-side FX context requested before posting.</div>
+                            </div>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@_review.FxSnapshotLabel</MudChip>
+                        </div>
+
+                        <div class="mjs-review-facts">
+                            <div class="mjs-review-fact">
+                                <span class="mjs-review-fact__label">FX source</span>
+                                <span class="mjs-review-fact__value">@_review.FxSource</span>
+                            </div>
+                            <div class="mjs-review-fact">
+                                <span class="mjs-review-fact__label">Requested date</span>
+                                <span class="mjs-review-fact__value">@_review.FxRequestedDate.ToString("yyyy-MM-dd")</span>
+                            </div>
+                            <div class="mjs-review-fact">
+                                <span class="mjs-review-fact__label">Effective date</span>
+                                <span class="mjs-review-fact__value">@_review.FxEffectiveDate.ToString("yyyy-MM-dd")</span>
+                            </div>
+                            <div class="mjs-review-fact">
+                                <span class="mjs-review-fact__label">Rate</span>
+                                <span class="mjs-review-fact__value">@_review.FxRate.ToString("0.######")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mjs-review-panel">
+                        <div class="mjs-review-panel__header">
+                            <div>
+                                <div class="mjs-review-panel__title">Source lines</div>
+                                <div class="mjs-review-panel__caption">These are the original manual-journal input lines before posting.</div>
+                            </div>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@($"{_review.Lines.Count} lines")</MudChip>
+                        </div>
+
+                        <MudTable Items="_review.Lines" Dense="true" Hover="true" Class="mjs-review-table">
+                            <HeaderContent>
+                                <MudTh>#</MudTh>
+                                <MudTh>Account</MudTh>
+                                <MudTh>Tx debit</MudTh>
+                                <MudTh>Tx credit</MudTh>
+                                <MudTh>Description</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="#">@context.LineNumber</MudTd>
+                                <MudTd DataLabel="Account">
+                                    <div class="mjs-review-account">
+                                        <span class="mjs-review-account__code">@context.AccountCode</span>
+                                        <span class="mjs-review-account__name">@context.AccountName</span>
+                                        <span class="mjs-review-account__type">@context.RootType</span>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="Tx debit">@FormatAmount(context.TransactionDebit)</MudTd>
+                                <MudTd DataLabel="Tx credit">@FormatAmount(context.TransactionCredit)</MudTd>
+                                <MudTd DataLabel="Description">@context.DisplayDescription</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+                </div>
+
+                <div class="mjs-review-stack">
+                    <div class="mjs-review-panel">
+                        <div class="mjs-review-panel__header">
+                            <div>
+                                <div class="mjs-review-panel__title">Memo</div>
+                                <div class="mjs-review-panel__caption">Source-side user note stored with the manual journal document.</div>
+                            </div>
+                        </div>
+                        <div class="mjs-review-memo">
+                            @DisplayMemo(_review.Memo)
+                        </div>
+                    </div>
+
+                    <div class="mjs-review-panel">
+                        <div class="mjs-review-panel__header">
+                            <div>
+                                <div class="mjs-review-panel__title">Related journal chain</div>
+                                <div class="mjs-review-panel__caption">Source and compensation journals stay visible together.</div>
+                            </div>
+                        </div>
+
+                        <MudTable Items="_review.RelatedEntries" Dense="true" Hover="true" Class="mjs-review-table">
+                            <HeaderContent>
+                                <MudTh>Journal</MudTh>
+                                <MudTh>Meaning</MudTh>
+                                <MudTh>Status</MudTh>
+                                <MudTh>Posted at</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Journal">@context.DisplayNumber</MudTd>
+                                <MudTd DataLabel="Meaning">@context.SourceTypeLabel</MudTd>
+                                <MudTd DataLabel="Status">@context.Status</MudTd>
+                                <MudTd DataLabel="Posted at">@FormatTimestamp(context.PostedAt)</MudTd>
+                                <MudTd DataLabel="">
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Info"
+                                               Href="@BuildJournalReviewHref(context.Id)">
+                                        Open
+                                    </MudButton>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+
+                    <div class="mjs-review-panel">
+                        <div class="mjs-review-panel__header">
+                            <div>
+                                <div class="mjs-review-panel__title">Control links</div>
+                                <div class="mjs-review-panel__caption">Move between source and journal review without losing context.</div>
+                            </div>
+                        </div>
+
+                        <div class="mjs-review-links">
+                            @if (_review.HasLinkedJournalEntry)
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Info"
+                                           Href="@BuildJournalReviewHref(_review.LinkedJournalEntryId!.Value)">
+                                    Open posted JE review
+                                </MudButton>
+                            }
+
+                            <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="HandleBackToEditor">
+                                New journal entry
+                            </MudButton>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code
+{
+    private static readonly Guid DemoCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+
+    [Parameter]
+    public Guid DocumentId { get; set; }
+
+    private ManualJournalSourceReview? _review;
+    private bool _isLoading;
+    private string? _errorText;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+        _review = null;
+
+        try
+        {
+            _review = await ManualJournalSourceReviewStore.GetAsync(DemoCompanyId, DocumentId, CancellationToken.None);
+
+            if (_review is null)
+            {
+                _errorText = $"Manual journal source document {DocumentId:D} could not be found in the active company context.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void HandleBackToEditor()
+    {
+        Navigation.NavigateTo("/gl/journal-entry/editor");
+    }
+
+    private static string BuildJournalReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string FormatTimestamp(DateTimeOffset? value) =>
+        value?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable";
+
+    private static string DisplayMemo(string memo) =>
+        string.IsNullOrWhiteSpace(memo) ? "No memo was stored on the source document." : memo;
+
+    private static Color GetStatusColor(string status) =>
+        status switch
+        {
+            "posted" => Color.Success,
+            "voided" => Color.Warning,
+            "reversed" => Color.Warning,
+            _ => Color.Info
+        };
+}

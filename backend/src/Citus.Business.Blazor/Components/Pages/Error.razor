@@ -1,0 +1,36 @@
+@page "/error"
+@using System.Diagnostics
+
+<PageTitle>Error | Citus Business</PageTitle>
+
+<MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="mb-6">
+    The business shell encountered an unhandled error.
+</MudAlert>
+
+@if (ShowRequestId)
+{
+    <MudText Typo="Typo.body2" Class="mb-4">
+        Request ID: <code>@RequestId</code>
+    </MudText>
+}
+
+<CitusEmptyState
+    Title="Runtime error"
+    Message="Switch to Development locally for diagnostic detail. Production deployments should keep the business surface tight and controlled."
+    ActionLabel="Return to dashboard"
+    ActionHref="dashboard" />
+
+@code
+{
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized()
+    {
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+    }
+}

@@ -71,6 +71,30 @@ CREATE TABLE business_sessions (
   created_at timestamptz NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE platform_modules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  module_key text NOT NULL UNIQUE,
+  json jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_entities (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_name text NOT NULL UNIQUE,
+  module_key text NOT NULL,
+  storage_table text NOT NULL,
+  json jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_platform_entities_module_key
+  ON platform_entities (module_key);
+
+CREATE INDEX idx_platform_entities_storage_table
+  ON platform_entities (storage_table);
+
 -- ---------------------------------------------------------------------------
 -- Currency and FX
 -- ---------------------------------------------------------------------------

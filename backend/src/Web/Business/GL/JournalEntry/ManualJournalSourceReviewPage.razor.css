@@ -1,0 +1,212 @@
+.mjs-review {
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at top left, rgba(111, 207, 151, 0.08), transparent 20%),
+        radial-gradient(circle at top right, rgba(122, 182, 217, 0.06), transparent 18%),
+        linear-gradient(180deg, #0c1218 0%, #0a1016 100%);
+    color: #d9e2ea;
+}
+
+.mjs-review-shell {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 28px 28px 48px;
+}
+
+.mjs-review-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.mjs-review-title__text {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.mjs-review-title__meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mjs-review-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.mjs-review-card,
+.mjs-review-panel {
+    border: 1px solid rgba(151, 168, 183, 0.18);
+    background: rgba(16, 24, 33, 0.92);
+    border-radius: 14px;
+    box-shadow: 0 20px 38px rgba(0, 0, 0, 0.22);
+}
+
+.mjs-review-card {
+    padding: 16px 18px;
+}
+
+.mjs-review-card__label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #97a8b7;
+    margin-bottom: 8px;
+}
+
+.mjs-review-card__value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #eef5fb;
+}
+
+.mjs-review-card__hint {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: #97a8b7;
+    word-break: break-word;
+}
+
+.mjs-review-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.9fr);
+    gap: 18px;
+}
+
+.mjs-review-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.mjs-review-panel {
+    padding: 18px;
+}
+
+.mjs-review-panel__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.mjs-review-panel__title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #eef5fb;
+}
+
+.mjs-review-panel__caption {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: #97a8b7;
+}
+
+.mjs-review-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+}
+
+.mjs-review-fact {
+    padding: 12px 13px;
+    border: 1px solid rgba(151, 168, 183, 0.14);
+    border-radius: 12px;
+    background: rgba(10, 16, 22, 0.72);
+}
+
+.mjs-review-fact__label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #97a8b7;
+}
+
+.mjs-review-fact__value {
+    display: block;
+    font-size: 0.9rem;
+    color: #eef5fb;
+    word-break: break-word;
+}
+
+.mjs-review-table {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.mjs-review-account {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mjs-review-account__code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.78rem;
+    color: #7ab6d9;
+}
+
+.mjs-review-account__name {
+    font-size: 0.88rem;
+    color: #eef5fb;
+}
+
+.mjs-review-account__type {
+    font-size: 0.72rem;
+    color: #97a8b7;
+    text-transform: capitalize;
+}
+
+.mjs-review-memo {
+    min-height: 120px;
+    padding: 14px;
+    border: 1px solid rgba(151, 168, 183, 0.14);
+    border-radius: 12px;
+    background: rgba(10, 16, 22, 0.72);
+    white-space: pre-wrap;
+    line-height: 1.55;
+}
+
+.mjs-review-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+@media (max-width: 1280px) {
+    .mjs-review-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .mjs-review-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .mjs-review-shell {
+        padding: 20px 16px 32px;
+    }
+
+    .mjs-review-title,
+    .mjs-review-panel__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .mjs-review-summary-grid,
+    .mjs-review-facts {
+        grid-template-columns: 1fr;
+    }
+}

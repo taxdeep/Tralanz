@@ -1,0 +1,122 @@
+@page "/"
+@page "/dashboard"
+
+@inject BusinessShellState ShellState
+@inject AccountingHealthClient AccountingHealthClient
+
+<PageTitle>Dashboard | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudGrid Class="mb-6">
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Active company"
+            Value="@ShellState.ActiveCompany.CompanyCode"
+            Description="@ShellState.ActiveCompany.CompanyName"
+            Icon="@Icons.Material.Filled.Domain"
+            Color="Color.Primary" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Operator"
+            Value="@ShellState.User.DisplayName"
+            Description="Backend-authoritative business session."
+            Icon="@Icons.Material.Filled.Badge"
+            Color="Color.Success" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Accessible companies"
+            Value="@ShellState.AvailableCompanies.Count.ToString()"
+            Description="Membership-scoped company contexts."
+            Icon="@Icons.Material.Filled.Hub"
+            Color="Color.Info" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Accounting API"
+            Value="@(_health?.Status ?? "Unavailable")"
+            Description="Business shell read path into the accounting backend."
+            Icon="@Icons.Material.Filled.MonitorHeart"
+            Color="Color.Secondary" />
+    </MudItem>
+</MudGrid>
+
+<MudGrid>
+    <MudItem xs="12" lg="7">
+        <MudPaper Class="pa-4 mb-6">
+            <MudText Typo="Typo.h6" Class="mb-4">Business shell direction</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary mb-2">
+                This host is the first business-facing Blazor shell. It intentionally stops short of generic posting CRUD
+                and keeps accounting truth behind the Posting Engine.
+            </MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem>Company context is always visible.</MudListItem>
+                <MudListItem>Maintenance mode stays visible and blocks backend writes.</MudListItem>
+                <MudListItem>Session headers are emitted server-side, not from browser-local truth.</MudListItem>
+            </MudList>
+        </MudPaper>
+
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Next business surfaces</MudText>
+            <MudTable Items="_nextSurfaces" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Surface</MudTh>
+                    <MudTh>Why next</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Surface">@context.Surface</MudTd>
+                    <MudTd DataLabel="Why next">@context.Rationale</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="5">
+        <MudPaper Class="pa-4 mb-6">
+            <MudText Typo="Typo.h6" Class="mb-4">Session snapshot</MudText>
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.body2"><strong>User:</strong> @ShellState.User.Username</MudText>
+                <MudText Typo="Typo.body2"><strong>Email:</strong> @ShellState.User.Email</MudText>
+                <MudText Typo="Typo.body2"><strong>Base currency:</strong> @ShellState.ActiveCompany.BaseCurrencyCode</MudText>
+                <MudText Typo="Typo.body2"><strong>Multi-currency:</strong> @(ShellState.ActiveCompany.MultiCurrencyEnabled ? "enabled" : "disabled")</MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Maintenance state</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                @(ShellState.MaintenanceState.Enabled
+                    ? ShellState.MaintenanceState.Message
+                    : "Interactive business reads are available. Formal writes remain guarded by the backend.")
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Business App",
+        Title = "Operational dashboard shell",
+        Subtitle = "Company-aware Blazor entrypoint for the main Citus product surface."
+    };
+
+    private readonly IReadOnlyList<NextSurfaceRow> _nextSurfaces =
+    [
+        new("Journal Entry review shell", "Introduces business navigation without bypassing posting validation."),
+        new("Reports home", "Fits the read-first migration path and stays aligned with backend report truth."),
+        new("Settings > Company", "Reinforces company-aware control surfaces before deep transaction forms.")
+    ];
+
+    private ServiceHealthStatus? _health;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _health = await AccountingHealthClient.GetHealthAsync();
+    }
+
+    private sealed record class NextSurfaceRow(string Surface, string Rationale);
+}

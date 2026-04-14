@@ -1,0 +1,19 @@
+@if (!string.IsNullOrWhiteSpace(Model.Eyebrow))
+{
+    <MudText Typo="Typo.overline" Color="Color.Info">@Model.Eyebrow</MudText>
+}
+
+<MudStack Spacing="1" Class="mb-6">
+    <MudText Typo="Typo.h4">@Model.Title</MudText>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
+    {
+        <MudText Typo="Typo.body1" Class="text-secondary">@Model.Subtitle</MudText>
+    }
+</MudStack>
+
+@code
+{
+    [Parameter, EditorRequired]
+    public PageHeaderModel Model { get; set; } = new();
+}

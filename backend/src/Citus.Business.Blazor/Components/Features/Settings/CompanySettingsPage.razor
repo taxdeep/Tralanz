@@ -1,0 +1,122 @@
+@page "/settings"
+
+@inject BusinessShellState ShellState
+
+<PageTitle>Settings | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudGrid Class="mb-6">
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Company"
+            Value="@ShellState.ActiveCompany.CompanyCode"
+            Description="@ShellState.ActiveCompany.CompanyName"
+            Icon="@Icons.Material.Filled.Domain"
+            Color="Color.Primary" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Base currency"
+            Value="@ShellState.ActiveCompany.BaseCurrencyCode"
+            Description="Company-level accounting default."
+            Icon="@Icons.Material.Filled.AttachMoney"
+            Color="Color.Info" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Multi-currency"
+            Value="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled")"
+            Description="Future FX controls should stay here, not spread across forms."
+            Icon="@Icons.Material.Filled.CurrencyExchange"
+            Color="Color.Success" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Maintenance"
+            Value="@(ShellState.MaintenanceState.Enabled ? "Active" : "Normal")"
+            Description="Business write behavior must reflect platform maintenance state."
+            Icon="@Icons.Material.Filled.BuildCircle"
+            Color="Color.Secondary" />
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudText Typo="Typo.h6" Class="mb-4">Company settings domains</MudText>
+    <MudGrid>
+        @foreach (var domain in _domains)
+        {
+            <MudItem xs="12" md="6" lg="4">
+                <MudPaper Outlined="true" Class="pa-4 mb-4">
+                    <MudStack Spacing="2">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle1">@domain.Title</MudText>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="@domain.Color">@domain.Stage</MudChip>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@domain.Description</MudText>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+</MudPaper>
+
+<MudGrid>
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Current company snapshot</MudText>
+            <MudTable Items="_snapshotRows" Dense="true">
+                <RowTemplate>
+                    <MudTd DataLabel="Field">@context.Field</MudTd>
+                    <MudTd DataLabel="Value">@context.Value</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Guardrails for settings</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem>Settings remain structured domains, not a miscellaneous dumping ground.</MudListItem>
+                <MudListItem>Currency and numbering behavior stay company-scoped.</MudListItem>
+                <MudListItem>Sensitive changes should remain audit-visible and backend-authoritative.</MudListItem>
+                <MudListItem>Security and notification readiness should not be inferred only from the UI.</MudListItem>
+            </MudList>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Company settings shell",
+        Subtitle = "This page establishes the controlled settings domains before deeper forms are migrated."
+    };
+
+    private readonly IReadOnlyList<DomainRow> _domains =
+    [
+        new("Profile", "Next", "Company identity, address, and fiscal profile should live together.", Color.Success),
+        new("Templates", "Planned", "Document template controls belong under company-owned settings.", Color.Info),
+        new("Sales Tax", "Planned", "Tax controls should connect back to the backend tax engine, not ad hoc form logic.", Color.Info),
+        new("Numbering", "Planned", "Entity numbering rules are company-scoped and backend-generated.", Color.Info),
+        new("Notifications", "Later", "Readiness and verification state need infrastructure support.", Color.Warning),
+        new("Security", "Later", "Verification-driven security settings should follow auth/session foundations.", Color.Warning),
+        new("Currencies", "Core", "Base currency and multi-currency state must remain visible and governed.", Color.Secondary)
+    ];
+
+    private IReadOnlyList<SnapshotRow> _snapshotRows =>
+    [
+        new("Company", $"{ShellState.ActiveCompany.CompanyName} ({ShellState.ActiveCompany.CompanyCode})"),
+        new("Base currency", ShellState.ActiveCompany.BaseCurrencyCode),
+        new("Multi-currency", ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled"),
+        new("Available companies", ShellState.AvailableCompanies.Count.ToString()),
+        new("Maintenance mode", ShellState.MaintenanceState.Enabled ? ShellState.MaintenanceState.Message : "Disabled")
+    ];
+
+    private sealed record class DomainRow(string Title, string Stage, string Description, Color Color);
+
+    private sealed record class SnapshotRow(string Field, string Value);
+}

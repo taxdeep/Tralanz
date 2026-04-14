@@ -1,0 +1,343 @@
+@page "/documents/{SourceType}/{DocumentId:guid}"
+
+@inject BusinessShellState ShellState
+@inject AccountingDocumentReviewClient AccountingDocumentReviewClient
+@inject JournalEntryReviewClient JournalEntryReviewClient
+
+<PageTitle>@($"{_header.Title} | Citus Business")</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
+    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="@_backHref" StartIcon="@Icons.Material.Filled.ArrowBack">
+        @_backLabel
+    </MudButton>
+    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only review</MudChip>
+</MudStack>
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+        @_error
+    </MudAlert>
+}
+
+@if (_document is not null)
+{
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Document"
+                Value="@_document.DisplayNumber"
+                Description="@($"{_document.SourceTypeLabel} | status {_document.Status}")"
+                Icon="@Icons.Material.Filled.Description"
+                Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Company"
+                Value="@ShellState.ActiveCompany.CompanyCode"
+                Description="@ShellState.ActiveCompany.CompanyName"
+                Icon="@Icons.Material.Filled.Domain"
+                Color="Color.Info" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Total"
+                Value="@FormatAmount(_document.TotalAmount)"
+                Description="@($"{_document.TransactionCurrencyCode} transaction currency")"
+                Icon="@Icons.Material.Filled.RequestQuote"
+                Color="Color.Success" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Due date"
+                Value="@(_document.DueDate?.ToString("yyyy-MM-dd") ?? "No due date")"
+                Description="@($"Document date {_document.DocumentDate:yyyy-MM-dd}")"
+                Icon="@Icons.Material.Filled.Event"
+                Color="Color.Secondary" />
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        <MudItem xs="12" lg="7">
+            <MudPaper Class="pa-4 mb-6">
+                <MudText Typo="Typo.h6" Class="mb-4">Document review</MudText>
+                <MudTable Items="_factRows" Dense="true" Hover="true">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                    <MudText Typo="Typo.h6">Lines</MudText>
+                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@($"{_document.Lines.Count} lines")</MudChip>
+                </MudStack>
+
+                @if (_document.Lines.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                        No line rows were returned for this source document in the current review dataset.
+                    </MudAlert>
+                }
+                else
+                {
+                    @if (IsManualJournal(_document))
+                    {
+                        <MudTable Items="@_document.Lines" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh>Line</MudTh>
+                                <MudTh>Account</MudTh>
+                                <MudTh>Description</MudTh>
+                                <MudTh>Tx debit</MudTh>
+                                <MudTh>Tx credit</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Line">@context.LineNumber</MudTd>
+                                <MudTd DataLabel="Account">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2"><span class="citus-inline-code">@context.AccountCode</span> @context.AccountName</MudText>
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@context.AccountLabel</MudText>
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Description">@DisplayDescription(context.Description)</MudTd>
+                                <MudTd DataLabel="Tx debit">@(context.TxDebit is null ? "-" : FormatAmount(context.TxDebit.Value))</MudTd>
+                                <MudTd DataLabel="Tx credit">@(context.TxCredit is null ? "-" : FormatAmount(context.TxCredit.Value))</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                    else
+                    {
+                        <MudTable Items="@_document.Lines" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh>Line</MudTh>
+                                <MudTh>Description</MudTh>
+                                <MudTh>Account</MudTh>
+                                <MudTh>Quantity</MudTh>
+                                <MudTh>Unit price</MudTh>
+                                <MudTh>Line amount</MudTh>
+                                <MudTh>Tax</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Line">@context.LineNumber</MudTd>
+                                <MudTd DataLabel="Description">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@DisplayDescription(context.Description)</MudText>
+                                        @if (context.IsTaxRecoverable is not null)
+                                        {
+                                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                                @(context.IsTaxRecoverable.Value ? "Recoverable tax" : "Non-recoverable tax")
+                                            </MudText>
+                                        }
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Account">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2"><span class="citus-inline-code">@context.AccountCode</span> @context.AccountName</MudText>
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@context.AccountLabel | <span class="citus-inline-code">@context.AccountId</span></MudText>
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Quantity">@(context.Quantity is null ? "-" : context.Quantity.Value.ToString("N2"))</MudTd>
+                                <MudTd DataLabel="Unit price">@(context.UnitPrice is null ? "-" : FormatAmount(context.UnitPrice.Value))</MudTd>
+                                <MudTd DataLabel="Line amount">@FormatAmount(context.LineAmount)</MudTd>
+                                <MudTd DataLabel="Tax">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@FormatAmount(context.TaxAmount)</MudText>
+                                        @if (context.TaxAccountId is not null)
+                                        {
+                                            <MudText Typo="Typo.caption" Class="text-secondary"><span class="citus-inline-code">@context.TaxAccountId.Value</span></MudText>
+                                        }
+                                    </MudStack>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="5">
+            <MudPaper Class="pa-4 mb-6">
+                <MudText Typo="Typo.h6" Class="mb-4">Why this page exists</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Report drill-down stays read-only so review never turns into an accidental edit path.</MudListItem>
+                    <MudListItem>Company scope remains fixed to the active business session.</MudListItem>
+                    <MudListItem>Users review source truth before any future workflow branches into posting or settlement actions.</MudListItem>
+                </MudList>
+
+                @if (_relatedJournalEntryHref is not null)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@_relatedJournalEntryHref" Class="mt-4">
+                        Open related journal entry
+                    </MudButton>
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-4">Amounts</MudText>
+                <MudTable Items="_amountRows" Dense="true">
+                    <RowTemplate>
+                        <MudTd DataLabel="Label">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code
+{
+    [Parameter]
+    public string SourceType { get; set; } = string.Empty;
+
+    [Parameter]
+    public Guid DocumentId { get; set; }
+
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Reports",
+        Title = "Document review",
+        Subtitle = "Read-only drill-down keeps report navigation aligned with backend-owned source truth."
+    };
+
+    private AccountingDocumentReviewSummary? _document;
+    private bool _isLoading;
+    private string? _error;
+    private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
+    private IReadOnlyList<FactRow> _amountRows = Array.Empty<FactRow>();
+    private string? _relatedJournalEntryHref;
+    private string _backHref = "reports";
+    private string _backLabel = "Back to reports";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        _document = null;
+        _factRows = Array.Empty<FactRow>();
+        _amountRows = Array.Empty<FactRow>();
+        _relatedJournalEntryHref = null;
+        _backHref = "reports";
+        _backLabel = "Back to reports";
+
+        var sourceLabel = AccountingDocumentReviewRouteCatalog.GetSourceLabel(SourceType);
+
+        if (!AccountingDocumentReviewRouteCatalog.IsSupported(SourceType))
+        {
+            _header = new PageHeaderModel
+            {
+                Eyebrow = "Reports",
+                Title = $"{sourceLabel} review",
+                Subtitle = "This drill-down route is not supported yet for the selected source type."
+            };
+            _error = $"The source type '{SourceType}' is not yet supported by the document review surface.";
+            _isLoading = false;
+            return;
+        }
+
+        var document = await AccountingDocumentReviewClient.GetDocumentAsync(
+            ShellState.ActiveCompany.Id,
+            SourceType,
+            DocumentId);
+
+        if (document is null)
+        {
+            _header = new PageHeaderModel
+            {
+                Eyebrow = "Reports",
+                Title = $"{sourceLabel} review",
+                Subtitle = "The requested source document was not found in the active company context."
+            };
+            _error = $"The {sourceLabel.ToLowerInvariant()} could not be found in company {ShellState.ActiveCompany.CompanyCode}.";
+            _isLoading = false;
+            return;
+        }
+
+        _document = document;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Reports",
+            Title = document.DisplayNumber,
+            Subtitle = $"{document.SourceTypeLabel} review stays read-only and company-scoped under backend-owned source truth."
+        };
+        _factRows = BuildFactRows(document);
+        _amountRows = BuildAmountRows(document);
+
+        if (IsManualJournal(document))
+        {
+            _backHref = "journal-entry";
+            _backLabel = "Back to journal entries";
+        }
+
+        var relatedJournalEntry = await JournalEntryReviewClient.FindBySourceAsync(
+            ShellState.ActiveCompany.Id,
+            document.SourceType,
+            document.Id);
+
+        if (relatedJournalEntry is not null)
+        {
+            _relatedJournalEntryHref = $"journal-entry/review/{relatedJournalEntry.Id:D}";
+        }
+
+        _isLoading = false;
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string DisplayDescription(string? description) =>
+        string.IsNullOrWhiteSpace(description) ? "No description" : description;
+
+    private static bool IsManualJournal(AccountingDocumentReviewSummary? document) =>
+        document?.SourceType == "manual_journal";
+
+    private static IReadOnlyList<FactRow> BuildFactRows(AccountingDocumentReviewSummary document)
+    {
+        var rows = new List<FactRow>
+        {
+            new("Entity number", document.EntityNumber),
+            new("Status", document.Status),
+            new("Document date", document.DocumentDate.ToString("yyyy-MM-dd")),
+            new("Due date", document.DueDate?.ToString("yyyy-MM-dd") ?? "No due date")
+        };
+
+        if (document.CounterpartyId is not null)
+        {
+            rows.Add(new(document.CounterpartyLabel, document.CounterpartyId.Value.ToString("D")));
+        }
+
+        if (document.ControlAccountId is not null)
+        {
+            rows.Add(new(document.ControlAccountLabel, document.ControlAccountId.Value.ToString("D")));
+        }
+
+        rows.Add(new("Memo", string.IsNullOrWhiteSpace(document.Memo) ? "No memo" : document.Memo!));
+        return rows;
+    }
+
+    private static IReadOnlyList<FactRow> BuildAmountRows(AccountingDocumentReviewSummary document) =>
+        IsManualJournal(document)
+            ?
+            [
+                new("Tx debit total", $"{FormatAmount(document.SubtotalAmount)} {document.TransactionCurrencyCode}"),
+                new("Tx credit total", $"{FormatAmount(document.TotalAmount)} {document.TransactionCurrencyCode}"),
+                new("Base currency", document.BaseCurrencyCode)
+            ]
+            :
+            [
+                new("Subtotal", $"{FormatAmount(document.SubtotalAmount)} {document.TransactionCurrencyCode}"),
+                new("Tax", $"{FormatAmount(document.TaxAmount)} {document.TransactionCurrencyCode}"),
+                new("Total", $"{FormatAmount(document.TotalAmount)} {document.TransactionCurrencyCode}"),
+                new("Base currency", document.BaseCurrencyCode)
+            ];
+
+    private sealed record class FactRow(string Label, string Value);
+}

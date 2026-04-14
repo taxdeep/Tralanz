@@ -1,0 +1,83 @@
+@page "/session"
+
+@inject BusinessShellState ShellState
+
+<PageTitle>Session | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudGrid>
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4 mb-6">
+            <MudText Typo="Typo.h6" Class="mb-4">Business identity</MudText>
+            <MudTable Items="_userFacts" Dense="true">
+                <RowTemplate>
+                    <MudTd DataLabel="Label">@context.Label</MudTd>
+                    <MudTd DataLabel="Value">@context.Value</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="pa-4 mb-6">
+            <MudText Typo="Typo.h6" Class="mb-4">Company context</MudText>
+            <MudTable Items="_companyFacts" Dense="true">
+                <RowTemplate>
+                    <MudTd DataLabel="Label">@context.Label</MudTd>
+                    <MudTd DataLabel="Value">@context.Value</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="pa-4">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">Accessible companies</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+            @ShellState.AvailableCompanies.Count memberships
+        </MudChip>
+    </MudStack>
+
+    <MudTable Items="ShellState.AvailableCompanies" Dense="true" Hover="true">
+        <HeaderContent>
+            <MudTh>Company</MudTh>
+            <MudTh>Base currency</MudTh>
+            <MudTh>Multi-currency</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Company">@context.CompanyName (@context.CompanyCode)</MudTd>
+            <MudTd DataLabel="Base currency">@context.BaseCurrencyCode</MudTd>
+            <MudTd DataLabel="Multi-currency">@(context.MultiCurrencyEnabled ? "Enabled" : "Disabled")</MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Session",
+        Title = "Business session context",
+        Subtitle = "This shell keeps active company selection explicit and visible."
+    };
+
+    private IReadOnlyList<FactRow> _userFacts =>
+    [
+        new("Display name", ShellState.User.DisplayName),
+        new("Username", ShellState.User.Username),
+        new("Email", ShellState.User.Email),
+        new("Roles", string.Join(", ", ShellState.User.Roles))
+    ];
+
+    private IReadOnlyList<FactRow> _companyFacts =>
+    [
+        new("Company", $"{ShellState.ActiveCompany.CompanyName} ({ShellState.ActiveCompany.CompanyCode})"),
+        new("Base currency", ShellState.ActiveCompany.BaseCurrencyCode),
+        new("Multi-currency", ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled"),
+        new("Maintenance", ShellState.MaintenanceState.Enabled ? ShellState.MaintenanceState.Message : "Disabled")
+    ];
+
+    private sealed record class FactRow(string Label, string Value);
+}

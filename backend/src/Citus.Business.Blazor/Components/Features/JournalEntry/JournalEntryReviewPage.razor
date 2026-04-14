@@ -1,0 +1,272 @@
+@page "/journal-entry/review/{JournalEntryId:guid}"
+
+@inject BusinessShellState ShellState
+@inject JournalEntryReviewClient JournalEntryReviewClient
+
+<PageTitle>@($"{_header.Title} | Citus Business")</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
+    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="journal-entry" StartIcon="@Icons.Material.Filled.ArrowBack">
+        Back to journal entries
+    </MudButton>
+    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only review</MudChip>
+</MudStack>
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+        @_error
+    </MudAlert>
+}
+
+@if (_review is not null)
+{
+    @if (_review.Status is "voided" or "reversed")
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            @GetLifecycleAlert(_review)
+        </MudAlert>
+    }
+
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Journal entry"
+                Value="@_review.DisplayNumber"
+                Description="@($"{_review.SourceTypeLabel} | status {_review.Status}")"
+                Icon="@Icons.Material.Filled.LibraryBooks"
+                Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Posted at"
+                Value="@(_review.PostedAt?.ToString("yyyy-MM-dd") ?? "Pending")"
+                Description="@(_review.PostedAt?.ToString("HH:mm 'UTC'") ?? "posted_at unavailable")"
+                Icon="@Icons.Material.Filled.Schedule"
+                Color="Color.Info" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Base total"
+                Value="@FormatAmount(_review.TotalDebit)"
+                Description="@($"Credit {FormatAmount(_review.TotalCredit)} {_review.BaseCurrencyCode}")"
+                Icon="@Icons.Material.Filled.AccountBalance"
+                Color="@(_review.TotalDebit == _review.TotalCredit ? Color.Success : Color.Error)" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="FX snapshot"
+                Value="@_review.ExchangeRate.ToString("0.######")"
+                Description="@($"{_review.ExchangeRateSource} on {_review.ExchangeRateDate:yyyy-MM-dd}")"
+                Icon="@Icons.Material.Filled.CurrencyExchange"
+                Color="Color.Secondary" />
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        <MudItem xs="12" lg="7">
+            <MudPaper Class="pa-4 mb-6">
+                <MudText Typo="Typo.h6" Class="mb-4">Journal facts</MudText>
+                <MudTable Items="_factRows" Dense="true" Hover="true">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                    <MudText Typo="Typo.h6">Journal lines</MudText>
+                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@($"{_review.LineCount} lines")</MudChip>
+                </MudStack>
+
+                <MudTable Items="@_review.Lines" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Line</MudTh>
+                        <MudTh>Account</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Tx debit</MudTh>
+                        <MudTh>Tx credit</MudTh>
+                        <MudTh>Debit</MudTh>
+                        <MudTh>Credit</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Line">@context.LineNumber</MudTd>
+                        <MudTd DataLabel="Account">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2"><span class="citus-inline-code">@context.AccountCode</span> @context.AccountName</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.RootType | @context.DetailType</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Description">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@DisplayDescription(context.Description)</MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.ControlRole) || !string.IsNullOrWhiteSpace(context.TaxComponentType))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        @DisplayLineMarkers(context)
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudTd>
+                        <MudTd DataLabel="Tx debit">@FormatAmount(context.TxDebit)</MudTd>
+                        <MudTd DataLabel="Tx credit">@FormatAmount(context.TxCredit)</MudTd>
+                        <MudTd DataLabel="Debit">@FormatAmount(context.Debit)</MudTd>
+                        <MudTd DataLabel="Credit">@FormatAmount(context.Credit)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="5">
+            <MudPaper Class="pa-4 mb-6">
+                <MudText Typo="Typo.h6" Class="mb-4">Source linkage</MudText>
+                <MudTable Items="_sourceRows" Dense="true">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                @if (_sourceDocumentHref is not null)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@_sourceDocumentHref" Class="mt-4">
+                        Open source document review
+                    </MudButton>
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-4">Why this page exists</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem>Journal review is a control surface, not an edit surface.</MudListItem>
+                    <MudListItem>FX snapshot data stays visible on the same page as line truth.</MudListItem>
+                    <MudListItem>Source linkage stays explicit so business truth and accounting truth do not drift apart.</MudListItem>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code
+{
+    [Parameter]
+    public Guid JournalEntryId { get; set; }
+
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Accounting",
+        Title = "Journal Entry review",
+        Subtitle = "Journal detail stays read-only, source-linked, and explicit about FX and line truth."
+    };
+
+    private JournalEntryReviewSummary? _review;
+    private bool _isLoading;
+    private string? _error;
+    private string? _sourceDocumentHref;
+    private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
+    private IReadOnlyList<FactRow> _sourceRows = Array.Empty<FactRow>();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        _review = null;
+        _sourceDocumentHref = null;
+        _factRows = Array.Empty<FactRow>();
+        _sourceRows = Array.Empty<FactRow>();
+
+        var review = await JournalEntryReviewClient.GetAsync(ShellState.ActiveCompany.Id, JournalEntryId);
+
+        if (review is null)
+        {
+            _header = new PageHeaderModel
+            {
+                Eyebrow = "Accounting",
+                Title = "Journal Entry review",
+                Subtitle = "The requested journal entry was not found in the active company context."
+            };
+            _error = $"Journal entry {JournalEntryId:D} could not be found for company {ShellState.ActiveCompany.CompanyCode}.";
+            _isLoading = false;
+            return;
+        }
+
+        _review = review;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Accounting",
+            Title = review.DisplayNumber,
+            Subtitle = $"{review.SourceTypeLabel} posting review stays read-only and preserves backend-owned journal truth."
+        };
+        _factRows =
+        [
+            new("Entity number", review.EntityNumber),
+            new("Status", review.Status),
+            new("Transaction currency", review.TransactionCurrencyCode),
+            new("Base currency", review.BaseCurrencyCode),
+            new("FX rate snapshot", review.FxRateSnapshotId?.ToString("D") ?? "No snapshot id"),
+            new("Voided at", review.VoidedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Not voided"),
+            new("Reversed at", review.ReversedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Not reversed"),
+            new("Created by", review.CreatedByUserId.ToString("D"))
+        ];
+        _sourceRows =
+        [
+            new("Source type", review.SourceTypeLabel),
+            new("Source id", review.SourceId.ToString("D")),
+            new("Posted at", review.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable"),
+            new("Company", $"{ShellState.ActiveCompany.CompanyName} ({ShellState.ActiveCompany.CompanyCode})")
+        ];
+
+        if (AccountingDocumentReviewRouteCatalog.TryBuildReviewHref(review.SourceType, review.SourceId, out var href))
+        {
+            _sourceDocumentHref = href;
+        }
+
+        _isLoading = false;
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string DisplayDescription(string description) =>
+        string.IsNullOrWhiteSpace(description) ? "No description" : description;
+
+    private static string GetLifecycleAlert(JournalEntryReviewSummary review) =>
+        review.Status switch
+        {
+            "voided" => $"This journal entry is voided. Voided at {review.VoidedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "an unavailable time"}.",
+            "reversed" => $"This journal entry is reversed. Reversed at {review.ReversedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "an unavailable time"}.",
+            _ => string.Empty
+        };
+
+    private static string DisplayLineMarkers(JournalEntryReviewLineSummary line)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(line.ControlRole))
+        {
+            parts.Add($"control: {line.ControlRole}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.TaxComponentType))
+        {
+            parts.Add($"tax: {line.TaxComponentType}");
+        }
+
+        if (line.PartyId is not null)
+        {
+            parts.Add($"party: {line.PartyId.Value:D}");
+        }
+
+        return string.Join(" | ", parts);
+    }
+
+    private sealed record class FactRow(string Label, string Value);
+}

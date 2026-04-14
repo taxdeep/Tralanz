@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Engines\FX\Engines.FX.csproj" />
+    <ProjectReference Include="..\..\..\Engines\Numbering\Engines.Numbering.csproj" />
+    <ProjectReference Include="..\..\..\Modules\GL\Modules.GL.csproj" />
+  </ItemGroup>
+
+</Project>

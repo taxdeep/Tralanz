@@ -1,0 +1,67 @@
+@page "/runtime-health"
+
+@inject AccountingHealthClient AccountingHealthClient
+@inject IOptions<AppHostOptions> HostOptions
+@inject SysAdminHealthClient SysAdminHealthClient
+
+<PageTitle>Runtime Health | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+}
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4 mb-6">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudText Typo="Typo.h6">SysAdmin API</MudText>
+                <CitusStatusBadge Status="_sysAdminHealth" />
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Endpoint: <span class="citus-inline-code">@HostOptions.Value.SysAdminApiBaseUrl</span>
+            </MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4 mb-6">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudText Typo="Typo.h6">Accounting API</MudText>
+                <CitusStatusBadge Status="_accountingHealth" />
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Endpoint: <span class="citus-inline-code">@HostOptions.Value.AccountingApiBaseUrl</span>
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.h6" Class="mb-3">Shell probe</MudText>
+    <MudText Typo="Typo.body2" Class="text-secondary">
+        This Blazor host also exposes <span class="citus-inline-code">/system/health</span> under its path base for gateway and deployment checks.
+    </MudText>
+</MudPaper>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Runtime health",
+        Subtitle = "Phase 1 service reachability across the control plane."
+    };
+
+    private bool _isLoading = true;
+    private ServiceHealthStatus? _sysAdminHealth;
+    private ServiceHealthStatus? _accountingHealth;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sysAdminHealth = await SysAdminHealthClient.GetHealthAsync();
+        _accountingHealth = await AccountingHealthClient.GetHealthAsync();
+        _isLoading = false;
+    }
+}

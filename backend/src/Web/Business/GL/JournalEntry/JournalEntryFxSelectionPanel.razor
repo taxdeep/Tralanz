@@ -1,0 +1,135 @@
+@using Engines.FX.FxRateLookup
+@using Modules.GL.JournalEntry
+@using MudBlazor
+@using SharedKernel.FX
+
+@if (State.Draft.IsForeignCurrency)
+{
+    <div class="je-fx-selection-panel">
+        <div class="je-fx-selection-panel__header">
+            <div>
+                <div class="je-fx-selection-panel__title">FX selection</div>
+                <div class="je-fx-selection-panel__subtitle">Choose a governed local snapshot, promote a stored market rate, or persist the current manual override.</div>
+            </div>
+
+            @if (IsBusy)
+            {
+                <MudChip T="string" Variant="Variant.Text" Color="Color.Info">Refreshing</MudChip>
+            }
+        </div>
+
+        <div class="je-fx-selection-panel__section">
+            <div class="je-fx-selection-panel__section-title">Company snapshots</div>
+            @if (SelectionData.CompanySnapshots.Count == 0)
+            {
+                <div class="je-fx-selection-panel__empty">No local company snapshots yet for this currency pair.</div>
+            }
+            else
+            {
+                @foreach (var snapshot in SelectionData.CompanySnapshots)
+                {
+                    <div class="je-fx-option-row @(State.IsCurrentSnapshot(snapshot.Id) ? "je-fx-option-row--current" : string.Empty)">
+                        <div class="je-fx-option-row__main">
+                            <div class="je-fx-option-row__rate">@snapshot.Rate.ToString("N6")</div>
+                            <div class="je-fx-option-row__meta">
+                                <span>@snapshot.RowOrigin</span>
+                                <span>Requested @snapshot.RequestedDate.ToString("yyyy-MM-dd")</span>
+                                <span>Effective @snapshot.EffectiveDate.ToString("yyyy-MM-dd")</span>
+                            </div>
+                        </div>
+                        <div class="je-fx-option-row__actions">
+                            <MudChip T="string" Variant="Variant.Text" Color="@GetSnapshotColor(snapshot.SnapshotSemantics)">@snapshot.SnapshotSemantics</MudChip>
+
+                            @if (State.IsCurrentSnapshot(snapshot.Id))
+                            {
+                                <MudChip T="string" Variant="Variant.Text" Color="Color.Success">Current</MudChip>
+                            }
+                            else if (State.CanEditJournal)
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OnUseSnapshot.InvokeAsync(snapshot.Id))">Use</MudButton>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="je-fx-selection-panel__section">
+            <div class="je-fx-selection-panel__section-title">Stored market rates</div>
+            @if (SelectionData.MarketRates.Count == 0)
+            {
+                <div class="je-fx-selection-panel__empty">No stored market rates yet. Refresh falls back to Frankfurter only when local data is missing.</div>
+            }
+            else
+            {
+                @foreach (var marketRate in SelectionData.MarketRates)
+                {
+                    <div class="je-fx-option-row @(State.IsCurrentMarketRate(marketRate.Id, SelectionData.CompanySnapshots) ? "je-fx-option-row--linked" : string.Empty)">
+                        <div class="je-fx-option-row__main">
+                            <div class="je-fx-option-row__rate">@marketRate.Rate.ToString("N6")</div>
+                            <div class="je-fx-option-row__meta">
+                                <span>@marketRate.ProviderKey</span>
+                                <span>Market @marketRate.MarketDate.ToString("yyyy-MM-dd")</span>
+                                <span>Fetched @marketRate.FetchedAt.ToString("yyyy-MM-dd HH:mm")</span>
+                            </div>
+                        </div>
+                        <div class="je-fx-option-row__actions">
+                            @if (State.IsCurrentMarketRate(marketRate.Id, SelectionData.CompanySnapshots))
+                            {
+                                <MudChip T="string" Variant="Variant.Text" Color="Color.Success">Current source</MudChip>
+                            }
+                            else if (State.CanEditJournal)
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OnUseMarketRate.InvokeAsync(marketRate.Id))">Promote</MudButton>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        @if (State.Draft.FxSourceSemantics == FxSourceSemantics.Manual && State.CanEditJournal)
+        {
+            <div class="je-fx-selection-panel__manual">
+                <div>
+                    <div class="je-fx-selection-panel__section-title">Manual override governance</div>
+                    <div class="je-fx-selection-panel__subtitle">Persist the current manual rate as a company snapshot before save or post.</div>
+                </div>
+
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Disabled="@IsBusy" OnClick="OnPersistManualSnapshot">
+                    Persist manual snapshot
+                </MudButton>
+            </div>
+        }
+    </div>
+}
+
+@code
+{
+    [Parameter, EditorRequired]
+    public JournalEntryEditorState State { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public FxRateSelectionData SelectionData { get; set; } = default!;
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnUseSnapshot { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnUseMarketRate { get; set; }
+
+    [Parameter]
+    public EventCallback OnPersistManualSnapshot { get; set; }
+
+    private static Color GetSnapshotColor(string semantics) =>
+        semantics switch
+        {
+            FxSourceSemantics.Manual => Color.Warning,
+            FxSourceSemantics.SystemStored => Color.Info,
+            FxSourceSemantics.Identity => Color.Success,
+            _ => Color.Default
+        };
+}

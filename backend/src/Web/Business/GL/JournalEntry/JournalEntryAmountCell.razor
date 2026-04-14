@@ -1,0 +1,38 @@
+@using MudBlazor
+
+<div class="je-amount-cell">
+    <MudNumericField T="decimal?"
+                     Value="Value"
+                     ValueChanged="ValueChanged"
+                     HideSpinButtons="true"
+                     Immediate="true"
+                     Variant="Variant.Outlined"
+                     Margin="Margin.Dense"
+                     Format="0.00"
+                     Class="je-amount-input" />
+
+    @if (ShowPreview && PreviewValue.HasValue)
+    {
+        <div class="je-amount-preview">@PreviewLabel @FormatAmount(PreviewValue.Value)</div>
+    }
+</div>
+
+@code
+{
+    [Parameter]
+    public decimal? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<decimal?> ValueChanged { get; set; }
+
+    [Parameter]
+    public decimal? PreviewValue { get; set; }
+
+    [Parameter]
+    public string PreviewLabel { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool ShowPreview { get; set; }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+}

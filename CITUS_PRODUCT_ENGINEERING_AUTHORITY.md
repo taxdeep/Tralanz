@@ -48,21 +48,65 @@ Citus aims to provide a system that is:
 - disciplined in AI usage
 - stable enough for long-term expansion
 
+### 1.4 核心技术栈（ABP 治理版，适合 AI 主导开发）
+- 框架：.NET 10 (ASP.NET Core)
+- **总体架构**：**ABP-based Modular Monolith（基于 ABP 的模块化单体） + DDD（领域驱动设计） + CQRS（读写分离） + Vertical Slice Architecture（按功能切片）**
+  - ABP 负责平台治理与通用基础设施。
+  - Citus 自研模块负责 accounting truth、posting/tax/FX/reconciliation 等核心业务真相。
+  - DDD 应用于规则密集的核心域；简单后台管理与配置型模块保持务实，不为了模式而模式。
+  - 首期不强制按每个模块拆成大量独立项目；先在单体内保持清晰边界，等模块稳定后再提升可复用度。
+- 数据库：PostgreSQL
+- ORM：EF Core 为主，Dapper 为辅
+  - 写操作（Commands）：统一使用 EF Core，负责事务、Change Tracking、迁移、领域验证。
+  - 读操作（Queries）：默认使用 EF Core（AsNoTracking / Projection / Raw SQL）。
+  - 只有在报表、大分页、复杂聚合、性能热点被确认后，再引入 Dapper。
+- 前端：Blazor Web App + MudBlazor
+  - 优先面向内部 ERP / Back Office 场景，保持 C# 全栈，降低学习与维护成本。
+  - 首期不把 React/Vue + TypeScript 作为主路线。
+  - 若未来需要独立客户门户、公开站点、移动端配套或前端团队独立演进，再评估 React/Vue + TypeScript。
+- 身份认证 / 账户：优先复用 ABP Identity / Account
+  - 若未来出现独立 AuthServer、第三方 API 客户端、SSO、单点登出等需求，再引入 OpenIddict 体系。
+- 平台治理基础设施：优先复用 ABP / ABP Commercial 模块
+  - Permission Management
+  - Setting Management
+  - Feature Management
+  - Audit Logging
+  - Background Jobs / Background Workers
+  - Blob Storing
+  - Text Template Management
+  - Tenant Management / SaaS（仅在 SaaS 化时启用）
+- API 网关：首期不强制引入
+  - 单体阶段可不使用独立网关。
+  - 当系统拆分为多个独立服务、需要统一入口、转发、限流或鉴权编排时，再引入 YARP。
+- 缓存：分阶段引入
+  - Phase 1：IMemoryCache / ABP Distributed Cache（配置、字典、低频变化主数据）
+  - Phase 2：HybridCache + Redis（高频只读、SmartPicker、报表加速）
+  - 当 ABP multi-tenancy 启用时，所有缓存 key 必须同时带 `tenant_id` 与 `company_id`；未启用时至少带 `company_id`。
+  - 缓存只加速，不作为 truth；写操作必须主动失效。
+- 异步 / 后台任务：**ABP Background Jobs / Background Workers + Outbox 模式优先**
+  - 用于报表生成、通知发送、审计日志同步、FX rate refresh 等非实时任务。
+  - 首期不强制引入 MassTransit / RabbitMQ。
+  - 只有在出现多服务可靠投递、复杂工作流或 Saga 需求后，再升级到 MassTransit。
+- 监控 / 可观测性：`ILogger` + HealthChecks + OpenTelemetry
+  - 首先保证错误日志、请求链路、健康检查可见。
+  - Prometheus / Grafana 作为第二阶段增强，而不是首发硬依赖。
+
+
 ## 2. Core Principles
 
 The following principles are non-negotiable.
 
 ### 2.1 Immutable Principles
 
-- Correctness > Flexibility
-- Backend Authority > Frontend Assumptions
-- Structure > Convenience
-- Auditability > Performance Tricks
-- Company Isolation > Everything
-- Engine Truth > UI Presentation
-- Historical Honesty > Cosmetic Neatness
-- Cache = Acceleration ONLY
-- AI = Suggestion Layer ONLY
+- Correctness（正确性） > Flexibility（灵活性）
+- Backend Authority（后端权威） > Frontend Assumptions（前端假设）
+- Structure（结构） > Convenience（便利）
+- Auditability（可审计性） > Performance Tricks（性能小技巧）
+- Company Isolation（公司隔离） > Everything（一切）
+- Engine Truth（引擎真相） > UI Presentation（界面展示）
+- Historical Honesty（历史诚实性） > Cosmetic Neatness（外观整洁）
+- Cache（缓存） = Acceleration ONLY（仅用于加速）
+- AI = Suggestion Layer ONLY（仅作为建议层）
 
 ### 2.2 Principle Clarifications
 
@@ -109,14 +153,15 @@ The main product used by business users.
 
 This is where accounting, reporting, reconciliation, customers, vendors, invoices, bills, payments, tax, templates, settings, notifications, and operational workflows belong.
 
-#### 2) SysAdmin
+#### 2) SysAdmin / Host Admin
 
 A fully separate administration system.
 
-It has independent authentication and does not participate in normal business posting flows.
+It has independent operational responsibility and does not participate in normal business posting flows.
 
-SysAdmin controls:
+SysAdmin / Host Admin controls:
 
+- tenant / workspace lifecycle
 - company lifecycle
 - users
 - system mode / maintenance mode
@@ -131,11 +176,13 @@ Citus must remain:
 - module-based
 - connector-ready
 - AI-assisted, not AI-driven
+- ABP-governed for platform concerns, domain-sovereign for accounting truth
 
 Core truth belongs to engines.
 Business workflows belong to modules.
 External integrations belong to connectors.
 AI belongs to the suggestion layer.
+ABP belongs to platform governance and reusable infrastructure.
 
 ### 3.3 Shared Architecture Layers
 
@@ -160,9 +207,16 @@ The platform should progressively standardize into these reusable layers:
 - Tasks
 - Payment / Collection flows
 
-#### Infrastructure Modules
+#### Platform / Infrastructure Modules
 
-- Notification infrastructure
+- Identity / Account
+- Permission Management
+- Setting Management
+- Feature Management
+- Audit Logging
+- Background Jobs
+- Blob Storing
+- Text Template Management
 - Shared Cache Infrastructure
 - AI Assist Platform
 - SmartPicker Acceleration
@@ -174,25 +228,117 @@ The platform should progressively standardize into these reusable layers:
 - channels
 - external rate providers
 
+### 3.4 ABP Governance Boundary
+
+ABP / ABP Commercial should be treated as the platform governance layer.
+
+It may own:
+
+- authentication / account UI
+- permission persistence and management
+- feature flags / edition controls
+- setting persistence and hierarchy
+- request/action/entity audit logs
+- background jobs and workers
+- blob storage abstraction
+- text template editing
+- SaaS / tenant administration where applicable
+
+Citus domain modules must remain the authority for:
+
+- posting truth
+- tax truth
+- FX snapshot truth
+- reconciliation truth
+- accounting lifecycle truth
+- report semantics
+- company-level accounting rules
+
+No ABP module may bypass the Posting Engine or replace accounting domain rules.
+
+### 3.5 Official Code Boundary Names
+
+User-facing navigation labels and code boundary names are not the same thing.
+
+Navigation may use business-friendly labels such as Dashboard, Journal Entry, Receive Payment, Pay Bills, and Settings.
+
+Code and project boundaries must use approved root names only.
+
+Approved root business modules:
+
+- `Company`
+- `CompanyAccess`
+- `GL`
+- `AR`
+- `AP`
+- `Reconciliation`
+- `Reports`
+- `Tasks`
+
+Approved root engines:
+
+- `Posting`
+- `Tax`
+- `FX`
+- `Numbering`
+- `ReconciliationControl`
+
+Approved root infrastructure areas:
+
+- `AIAssist`
+- `Notifications`
+- `Caching`
+- `SmartPicker`
+- `Reporting`
+
+Mapping rules:
+
+- Journal Entry, Chart of Accounts, and related general-ledger workflows belong to `GL`.
+- Customers, Invoices, and Receive Payment belong to `AR`.
+- Vendors, Bills, and Pay Bills belong to `AP`.
+- Company-level controlled areas such as Profile, Templates, Sales Tax, Numbering, Notifications, Security, and Currencies belong to `Company`.
+- Company membership, invitations, owner/user assignment, active company context, and company-scoped authorization belong to `CompanyAccess`.
+- Dashboard is a host-level product surface, not an independent root module.
+- Settings is a navigation surface, not a dumping-ground root module.
+
 ## 4. Multi-Company Architecture
 
-### 4.1 Basic Model
+### 4.1 Boundary Model
 
-- one user can belong to multiple companies
-- one company can have multiple users
-- every authenticated session must have a clear active company context
+Citus must explicitly distinguish three boundaries:
+
+- **Host / Platform** = the system owner and platform administration boundary
+- **Tenant / Workspace** = the SaaS customer or workspace boundary managed by ABP multi-tenancy when enabled
+- **Company** = the legal accounting entity boundary inside a tenant / workspace
+
+**Default future direction:** `tenant/workspace != company`
+
+One tenant / workspace may contain multiple companies.
+A company is not the same thing as an ABP tenant by default.
+
+### 4.2 Membership Model
+
+- one user may belong to multiple companies
+- one company may have multiple users
+- when ABP multi-tenancy is enabled, these memberships are expected to be **within the same tenant / workspace** unless explicitly governed otherwise
+- every authenticated business session must have a clear active company context
 
 Session must include:
 
 - `active_company_id`
 
-### 4.2 Mandatory Data Rules
+If the system later supports multiple workspaces for the same user, the runtime must also have a clear tenant / workspace context before company selection.
+
+### 4.3 Mandatory Data Rules
 
 All core accounting and business objects must have:
 
 - `company_id NOT NULL`
 
+When ABP multi-tenancy is enabled, all tenant-owned business objects should also be tenant-aware through `TenantId` / `tenant_id`.
+
 All reads, writes, relations, reports, exports, caches, and AI context must be company-scoped.
+When multi-tenancy is enabled, they must also be tenant-scoped first.
 
 This applies to, at minimum:
 
@@ -216,9 +362,9 @@ This applies to, at minimum:
 - notification configs
 - security configs
 
-### 4.3 Mandatory Write Validation
+### 4.4 Mandatory Write Validation
 
-Every write path must validate company consistency, including:
+Every write path must validate both tenant/workspace consistency (when enabled) and company consistency, including:
 
 - `document.company_id == session.active_company_id`
 - `account.company_id == session.active_company_id`
@@ -227,22 +373,30 @@ Every write path must validate company consistency, including:
 - `journal_entry.company_id == source.company_id`
 - `party.company_id == session.active_company_id`
 
-Any cross-company reference must be rejected.
+When ABP multi-tenancy is enabled:
 
-### 4.4 Forbidden by Default
+- runtime `CurrentTenant.Id` must match the tenant ownership of the target data
+- tenant switch is not equivalent to company switch
+
+Any cross-company reference must be rejected.
+Any cross-tenant reference must be rejected.
+
+### 4.5 Forbidden by Default
 
 The following are forbidden:
 
 - cross-company journal entries
 - cross-company ledger entries
-- shared chart of accounts
-- shared customers
-- shared vendors
-- shared tax objects
-- shared business documents
+- cross-tenant access to business truth
+- shared chart of accounts across companies
+- shared customers across companies
+- shared vendors across companies
+- shared tax objects across companies
+- shared business documents across companies
 - business documents referencing accounting objects from another company
+- treating ABP tenant features/settings as a substitute for company-level accounting ownership
 
-### 4.5 UI Behavior
+### 4.6 UI Behavior
 
 Users must always know which company they are in.
 
@@ -252,10 +406,13 @@ The UI must clearly provide:
 - company switcher
 - full company-context switching
 
+If multi-workspace is later enabled, the UI must also clearly show current workspace / tenant.
+
 When switching company:
 
 - UI shell may stay stable
 - all data, permissions, reports, settings, numbering, templates, currencies, and FX context must switch
+
 
 ## 5. Authorization, Roles, and System Control
 
@@ -281,21 +438,67 @@ Minimum recommended permission domains:
 - settings access
 - reconciliation-related access
 
-### 5.2 SysAdmin Role
+### 5.2 ABP Permission Boundary
 
-SysAdmin is not a business-company extension.
+ABP Permission Management should be the canonical platform store for permission values and grant management.
 
-It is a separate system identity and must not reuse the business user model for company write operations.
+Recommended use:
 
-SysAdmin capabilities include:
+- ABP permissions control whether a user can access an operation, page, endpoint, or menu
+- Citus domain policies control whether a business action is valid in the current company, state, period, and workflow
 
+This means:
+
+- permission allows an attempt
+- domain rules decide whether the attempt is legal
+
+Approval logic, posting authority, period-close restrictions, and reconciliation completion rules must remain domain-owned, not only permission-owned.
+
+### 5.3 Feature / Edition Control
+
+When ABP SaaS / Feature Management is enabled, feature flags and editions may be used to control commercial packaging and tenant/workspace-level capability rollout.
+
+Examples:
+
+- multi-currency enabled
+- AI assist enabled
+- advanced reports enabled
+- attachments enabled
+- customer portal enabled
+
+Feature flags may enable or disable capabilities.
+Feature flags may not rewrite historical accounting truth or bypass engines.
+
+### 5.4 SysAdmin / Host Admin Role
+
+SysAdmin / Host Admin is not a business-company extension.
+
+It is a separate platform identity and must not reuse the business user model for company write operations.
+
+SysAdmin / Host Admin capabilities include:
+
+- tenant / workspace lifecycle control
 - company delete / inactive / lifecycle control
 - user edit / disable / reset password / role management
 - maintenance mode
 - runtime/system error visibility
 - platform-level administration
 
-### 5.3 Maintenance Mode
+### 5.5 Identity, Membership, and Control Boundary
+
+Platform identity is platform-governed.
+Company membership and company-scoped authorization are business-module-governed.
+
+Rules:
+
+- authentication, password, login flows, and platform identity infrastructure belong to the platform layer
+- company membership, invitations, owner/user assignment, active company resolution, and company-scoped authorization belong to `CompanyAccess`
+- global user disable, password reset, maintenance control, and platform lifecycle actions belong to `SysAdmin`
+- a generic business module named `Users`, `UserManagement`, or `Identity` is forbidden unless explicitly approved as a platform module
+
+This boundary exists to keep platform identity logic separate from company-scoped business control.
+
+### 5.6 Maintenance Mode
 
 The system must support maintenance / restart mode.
 
@@ -303,7 +506,8 @@ When enabled:
 
 - normal users cannot log in or perform writes
 - maintenance state must be visible
-- SysAdmin remains available
+- SysAdmin / Host Admin remains available
+
 
 ## 6. Posting Engine
 
@@ -876,9 +1080,23 @@ Void means rollback of control state while preserving history.
 
 ## 16. Audit and Observability
 
-### 16.1 Audit Is System-Wide
+### 16.1 Audit Is Two-Layered
 
-The system must record key actions including:
+Citus auditability must distinguish between:
+
+#### 1) Platform Audit (ABP Audit Logging)
+
+Used for:
+
+- request / response traces
+- executed actions and application-service calls
+- entity change visibility where supported
+- exception visibility
+- request duration and operational diagnostics
+
+#### 2) Domain Audit (Citus Business Event Trail)
+
+Used for:
 
 - match / unmatch
 - suggestion accept / reject
@@ -892,6 +1110,9 @@ The system must record key actions including:
 - FX snapshot selection / override where appropriate
 - legacy reversal block decisions where applicable
 
+ABP audit logging does not replace the business event trail.
+The business event trail does not replace platform request audit.
+
 ### 16.2 Observability
 
 The platform should progressively support:
@@ -902,6 +1123,9 @@ The platform should progressively support:
 - future CPU / storage / attachment observability
 - cache source / invalidation visibility
 - provider / FX lookup visibility
+- job queue / retry visibility
+- report-generation latency visibility
+
 
 ## 17. Notifications and Communication Infrastructure
 
@@ -965,7 +1189,53 @@ Settings should reserve room for future rules such as:
 
 Settings is a structured control surface, not a dumping ground.
 
-### 19.2 Company Settings Direction
+### 19.2 ABP Setting Hierarchy vs Citus Domain Settings
+
+The system should distinguish four configuration layers:
+
+#### 1) Host / Global Settings (ABP Global)
+
+Used for platform-wide behavior, such as:
+
+- maintenance mode
+- platform notification provider defaults
+- global audit retention
+- global AI provider defaults
+- system SMTP defaults
+
+#### 2) Tenant / Workspace Settings (ABP Tenant Settings)
+
+Used for workspace-level behavior, such as:
+
+- enabled integrations for a customer workspace
+- tenant notification branding
+- tenant-level feature defaults
+- workspace-level security policies
+
+#### 3) User Preferences (ABP User Settings)
+
+Used for user-specific behavior, such as:
+
+- theme
+- locale
+- table density
+- personal dashboard preferences
+
+#### 4) Company Accounting Settings (Citus Domain Tables)
+
+Used for accounting truth and company-owned business control, such as:
+
+- base currency
+- numbering rules
+- tax setup
+- document templates
+- posting defaults
+- AR/AP account mappings
+- multi-currency control behavior
+
+**Important rule:** company accounting settings must not be hidden inside generic ABP setting storage if they are part of accounting truth or posting behavior.
+
+### 19.3 Company Settings Direction
 
 Settings > Company should progressively organize into clear domains such as:
 
@@ -979,7 +1249,7 @@ Settings > Company should progressively organize into clear domains such as:
 
 These are company-level controlled areas.
 
-### 19.3 User Menu
+### 19.4 User Menu
 
 User menu should provide:
 
@@ -987,6 +1257,17 @@ User menu should provide:
 - Log out
 
 Profile changes involving email/password must go through verification.
+### 19.5 Settings Boundary Clarification
+
+Settings is a structured entry surface, not a root dumping-ground module.
+
+Rules:
+
+- Settings may aggregate pages from `Company`, `CompanyAccess`, user profile, and platform-governed capabilities
+- company business settings must remain in `Company`
+- company membership and company-scoped permission settings must remain in `CompanyAccess`
+- platform identity and global system control settings must remain in platform or `SysAdmin`
+- creating a catch-all root module named `Settings` is forbidden
 
 ## 20. UI / UX Design Principles
 
@@ -1158,6 +1439,37 @@ Rules:
 - write-side invalidation is required on all relevant mutation paths
 - cached/source/freshness semantics must be visible on supported report surfaces
 
+### 23.5 Report Type / Accounting Basis Selection
+Citus 必须支持多种报表会计基础（Report Type），以满足不同用户、税务申报和内部管理的需求。
+Report Type 下拉选项（必须实现）：
+
+- Accrual (Paid & Unpaid)（默认推荐）：采用权责发生制（Accrual Basis）。收入在赚取时确认，费用在发生时确认，无论是否实际收付。这应该是大多数正式财务报表（Profit & Loss、Balance Sheet、Aging Reports 等）的默认选项，提供最完整的财务状况视图。
+- Cash Basis (Paid)：采用收付实现制（Cash Basis）。仅显示已实际收到或支付的金额。适合现金流管理、税务申报（部分小型企业或特定税种）。
+- Cash Only：更严格的现金基础，仅基于现金账户变动（可能排除部分银行调节项）。适合极简现金流视图。
+
+#### 实现规则（必须遵守）：
+
+Report Type 是报表级参数，而非公司全局默认会计方法（公司可有默认偏好，但用户生成报表时可切换）。
+所有报表（尤其是 AR Aging、AP Aging、Profit & Loss、Balance Sheet 等）必须支持这三种 Report Type。
+Backend Authority：报表的计算逻辑必须由后端引擎决定（使用 Dapper 或专用 Report Service），前端只负责传递选择参数和展示结果。不能让前端自行计算差异。
+- 一致性：同一 Report Type 下，不同报表（例如 Invoice 列表 vs P&L）必须使用相同的确认规则。
+- 公司隔离：Report Type 选择必须在当前 active company 上下文中生效。
+- 审计与历史诚实性：生成报表时应记录使用的 Report Type、生成时间和参数快照（便于以后审计）。
+- 默认值：新公司默认使用 Accrual (Paid & Unpaid)，可在 Company Settings 中配置默认 Report Type。
+- UI 位置：这个下拉框应出现在 Reports 主页、具体报表参数面板中（例如 AR Aging Report、Profit & Loss 等页面顶部），并带有帮助提示（?）解释每种类型的含义。
+
+与现有原则的对齐：
+
+- 符合 “Engine Truth > UI Presentation” —— 报表真相由后端 Posting Engine 和查询逻辑决定。
+- 符合 “Historical Honesty” —— 如果数据来自不同期间，应清晰显示使用的会计基础。
+- 与 ABP 集成：可将 Report Type 作为查询参数传入 Application Service，或使用 ABP 的 Setting Management 保存公司默认值。
+
+#### 可选扩展（未来可考虑）：
+
+- 支持用户保存常用报表模板（含 Report Type 设置）。
+- 在 Dashboard 或关键报表中显示当前使用的 Report Type。
+- 提供 “Compare Accrual vs Cash” 并排视图（高级功能）。
+
 ## 24. AI Layer
 
 ### 24.1 Definition
@@ -1312,6 +1624,8 @@ Before implementing any feature, verify:
 6. does it avoid polluting unrelated modules
 7. does it preserve historical honesty when data is uncertain
 8. does it keep cache / AI / provider layers subordinate to backend truth
+9. does it keep ABP governance concerns separate from accounting truth
+10. does it preserve upgradeability of ABP modules
 
 ### 28.2 Default Build Order
 
@@ -1328,6 +1642,7 @@ Important capabilities should cover:
 - partial payment / partial state
 - void / reverse exclusion
 - cross-company rejection
+- cross-tenant rejection where applicable
 - export / HTML / CSV consistency
 - nil / empty safety
 - ordering stability
@@ -1335,7 +1650,316 @@ Important capabilities should cover:
 - no-live-provider-at-save where applicable
 - honest legacy read semantics where applicable
 
-## 29. Final Product Summary
+### 28.4 AI-First Development Rules
+
+For AI-assisted development, the following rules are mandatory:
+
+- AI may draft code, tests, SQL, UI, and refactors, but human review remains required for accounting correctness.
+- Any feature touching company isolation, posting, tax, FX, reconciliation, permissions, numbering, or auditability must be implemented together with tests.
+- Prompts must reference this document and the related executable specifications.
+- AI should work slice-by-slice, not through large unbounded rewrites.
+- Each task should preferably target one use case / one screen / one command-query pair.
+- Generated code must preserve naming, folder conventions, and module boundaries.
+- Generated migrations and SQL must be manually reviewed before execution on shared environments.
+- AI may assist implementation, but engine rules and tests remain the final authority.
+
+All new projects, namespaces, folders, and files must follow the approved naming grammar.
+
+Project naming grammar:
+
+`Citus.<Category>[.<RootName>][.<Layer>]`
+
+Allowed categories:
+
+- `Web`
+- `SysAdmin`
+- `DbMigrator`
+- `SharedKernel`
+- `Modules`
+- `Engines`
+- `Infrastructure`
+- `Connectors`
+- `Tests`
+
+Approved root business modules:
+
+- `Company`
+- `CompanyAccess`
+- `GL`
+- `AR`
+- `AP`
+- `Reconciliation`
+- `Reports`
+- `Tasks`
+
+Approved root engines:
+
+- `Posting`
+- `Tax`
+- `FX`
+- `Numbering`
+- `ReconciliationControl`
+
+Approved root infrastructure names:
+
+- `AIAssist`
+- `Notifications`
+- `Caching`
+- `SmartPicker`
+- `Reporting`
+
+Approved connector root names include patterns such as:
+
+- `Payment.<Provider>`
+- `Channel.<Provider>`
+- `Rates.<Provider>`
+
+Examples:
+
+- `Citus.Modules.GL.Domain`
+- `Citus.Modules.GL.Application`
+- `Citus.Modules.CompanyAccess.Blazor`
+- `Citus.Engines.Posting`
+- `Citus.Infrastructure.AIAssist`
+- `Citus.Connectors.Payment.Stripe`
+
+Allowed layers for business modules:
+
+- `Domain.Shared`
+- `Domain`
+- `Application.Contracts`
+- `Application`
+- `EntityFrameworkCore`
+- `Blazor`
+
+Forbidden root or utility names:
+
+- `Users`
+- `UserManagement`
+- `Identity`
+- `AccountingCore`
+- `LedgerEngine`
+- `Common`
+- `Utils`
+- `Helpers`
+- `Misc`
+- `Temp`
+- `Manager`
+- `Processor`
+
+Rules:
+
+- AI must not invent new root categories, root module names, or layer names without explicit approval
+- file name must match the primary type name exactly
+- one public type per file is the default rule
+- new use cases must stay inside an approved root module boundary
+- Journal Entry code must live under `GL`, not under a standalone `JournalEntry` root module
+- company membership and company-scoped authorization code must live under `CompanyAccess`, not under a generic `Users` root module
+- before generating code, AI must first list the exact target file paths it plans to create or modify
+- if no approved target path exists, AI must stop and report: `No approved target path found.`
+
+## 28.6 Module Naming and File Placement Rules
+
+All new projects, folders, namespaces, and files must follow the approved naming grammar.
+
+### Project name grammar
+`Citus.<Category>[.<Module>][.<Layer>]`
+
+Allowed categories:
+- Web
+- SysAdmin
+- DbMigrator
+- SharedKernel
+- Modules
+- Connectors
+- Tests
+
+Allowed module names:
+- Company
+- GL
+- AR
+- AP
+- Tax
+- FX
+- Reconciliation
+- Reports
+- Tasks
+- Notifications
+- Identity
+
+Allowed layers for Modules:
+- Domain.Shared
+- Domain
+- Application.Contracts
+- Application
+- EntityFrameworkCore
+- Blazor
+
+Forbidden names:
+- Common
+- Helpers
+- Utils
+- Temp
+- Misc
+- Manager
+- Processor
+- ServiceImpl
+
+Rules:
+- AI must not invent new project categories.
+- AI must not invent new module names without explicit approval.
+- AI must not create files outside approved module boundaries.
+- One public type per file.
+- File name must match the main type name exactly.
+- Vertical Slice use cases must be grouped by feature/use case folder.
+
+
+## 29. Performance Strategy and Constraints
+
+Performance must be designed, measured, and observed.
+It must not be assumed merely because a certain stack or pattern is present.
+
+### 29.1 Write Path Discipline
+
+ERP write paths must prioritize correctness and transaction safety.
+
+Rules:
+
+- transactional writes use EF Core + Unit of Work semantics
+- posting path must stay synchronous, atomic, and local to the transaction
+- live provider calls are forbidden on save/post
+- report generation, notifications, and heavy secondary work must be offloaded
+
+### 29.2 Read Path Strategy
+
+Default read strategy:
+
+- start with EF Core projections and `AsNoTracking`
+- use Dapper only for proven hot paths
+- create report-specific read models only when needed
+- prefer materialized views / summary tables only after semantics are stable
+
+### 29.3 Cache Strategy
+
+Cache is acceleration only.
+
+Rules:
+
+- cache keys must be namespaced
+- when multi-tenancy is enabled, keys should include both `tenant_id` and `company_id`
+- query/result versioning or equivalent invalidation primitives should be used
+- write-side invalidation is mandatory
+- cached data must never become accounting truth
+
+### 29.4 Async Strategy
+
+Preferred path:
+
+- ABP Background Jobs / Workers for non-real-time work
+- Outbox for reliable post-commit processing
+- MassTransit / RabbitMQ only after real complexity justifies it
+
+Typical async candidates:
+
+- report generation
+- invoice email sending
+- notification dispatch
+- FX rate refresh
+- audit-log cleanup / archival
+- AI summary generation
+
+### 29.5 Database Strategy
+
+Performance work should typically prioritize:
+
+- proper indexes
+- filtered / partial indexes where appropriate
+- query-shape review
+- projection trimming
+- duplicate-post prevention indexes
+- concurrency control for drafts and hot master data
+- partitioning / materialized views only after real evidence
+
+### 29.6 UI Read Strategy
+
+Blazor pages must avoid over-fetching.
+
+Rules:
+
+- lists should paginate
+- large tables should virtualize where appropriate
+- detail pages should load focused view models, not giant aggregates
+- posting preview and audit panels may use separate optimized read models
+
+## 30. ABP Integration and Upgrade Governance
+
+### 30.1 Adoption Boundary
+
+ABP / ABP Commercial should primarily govern platform concerns:
+
+- identity / account
+- tenant / workspace management
+- permission management
+- feature management
+- setting management
+- audit logging
+- background jobs
+- blob storage
+- text templates
+- optional OpenIddict-based auth infrastructure
+
+Citus-owned modules should govern business truth:
+
+- GL
+- AR
+- AP
+- FX
+- tax
+- reconciliation
+- reports semantics
+- company accounting settings
+
+### 30.2 Tenant / Workspace Strategy
+
+For future SaaS control:
+
+- use **tenant / workspace** as the commercial and deployment boundary
+- use **company** as the accounting/legal boundary inside that workspace
+- use editions/features for packaging and rollout
+- do not collapse tenant and company into the same concept unless the deployment model truly requires it
+
+### 30.3 Extension Strategy
+
+Preferred customization order:
+
+1. configuration
+2. module options
+3. extension points / extra properties for ABP-owned objects
+4. replaceable services / adapters
+5. source inclusion or fork as the last resort
+
+### 30.4 Source-of-Truth Rule
+
+ABP may provide infrastructure, UI, and administration.
+ABP may not redefine accounting truth.
+
+Therefore:
+
+- ABP settings may configure behavior, but may not rewrite posted history
+- ABP permissions may gate access, but may not decide accounting legality alone
+- ABP features may enable modules, but may not bypass posting/tax/FX engines
+- ABP audit logs may record operations, but may not replace the accounting event trail
+
+### 30.5 Upgradeability Rule
+
+To preserve future control:
+
+- keep business rules in Citus modules, not inside ABP package internals
+- isolate overrides behind interfaces/adapters
+- record all non-trivial ABP customizations
+- prefer package updates over long-lived source forks wherever possible
+
+## 31. Final Product Summary
 
 Citus is:
 
@@ -1343,6 +1967,7 @@ Citus is:
 - a strong-rule accounting engine
 - a control-layer-driven finance platform
 - a modular business application
+- an ABP-governed platform shell for cross-cutting concerns
 - an AI suggestion layer, not an AI execution layer
 - a long-term extensible architecture
 
@@ -1350,6 +1975,7 @@ It must simultaneously preserve:
 
 - accounting correctness
 - company isolation
+- tenant/workspace isolation where applicable
 - business/accounting consistency
 - auditability and control
 - modular extensibility

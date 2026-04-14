@@ -114,6 +114,40 @@ Core columns:
 - `expires_at timestamptz not null`
 - `created_at timestamptz not null`
 
+### 4.5 `platform_modules`
+
+Meaning:
+
+- system-level module registry
+- makes bounded contexts explicit instead of leaving them implied by API shape
+- adapted from the plugin/kernel direction used in `WebVella.Erp`
+
+Core columns:
+
+- `id uuid pk`
+- `module_key text unique not null`
+- `json jsonb not null`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+### 4.6 `platform_entities`
+
+Meaning:
+
+- system-level entity metadata registry
+- describes which module owns an entity and which storage table is authoritative
+- gives `Citus.SysAdmin.Api` a durable control surface for platform governance
+
+Core columns:
+
+- `id uuid pk`
+- `entity_name text unique not null`
+- `module_key text not null`
+- `storage_table text not null`
+- `json jsonb not null`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
 ## 5. Currency And FX Structure
 
 ## 5.1 Design Split

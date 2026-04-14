@@ -1,0 +1,378 @@
+@page "/gl/journal-entry/editor"
+@using Engines.FX.FxRateLookup
+@using Engines.Numbering.JournalEntry
+@using Modules.GL.JournalEntry
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@inject IFxRateResolver FxRateResolver
+@inject IFxRateSelectionService FxRateSelectionService
+@inject IJournalEntryNumberLookup JournalEntryNumberLookup
+@inject IJournalEntryWorkflow JournalEntryWorkflow
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@_state.Draft.Title</PageTitle>
+
+<div class="je-editor">
+    <div class="je-editor-shell">
+        <div class="je-workbench-title">
+            <div class="je-workbench-title__text">
+                <MudIcon Icon="@Icons.Material.Outlined.History" Size="Size.Small" />
+                <span>@_state.Draft.Title</span>
+            </div>
+            <div class="je-workbench-title__meta">
+                <MudChip T="string" Variant="Variant.Text" Color="Color.Success">Dark mode</MudChip>
+                <MudChip T="string" Variant="Variant.Text" Color="Color.Info">Excel-style grid</MudChip>
+            </div>
+        </div>
+
+        <JournalEntryHeaderBand State="_state"
+                                IsFxBusy="_isFxBusy"
+                                FxErrorText="@_fxErrorText"
+                                OnCurrencyChanged="HandleCurrencyChanged"
+                                OnFxRateChanged="HandleFxRateChanged"
+                                OnJournalDateChanged="HandleJournalDateChanged" />
+
+        <JournalEntryFxReviewPanel State="_state" SelectionData="_fxSelectionData" />
+
+        @if (_state.Draft.IsForeignCurrency && _state.CanEditJournal)
+        {
+            <JournalEntryFxSelectionPanel State="_state"
+                                          SelectionData="_fxSelectionData"
+                                          IsBusy="_isFxBusy"
+                                          OnUseSnapshot="HandleUseSnapshotAsync"
+                                          OnUseMarketRate="HandleUseMarketRateAsync"
+                                          OnPersistManualSnapshot="HandlePersistManualSnapshotAsync" />
+        }
+
+        <JournalEntryGrid State="_state" OnChanged="HandleChanged" />
+
+        <div class="je-bottom-panels">
+            <div class="je-panel">
+                <div class="je-panel__label">Memo</div>
+                <MudTextField T="string"
+                              @bind-Value="_state.Draft.Memo"
+                              Lines="4"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              FullWidth="true" />
+            </div>
+
+            <div class="je-panel">
+                <div class="je-panel__label">Attachments</div>
+                <div class="je-attachment-dropzone">
+                    <div class="je-attachment-dropzone__title">Add attachment</div>
+                    <div class="je-attachment-dropzone__hint">Max file size: 20 MB</div>
+                    <MudButton Variant="Variant.Text" Color="Color.Info">Show existing</MudButton>
+                </div>
+            </div>
+        </div>
+
+        <div class="je-action-bar">
+            <div class="je-action-bar__left">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/">Cancel</MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@(!_state.CanEditJournal)" OnClick="ClearLines">Clear</MudButton>
+            </div>
+
+            <div class="je-action-bar__center">
+                <MudChip T="string" Variant="Variant.Text" Color="@(_state.Draft.Status == "posted" ? Color.Success : Color.Info)">
+                    @(_state.Draft.Status == "posted" ? "Posted" : "Draft")
+                </MudChip>
+                @if (!string.IsNullOrWhiteSpace(_state.Draft.DocumentNumber))
+                {
+                    <MudChip T="string" Variant="Variant.Text" Color="Color.Default">@_state.Draft.DocumentNumber</MudChip>
+                }
+                @if (_postedJournalEntryId.HasValue)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Info"
+                               Href="@BuildReviewHref(_postedJournalEntryId.Value)">
+                        Open review
+                    </MudButton>
+                }
+            </div>
+
+            <div class="je-action-bar__right">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Success"
+                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal)"
+                           OnClick="HandleSaveClickAsync">
+                    Save
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Warning"
+                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal)"
+                           OnClick="PostDraftAsync">
+                    Post
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal)"
+                           OnClick="HandleSaveAndCloseClickAsync">
+                    Save and close
+                </MudButton>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code
+{
+    private static readonly Guid DemoUserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private readonly JournalEntryEditorState _state = JournalEntryEditorState.CreateDarkModeDemo();
+    private FxRateSelectionData _fxSelectionData = new([], []);
+    private bool _isFxBusy;
+    private bool _isSaving;
+    private bool _isPosting;
+    private string? _fxErrorText;
+    private Guid? _postedJournalEntryId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var accountOptions = await JournalEntryWorkflow.LoadAccountOptionsAsync(_state.Draft.CompanyId, CancellationToken.None);
+        _state.ReplaceAccountOptions(accountOptions);
+        _state.SetJournalNumber(await JournalEntryNumberLookup.GetNextDisplayNumberAsync(_state.Draft.CompanyId, CancellationToken.None));
+        await RefreshFxRateAsync();
+    }
+
+    private Task HandleChanged()
+    {
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleCurrencyChanged(string currencyCode)
+    {
+        _state.SetCurrency(currencyCode);
+        await RefreshFxRateAsync();
+    }
+
+    private async Task HandleJournalDateChanged(DateOnly journalDate)
+    {
+        _state.SetJournalDate(journalDate);
+        await RefreshFxRateAsync();
+    }
+
+    private Task HandleFxRateChanged(decimal fxRate)
+    {
+        _state.ApplyManualFxRate(fxRate);
+        _ = LoadFxSelectionDataAsync();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task ClearLines()
+    {
+        _state.ClearAllLines();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task HandleSaveClickAsync() => SaveDraftCoreAsync();
+
+    private async Task HandleSaveAndCloseClickAsync()
+    {
+        var saved = await SaveDraftCoreAsync();
+        if (saved)
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task<bool> SaveDraftCoreAsync()
+    {
+        try
+        {
+            _isSaving = true;
+            StateHasChanged();
+
+            var result = await JournalEntryWorkflow.SaveDraftAsync(_state.Draft, DemoUserId, CancellationToken.None);
+            _state.Draft.DocumentId = result.DocumentId;
+            _state.Draft.DocumentNumber = result.DocumentNumber;
+            _state.Draft.Status = result.Status;
+            Snackbar.Add($"Draft saved as {result.DocumentNumber}.", Severity.Success);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return false;
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PostDraftAsync()
+    {
+        try
+        {
+            _isPosting = true;
+            StateHasChanged();
+
+            var result = await JournalEntryWorkflow.PostDraftAsync(_state.Draft, DemoUserId, CancellationToken.None);
+            _state.Draft.DocumentId = result.DocumentId;
+            _state.Draft.DocumentNumber = result.DocumentNumber;
+            _state.Draft.JournalNumber = result.JournalDisplayNumber;
+            _state.Draft.Status = "posted";
+            _postedJournalEntryId = result.JournalEntryId;
+            Snackbar.Add($"Posted as {result.JournalDisplayNumber}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isPosting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshFxRateAsync()
+    {
+        _fxErrorText = null;
+
+        if (!_state.Draft.IsForeignCurrency)
+        {
+            _state.ApplyIdentityFxRate();
+            _fxSelectionData = new FxRateSelectionData([], []);
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            _isFxBusy = true;
+            StateHasChanged();
+
+            var resolution = await FxRateResolver.ResolveAsync(
+                new FxRateLookupRequest(
+                    _state.Draft.CompanyId,
+                    DemoUserId,
+                    _state.Draft.CurrencyCode,
+                    _state.Draft.BaseCurrencyCode,
+                    _state.Draft.JournalDate,
+                    _state.Draft.FxProviderKey,
+                    7),
+                CancellationToken.None);
+
+            _state.ApplyResolvedFxRate(resolution);
+            await LoadFxSelectionDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _fxErrorText = ex.Message;
+        }
+        finally
+        {
+            _isFxBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleUseSnapshotAsync(Guid snapshotId)
+    {
+        try
+        {
+            _isFxBusy = true;
+            StateHasChanged();
+
+            var resolution = await FxRateSelectionService.UseCompanySnapshotAsync(
+                _state.Draft.CompanyId,
+                snapshotId,
+                CancellationToken.None);
+
+            _state.ApplyResolvedFxRate(resolution);
+            await LoadFxSelectionDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isFxBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleUseMarketRateAsync(Guid marketRateId)
+    {
+        try
+        {
+            _isFxBusy = true;
+            StateHasChanged();
+
+            var resolution = await FxRateSelectionService.UseMarketRateAsync(
+                BuildSelectionRequest(),
+                marketRateId,
+                CancellationToken.None);
+
+            _state.ApplyResolvedFxRate(resolution);
+            await LoadFxSelectionDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isFxBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandlePersistManualSnapshotAsync()
+    {
+        try
+        {
+            _isFxBusy = true;
+            StateHasChanged();
+
+            var resolution = await FxRateSelectionService.PersistManualSnapshotAsync(
+                BuildSelectionRequest(),
+                _state.Draft.FxRate,
+                CancellationToken.None);
+
+            _state.ApplyResolvedFxRate(resolution);
+            await LoadFxSelectionDataAsync();
+            Snackbar.Add("Manual FX snapshot persisted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isFxBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadFxSelectionDataAsync()
+    {
+        if (!_state.Draft.IsForeignCurrency)
+        {
+            _fxSelectionData = new FxRateSelectionData([], []);
+            return;
+        }
+
+        _fxSelectionData = await FxRateSelectionService.LoadAsync(BuildSelectionRequest(), CancellationToken.None);
+    }
+
+    private FxRateSelectionRequest BuildSelectionRequest() =>
+        new(
+            _state.Draft.CompanyId,
+            DemoUserId,
+            _state.Draft.CurrencyCode,
+            _state.Draft.BaseCurrencyCode,
+            _state.Draft.JournalDate,
+            _state.Draft.FxProviderKey,
+            7);
+
+    private static string BuildReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+}

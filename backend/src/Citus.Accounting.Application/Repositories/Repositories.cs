@@ -1,3 +1,4 @@
+using Citus.Accounting.Application.Queries;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Documents;
@@ -218,6 +219,153 @@ public interface IJournalEntryRepository
         JournalEntry entry,
         CancellationToken cancellationToken);
 }
+
+public interface IJournalEntryReviewRepository
+{
+    Task<IReadOnlyList<JournalEntryReviewListItem>> ListRecentAsync(
+        CompanyId companyId,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<JournalEntryReview?> GetAsync(
+        CompanyId companyId,
+        Guid journalEntryId,
+        CancellationToken cancellationToken);
+
+    Task<JournalEntryReviewListItem?> FindBySourceAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid sourceId,
+        CancellationToken cancellationToken);
+}
+
+public sealed record JournalEntryReviewListItem(
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    string SourceType,
+    Guid SourceId,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    decimal TotalTxDebit,
+    decimal TotalTxCredit,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    int LineCount,
+    DateTimeOffset? PostedAt,
+    DateTimeOffset? VoidedAt,
+    DateTimeOffset? ReversedAt);
+
+public sealed record JournalEntryReview(
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    string SourceType,
+    Guid SourceId,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    decimal ExchangeRate,
+    DateOnly ExchangeRateDate,
+    string ExchangeRateSource,
+    Guid? FxRateSnapshotId,
+    decimal TotalTxDebit,
+    decimal TotalTxCredit,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    int LineCount,
+    DateTimeOffset? PostedAt,
+    DateTimeOffset? VoidedAt,
+    DateTimeOffset? ReversedAt,
+    Guid CreatedByUserId,
+    IReadOnlyList<JournalEntryReviewLine> Lines);
+
+public sealed record JournalEntryReviewLine(
+    Guid LineId,
+    int LineNumber,
+    Guid AccountId,
+    string AccountCode,
+    string AccountName,
+    string RootType,
+    string DetailType,
+    string Description,
+    decimal TxDebit,
+    decimal TxCredit,
+    decimal Debit,
+    decimal Credit,
+    string? TaxComponentType,
+    string? ControlRole,
+    Guid? PartyId);
+
+public interface IAccountingReportRepository
+{
+    Task<TrialBalanceReport?> GetTrialBalanceAsync(
+        GetTrialBalanceQuery query,
+        CancellationToken cancellationToken);
+
+    Task<IncomeStatementReport?> GetIncomeStatementAsync(
+        GetIncomeStatementQuery query,
+        CancellationToken cancellationToken);
+
+    Task<BalanceSheetReport?> GetBalanceSheetAsync(
+        GetBalanceSheetQuery query,
+        CancellationToken cancellationToken);
+
+    Task<ArAgingReport?> GetArAgingAsync(
+        GetArAgingQuery query,
+        CancellationToken cancellationToken);
+
+    Task<ApAgingReport?> GetApAgingAsync(
+        GetApAgingQuery query,
+        CancellationToken cancellationToken);
+}
+
+public interface IAccountingDocumentReviewRepository
+{
+    Task<AccountingDocumentReview?> GetSourceDocumentAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken);
+}
+
+public sealed record AccountingDocumentReview(
+    string SourceType,
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly DocumentDate,
+    DateOnly? DueDate,
+    string CounterpartyRole,
+    Guid? CounterpartyId,
+    Guid? ControlAccountId,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    decimal SubtotalAmount,
+    decimal TaxAmount,
+    decimal TotalAmount,
+    string? Memo,
+    IReadOnlyList<AccountingDocumentReviewLine> Lines);
+
+public sealed record AccountingDocumentReviewLine(
+    int LineNumber,
+    Guid AccountId,
+    string AccountCode,
+    string AccountName,
+    string Description,
+    decimal? Quantity,
+    decimal? UnitPrice,
+    decimal LineAmount,
+    decimal TaxAmount,
+    bool? IsTaxRecoverable,
+    Guid? TaxAccountId,
+    decimal? TxDebit,
+    decimal? TxCredit);
 
 public interface IFxSnapshotRepository
 {

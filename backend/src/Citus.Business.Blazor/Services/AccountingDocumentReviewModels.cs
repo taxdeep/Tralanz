@@ -1,0 +1,75 @@
+namespace Citus.Business.Blazor.Services;
+
+public sealed record class AccountingDocumentReviewSummary
+{
+    public string SourceType { get; init; } = string.Empty;
+
+    public string SourceTypeLabel { get; init; } = string.Empty;
+
+    public Guid Id { get; init; }
+
+    public Guid CompanyId { get; init; }
+
+    public string EntityNumber { get; init; } = string.Empty;
+
+    public string DisplayNumber { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public DateOnly DocumentDate { get; init; }
+
+    public DateOnly? DueDate { get; init; }
+
+    public string CounterpartyLabel { get; init; } = string.Empty;
+
+    public Guid? CounterpartyId { get; init; }
+
+    public string ControlAccountLabel { get; init; } = string.Empty;
+
+    public Guid? ControlAccountId { get; init; }
+
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+
+    public string BaseCurrencyCode { get; init; } = string.Empty;
+
+    public decimal SubtotalAmount { get; init; }
+
+    public decimal TaxAmount { get; init; }
+
+    public decimal TotalAmount { get; init; }
+
+    public string? Memo { get; init; }
+
+    public IReadOnlyList<AccountingDocumentReviewLineSummary> Lines { get; init; } = Array.Empty<AccountingDocumentReviewLineSummary>();
+}
+
+public sealed record class AccountingDocumentReviewLineSummary
+{
+    public int LineNumber { get; init; }
+
+    public Guid AccountId { get; init; }
+
+    public string AccountCode { get; init; } = string.Empty;
+
+    public string AccountName { get; init; } = string.Empty;
+
+    public string AccountLabel { get; init; } = string.Empty;
+
+    public string Description { get; init; } = string.Empty;
+
+    public decimal? Quantity { get; init; }
+
+    public decimal? UnitPrice { get; init; }
+
+    public decimal LineAmount { get; init; }
+
+    public decimal TaxAmount { get; init; }
+
+    public bool? IsTaxRecoverable { get; init; }
+
+    public Guid? TaxAccountId { get; init; }
+
+    public decimal? TxDebit { get; init; }
+
+    public decimal? TxCredit { get; init; }
+}

@@ -2,7 +2,7 @@
 
 ## Product goal
 
-Build a QuickBooks-like accounting MVP for small businesses that is simple, practical, and modular.
+Build an accounting MVP for small businesses that is simple, practical, and modular.
 
 Primary users are small business owners who need basic bookkeeping workflows without enterprise complexity.
 

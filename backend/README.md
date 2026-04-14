@@ -1,6 +1,6 @@
 # Citus Backend
 
-This directory contains the first PostgreSQL-backed .NET backend slice for the Citus accounting core.
+This directory contains the PostgreSQL-backed .NET backend slice for the Citus platform core and accounting module.
 
 Current layout:
 
@@ -8,10 +8,14 @@ Current layout:
 - `src/Citus.Accounting.Application`
 - `src/Citus.Accounting.Infrastructure`
 - `src/Citus.Accounting.Api`
+- `src/Citus.ConsoleApp`
+- `src/Citus.Platform.Core`
+- `src/Citus.Platform.Infrastructure`
 - `src/Citus.SysAdmin.Api`
 - `tests/Citus.Accounting.Domain.Tests`
 - `tests/Citus.Accounting.Application.Tests`
 - `tests/Citus.Accounting.IntegrationTests`
+- `tests/Citus.Platform.Core.Tests`
 
 Notes:
 
@@ -19,6 +23,9 @@ Notes:
 - The backend now targets `.NET 10` through `backend/Directory.Build.props`, so local build/test/run no longer depends on `DOTNET_ROLL_FORWARD=Major`.
 - You can start and stop the API from any directory with `D:\Coding\Citus\backend\start-accounting-api.ps1` and `D:\Coding\Citus\backend\stop-accounting-api.ps1`.
 - `Citus.Accounting.Api` now wires the manual-journal, invoice, credit-note, bill, vendor-credit, receive-payment, credit-application, pay-bill, vendor-credit-application, and FX revaluation paths against PostgreSQL.
+- `Citus.Platform.Core` now provides a WebVella-inspired platform kernel for module registration and entity metadata governance.
+- `Citus.SysAdmin.Api` now boots and governs the platform kernel through PostgreSQL-backed metadata tables.
+- `Citus.ConsoleApp` now provides a local operator control surface for the same kernel, inspired by `WebVella.Erp.ConsoleApp`.
 - The current slice reads `manual_journal_documents`, `invoices`, `credit_notes`, `bills`, `vendor_credits`, `receive_payments`, `credit_applications`, `pay_bills`, `vendor_credit_applications`, and `fx_revaluation_batches`, resolves FX snapshots from `company_fx_rate_snapshots` when needed, and writes `journal_entries`, `journal_entry_lines`, `ledger_entries`, `ar_open_items`, `ap_open_items`, `settlement_applications`, and `fx_revaluation_batch_lines`.
 - Posted invoices and credit notes create `ar_open_items`, posted bills and vendor credits create `ap_open_items`, and posted settlements update open-item balances through `settlement_applications`.
 - Foreign-currency receive-payment/pay-bill posting now uses the source document FX snapshot as the authoritative settlement rate, writes realized FX to dedicated gain/loss accounts, and reduces open-item carrying base separately from settlement base.
@@ -62,6 +69,26 @@ Current limitation:
 - test coverage is still narrow; the current `dotnet test` pass now exercises posting-fragment behavior, unwind-chain selection, and cascade orchestration, but it is not yet end-to-end PostgreSQL coverage.
 
 ## API endpoints
+
+Platform core / sysadmin:
+
+- `GET /core`
+- `POST /core/bootstrap`
+- `GET /core/modules`
+- `GET /core/entities`
+- `GET /core/entities/{name}`
+- `POST /core/entities`
+
+Console app:
+
+- `dotnet run --project src/Citus.ConsoleApp/Citus.ConsoleApp.csproj -- help`
+- `dotnet run --project src/Citus.ConsoleApp/Citus.ConsoleApp.csproj -- describe-webvella`
+- `dotnet run --project src/Citus.ConsoleApp/Citus.ConsoleApp.csproj -- bootstrap-core`
+- `dotnet run --project src/Citus.ConsoleApp/Citus.ConsoleApp.csproj -- list-modules`
+- `dotnet run --project src/Citus.ConsoleApp/Citus.ConsoleApp.csproj -- list-entities accounting`
+- `dotnet run --project src/Citus.ConsoleApp/Citus.ConsoleApp.csproj -- show-entity journal_entries`
+
+Accounting:
 
 - `GET /accounting/manual-journals/{documentId}?companyId={companyId}`
 - `POST /accounting/manual-journals/{documentId}/post`
@@ -107,6 +134,10 @@ Example POST body:
 ## Configuration
 
 `src/Citus.Accounting.Api/appsettings.json` contains the development connection string key:
+
+- `ConnectionStrings:AccountingCore`
+
+`src/Citus.SysAdmin.Api/appsettings.json` uses the same connection string key for the shared PostgreSQL platform database:
 
 - `ConnectionStrings:AccountingCore`
 

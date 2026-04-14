@@ -1,0 +1,261 @@
+@page "/"
+@page "/overview"
+
+@inject ISnackbar Snackbar
+@inject PlatformCoreClient PlatformCoreClient
+@inject SysAdminHealthClient SysAdminHealthClient
+@inject AccountingHealthClient AccountingHealthClient
+
+<PageTitle>Overview | Citus SysAdmin</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Class="mb-6">
+    <div>
+        <CitusPageHeader Model="_header" />
+    </div>
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudButton
+            Variant="Variant.Filled"
+            Color="Color.Primary"
+            Disabled="@_isBootstrapping"
+            OnClick="BootstrapCoreAsync">
+            @(_isBootstrapping ? "Bootstrapping..." : "Bootstrap core")
+        </MudButton>
+
+        <MudButton
+            Variant="Variant.Outlined"
+            Color="Color.Info"
+            Disabled="@_isLoading"
+            OnClick="LoadAsync">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_lastBootstrapReport is not null)
+{
+    <MudPaper Class="pa-4 mb-6">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h6">Last bootstrap</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Seeded @_lastBootstrapReport.ModulesSeeded modules and @_lastBootstrapReport.EntitiesSeeded entities at
+                @_lastBootstrapReport.BootstrappedAtUtc.ToUniversalTime().ToString("u").
+            </MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                @foreach (var moduleKey in _lastBootstrapReport.ModuleKeys)
+                {
+                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@moduleKey</MudChip>
+                }
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+}
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+}
+
+@if (_overview is null && _modules.Count == 0 && _entities.Count == 0)
+{
+    <CitusEmptyState
+        Title="Platform data is not reachable yet"
+        Message="The phase 1 shell is ready, but the SysAdmin API has not returned platform metadata. Start the API and bootstrap the core to populate this view."
+        ActionLabel="Open modules"
+        ActionHref="modules" />
+}
+else
+{
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Core"
+                Value="@(_overview?.Name ?? "Unavailable")"
+                Description="Metadata kernel for modules and entities."
+                Icon="@Icons.Material.Filled.Hub"
+                Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Modules"
+                Value="@(_overview?.ModulesRegistered.ToString() ?? _modules.Count.ToString())"
+                Description="Registered platform modules."
+                Icon="@Icons.Material.Filled.Extension"
+                Color="Color.Secondary" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Entities"
+                Value="@(_overview?.EntitiesRegistered.ToString() ?? _entities.Count.ToString())"
+                Description="Metadata entities under control."
+                Icon="@Icons.Material.Filled.Schema"
+                Color="Color.Tertiary" />
+        </MudItem>
+        <MudItem xs="12" md="6" lg="3">
+            <CitusStatCard
+                Label="Health"
+                Value="@HealthSummary"
+                Description="Cross-service snapshot for the control plane."
+                Icon="@Icons.Material.Filled.MonitorHeart"
+                Color="Color.Success" />
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        <MudItem xs="12" lg="7">
+            <MudPaper Class="pa-4 mb-6">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                    <MudText Typo="Typo.h6">Platform capabilities</MudText>
+                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Phase 1</MudChip>
+                </MudStack>
+
+                @if (_overview?.Capabilities.Count > 0)
+                {
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                        @foreach (var capability in _overview.Capabilities)
+                        {
+                            <MudChip T="string" Variant="Variant.Outlined">@capability</MudChip>
+                        }
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Capability data will appear here after the platform core is reachable.
+                    </MudText>
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                    <MudText Typo="Typo.h6">Module snapshot</MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="modules">View all</MudButton>
+                </MudStack>
+
+                <MudTable Items="_modules.Take(5)" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Route</MudTh>
+                        <MudTh>Entities</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Name">@context.Name</MudTd>
+                        <MudTd DataLabel="Route"><span class="citus-inline-code">@context.RoutePrefix</span></MudTd>
+                        <MudTd DataLabel="Entities">@context.EntityNames.Count</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="5">
+            <MudPaper Class="pa-4 mb-6">
+                <MudText Typo="Typo.h6" Class="mb-4">Service status</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="SysAdmin API">
+                        <ChildContent>
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
+                                <MudText Typo="Typo.body2">SysAdmin API</MudText>
+                                <CitusStatusBadge Status="_sysAdminHealth" />
+                            </MudStack>
+                        </ChildContent>
+                    </MudListItem>
+                    <MudListItem Text="Accounting API">
+                        <ChildContent>
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
+                                <MudText Typo="Typo.body2">Accounting API</MudText>
+                                <CitusStatusBadge Status="_accountingHealth" />
+                            </MudStack>
+                        </ChildContent>
+                    </MudListItem>
+                </MudList>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                    <MudText Typo="Typo.h6">Entity coverage</MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="entities">Inspect entities</MudButton>
+                </MudStack>
+                <MudText Typo="Typo.body2" Class="text-secondary mb-2">
+                    The first phase keeps business truth in backend engines while exposing metadata and control surfaces in Blazor.
+                </MudText>
+                <MudText Typo="Typo.h3">@_entities.Count</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">Entities currently visible to the platform shell.</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Phase 1",
+        Title = "Platform overview",
+        Subtitle = "Blazor control shell for the metadata-driven Citus core."
+    };
+
+    private bool _isLoading = true;
+    private bool _isBootstrapping;
+    private PlatformOverviewSummary? _overview;
+    private PlatformBootstrapReportSummary? _lastBootstrapReport;
+    private IReadOnlyList<PlatformModuleSummary> _modules = Array.Empty<PlatformModuleSummary>();
+    private IReadOnlyList<PlatformEntitySummary> _entities = Array.Empty<PlatformEntitySummary>();
+    private ServiceHealthStatus? _sysAdminHealth;
+    private ServiceHealthStatus? _accountingHealth;
+
+    private string HealthSummary =>
+        string.Equals(_sysAdminHealth?.Status, "ok", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_accountingHealth?.Status, "ok", StringComparison.OrdinalIgnoreCase)
+            ? "Nominal"
+            : "Attention";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        var overviewTask = PlatformCoreClient.GetOverviewAsync();
+        var modulesTask = PlatformCoreClient.ListModulesAsync();
+        var entitiesTask = PlatformCoreClient.ListEntitiesAsync();
+        var sysAdminHealthTask = SysAdminHealthClient.GetHealthAsync();
+        var accountingHealthTask = AccountingHealthClient.GetHealthAsync();
+
+        _overview = await overviewTask;
+        _modules = await modulesTask;
+        _entities = await entitiesTask;
+        _sysAdminHealth = await sysAdminHealthTask;
+        _accountingHealth = await accountingHealthTask;
+        _isLoading = false;
+    }
+
+    private async Task BootstrapCoreAsync()
+    {
+        _isBootstrapping = true;
+
+        try
+        {
+            var report = await PlatformCoreClient.BootstrapAsync();
+
+            if (report is null)
+            {
+                Snackbar.Add("Platform core bootstrap failed. Check SysAdmin API connectivity and database readiness.", Severity.Warning);
+                return;
+            }
+
+            _lastBootstrapReport = report;
+            Snackbar.Add(
+                $"Platform core bootstrapped: {report.ModulesSeeded} modules and {report.EntitiesSeeded} entities seeded.",
+                Severity.Success);
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBootstrapping = false;
+        }
+    }
+}

@@ -1,0 +1,67 @@
+@inject NavigationManager NavigationManager
+@inject BusinessShellState ShellState
+@inject BusinessSessionClient BusinessSessionClient
+@inject ISnackbar Snackbar
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined">
+        @PrimaryRole
+    </MudChip>
+
+    <MudStack Spacing="0">
+        <MudText Typo="Typo.caption" Class="text-secondary">User</MudText>
+        <MudText Typo="Typo.body2">@ShellState.User.DisplayName</MudText>
+    </MudStack>
+
+    <MudStack Spacing="0" Style="min-width: 240px;">
+        <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
+        <MudSelect T="Guid"
+                   Dense="true"
+                   Disabled="@IsCompanySwitcherDisabled"
+                   Value="@SelectedCompanyId"
+                   ValueChanged="OnCompanyChangedAsync">
+            @foreach (var company in ShellState.AvailableCompanies)
+            {
+                <MudSelectItem T="Guid" Value="@company.Id">
+                    @company.CompanyName (@company.CompanyCode)
+                </MudSelectItem>
+            }
+        </MudSelect>
+    </MudStack>
+</MudStack>
+
+@code
+{
+    private string PrimaryRole => ShellState.User.Roles.FirstOrDefault() ?? "user";
+
+    private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
+
+    private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
+
+    private async Task OnCompanyChangedAsync(Guid companyId)
+    {
+        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.Id)
+        {
+            return;
+        }
+
+        var previousCompany = ShellState.ActiveCompany;
+        if (!ShellState.TrySetActiveCompany(companyId))
+        {
+            Snackbar.Add("The selected company is not available in this business session.", Severity.Warning);
+            return;
+        }
+
+        var context = await BusinessSessionClient.GetContextAsync();
+        if (context is null)
+        {
+            ShellState.TrySetActiveCompany(previousCompany.Id);
+            Snackbar.Add("Unable to refresh the business session after switching company.", Severity.Warning);
+            return;
+        }
+
+        ShellState.ApplySessionContext(context);
+        Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+        NavigationManager.NavigateTo("dashboard");
+    }
+}

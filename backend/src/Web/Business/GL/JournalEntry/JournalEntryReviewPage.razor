@@ -1,0 +1,458 @@
+@page "/gl/journal-entry/review/{JournalEntryId:guid}"
+@using Microsoft.AspNetCore.Components.Web
+@using Modules.GL.JournalEntry
+@using MudBlazor
+@inject IJournalEntryReviewStore JournalEntryReviewStore
+@inject IManualJournalSourceReviewStore ManualJournalSourceReviewStore
+@inject IJournalEntryLifecycleWorkflow JournalEntryLifecycleWorkflow
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@(_review?.Title ?? "Journal Entry review")</PageTitle>
+
+<div class="je-review">
+    <div class="je-review-shell">
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+        }
+        else if (!string.IsNullOrWhiteSpace(_errorText))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                @_errorText
+            </MudAlert>
+        }
+        else if (_review is not null)
+        {
+            <div class="je-review-title">
+                <div class="je-review-title__text">
+                    <MudIcon Icon="@Icons.Material.Outlined.LibraryBooks" Size="Size.Small" />
+                    <span>@_review.Title</span>
+                </div>
+                <div class="je-review-title__meta">
+                    <MudChip T="string" Variant="Variant.Text" Color="Color.Info">Read-only review</MudChip>
+                    <MudChip T="string" Variant="Variant.Text" Color="@GetStatusColor(_review.Status)">@_review.Status</MudChip>
+                    <MudChip T="string" Variant="Variant.Text" Color="Color.Secondary">@_review.SourceTypeLabel</MudChip>
+                </div>
+            </div>
+
+            @if (_review.HasLifecycleAlert)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                    @_review.LifecycleAlert
+                </MudAlert>
+            }
+
+            <div class="je-review-summary-grid">
+                <div class="je-review-card">
+                    <div class="je-review-card__label">Journal</div>
+                    <div class="je-review-card__value">@_review.DisplayNumber</div>
+                    <div class="je-review-card__hint">@_review.EntityNumber</div>
+                </div>
+
+                <div class="je-review-card">
+                    <div class="je-review-card__label">Posted at</div>
+                    <div class="je-review-card__value">@FormatTimestamp(_review.PostedAt)</div>
+                    <div class="je-review-card__hint">Backend-owned posting truth</div>
+                </div>
+
+                <div class="je-review-card">
+                    <div class="je-review-card__label">Transaction total</div>
+                    <div class="je-review-card__value">@FormatAmount(_review.TotalTransactionDebit) @(_review.TransactionCurrencyCode)</div>
+                    <div class="je-review-card__hint">Credit @FormatAmount(_review.TotalTransactionCredit) @(_review.TransactionCurrencyCode)</div>
+                </div>
+
+                <div class="je-review-card">
+                    <div class="je-review-card__label">Base total</div>
+                    <div class="je-review-card__value">@FormatAmount(_review.TotalDebit) @(_review.BaseCurrencyCode)</div>
+                    <div class="je-review-card__hint">Credit @FormatAmount(_review.TotalCredit) @(_review.BaseCurrencyCode)</div>
+                </div>
+            </div>
+
+            <div class="je-review-layout">
+                <div class="je-review-stack">
+                    <div class="je-review-panel">
+                        <div class="je-review-panel__header">
+                            <div>
+                                <div class="je-review-panel__title">@_review.FxReviewTitle</div>
+                                <div class="je-review-panel__caption">@_review.FxReviewCaption</div>
+                            </div>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@_review.FxSnapshotLabel</MudChip>
+                        </div>
+
+                        <div class="je-review-facts">
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Rate source</span>
+                                <span class="je-review-fact__value">@_review.ExchangeRateSource</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Effective date</span>
+                                <span class="je-review-fact__value">@_review.ExchangeRateDate.ToString("yyyy-MM-dd")</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Exchange rate</span>
+                                <span class="je-review-fact__value">@_review.ExchangeRate.ToString("0.######")</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Snapshot id</span>
+                                <span class="je-review-fact__value">@(_review.FxSnapshotId?.ToString("D") ?? "No persisted snapshot")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="je-review-panel">
+                        <div class="je-review-panel__header">
+                            <div>
+                                <div class="je-review-panel__title">Journal lines</div>
+                                <div class="je-review-panel__caption">Transaction and base currency stay visible on the same row.</div>
+                            </div>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@($"{_review.LineCount} lines")</MudChip>
+                        </div>
+
+                        <MudTable Items="_review.Lines" Dense="true" Hover="true" Class="je-review-table">
+                            <HeaderContent>
+                                <MudTh>#</MudTh>
+                                <MudTh>Account</MudTh>
+                                <MudTh>Tx debit</MudTh>
+                                <MudTh>Tx credit</MudTh>
+                                <MudTh>Debit</MudTh>
+                                <MudTh>Credit</MudTh>
+                                <MudTh>Description</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="#">@context.LineNumber</MudTd>
+                                <MudTd DataLabel="Account">
+                                    <div class="je-review-account">
+                                        <span class="je-review-account__code">@context.AccountCode</span>
+                                        <span class="je-review-account__name">@context.AccountName</span>
+                                        <span class="je-review-account__type">@context.RootType</span>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="Tx debit">@FormatAmount(context.TransactionDebit)</MudTd>
+                                <MudTd DataLabel="Tx credit">@FormatAmount(context.TransactionCredit)</MudTd>
+                                <MudTd DataLabel="Debit">@FormatAmount(context.Debit)</MudTd>
+                                <MudTd DataLabel="Credit">@FormatAmount(context.Credit)</MudTd>
+                                <MudTd DataLabel="Description">
+                                    <div class="je-review-line-detail">
+                                        <span>@context.DisplayDescription</span>
+                                        @if (!string.IsNullOrWhiteSpace(BuildMarkers(context)))
+                                        {
+                                            <span class="je-review-line-detail__meta">@BuildMarkers(context)</span>
+                                        }
+                                    </div>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+                </div>
+
+                <div class="je-review-stack">
+                    <div class="je-review-panel">
+                        <div class="je-review-panel__header">
+                            <div>
+                                <div class="je-review-panel__title">Lifecycle control</div>
+                                <div class="je-review-panel__caption">Void and reversal preserve history by creating a compensating posted JE.</div>
+                            </div>
+                        </div>
+
+                        <div class="je-review-facts">
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Current status</span>
+                                <span class="je-review-fact__value">@_review.Status</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Voided at</span>
+                                <span class="je-review-fact__value">@FormatTimestamp(_review.VoidedAt)</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Reversed at</span>
+                                <span class="je-review-fact__value">@FormatTimestamp(_review.ReversedAt)</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Source type</span>
+                                <span class="je-review-fact__value">@_review.SourceTypeLabel</span>
+                            </div>
+                        </div>
+
+                        <div class="je-review-links">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Warning"
+                                       Disabled="@(!_review.CanVoid || _isApplyingLifecycle)"
+                                       OnClick="HandleVoidAsync">
+                                Void
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       Disabled="@(!_review.CanReverse || _isApplyingLifecycle)"
+                                       OnClick="HandleReverseAsync">
+                                Reverse
+                            </MudButton>
+                        </div>
+                    </div>
+
+                    <div class="je-review-panel">
+                        <div class="je-review-panel__header">
+                            <div>
+                                <div class="je-review-panel__title">Related journal chain</div>
+                                <div class="je-review-panel__caption">Original and compensation entries stay linked by source truth.</div>
+                            </div>
+                        </div>
+
+                        <MudTable Items="_review.RelatedEntries" Dense="true" Hover="true" Class="je-review-table">
+                            <HeaderContent>
+                                <MudTh>Journal</MudTh>
+                                <MudTh>Meaning</MudTh>
+                                <MudTh>Status</MudTh>
+                                <MudTh>Posted at</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Journal">@context.DisplayNumber</MudTd>
+                                <MudTd DataLabel="Meaning">@context.SourceTypeLabel</MudTd>
+                                <MudTd DataLabel="Status">@context.Status</MudTd>
+                                <MudTd DataLabel="Posted at">@FormatTimestamp(context.PostedAt)</MudTd>
+                                <MudTd DataLabel="">
+                                    @if (context.Id != _review.Id)
+                                    {
+                                        <MudButton Variant="Variant.Text"
+                                                   Color="Color.Info"
+                                                   Href="@BuildReviewHref(context.Id)">
+                                            Open
+                                        </MudButton>
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+
+                    <div class="je-review-panel">
+                        <div class="je-review-panel__header">
+                            <div>
+                                <div class="je-review-panel__title">Posting facts</div>
+                                <div class="je-review-panel__caption">Editor and review now point to the same persisted journal truth.</div>
+                            </div>
+                        </div>
+
+                        <div class="je-review-facts">
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Source document</span>
+                                <span class="je-review-fact__value">@_review.SourceId.ToString("D")</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Source type</span>
+                                <span class="je-review-fact__value">@_review.SourceTypeLabel</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Created by</span>
+                                <span class="je-review-fact__value">@_review.CreatedByUserId.ToString("D")</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Base balanced</span>
+                                <span class="je-review-fact__value">@(_review.IsBalanced ? "Yes" : "No")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (_sourceReview is not null)
+                    {
+                        <div class="je-review-panel">
+                            <div class="je-review-panel__header">
+                                <div>
+                                    <div class="je-review-panel__title">Source document</div>
+                                    <div class="je-review-panel__caption">The posted JE stays linked to the original manual-journal source review.</div>
+                                </div>
+                                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@_sourceReview.DisplayNumber</MudChip>
+                            </div>
+
+                            <div class="je-review-facts">
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Entry date</span>
+                                    <span class="je-review-fact__value">@_sourceReview.EntryDate.ToString("yyyy-MM-dd")</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Source status</span>
+                                    <span class="je-review-fact__value">@_sourceReview.Status</span>
+                                </div>
+                                <div class="je-review-fact je-review-fact--wide">
+                                    <span class="je-review-fact__label">Memo</span>
+                                    <span class="je-review-fact__value">@DisplayMemo(_sourceReview.Memo)</span>
+                                </div>
+                            </div>
+
+                            <div class="je-review-links">
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Info"
+                                           Href="@BuildSourceReviewHref(_sourceReview.Id)">
+                                    Open source review
+                                </MudButton>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="je-review-panel">
+                        <div class="je-review-panel__header">
+                            <div>
+                                <div class="je-review-panel__title">Read path meaning</div>
+                                <div class="je-review-panel__caption">This page is for review, not mutation.</div>
+                            </div>
+                        </div>
+
+                        <ul class="je-review-notes">
+                            <li>Posted journal entries stay read-only.</li>
+                            <li>FX semantics are taken from the persisted journal header, not recalculated in the UI.</li>
+                            <li>Transaction and base amounts are shown together so reviewers can reconcile both views quickly.</li>
+                            <li>Void and reversal preserve auditability by adding a compensation JE instead of deleting history.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="je-review-action-bar">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="HandleBackToEditor">
+                    New journal entry
+                </MudButton>
+            </div>
+        }
+    </div>
+</div>
+
+@code
+{
+    private static readonly Guid DemoCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly Guid DemoUserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+
+    [Parameter]
+    public Guid JournalEntryId { get; set; }
+
+    private JournalEntryReview? _review;
+    private ManualJournalSourceReview? _sourceReview;
+    private bool _isLoading;
+    private bool _isApplyingLifecycle;
+    private string? _errorText;
+
+    protected override Task OnParametersSetAsync() => LoadReviewAsync();
+
+    private async Task LoadReviewAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+        _review = null;
+        _sourceReview = null;
+
+        try
+        {
+            _review = await JournalEntryReviewStore.GetAsync(DemoCompanyId, JournalEntryId, CancellationToken.None);
+
+            if (_review is null)
+            {
+                _errorText = $"Journal entry {JournalEntryId:D} could not be found in the active company context.";
+            }
+            else if (_review.SourceId != Guid.Empty)
+            {
+                _sourceReview = await ManualJournalSourceReviewStore.GetAsync(DemoCompanyId, _review.SourceId, CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task HandleVoidAsync()
+    {
+        if (_review is null)
+        {
+            return;
+        }
+
+        await ApplyLifecycleAsync(() => JournalEntryLifecycleWorkflow.VoidAsync(DemoCompanyId, _review.Id, DemoUserId, CancellationToken.None), "Journal entry voided.");
+    }
+
+    private async Task HandleReverseAsync()
+    {
+        if (_review is null)
+        {
+            return;
+        }
+
+        await ApplyLifecycleAsync(() => JournalEntryLifecycleWorkflow.ReverseAsync(DemoCompanyId, _review.Id, DemoUserId, CancellationToken.None), "Journal entry reversed.");
+    }
+
+    private async Task ApplyLifecycleAsync(
+        Func<Task<JournalEntryLifecycleResult>> action,
+        string successMessage)
+    {
+        try
+        {
+            _isApplyingLifecycle = true;
+            StateHasChanged();
+
+            var result = await action();
+            Snackbar.Add($"{successMessage} Compensation JE {result.CompensationDisplayNumber} created.", Severity.Success);
+            await LoadReviewAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isApplyingLifecycle = false;
+            StateHasChanged();
+        }
+    }
+
+    private void HandleBackToEditor()
+    {
+        Navigation.NavigateTo("/gl/journal-entry/editor");
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string FormatTimestamp(DateTimeOffset? value) =>
+        value?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable";
+
+    private static string DisplayMemo(string memo) =>
+        string.IsNullOrWhiteSpace(memo) ? "No memo was stored on the source document." : memo;
+
+    private static string BuildSourceReviewHref(Guid documentId) =>
+        $"/gl/journal-entry/source/{documentId:D}";
+
+    private static string BuildReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private static Color GetStatusColor(string status) =>
+        status switch
+        {
+            "posted" => Color.Success,
+            "voided" => Color.Warning,
+            "reversed" => Color.Warning,
+            _ => Color.Info
+        };
+
+    private static string BuildMarkers(JournalEntryReviewLine line)
+    {
+        var markers = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(line.ControlRole))
+        {
+            markers.Add($"control: {line.ControlRole}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.TaxComponentType))
+        {
+            markers.Add($"tax: {line.TaxComponentType}");
+        }
+
+        if (line.PartyId.HasValue)
+        {
+            markers.Add($"party: {line.PartyId.Value:D}");
+        }
+
+        return string.Join(" | ", markers);
+    }
+}

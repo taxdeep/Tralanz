@@ -1,0 +1,71 @@
+@using Modules.GL.JournalEntry
+@using MudBlazor
+
+<div class="je-grid-surface">
+    <table class="je-grid">
+        <thead>
+            <tr>
+                <th class="je-col je-col--action"></th>
+                <th class="je-col je-col--index">#</th>
+                <th class="je-col je-col--account">Account</th>
+                <th class="je-col je-col--amount">
+                    <div class="je-col-head">
+                        <span>Debits (@State.Draft.CurrencyCode)</span>
+                        @if (State.Draft.IsForeignCurrency)
+                        {
+                            <span class="je-col-head__meta">Base preview @State.Draft.BaseCurrencyCode</span>
+                        }
+                    </div>
+                </th>
+                <th class="je-col je-col--amount">
+                    <div class="je-col-head">
+                        <span>Credits (@State.Draft.CurrencyCode)</span>
+                        @if (State.Draft.IsForeignCurrency)
+                        {
+                            <span class="je-col-head__meta">Base preview @State.Draft.BaseCurrencyCode</span>
+                        }
+                    </div>
+                </th>
+                <th class="je-col je-col--description">Description</th>
+                <th class="je-col je-col--name">Name</th>
+                <th class="je-col je-col--tax">Sales Tax</th>
+                <th class="je-col je-col--icon"></th>
+                <th class="je-col je-col--icon"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var line in State.Draft.Lines)
+            {
+                <JournalEntryGridRow State="State" Line="line" OnChanged="OnChanged" />
+            }
+        </tbody>
+    </table>
+
+    <JournalEntryTotalsFooter Totals="@State.BuildTotals()" />
+
+    <div class="je-grid-toolbar">
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="AddLine">Add lines</MudButton>
+        <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="ClearAllLines">Clear all lines</MudButton>
+    </div>
+</div>
+
+@code
+{
+    [Parameter, EditorRequired]
+    public JournalEntryEditorState State { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    private Task AddLine()
+    {
+        State.AddLine();
+        return OnChanged.InvokeAsync();
+    }
+
+    private Task ClearAllLines()
+    {
+        State.ClearAllLines();
+        return OnChanged.InvokeAsync();
+    }
+}

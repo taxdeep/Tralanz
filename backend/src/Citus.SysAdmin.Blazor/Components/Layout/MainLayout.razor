@@ -1,0 +1,79 @@
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
+@inject SysAdminControlClient SysAdminControlClient
+
+@inherits LayoutComponentBase
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton
+            Icon="@Icons.Material.Filled.Menu"
+            Color="Color.Inherit"
+            Edge="Edge.Start"
+            OnClick="ToggleDrawer" />
+        <MudText Typo="Typo.h6">Citus SysAdmin</MudText>
+        <MudSpacer />
+        <SysAdminTopBar />
+    </MudAppBar>
+
+    <MudDrawer
+        @bind-Open="_drawerOpen"
+        ClipMode="DrawerClipMode.Always"
+        Elevation="1"
+        Variant="DrawerVariant.Responsive"
+        Class="citus-drawer">
+        <SysAdminNavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="citus-main-content">
+        <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
+            @if (_isContextLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+            }
+
+            <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code
+{
+    private bool _drawerOpen = true;
+    private bool _isContextLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var context = await SysAdminControlClient.GetContextAsync();
+
+        if (context is null)
+        {
+            Snackbar.Add(
+                "SysAdmin control context is unavailable. The shell will stay in fallback mode until the API responds.",
+                Severity.Warning);
+        }
+        else
+        {
+            ShellState.ApplyControlContext(context);
+        }
+
+        _isContextLoading = false;
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+}

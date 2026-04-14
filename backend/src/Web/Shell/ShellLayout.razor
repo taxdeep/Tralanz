@@ -1,0 +1,16 @@
+@inherits LayoutComponentBase
+
+<MudLayout>
+    <MudDrawer Open="true" Elevation="1" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md" Class="ws-drawer">
+        <div class="ws-brand">
+            <div class="ws-brand__eyebrow">Citus</div>
+            <div class="ws-brand__title">Web Shell</div>
+            <div class="ws-brand__subtitle">Dark accounting workspace host</div>
+        </div>
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="ws-main">
+        @Body
+    </MudMainContent>
+</MudLayout>

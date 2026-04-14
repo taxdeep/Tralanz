@@ -1,0 +1,15 @@
+@inject BusinessShellState ShellState
+
+<MudNavMenu Class="pa-4">
+@foreach (var navSection in ShellState.NavigationSections)
+{
+    <MudText Typo="Typo.overline" Class="px-4 pt-4 text-secondary">@navSection.Title</MudText>
+
+    @foreach (var item in navSection.Items)
+    {
+        <MudNavLink Href="@item.Href" Match="NavLinkMatch.Prefix" Icon="@item.Icon">
+            @item.Title
+        </MudNavLink>
+    }
+}
+</MudNavMenu>

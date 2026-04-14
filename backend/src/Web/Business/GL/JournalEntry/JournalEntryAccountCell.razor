@@ -1,0 +1,43 @@
+@using Modules.GL.JournalEntry
+@using MudBlazor
+
+<MudAutocomplete T="JournalEntryAccountOption"
+                 Value="@Line.Account"
+                 ValueChanged="OnAccountChanged"
+                 SearchFunc="State.SearchAccountsAsync"
+                 ToStringFunc="FormatAccount"
+                 Variant="Variant.Outlined"
+                 Margin="Margin.Dense"
+                 Dense="true"
+                 Placeholder="Search account"
+                 ResetValueOnEmptyText="true"
+                 MaxItems="8"
+                 Class="je-account-input">
+    <ItemTemplate Context="option">
+        <div class="je-account-option">
+            <div class="je-account-option__main">@option.Code @option.Name</div>
+            <div class="je-account-option__meta">@option.TypeLabel</div>
+        </div>
+    </ItemTemplate>
+</MudAutocomplete>
+
+@code
+{
+    [Parameter, EditorRequired]
+    public JournalEntryEditorState State { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public JournalEntryDraftLine Line { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    private static string FormatAccount(JournalEntryAccountOption? option) =>
+        option?.DisplayText ?? string.Empty;
+
+    private Task OnAccountChanged(JournalEntryAccountOption? option)
+    {
+        Line.Account = option;
+        return OnChanged.InvokeAsync();
+    }
+}
