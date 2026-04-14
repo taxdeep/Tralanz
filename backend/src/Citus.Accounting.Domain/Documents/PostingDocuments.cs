@@ -1669,7 +1669,12 @@ public sealed class FxRevaluationDocument : IPostingDocument
         IEnumerable<FxRevaluationDocumentLine> lines,
         string? memo = null,
         string? batchKind = null,
-        Guid? reversalOfDocumentId = null)
+        Guid? reversalOfDocumentId = null,
+        Guid? bookId = null,
+        string? bookCode = null,
+        string? accountingStandard = null,
+        string? revaluationProfile = null,
+        string? fxRoundingPolicy = null)
     {
         if (fxSnapshot is null)
         {
@@ -1705,6 +1710,11 @@ public sealed class FxRevaluationDocument : IPostingDocument
         UnrealizedFxGainAccountId = unrealizedFxGainAccountId;
         UnrealizedFxLossAccountId = unrealizedFxLossAccountId;
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        BookId = bookId;
+        BookCode = string.IsNullOrWhiteSpace(bookCode) ? null : bookCode.Trim();
+        AccountingStandard = string.IsNullOrWhiteSpace(accountingStandard) ? null : accountingStandard.Trim();
+        RevaluationProfile = string.IsNullOrWhiteSpace(revaluationProfile) ? null : revaluationProfile.Trim();
+        FxRoundingPolicy = string.IsNullOrWhiteSpace(fxRoundingPolicy) ? null : fxRoundingPolicy.Trim();
 
         if (BatchKind == "revaluation" && ReversalOfDocumentId.HasValue)
         {
@@ -1749,6 +1759,16 @@ public sealed class FxRevaluationDocument : IPostingDocument
     public CurrencyCode BaseCurrencyCode { get; }
 
     public FxSnapshotRef FxSnapshot { get; }
+
+    public Guid? BookId { get; }
+
+    public string? BookCode { get; }
+
+    public string? AccountingStandard { get; }
+
+    public string? RevaluationProfile { get; }
+
+    public string? FxRoundingPolicy { get; }
 
     public Guid UnrealizedFxGainAccountId { get; }
 

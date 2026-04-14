@@ -7,5 +7,7 @@ public sealed record class FxMarketRateRecord(
     string QuoteCurrencyCode,
     DateOnly MarketDate,
     decimal Rate,
+    string RateType,
+    string QuoteBasis,
     DateTimeOffset FetchedAt,
     string? PayloadJson);

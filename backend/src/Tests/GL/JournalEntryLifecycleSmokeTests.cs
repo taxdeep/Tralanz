@@ -1,8 +1,10 @@
 using Engines.FX.FxRateLookup;
 using Infrastructure.PostgreSQL;
+using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.FX;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Numbering;
+using Modules.Company.MultiCurrency;
 using Modules.GL.JournalEntry;
 using Npgsql;
 
@@ -84,11 +86,14 @@ public sealed class JournalEntryLifecycleSmokeTests
         var postingStore = new PostgreSqlJournalEntryPostingStore(connectionFactory, numberLookup);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(connectionFactory, numberLookup);
         var fxSelectionService = new FxRateSelectionService(new PostgreSqlFxRateStore(connectionFactory));
-        var workflow = new JournalEntryWorkflow(accountCatalog, draftStore, postingStore, fxSelectionService);
+        var companyCurrencyStore = new PostgreSqlCompanyCurrencyProvisioningStore(connectionFactory);
+        var companyCurrencyWorkflow = new CompanyCurrencyGovernanceWorkflow(companyCurrencyStore);
+        var workflow = new JournalEntryWorkflow(accountCatalog, draftStore, postingStore, fxSelectionService, companyCurrencyStore);
         var lifecycleWorkflow = new JournalEntryLifecycleWorkflow(lifecycleStore);
         var reviewStore = new PostgreSqlJournalEntryReviewStore(connectionFactory);
         var sourceReviewStore = new PostgreSqlManualJournalSourceReviewStore(connectionFactory);
 
+        var companyCurrency = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyId, "CNY", UserId, CancellationToken.None);
         var accounts = await accountCatalog.ListManualPostingAccountsAsync(CompanyId, CancellationToken.None);
         Assert.True(accounts.Count >= 2, "Expected at least two manual-posting accounts in the demo company.");
 
@@ -96,9 +101,9 @@ public sealed class JournalEntryLifecycleSmokeTests
         var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
         draft.CompanyId = CompanyId;
         draft.JournalDate = journalDate;
-        draft.CurrencyCode = "USD";
-        draft.BaseCurrencyCode = "CAD";
-        draft.FxRate = 1.3915m;
+        draft.CurrencyCode = "CNY";
+        draft.BaseCurrencyCode = companyCurrency.Profile.BaseCurrencyCode;
+        draft.FxRate = 0.1385m;
         draft.FxEffectiveDate = draft.JournalDate;
         draft.FxSourceSemantics = "manual";
         draft.Memo = $"Lifecycle smoke {Guid.NewGuid():N}";
@@ -164,6 +169,26 @@ public sealed class JournalEntryLifecycleSmokeTests
             await ExecuteDeleteAsync(connection, transaction, "delete from company_fx_rate_snapshots where id = @id;", fixture.FxSnapshotId.Value, CancellationToken.None);
         }
 
+        await ExecuteDeleteByCompanyAsync(
+            connection,
+            transaction,
+            """
+            delete from accounts
+            where company_id = @company_id
+              and system_role in ('accounts_receivable:CNY', 'accounts_payable:CNY');
+            """,
+            CancellationToken.None);
+
+        await ExecuteDeleteByCompanyAsync(
+            connection,
+            transaction,
+            """
+            delete from company_currencies
+            where company_id = @company_id
+              and currency_code = 'CNY';
+            """,
+            CancellationToken.None);
+
         await transaction.CommitAsync(CancellationToken.None);
     }
 
@@ -178,6 +203,19 @@ public sealed class JournalEntryLifecycleSmokeTests
         command.Transaction = transaction;
         command.CommandText = sql;
         command.Parameters.AddWithValue("id", id);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ExecuteDeleteByCompanyAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("company_id", CompanyId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

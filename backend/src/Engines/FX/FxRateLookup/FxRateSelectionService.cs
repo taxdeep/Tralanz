@@ -65,8 +65,16 @@ public sealed class FxRateSelectionService : IFxRateSelectionService
             request.BaseCurrencyCode,
             request.QuoteCurrencyCode,
             request.RequestedDate,
-            marketRate,
+            marketRate with
+            {
+                RateType = request.RateType,
+                QuoteBasis = request.QuoteBasis
+            },
             request.ProviderKey,
+            request.RateType,
+            request.QuoteBasis,
+            request.RateUseCase,
+            request.PostingReason,
             cancellationToken);
 
         return ToResolution(snapshot);
@@ -90,6 +98,10 @@ public sealed class FxRateSelectionService : IFxRateSelectionService
             request.RequestedDate,
             rate,
             request.ProviderKey,
+            request.RateType,
+            request.QuoteBasis,
+            request.RateUseCase,
+            request.PostingReason,
             cancellationToken);
 
         return ToResolution(snapshot);
@@ -109,6 +121,10 @@ public sealed class FxRateSelectionService : IFxRateSelectionService
             snapshot.EffectiveDate,
             snapshot.SnapshotSemantics,
             statusLabel,
+            snapshot.RateType,
+            snapshot.QuoteBasis,
+            snapshot.RateUseCase,
+            snapshot.PostingReason,
             snapshot.ProviderKey,
             snapshot.Id);
     }

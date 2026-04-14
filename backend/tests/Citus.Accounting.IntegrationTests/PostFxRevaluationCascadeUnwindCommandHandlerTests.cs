@@ -184,6 +184,11 @@ public sealed class PostFxRevaluationCascadeUnwindCommandHandlerTests
                 draftId,
                 $"EN2026{_draftNumber:000000}",
                 draftDisplayNumber,
+                null,
+                null,
+                null,
+                null,
+                null,
                 1,
                 "draft"));
         }

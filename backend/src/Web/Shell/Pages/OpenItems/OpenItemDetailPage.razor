@@ -1,0 +1,199 @@
+@page "/open-items/{OpenItemType}/{OpenItemId:guid}"
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject ShellOpenItemDrillDownClient DrillDownClient
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.ArrowBack">
+            Back to shell
+        </MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Open item drill-down</MudChip>
+    </div>
+
+    <h1 style="margin:0 0 0.75rem 0;">@(_response?.OpenItem?.SourceDocumentDisplayNumber ?? "Open Item Detail")</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
+        This page keeps source document truth, current open balance, and settlement/application trail on one read-only surface.
+    </p>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (_response?.OpenItem is not null)
+    {
+        var item = _response.OpenItem;
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Open Item</MudText>
+                <MudText Typo="Typo.h6">@item.SourceDocumentDisplayNumber</MudText>
+                <MudText Typo="Typo.body2">@GetSourceLabel(item.SourceType) | @item.Status</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Party</MudText>
+                <MudText Typo="Typo.h6">@item.PartyDisplayName</MudText>
+                <MudText Typo="Typo.body2">@item.PartyEntityNumber | @GetPartyLabel(item.PartyRole)</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Open Tx</MudText>
+                <MudText Typo="Typo.h6">@FormatAmount(item.OpenAmountTx)</MudText>
+                <MudText Typo="Typo.body2">@item.DocumentCurrencyCode</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Open Base</MudText>
+                <MudText Typo="Typo.h6">@FormatAmount(item.OpenAmountBase)</MudText>
+                <MudText Typo="Typo.body2">@item.BaseCurrencyCode</MudText>
+            </MudPaper>
+        </div>
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6" Class="mb-3">Facts</MudText>
+            <MudTable Items="_factRows" Dense="true">
+                <RowTemplate>
+                    <MudTd DataLabel="Field">@context.Label</MudTd>
+                    <MudTd DataLabel="Value">@context.Value</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/{item.SourceType}/{item.SourceDocumentId:D}")">
+                    Open Source Document
+                </MudButton>
+            </div>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.h6" Class="mb-3">Settlement / Application Trail</MudText>
+            @if (_response.Applications.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    No settlement or application rows were found for this open item yet.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_response.Applications" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Application</MudTh>
+                        <MudTh>Source Document</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Applied Tx</MudTh>
+                        <MudTh>Applied Base</MudTh>
+                        <MudTh>FX</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@GetApplicationLabel(context.ApplicationType)</MudTd>
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                <MudLink Href="@($"/documents/{context.SourceType}/{context.SourceDocumentId:D}")">
+                                    @($"{context.SourceDocumentDisplayNumber} | {GetSourceLabel(context.SourceType)}")
+                                </MudLink>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>@context.SourceDocumentDate.ToString("yyyy-MM-dd")</MudTd>
+                        <MudTd>@FormatAmount(context.AppliedAmountTx)</MudTd>
+                        <MudTd>@FormatAmount(context.AppliedAmountBase)</MudTd>
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@(context.SettlementFxRate?.ToString("0.######") ?? "No FX rate")</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">Realized FX @(context.RealizedFxAmount?.ToString("N2") ?? "n/a")</MudText>
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+</div>
+
+@code
+{
+    [Parameter]
+    public string OpenItemType { get; set; } = string.Empty;
+
+    [Parameter]
+    public Guid OpenItemId { get; set; }
+
+    private bool _isLoading;
+    private string? _errorText;
+    private ShellOpenItemDrillDownResponse? _response;
+    private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+        _response = null;
+        _factRows = Array.Empty<FactRow>();
+
+        var response = await DrillDownClient.GetAsync(ShellState.ActiveCompany.Id, OpenItemType, OpenItemId);
+        if (response?.OpenItem is null)
+        {
+            _errorText = $"The requested {OpenItemType.ToUpperInvariant()} open item could not be found in company {ShellState.ActiveCompany.CompanyCode}.";
+            _isLoading = false;
+            return;
+        }
+
+        _response = response;
+        _factRows = BuildFactRows(response.OpenItem);
+        _isLoading = false;
+    }
+
+    private static IReadOnlyList<FactRow> BuildFactRows(ShellOpenItemDetail item) =>
+    [
+        new("Open Item Id", item.OpenItemId.ToString("D")),
+        new("Balance Side", item.BalanceSide),
+        new("Document Date", item.DocumentDate.ToString("yyyy-MM-dd")),
+        new("Due Date", item.DueDate?.ToString("yyyy-MM-dd") ?? "No due date"),
+        new("Original Tx", $"{FormatAmount(item.OriginalAmountTx)} {item.DocumentCurrencyCode}"),
+        new("Original Base", $"{FormatAmount(item.OriginalAmountBase)} {item.BaseCurrencyCode}"),
+        new("Open Tx", $"{FormatAmount(item.OpenAmountTx)} {item.DocumentCurrencyCode}"),
+        new("Open Base", $"{FormatAmount(item.OpenAmountBase)} {item.BaseCurrencyCode}")
+    ];
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string GetSourceLabel(string? sourceType) =>
+        sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => "Invoice",
+            "credit_note" => "Credit Note",
+            "bill" => "Bill",
+            "vendor_credit" => "Vendor Credit",
+            "receive_payment" => "Receive Payment",
+            "credit_application" => "Credit Application",
+            "pay_bill" => "Pay Bill",
+            "vendor_credit_application" => "Vendor Credit Application",
+            _ => "Document"
+        };
+
+    private static string GetApplicationLabel(string? applicationType) =>
+        applicationType?.Trim().ToLowerInvariant() switch
+        {
+            "receive_payment" => "Receive Payment",
+            "credit_application" => "Credit Application",
+            "pay_bill" => "Pay Bill",
+            "vendor_credit_application" => "Vendor Credit Application",
+            _ => "Application"
+        };
+
+    private static string GetPartyLabel(string? partyRole) =>
+        partyRole?.Trim().ToLowerInvariant() switch
+        {
+            "customer" => "Customer",
+            "vendor" => "Vendor",
+            _ => "Party"
+        };
+
+    private sealed record class FactRow(string Label, string Value);
+}

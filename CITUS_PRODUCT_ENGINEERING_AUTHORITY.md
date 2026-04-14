@@ -49,7 +49,7 @@ Citus aims to provide a system that is:
 - stable enough for long-term expansion
 
 ### 1.4 核心技术栈（ABP 治理版，适合 AI 主导开发）
-- 框架：.NET 10 (ASP.NET Core)
+- 框架：.NET 11 (ASP.NET Core)
 - **总体架构**：**ABP-based Modular Monolith（基于 ABP 的模块化单体） + DDD（领域驱动设计） + CQRS（读写分离） + Vertical Slice Architecture（按功能切片）**
   - ABP 负责平台治理与通用基础设施。
   - Citus 自研模块负责 accounting truth、posting/tax/FX/reconciliation 等核心业务真相。
@@ -91,6 +91,67 @@ Citus aims to provide a system that is:
   - 首先保证错误日志、请求链路、健康检查可见。
   - Prometheus / Grafana 作为第二阶段增强，而不是首发硬依赖。
 
+### 1.5 Multi-Book Accounting 支持（single-book first, multi-book capable；NetSuite 风格，但术语更严格，IFRS / US GAAP / ASPE 友好）
+
+Citus 支持 **Multi-Book Accounting**，但默认产品体验应是 **single-book first, multi-book capable**：
+
+- 大多数用户日常只操作 **Primary Book**，不应被迫每天显式理解并维护多个平行账簿。
+- **Multi-Book** 是受控扩展能力，用于标准差异、税务口径、管理口径、集团列报或监管需求。
+- 用户界面可以默认只呈现一套主要会计标准；系统底层仍必须保留多账簿与多准则能力。
+
+Citus 在多账簿场景下，必须严格区分四个层次：
+
+- **Source Transaction（源交易）**
+- **Book Measurement / Posting（账簿计量与过账）**
+- **Period-End Remeasurement（期末重估）**
+- **Presentation / Consolidation Translation（列报 / 合并折算）**
+
+核心规则：
+
+- 一笔源交易只保留一份业务真相；**Posting Engine** 基于该真相并行生成各 Book 的会计结果。
+- 每个 Book 都有自己的 accounted amounts、period close、revaluation journal、book-specific adjustments 与完整审计轨迹。
+- 支持 **Adjustment-Only Book** 作为受控能力，用于只记录相对 Primary Book 的差异调整。
+- **Presentation Currency translation** 属于报表 / 合并层，不得回写或污染 transactional books。
+- 对同一 reporting entity 而言，**Functional Currency 是经济事实**，不应被普通用户随意按 Book 改写；若某 Book 需要不同的 ledger/base currency，应明确命名为 **Book Base Currency**，而不是默认等同 Functional Currency。
+- **Accounting Standard selection 是 company / book policy**，不是普通用户偏好，也不是仅在报表页切换的显示参数。
+- 新建加拿大私人企业模板时，**Primary Book 默认应为 ASPE**；若实体需要或选择 IFRS / US GAAP / Tax / Management 口径，则通过受控方式增加或切换 Books。
+- 只有 **owner** 或被授予 **Company Settings / Book Governance** 权限的用户，才能创建 / 修改 Books、Accounting Standard、Functional Currency binding、Revaluation Policy、Rate Type Policy 等治理性设置。
+- 一旦存在 posted history，变更 **Accounting Standard、Functional Currency binding、Book-governing FX policy** 时，必须走 **effective-dated governed change flow**、新建 secondary / adjustment book，或受控 migration；不得原地重写历史已过账真相。
+
+**Accounting Standard / Primary Book 变更治理（四档规则，必须遵守）**：
+
+1. **无任何 posted history**：允许直接修改 Primary Book / Primary Accounting Standard。
+2. **已有 posted history，但尚未关账 / 未出正式报表**：禁止原地覆盖，必须走 **migration wizard**，生成新 book 或 future-dated cutover。
+3. **已有 closed periods / 已出报告 / 已报税**：禁止 in-place change，只能新建 secondary / adjustment book，或从新财年首日切换并保留审计轨迹。
+4. **仅报表列报 / 展示参数**：允许自由切换（例如选择展示哪个 book / presentation currency），但这不改变任何 book truth。
+
+**现实合规提示（加拿大）**：
+
+- Publicly accountable enterprises 必须使用 IFRS。
+- Private enterprises 可选择 IFRS 或 ASPE。
+- 若发生 IFRS 首次采用，必须遵循 **IFRS 1**：生成 opening IFRS statement of financial position，并在 transition date 对 equity 作受控调整，保留 reconciliation 与系统变更文档。
+
+因此，“标准切换”必须被定义为 **framework migration**，而非普通设置开关。
+
+**支持的 Accounting Standard Profiles（由 owner / 治理级管理员配置）**：
+
+- **ASPE** —— 以 Section 1651 为基准；外币交易按 temporal method 进入当期损益；foreign operations 按 integrated / self-sustaining 分类处理。
+- **IFRS** —— 以 IAS 21 为基准；强调 functional currency 判断、monetary vs non-monetary 区分，以及 presentation currency translation / OCI。
+- **US GAAP** —— 以 ASC 830 为基准；强调 remeasurement into functional currency、translation adjustments / CTA、以及多实体环境下的并行账簿支持。
+- **Management / Tax Book**（可选）—— 用于内部管理报表、税务申报或监管口径。
+
+**配置方式**：
+
+- 在 **Company Settings > Multi-Book Configuration** 中，owner 或被授权的治理用户可以：
+  - 创建 / 管理多个 Accounting Books（Primary / Secondary / Adjustment-Only / Tax / Management）。
+  - 为每个 Book 选择 **Accounting Standard**（ASPE / IFRS / US GAAP 等）。
+  - 配置 **Book Role**、**Book Base Currency**、**Presentation Currency（可选）**、**Rate Type Policy**、**Revaluation Profile**、**FX Rounding Policy**、**Account Mapping Strategy**、**Effective From** 等治理字段。
+  - 为 standards book 绑定实体级 Functional Currency 判断结果，而不是把 Functional Currency 当成任意可改的 UI 选项。
+  - 在存在历史已过账数据后，发起 **future-dated change**、**new-book rollout** 或 **governed migration**，而不是直接覆盖历史设置。
+- 用户在生成报表或查看 JE 时，可以选择查看**特定 Book** 的数据（或并排对比多个 Books）。
+- 所有 Books 共享同一个 source transaction，但**不共享最终的 accounted truth**；每本账簿都独立生成自己的 JE / revaluation / adjustment trail。
+
+这确保 Citus 对加拿大私人企业（ASPE）、需要国际报告的企业（IFRS）和有美国业务的用户（US GAAP）都高度友好，同时严格遵守 “Engine Truth”、“Historical Honesty” 和 “Backend Authority” 原则。
 
 ## 2. Core Principles
 
@@ -193,19 +254,29 @@ The platform should progressively standardize into these reusable layers:
 - Posting Engine
 - Tax Engine
 - FX Conversion Engine
+- Settlement FX Engine
+- Remeasurement Engine
+- Presentation Translation Engine
+- Costing Engine
 - Numbering Engine
 - Reconciliation Control Engine
 
+> Book management、accounting standard selection、effective-dated accounting policy governance、以及 inventory costing policy 属于 **company-owned controlled capability**。它们可以调用引擎，但不应被降级成普通 UI 偏好设置。
+
 #### Business Modules
 
-- Invoices
-- Bills
-- Customers
-- Vendors
-- Journal Entry
+- Company
+- CompanyAccess
+- GL
+- AR
+- AP
+- Inventory
+- PaymentGateway
+- Reconciliation
 - Reports
 - Tasks
-- Payment / Collection flows
+
+User-facing business surfaces such as Journal Entry、Chart of Accounts、Invoices、Bills、Customers、Vendors、Receive Payment、Pay Bills、Inventory、Quotes、Sales Orders、Purchase Orders 等，必须落在上述批准的 root module 边界内，而不是临时发明新的 root module。
 
 #### Platform / Infrastructure Modules
 
@@ -260,7 +331,7 @@ No ABP module may bypass the Posting Engine or replace accounting domain rules.
 
 User-facing navigation labels and code boundary names are not the same thing.
 
-Navigation may use business-friendly labels such as Dashboard, Journal Entry, Receive Payment, Pay Bills, and Settings.
+Navigation may use business-friendly labels such as Dashboard, Journal Entry, Receive Payment, Pay Bills, Inventory, and Settings.
 
 Code and project boundaries must use approved root names only.
 
@@ -271,6 +342,8 @@ Approved root business modules:
 - `GL`
 - `AR`
 - `AP`
+- `Inventory`
+- `PaymentGateway`
 - `Reconciliation`
 - `Reports`
 - `Tasks`
@@ -280,6 +353,7 @@ Approved root engines:
 - `Posting`
 - `Tax`
 - `FX`
+- `Costing`
 - `Numbering`
 - `ReconciliationControl`
 
@@ -294,9 +368,11 @@ Approved root infrastructure areas:
 Mapping rules:
 
 - Journal Entry, Chart of Accounts, and related general-ledger workflows belong to `GL`.
-- Customers, Invoices, and Receive Payment belong to `AR`.
-- Vendors, Bills, and Pay Bills belong to `AP`.
-- Company-level controlled areas such as Profile, Templates, Sales Tax, Numbering, Notifications, Security, and Currencies belong to `Company`.
+- Customers, Quotes, Sales Orders, Invoices, Receive Payment, Customer Receipts, Payment Applications, Credit Notes, Customer Returns, Customer Refunds, and AR control outputs belong to `AR`.
+- Vendors, Purchase Orders, Bills, Pay Bills, Vendor Prepayments, Vendor Credits, Vendor Returns, Vendor Refunds, and AP control outputs belong to `AP`.
+- Inventory items, receipts, issues, adjustments, cost layers, valuation, COGS source truth, and inventory returns belong to `Inventory`.
+- Provider-agnostic payment request, hosted payment session, gateway transaction normalization, gateway refund/dispute handling, and payment-channel orchestration belong to `PaymentGateway`.
+- Company-level controlled areas such as Profile, Templates, Sales Tax, Numbering, Notifications, Security, Currencies, Books, Accounting Standards, Revaluation Profiles, inventory costing policy, and governed accounting policy settings belong to `Company`.
 - Company membership, invitations, owner/user assignment, active company context, and company-scoped authorization belong to `CompanyAccess`.
 - Dashboard is a host-level product surface, not an independent root module.
 - Settings is a navigation surface, not a dumping-ground root module.
@@ -427,6 +503,7 @@ Rules:
 
 - each company must always have at least one owner
 - owners can manage company users and permissions
+- changes to books, accounting standards, functional-currency bindings, rate-type policies, revaluation policies, and other governed accounting settings must be restricted to owners or users explicitly granted company-level book governance permission
 - user permissions should be configurable by domain
 
 Minimum recommended permission domains:
@@ -436,6 +513,7 @@ Minimum recommended permission domains:
 - approve
 - reports
 - settings access
+- company accounting settings / books
 - reconciliation-related access
 
 ### 5.2 ABP Permission Boundary
@@ -517,7 +595,7 @@ All formal accounting must go through the Posting Engine.
 
 Standard flow:
 
-**Document -> Validation -> Tax Calculation -> FX / Currency Resolution -> Posting Fragments -> Aggregation -> Journal Entry -> Ledger Entries**
+**Document -> Validation -> Tax Calculation -> FX / Currency Resolution -> Inventory / Cost Resolution (where applicable) -> Posting Fragments -> Aggregation -> Journal Entry -> Ledger Entries**
 
 ### 6.2 Prohibited Behavior
 
@@ -663,6 +741,7 @@ This is required for:
 - system control accounts
 - foreign-currency AR/AP control accounts
 - future FX gain/loss / rounding / revaluation accounts
+- inventory control / COGS / GRNI / landed-cost-clearing accounts where governed
 - other governed accounting infrastructure
 
 Rules:
@@ -758,93 +837,138 @@ JE must stay strongly linked to source:
 - hard deletion of posted truth
 - accounting truth detached from business truth
 
-### 10.4 Multi-Currency Journal Entry Rules
+### 10.4 Currency Layers and Book Concepts
 
-Journal Entry must support a single transaction currency per JE.
+Citus 在多币种 / 多账簿场景下，必须同时区分以下货币语义：
 
-Rules:
+- **Document / Transaction Currency**：源单据币种（例如 Invoice = USD）。
+- **Line Currency**：仅在受控的 manual GL multi-currency mode 下允许出现的行币种。
+- **Book Base Currency**：某个 Accounting Book 记账和平账所使用的币种。
+- **Functional Currency**：报告主体所处主要经济环境中的货币；这是会计判断结果，不是普通 UI 偏好。
+- **Presentation Currency**：报表展示或合并折算目标币种。
 
-- every JE must persist the actual `transaction_currency_code`
-- base-currency JE must still persist explicit base ISO code
-- JE header must persist a snapshot of:
-  - `exchange_rate`
-  - `exchange_rate_date`
-  - `exchange_rate_source`
-- JE lines must persist both:
-  - transaction-currency amounts (`tx_debit`, `tx_credit`)
-  - base-currency amounts (`debit`, `credit`)
-- base debit/credit remain ledger truth
-- tx amounts are the source amounts used to derive base truth
+**禁止把 Functional Currency、Book Base Currency、Presentation Currency 视为完全同义。**
 
-### 10.5 FX Source Semantics
+### 10.5 Posting Rules for Subledger Documents and Manual GL
 
-Exchange-rate storage semantics and JE snapshot semantics must be normalized and separated.
+Citus 的默认规则应为：
 
-Recommended row-origin semantics for stored exchange-rate rows:
+- **Subledger-generated documents**（Invoice、Bill、Payment、Credit Memo 等）必须只有**一个 document currency**。
+- **Manual GL Journal Entry** 默认使用一个 header transaction currency；若启用受控高级模式，可允许 line-level currency，但必须满足 account / entity / open-item 规则。
+- 无论 entered currency 如何，**每个 Book 的 accounted debit = accounted credit** 才能过账。
+- Source document 的 currency 一旦保存并进入正式流程，不得随意修改；如需变更，应通过 copy / void / reissue 或受控 amendment 流程完成。
 
-- `manual`
-- `provider_fetched`
-- `legacy_unknown` when old provenance cannot be reconstructed honestly
+每本账簿至少要记录：
 
-Recommended JE snapshot semantics:
+- entered debit / credit
+- entered currency（header 或 line）
+- accounted debit / credit（per book）
+- book_id
+- exchange_rate
+- exchange_rate_date
+- exchange_rate_type
+- exchange_rate_source
+- quote_basis / inverse basis
+- posting_reason（normal / settlement / revaluation / translation / adjustment）
 
-- `identity`
-- `manual`
-- `company_override`
-- `system_stored`
-- `provider_fetched`
+### 10.6 Realized vs Unrealized vs Translation Difference
 
-UI labels such as "Latest" or "Manual" are display labels only and must not become drifting accounting truth.
+必须严格区分三类差异：
 
-### 10.6 Save-Time FX Rules
+1. **Realized FX Gain/Loss（已实现汇兑损益）**
+   - 在结算 / apply / settlement 时产生。
+   - 由结算日金额与原始或最新账面金额比较得出。
+   - 每个 Book 独立计算并生成自己的 realized gain/loss posting。
 
-At JE save/post time:
+2. **Unrealized Remeasurement Gain/Loss（未实现重估损益）**
+   - 仅针对**货币性项目**在期末进行 remeasurement。
+   - 默认由 **Remeasurement Engine** 以 open item / monetary balance 为单位生成 revaluation JE。
+   - 一般进入 **P&L / earnings**；不得把“P&L 还是 OCI”做成普通自由切换开关。
 
-- live provider calls are forbidden
-- backend must validate an acceptable locally stored snapshot or a manual override
-- backend must derive base amounts from tx amounts
-- client-submitted base amounts must not be ledger truth
+3. **Translation Difference / CTA / OCI（折算差额）**
+   - 发生在 functional currency -> presentation currency，或 foreign operation translation / consolidation 层。
+   - 属于 **Presentation / Consolidation Translation Engine** 的职责，不属于 transactional revaluation。
+   - 不得与 open-item remeasurement 混为一谈。
 
-For non-manual foreign-currency saves:
+补充规则：
 
-- validation must be against the exact locally shown / accepted snapshot identity, or an explicitly allowed equivalent local snapshot state
-- validation must not be based on "current latest rate" equality
+- **Remeasurement 必须在每个 relevant reporting date / close date 执行**，例如月结、季结、年结或其他受控 reporting cycle；它不是“只在年底做一次”的概念。
+- **Settlement FX** 的确认与 remeasurement 周期无关；只要发生 apply / settlement，就必须在当时确认 realized difference。
 
-### 10.7 Rounding Policy
+### 10.7 IFRS / US GAAP / ASPE Friendly Policies
 
-Phase 1 policy:
+- **IFRS / IAS 21**：外币交易先折算到 functional currency；货币性项目期末按 closing rate 重估；历史成本计量的非货币性项目不按期末汇率重估；presentation currency translation 的差额进入 OCI，净投资等特殊项目另行处理。
+- **US GAAP / ASC 830**：外币项目按 functional currency 进行 remeasurement，汇率变动通常进入 earnings；translation adjustments 进入 equity / CTA。
+- **ASPE / Section 1651**：foreign currency transactions 使用 temporal method，相关汇兑差额进入当期净利润；foreign operations 根据 integrated / self-sustaining 分类处理，其中 self-sustaining foreign operations 的折算差额进入单独的 shareholders’ equity 组成部分。
 
-- convert each line individually using banker's rounding to 2 decimals
-- if resulting base totals do not balance exactly, block save
+因此，Citus 必须：
 
-This is intentional.
+- 把 **transaction remeasurement** 和 **presentation translation** 做成两个独立引擎。
+- 把 **OCI / CTA / shareholders’ equity translation reserve** 作为**特定情形**支持，而不是普通 revaluation 设置项。
+- 把 **ASPE integrated / self-sustaining** 限定为 **foreign operation classification**，而不是普通单据级 FX 选项。
 
-Controlled auto-rounding may only be considered later, and only after a governed system-owned FX rounding account exists.
+### 10.8 Rounding and Precision Policy
 
-### 10.8 Historical Honesty
+Phase 1 不应写死为“所有币种一律 2 decimals”。
 
-Historical FX truth must be shown honestly.
+应改为：
 
-Rules:
+- 使用 **currency precision**（按 ISO / 系统配置的 minor unit）决定 entered rounding 与 book rounding。
+- conversion 过程保留更高内部精度；正式 posting 时才按目标 currency precision rounding。
+- 默认逐行转换后再汇总。
+- 若 book accounted totals 因 rounding 不平：
+  - **严格模式**：阻止保存；
+  - **受控模式**：仅允许过到 system-owned FX rounding account，且必须按 company / book 配置启用并保留审计轨迹。
 
-- if historical FX semantics can be reconstructed with confidence, they may be displayed as resolved truth
-- if they cannot be reconstructed, they must be shown as unavailable / unknown / legacy-unavailable
-- the system must not cosmetically relabel uncertain historical FX truth as identity/base truth
-
-### 10.9 Posted JE FX Read Path
+### 10.9 Historical Honesty and Immutable FX Snapshot
 
 Every posted JE must have an immutable read-only FX snapshot display path.
 
-This path must show, where applicable:
+该路径至少应显示：
 
-- transaction currency
+- source document currency
+- line currency（如适用）
+- book base currency
 - exchange rate
-- effective date
-- source label
-- transaction/base amounts
-- any legacy-unavailable marker when historical truth cannot be reconstructed
+- exchange rate type
+- effective date / timestamp
+- source label（manual / imported / provider / policy-derived）
+- transaction amount
+- accounted amount
+- settlement rate（如适用）
+- revaluation rate（如适用）
+- translation rate（如适用）
+- legacy-unavailable / reconstructed 标识（如适用）
 
-List, detail, and reversal flows must not disagree about legacy FX truth.
+List、detail、reversal、audit trail、report drill-down 不得对历史 FX 语义给出互相冲突的结果。
+
+### 10.10 Accounting Standard per Book and Book Role
+
+每本账簿必须独立记录：
+
+- `book_id`
+- `book_role`（primary / secondary / adjustment_only / tax / management）
+- `accounting_standard`
+- `book_base_currency`
+- `functional_currency_binding_mode`
+- `presentation_currency`
+- `rate_type_policy`
+- `revaluation_policy`
+- `rounding_policy`
+- `account_mapping_profile`
+- `effective_from`
+- `effective_to`（nullable）
+- `change_governance_mode`
+
+**Book-Specific Adjustment Journal Entries** 可以存在，但只应用于：
+- standard-difference adjustments
+- tax adjustments
+- adjustment-only books
+- closing adjustments
+
+不应用来掩盖 source transaction 或 base posting 的缺陷。
+
+一旦账簿存在 posted history，**Accounting Standard**、**Functional Currency binding**、以及影响记账真相的治理性 FX policy 变更都必须以前瞻性、effective-dated 的方式处理；系统不得静默重写既有已过账分录的语义标签。
 
 ## 11. Multi-Currency Architecture Beyond JE
 
@@ -861,44 +985,90 @@ It must be implemented through reusable modules and engines, not duplicated acro
 
 Owns:
 
-- company base currency
-- multi-currency enablement
-- allowed transaction currencies
+- company enabled currencies
+- currency precision / minor-unit policy
+- default document currency policy
 - base vs foreign determination
-- reusable FX form/read context
+- reusable FX form / read context
+
+#### BookManagementModule
+
+Owns:
+
+- accounting book lifecycle
+- book role（primary / secondary / adjustment_only / tax / management）
+- accounting standard profile and defaulting strategy
+- book base currency
+- book account-mapping profile
+- parallel posting enablement
+- adjustment-only behavior
+- per-book close and activation rules
+- owner / governed-user mutation rules
+- effective-dated accounting policy changes
+- standard-migration / new-book rollout workflow after posted history exists
 
 #### ExchangeRateModule
 
 Owns:
 
 - local-first exchange-rate lookup
+- exchange rate types（spot / closing / average / historical / custom）
+- quote basis / inverse basis
 - company override vs system precedence
-- provider fetch/store lifecycle
-- provider adapter(s)
+- provider import lifecycle
 - source semantics
-- refresh behavior
+- effective date / timestamp policy
 - fallback behavior
 
 #### FXConversionEngine
 
 Owns:
 
-- tx -> base conversion
-- line-level conversion
-- totals conversion
-- rounding policy
+- transaction currency -> book base currency conversion
+- line-level and document-level conversion
+- accounted amount generation per book
+- conversion precision handling
 - save-time balance enforcement
+
+#### SettlementFXEngine
+
+Owns:
+
+- apply / settlement FX calculation
+- realized gain/loss calculation
+- partial settlement allocation logic
+- settlement-specific audit trail
+
+#### RemeasurementEngine
+
+Owns:
+
+- period-end remeasurement of monetary items
+- open-item / balance revaluation selection
+- unrealized gain/loss JE generation
+- reversal / next-period carry logic
+
+#### PresentationTranslationEngine
+
+Owns:
+
+- functional currency -> presentation currency translation
+- CTA / OCI / translation reserve handling
+- consolidation-friendly translation outputs
+- translation-only reporting artifacts
 
 ### 11.3 External Provider Rule
 
-Frankfurter may be used as the default free rate provider.
+Exchange-rate providers are lookup sources, not accounting truth.
 
 Rules:
 
-- provider is for lookup / refresh only
-- provider is never accounting truth
-- provider result becomes usable only after local persistence and JE snapshot persistence
-- manual override must never mutate shared rate tables
+- provider data is for **import / refresh / suggestion** only
+- provider data becomes usable only after **local persistence**
+- formal posting must use an **immutable FX snapshot**
+- manual override must never mutate historical posted snapshots
+- system must be **provider-agnostic**; Frankfurter may be a prototype / default provider, but production architecture must support alternative providers and custom internal rates
+- source document posting, settlement, remeasurement, and translation may use **different rate types**, and the selected rate type must be stored explicitly
 
 ## 12. AR/AP Multi-Currency Control Accounts
 
@@ -909,38 +1079,62 @@ When multi-currency is not in use:
 - Sales / Invoices post to the company default `AR`
 - Bills post to the company default `AP`
 
-### 12.2 Foreign-Currency Control Accounts
+### 12.2 Supported Subledger Control Models
 
-When a foreign currency such as USD is enabled:
+Citus 应支持两种受控模型，而不是只绑定一种做法：
 
-- Citus automatically creates the corresponding foreign-currency control accounts, for example:
-  - `AR-USD`
-  - `AP-USD`
+1. **Per-Currency Control Model（QuickBooks-like）**
+   - 例如 `AR-USD`、`AP-EUR`
+   - 简单直观，适合 SMB
+   - account currency 固定，便于限制误用
 
-These are system-owned control accounts.
+2. **Shared-Control + Open-Item Currency Model（更接近 NetSuite / stronger ERP design）**
+   - 使用共享 AR / AP control account
+   - open items 自身携带 transaction currency、accounted amount、revaluation history
+   - 更灵活，支持同一 customer / vendor 未来使用多种交易币种
 
-### 12.3 Customer/Vendor Routing Rules
+系统应通过配置决定 company / book / document-type 使用哪种模型，而不是在代码里写死。
 
-Customer and Vendor each have exactly one default transaction currency.
+### 12.3 Customer / Vendor Currency Policy
 
-Rules:
+Customer / Vendor 不应只有“exactly one default transaction currency”这一种表达。
 
-- if a customer's default transaction currency is USD, new sales / invoices route to `AR-USD`
-- if a vendor's default transaction currency is USD, new bills route to `AP-USD`
-- base-currency customers/vendors continue to use default `AR` / `AP`
+更合理的模型是：
 
-### 12.4 Edit Rules
+- `default_currency`
+- `allowed_currencies[]`
+- `currency_policy`（single / multi_allowed）
+- `payment_currency_policy`（must_match_open_item / controlled_cross_currency_later）
 
-- a customer/vendor may change default transaction currency only if they have no historical transaction records
-- once historical records exist, default transaction currency becomes locked
+规则：
+
+- 新建 source document 时默认带出 `default_currency`
+- document currency 必须属于 `allowed_currencies`
+- document 保存后，currency 不得随意改动
+- 可调整 `default_currency` 影响未来新单据，但不得改写历史交易
+- 移除某个 allowed currency 前，必须检查是否仍有 open items / active drafts / pending settlements
+
+### 12.4 Routing and Edit Rules
+
+Posting routing 必须由后端 mapping 决定，而不是根据 UI 名称猜测：
+
+- `company_id + book_id + document_type + currency_code -> control_account_id`
+- 或 `company_id + book_id + document_type -> shared_control_account_id`
+
+对于 edit rules：
+
+- 锁定的应是**历史交易币种与已过账事实**，不是把 master data 永久锁死在单一币种
+- 若使用 single-currency policy，可像 QuickBooks 一样严格限制
+- 若使用 multi_allowed policy，应更接近 NetSuite：允许 entity 拥有多个可用币种，但每张 document 仍只有一个币种且保存后不可改
 
 ### 12.5 System Ownership Rules
 
 System-owned foreign-currency control accounts must be:
 
-- auto-created by system workflow
+- auto-created by governed system workflow
 - mapped by backend control-account mapping, not guessed from UI text
 - protected from user deletion / repurposing
+- guarded by `system_role`, `currency_code`, `allow_manual_posting`, `book_id` where applicable
 - not freely selectable for arbitrary manual posting unless explicitly allowed by governed system behavior
 
 ## 13. Business Modules and Product Scope
@@ -959,6 +1153,7 @@ Current formal product direction includes:
 - Pay Bills
 - Reconciliation
 - Reports
+- Inventory
 - Settings
 
 ### 13.2 Task Module Position
@@ -992,7 +1187,7 @@ It must continue to improve in:
 
 ### 13.4 Payment Gateway Layer
 
-Citus should evolve toward a provider-agnostic payment gateway layer.
+Citus should evolve toward a provider-agnostic payment gateway module plus provider-specific payment connectors.
 
 Planned direction includes:
 
@@ -1002,9 +1197,10 @@ Planned direction includes:
 
 Rules:
 
-- connectors are modular
+- provider-specific connectors are modular
+- the provider-agnostic `PaymentGateway` module owns normalized gateway events and payment-channel orchestration
 - accounting truth remains system-owned
-- payment integration must not corrupt AR or posting consistency
+- payment integration must not corrupt AR, AP, inventory, or posting consistency
 
 ### 13.5 Channel / Integration Strategy
 
@@ -1022,6 +1218,466 @@ Rules:
 - channel-specific connectors
 - shared engine truth
 - no pollution of core accounting engine by connector logic
+
+### 13.6 AR Module Boundary
+
+`AR` is the official module for customer-side receivables truth, invoice-linked open-item truth, customer receipt truth, payment application, customer credit outcomes, and AR control outputs.
+
+AR owns the formal business and accounting-control lifecycle of customer receivables.
+
+AR officially includes:
+
+- `Customer`
+- `Quote`
+- `SalesOrder`
+- `CustomerDeposit`
+- `Invoice`
+- `CustomerReceipt`
+- `PaymentApplication`
+- `CreditNote`
+- `Return`
+- `Refund`
+- `CustomerStatement`
+- `ARAging`
+- `Collection`
+- `WriteOff`
+
+AR is responsible for:
+
+- customer-side revenue-flow control
+- receivable creation and balance truth
+- receipt truth
+- payment application / unapplication
+- customer credit and deposit outcomes
+- return / credit / refund business linkage
+- customer statement and aging outputs
+- collection and write-off control
+
+AR must remain:
+
+- source-linked
+- company-scoped
+- backend-authoritative
+- posting-engine-aligned
+- historically honest
+
+AR does not own:
+
+- payment provider transaction truth
+- gateway webhook lifecycle
+- payout-platform truth
+- inventory truth
+- warehouse / shipment core truth
+- posting-engine truth
+- tax-engine truth
+
+AR may consume upstream or downstream facts from those modules, but it may not absorb or replace their authority.
+
+### 13.7 AR Core Lifecycle
+
+The recommended AR lifecycle is:
+
+`Customer -> Quote -> SalesOrder -> CustomerDeposit(optional) -> Invoice -> CustomerReceipt -> PaymentApplication -> Return / CreditNote / Refund -> Statement / Collection / WriteOff`
+
+Rules:
+
+- `Quote` is a commercial quotation document and does not create formal accounting entries by default.
+- `SalesOrder` is a commercial commitment document and does not create formal accounting entries by default.
+- `CustomerDeposit` is optional, but must be independently modeled and must not be merged into generic receive-payment behavior.
+- `Invoice` is the primary AR accounting source document.
+- `CustomerReceipt` is the formal AR-side acknowledgment that value has been received from the customer.
+- `PaymentApplication` is a first-class AR capability and must not be hidden as an undocumented side effect of a payment screen.
+- `Return`, `CreditNote`, and `Refund` must remain separate objects with separate business and accounting semantics.
+- `Statement`, `Aging`, `Collection`, and `WriteOff` are formal AR control outputs, not temporary or cosmetic reporting pages.
+
+### 13.8 AR Accounting Boundary
+
+The following objects do not normally create formal accounting entries by themselves:
+
+- `Quote`
+- `SalesOrder`
+- `ReturnRequest`
+- `PackingSlip` / `FulfillmentDocument` by itself, unless another governed module adds accounting consequences
+
+The following objects may create or drive formal accounting outcomes through the Posting Engine:
+
+- `CustomerDeposit`
+- `Invoice`
+- `CustomerReceipt`
+- `CreditNote`
+- `Refund`
+- `WriteOff`
+
+Rules:
+
+- AR business objects own source truth and open-item truth.
+- Formal accounting entries must still go through the Posting Engine.
+- AR may not bypass the Posting Engine.
+- AR status and open-item truth must remain synchronized with formal accounting outcomes where applicable.
+- Historical AR truth must never be cosmetically rewritten to hide unapplied cash, unapplied credit, partial applications, or legacy uncertainty.
+
+### 13.9 Customer Deposit Rule
+
+`CustomerDeposit` must be treated as an independent AR-related object.
+
+Rules:
+
+- deposit is not revenue by default
+- deposit may be unapplied, partially applied, fully applied, refunded, or voided
+- deposit may later be applied to invoice settlement
+- deposit history must remain auditable and source-linked
+- deposit must not be collapsed into ordinary customer receipt logic without explicit deposit semantics
+
+### 13.10 Customer Receipt and Payment Application Rule
+
+`CustomerReceipt` and `PaymentApplication` are separate but strongly related AR capabilities.
+
+Rules:
+
+- receipt truth belongs to AR
+- receipt is not the same thing as gateway transaction status
+- receipt may come from multiple payment methods
+- receipt may be fully applied, partially applied, unapplied, reversed, or voided
+- application and unapplication must remain traceable
+- unapplied cash and unapplied credit must be preserved honestly
+- application results must update invoice balance truth and AR aging truth
+- payment application legality is backend-owned
+
+### 13.11 Credit Note / Return / Refund Separation Rule
+
+The following must remain distinct:
+
+- `Return` = business return fact
+- `CreditNote` = AR reduction / customer credit outcome
+- `Refund` = customer fund-outflow outcome
+
+Rules:
+
+- return does not automatically equal credit note
+- credit note does not automatically equal refund
+- refund may come from overpayment, deposit return, customer credit withdrawal, or paid-invoice reversal
+- all related objects must preserve explicit linkage where applicable
+- AI and implementation code must not collapse these three concepts into one generic adjustment object
+
+### 13.12 AR Control Outputs
+
+AR must formally support governed control outputs, including:
+
+- `CustomerStatement`
+- `ARAging`
+- collection / reminder flow
+- write-off / bad debt handling
+
+Rules:
+
+- these outputs are part of formal AR capability
+- they must remain aligned with engine truth and open-item truth
+- they must be company-scoped
+- they must remain consistent across HTML / print / CSV / export where applicable
+- they may use report acceleration, but acceleration must not replace AR truth
+
+### 13.13 AP Module Boundary
+
+`AP` is the official module for vendor-side payables truth, vendor bill truth, vendor payment truth, payment application, vendor credit outcomes, and AP control outputs.
+
+AP owns the formal business and accounting-control lifecycle of supplier liabilities and purchase-side settlement.
+
+AP officially includes:
+
+- `Vendor`
+- `PurchaseOrder`
+- `VendorPrepayment`
+- `VendorReceiptLinkage`
+- `Bill`
+- `VendorPayment`
+- `PaymentApplication`
+- `VendorCredit`
+- `VendorReturn`
+- `VendorRefund`
+- `APAging`
+- `DueControl`
+- `WriteOff`
+
+AP is responsible for:
+
+- vendor-side purchase-flow control
+- payable creation and balance truth
+- vendor payment truth
+- payment application / unapplication
+- vendor prepayment and credit outcomes
+- return / credit / refund business linkage
+- due control and aging outputs
+
+AP does not own:
+
+- inventory quantity truth
+- cost-layer truth
+- warehouse receipt truth
+- posting-engine truth
+- tax-engine truth
+- payment provider truth
+
+AP may consume upstream or downstream facts from those modules, but it may not absorb or replace their authority.
+
+### 13.14 AP Core Lifecycle
+
+The recommended AP lifecycle is:
+
+`Vendor -> PurchaseOrder -> VendorPrepayment(optional) -> Receipt(optional) -> Bill -> VendorPayment / PaymentApplication -> VendorReturn / VendorCredit / VendorRefund -> APAging / DueControl / WriteOff`
+
+Rules:
+
+- `PurchaseOrder` is a commercial commitment document and does not create formal accounting entries by default.
+- `VendorPrepayment` is optional, but must be independently modeled and must not be merged into generic pay-bills behavior.
+- `Receipt` is an operational or inventory-linked fact and must not be automatically collapsed into bill truth.
+- `Bill` is the primary AP accounting source document.
+- `VendorPayment` is the formal AP-side acknowledgment that value has been paid to the vendor.
+- `PaymentApplication` is a first-class AP capability and must not be hidden as an undocumented side effect of a pay-bills screen.
+- `VendorReturn`, `VendorCredit`, and `VendorRefund` must remain separate objects with separate business and accounting semantics.
+- `APAging`, `DueControl`, and `WriteOff` are formal AP control outputs.
+
+### 13.15 AP Accounting Boundary
+
+The following objects do not normally create formal accounting entries by themselves:
+
+- `PurchaseOrder`
+- `VendorReturnRequest`
+- `Receipt` by itself when receiving-accounting mode is disabled
+
+The following objects may create or drive formal accounting outcomes through the Posting Engine:
+
+- `VendorPrepayment`
+- `Bill`
+- `VendorPayment`
+- `VendorCredit`
+- `VendorRefund`
+- `WriteOff`
+- `Receipt` when governed receiving-accounting mode is enabled
+
+Rules:
+
+- AP business objects own source truth and open-item truth.
+- Formal accounting entries must still go through the Posting Engine.
+- AP may not bypass the Posting Engine.
+- Historical AP truth must never cosmetically hide unapplied prepayments, unapplied credits, overpayments, or legacy uncertainty.
+
+### 13.16 Vendor Prepayment / Vendor Payment / Payment Application Rule
+
+`VendorPrepayment`、`VendorPayment`、and `PaymentApplication` are separate but strongly related AP capabilities.
+
+Rules:
+
+- vendor prepayment is not expense by default
+- vendor payment truth belongs to AP
+- payment may be fully applied, partially applied, unapplied, reversed, or voided
+- application and unapplication must remain traceable
+- unapplied vendor payment and unapplied vendor credit must be preserved honestly
+- payment application legality is backend-owned
+- bill balance truth and AP aging truth must reflect governed application results
+
+### 13.17 Vendor Credit / Return / Vendor Refund Separation Rule
+
+The following must remain distinct:
+
+- `VendorReturn` = business return-to-vendor fact
+- `VendorCredit` = AP reduction / vendor credit outcome
+- `VendorRefund` = fund inflow back from vendor
+
+Rules:
+
+- vendor return does not automatically equal vendor credit
+- vendor credit does not automatically equal vendor refund
+- vendor refund may come from overpayment, prepayment reversal, vendor credit withdrawal, or post-return settlement
+- all related objects must preserve explicit linkage where applicable
+- AI and implementation code must not collapse these three concepts into one generic adjustment object
+
+### 13.18 AP Control Outputs
+
+AP must formally support governed control outputs, including:
+
+- `APAging`
+- due control / payment proposal flow
+- write-off / small-balance handling
+
+Rules:
+
+- these outputs are part of formal AP capability
+- they must remain aligned with engine truth and open-item truth
+- they must be company-scoped
+- they must remain consistent across HTML / print / CSV / export where applicable
+
+### 13.19 Inventory Module Boundary
+
+`Inventory` is the official module for quantity truth, receipt truth, issue truth, adjustment truth, cost-layer truth, inventory valuation truth, and COGS source truth.
+
+Inventory owns the formal business and accounting-control lifecycle of stock movements and stock-cost semantics.
+
+Inventory officially includes:
+
+- `InventoryItemProfile`
+- `InventoryReceipt`
+- `InventoryIssue`
+- `InventoryAdjustment`
+- `InventoryReturn`
+- `InventoryCostLayer`
+- `InventoryBalance`
+- `InventoryValuationSnapshot`
+- `InventoryCostEvent`
+- `InventoryCostingPolicy`
+
+Inventory is responsible for:
+
+- quantity on hand
+- quantity available
+- quantity committed
+- receipt / issue / adjustment truth
+- cost-layer creation and consumption
+- inventory valuation truth
+- COGS source truth
+- return-to-stock truth
+- vendor-return cost-out truth
+
+Inventory does not own:
+
+- receivable truth
+- payable truth
+- payment truth
+- tax-engine truth
+- final journal-entry truth
+
+Inventory may consume upstream sales / purchase / fulfillment facts, but it may not let AR or AP overwrite quantity truth or cost truth.
+
+### 13.20 Inventory Core Lifecycle and Source Boundaries
+
+The recommended inventory lifecycle is:
+
+`ItemProfile -> Receipt -> CostLayer Creation -> Issue / Consumption -> Adjustment / Return -> Valuation Snapshot / COGS Source Output`
+
+Rules:
+
+- purchase order and sales order are commercial commitments, not inventory truth by themselves
+- receipt creates or confirms inbound quantity truth
+- issue / shipment completion creates outbound quantity truth
+- return creates inbound or outbound reversal truth depending on direction
+- inventory truth must stay explicit even when billing and shipping timing differ
+- AR and AP may reference inventory events, but they do not own inventory quantity semantics
+
+### 13.21 Inventory Accounting and COGS Boundary
+
+Inventory must remain the source of quantity and cost truth.  
+The Posting Engine remains the only official path for formal accounting entries.
+
+Rules:
+
+- `COGS` must be driven by governed inventory cost truth, not guessed from invoice lines
+- `InventoryReceipt` may or may not create formal accounting entries depending on receiving-accounting mode
+- when receiving-accounting mode is disabled, receipt is operational truth and bill drives the first formal accounting entry
+- when receiving-accounting mode is enabled, receipt may drive Inventory / GRNI style posting through the Posting Engine
+- customer return and vendor return may affect inventory, but AR or AP return objects must not directly rewrite inventory valuation
+
+### 13.22 Costing Methods and FX Interaction Rules
+
+Inventory costing is a governed company-owned policy and must be explicitly configured.
+
+Phase rules:
+
+- Phase 1 default costing method: `moving_average`
+- Phase 2 optional governed costing method: `fifo`
+- no implementation may silently assume FIFO or moving average without explicit company policy
+
+Core rules:
+
+- inventory cost layers and valuation must be stored in company base currency or book base currency
+- source transaction currency and FX snapshot must still be preserved for traceability
+- moving average recomputation must use accounted / base currency cost, not floating live provider rates
+- FIFO layers must be consumed using the historical accounted cost stored in each layer
+- inventory layers are not monetary items and must not be remeasured like AR / AP open items
+- FX changes after receipt may affect AR / AP settlement and remeasurement, but they must not silently rewrite historical inventory-layer cost
+- purchase-bill timing differences, late vendor bills, and future landed-cost or variance handling must remain explicit and auditable
+
+### 13.23 Payment Gateway Boundary
+
+`PaymentGateway` is a separate payment-channel module.
+
+It owns external provider payment-channel truth, including:
+
+- `PaymentRequest`
+- `HostedPaymentSession`
+- `PaymentAttempt`
+- `GatewayTransaction`
+- `GatewayRefundEvent`
+- `GatewayDisputeEvent`
+- `GatewayPayoutMetadata`
+
+PaymentGateway is not the AR or AP module.
+
+PaymentGateway is responsible for:
+
+- payment request / hosted payment session lifecycle
+- provider transaction status
+- authorization / capture / fail / cancel / partial payment states
+- refund status from provider
+- dispute / chargeback status from provider
+- payout / fee / settlement metadata
+- webhook ingestion
+- provider idempotency and replay protection
+- provider-specific status normalization
+
+PaymentGateway does not own:
+
+- invoice balance truth
+- AR or AP aging truth
+- customer or vendor credit truth
+- receipt or payment application truth
+- formal accounting-entry truth
+
+Gateway status must not directly replace AR or AP accounting truth.
+
+### 13.24 Payment Gateway <-> AR/AP Interaction Rules
+
+The official rule is:
+
+`PaymentGateway status != AR/AP status`
+
+But:
+
+`PaymentGateway event -> may trigger AR/AP action`
+
+Rules:
+
+- PaymentGateway may report normalized outcomes such as:
+  - `payment_confirmed`
+  - `payment_partially_confirmed`
+  - `refund_confirmed`
+  - `dispute_opened`
+  - `dispute_resolved`
+  - `chargeback_confirmed`
+- AR then decides whether to:
+  - create customer receipt
+  - create partial receipt
+  - keep unapplied cash
+  - trigger customer refund flow
+  - trigger dispute / exception flow
+  - update invoice balance through governed application logic
+- AP then decides whether to:
+  - create vendor payment or refund acknowledgment where appropriate
+  - update vendor balance through governed application logic
+  - preserve overpayment / unapplied payment truth honestly
+- gateway-origin events must remain linked, but must not directly overwrite AR/AP history
+- provider refund or dispute events do not automatically rewrite customer receipt truth or vendor payment truth
+- formal accounting outcomes still belong to governed AR/AP flow plus the Posting Engine
+
+### 13.25 Formal Boundary Conclusion
+
+The final boundary is:
+
+- `AR` owns customer-side receivables truth
+- `AP` owns vendor-side payables truth
+- `Inventory` owns quantity, cost-layer, valuation, and COGS source truth
+- `PaymentGateway` owns external provider payment-channel truth
+- the `Posting Engine` owns formal accounting-entry truth
+
+AR/AP/Inventory may influence one another through governed source links, but no module may directly replace another module’s truth.
 
 ## 14. Reconciliation
 
@@ -1225,15 +1881,22 @@ Used for user-specific behavior, such as:
 
 Used for accounting truth and company-owned business control, such as:
 
-- base currency
+- company functional-currency judgment / primary-book base currency
 - numbering rules
 - tax setup
 - document templates
 - posting defaults
 - AR/AP account mappings
+- inventory control and costing policy
+- receiving-accounting mode / GRNI policy where applicable
 - multi-currency control behavior
+- Multi-Book Configuration：账簿列表、每本账簿的 Accounting Standard（ASPE / IFRS / US GAAP）、Book Role、Book Base Currency、Functional Currency binding、Presentation Currency、Rate Type Policy、Revaluation Policy、Rounding Policy、Account Mapping Profile、ASPE foreign operation classification、default primary book、effective-dated change policy、governed migration policy 等。
 
-**Important rule:** company accounting settings must not be hidden inside generic ABP setting storage if they are part of accounting truth or posting behavior.
+**Important rules:**
+
+- company accounting settings must not be hidden inside generic ABP setting storage if they are part of accounting truth or posting behavior.
+- accounting standard selection、book policy、functional currency binding、revaluation policy、以及 migration governance 不是 user preference，也不是 report-only toggle。
+- 一旦存在 posted history，这类治理性设置变更必须是 **effective-dated、auditable、company-owned** 的；原地重写历史 posted truth 是禁止的。
 
 ### 19.3 Company Settings Direction
 
@@ -1246,6 +1909,8 @@ Settings > Company should progressively organize into clear domains such as:
 - Notifications
 - Security
 - Currencies / Multi-Currency controls
+- Inventory / Costing / Receiving policy
+- Books / Accounting Standards / Accounting Policy
 
 These are company-level controlled areas.
 
@@ -1331,6 +1996,7 @@ The sidebar must remain business-driven.
 #### Accounting
 
 - Chart of Accounts
+- Inventory
 - Reconciliation
 - Reports
 
@@ -1446,6 +2112,7 @@ Report Type 下拉选项（必须实现）：
 - Accrual (Paid & Unpaid)（默认推荐）：采用权责发生制（Accrual Basis）。收入在赚取时确认，费用在发生时确认，无论是否实际收付。这应该是大多数正式财务报表（Profit & Loss、Balance Sheet、Aging Reports 等）的默认选项，提供最完整的财务状况视图。
 - Cash Basis (Paid)：采用收付实现制（Cash Basis）。仅显示已实际收到或支付的金额。适合现金流管理、税务申报（部分小型企业或特定税种）。
 - Cash Only：更严格的现金基础，仅基于现金账户变动（可能排除部分银行调节项）。适合极简现金流视图。
+- 报表必须支持按不同 Accounting Book（及其中选择的 Accounting Standard）生成，并清晰显示当前使用的准则。
 
 #### 实现规则（必须遵守）：
 
@@ -1453,6 +2120,7 @@ Report Type 是报表级参数，而非公司全局默认会计方法（公司�
 所有报表（尤其是 AR Aging、AP Aging、Profit & Loss、Balance Sheet 等）必须支持这三种 Report Type。
 Backend Authority：报表的计算逻辑必须由后端引擎决定（使用 Dapper 或专用 Report Service），前端只负责传递选择参数和展示结果。不能让前端自行计算差异。
 - 一致性：同一 Report Type 下，不同报表（例如 Invoice 列表 vs P&L）必须使用相同的确认规则。
+- Accounting Book / Accounting Standard 选择与 Report Type 是两个不同维度；切换报表基础或列报视图不得改写底层 book truth。
 - 公司隔离：Report Type 选择必须在当前 active company 上下文中生效。
 - 审计与历史诚实性：生成报表时应记录使用的 Report Type、生成时间和参数快照（便于以后审计）。
 - 默认值：新公司默认使用 Accrual (Paid & Unpaid)，可在 Company Settings 中配置默认 Report Type。
@@ -1688,6 +2356,8 @@ Approved root business modules:
 - `GL`
 - `AR`
 - `AP`
+- `Inventory`
+- `PaymentGateway`
 - `Reconciliation`
 - `Reports`
 - `Tasks`
@@ -1697,6 +2367,7 @@ Approved root engines:
 - `Posting`
 - `Tax`
 - `FX`
+- `Costing`
 - `Numbering`
 - `ReconciliationControl`
 
@@ -1719,7 +2390,10 @@ Examples:
 - `Citus.Modules.GL.Domain`
 - `Citus.Modules.GL.Application`
 - `Citus.Modules.CompanyAccess.Blazor`
+- `Citus.Modules.Inventory.Domain`
+- `Citus.Modules.PaymentGateway.Application`
 - `Citus.Engines.Posting`
+- `Citus.Engines.Costing`
 - `Citus.Infrastructure.AIAssist`
 - `Citus.Connectors.Payment.Stripe`
 
@@ -1754,16 +2428,18 @@ Rules:
 - one public type per file is the default rule
 - new use cases must stay inside an approved root module boundary
 - Journal Entry code must live under `GL`, not under a standalone `JournalEntry` root module
+- inventory quantity, cost-layer, valuation, and COGS source logic must live under `Inventory`, not under `AR` or `AP`
+- provider-specific gateway logic must live under `PaymentGateway` and/or `Connectors.Payment.<Provider>`, not inside AR/AP truth objects
 - company membership and company-scoped authorization code must live under `CompanyAccess`, not under a generic `Users` root module
 - before generating code, AI must first list the exact target file paths it plans to create or modify
 - if no approved target path exists, AI must stop and report: `No approved target path found.`
 
-## 28.6 Module Naming and File Placement Rules
+## 28.5 Module Naming and File Placement Rules
 
-All new projects, folders, namespaces, and files must follow the approved naming grammar.
+All new projects, folders, namespaces, and files must follow the approved naming grammar and must remain consistent with Sections 3.5 and 28.4.
 
 ### Project name grammar
-`Citus.<Category>[.<Module>][.<Layer>]`
+`Citus.<Category>[.<RootName>][.<Layer>]`
 
 Allowed categories:
 - Web
@@ -1771,23 +2447,44 @@ Allowed categories:
 - DbMigrator
 - SharedKernel
 - Modules
+- Engines
+- Infrastructure
 - Connectors
 - Tests
 
-Allowed module names:
+Approved root business modules:
 - Company
+- CompanyAccess
 - GL
 - AR
 - AP
-- Tax
-- FX
+- Inventory
+- PaymentGateway
 - Reconciliation
 - Reports
 - Tasks
-- Notifications
-- Identity
 
-Allowed layers for Modules:
+Approved root engines:
+- Posting
+- Tax
+- FX
+- Costing
+- Numbering
+- ReconciliationControl
+
+Approved root infrastructure names:
+- AIAssist
+- Notifications
+- Caching
+- SmartPicker
+- Reporting
+
+Approved connector root names include patterns such as:
+- Payment.<Provider>
+- Channel.<Provider>
+- Rates.<Provider>
+
+Allowed layers for business modules:
 - Domain.Shared
 - Domain
 - Application.Contracts
@@ -1796,6 +2493,11 @@ Allowed layers for Modules:
 - Blazor
 
 Forbidden names:
+- Users
+- UserManagement
+- Identity
+- AccountingCore
+- LedgerEngine
 - Common
 - Helpers
 - Utils
@@ -1806,12 +2508,11 @@ Forbidden names:
 - ServiceImpl
 
 Rules:
-- AI must not invent new project categories.
-- AI must not invent new module names without explicit approval.
+- AI must not invent new project categories, root module names, root engine names, or layer names without explicit approval.
 - AI must not create files outside approved module boundaries.
-- One public type per file.
+- One public type per file is the default rule.
 - File name must match the main type name exactly.
-- Vertical Slice use cases must be grouped by feature/use case folder.
+- Vertical Slice use cases must be grouped by feature / use-case folder.
 
 
 ## 29. Performance Strategy and Constraints

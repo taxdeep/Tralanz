@@ -1,0 +1,297 @@
+@page "/documents/{SourceType}/{DocumentId:guid}"
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject ShellAccountingDocumentReviewClient ReviewClient
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.ArrowBack">
+            Back to shell
+        </MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only detail</MudChip>
+    </div>
+
+    <h1 style="margin:0 0 0.75rem 0;">@(_document?.DisplayNumber ?? GetSourceLabel(SourceType))</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
+        Source document review stays backend-owned and company-scoped. This page is read-only and is intended for drill-down from settlement and control flows.
+    </p>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (_document is not null)
+    {
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Document</MudText>
+                <MudText Typo="Typo.h6">@_document.DisplayNumber</MudText>
+                <MudText Typo="Typo.body2">@_document.SourceTypeLabel | @_document.Status</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Company</MudText>
+                <MudText Typo="Typo.h6">@ShellState.ActiveCompany.CompanyCode</MudText>
+                <MudText Typo="Typo.body2">@ShellState.ActiveCompany.CompanyName</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Total</MudText>
+                <MudText Typo="Typo.h6">@FormatAmount(_document.TotalAmount)</MudText>
+                <MudText Typo="Typo.body2">@_document.TransactionCurrencyCode</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Document Date</MudText>
+                <MudText Typo="Typo.h6">@_document.DocumentDate.ToString("yyyy-MM-dd")</MudText>
+                <MudText Typo="Typo.body2">@($"Due {_document.DueDate?.ToString("yyyy-MM-dd") ?? "n/a"}")</MudText>
+            </MudPaper>
+        </div>
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6" Class="mb-3">Facts</MudText>
+            <MudTable Items="_factRows" Dense="true">
+                <RowTemplate>
+                    <MudTd DataLabel="Field">@context.Label</MudTd>
+                    <MudTd DataLabel="Value">@context.Value</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.h6" Class="mb-3">Lines</MudText>
+            @if (_document.Lines.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    No line details were returned for this source document.
+                </MudAlert>
+            }
+            else if (IsSettlementDocument(_document))
+            {
+                <MudTable Items="_document.Lines" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Line</MudTh>
+                        @if (IsApplicationDocument(_document))
+                        {
+                            <MudTh>Source</MudTh>
+                        }
+                        <MudTh>Target</MudTh>
+                        <MudTh>Applied</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.LineNumber</MudTd>
+                        @if (IsApplicationDocument(_document))
+                        {
+                            <MudTd>
+                                <MudStack Spacing="0">
+                                    @if (TryBuildDocumentHref(context.SourceDocumentType, context.SourceDocumentId, out var sourceHref))
+                                    {
+                                        <MudLink Href="@sourceHref">@DisplayDocumentLink(context.SourceDocumentDisplayNumber, context.SourceDocumentType)</MudLink>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2">@DisplayDocumentLink(context.SourceDocumentDisplayNumber, context.SourceDocumentType)</MudText>
+                                    }
+                                    @if (TryBuildOpenItemHref(context.SourceDocumentType, context.SourceOpenItemId, out var sourceOpenItemHref))
+                                    {
+                                        <MudLink Href="@sourceOpenItemHref" Typo="Typo.caption">@DisplayOpenItem(context.SourceOpenItemId)</MudLink>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@DisplayOpenItem(context.SourceOpenItemId)</MudText>
+                                    }
+                                </MudStack>
+                            </MudTd>
+                        }
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                @if (TryBuildDocumentHref(context.TargetDocumentType, context.TargetDocumentId, out var targetHref))
+                                {
+                                    <MudLink Href="@targetHref">@DisplayDocumentLink(context.TargetDocumentDisplayNumber, context.TargetDocumentType)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@DisplayDocumentLink(context.TargetDocumentDisplayNumber, context.TargetDocumentType)</MudText>
+                                }
+                                @if (TryBuildOpenItemHref(context.TargetDocumentType, context.TargetOpenItemId, out var targetOpenItemHref))
+                                {
+                                    <MudLink Href="@targetOpenItemHref" Typo="Typo.caption">@DisplayOpenItem(context.TargetOpenItemId)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">@DisplayOpenItem(context.TargetOpenItemId)</MudText>
+                                }
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>@FormatAmount(context.LineAmount)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudTable Items="_document.Lines" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Line</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Account</MudTh>
+                        <MudTh>Amount</MudTh>
+                        <MudTh>Tax</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.LineNumber</MudTd>
+                        <MudTd>@(string.IsNullOrWhiteSpace(context.Description) ? "No description" : context.Description)</MudTd>
+                        <MudTd>@($"{context.AccountCode} {context.AccountName}")</MudTd>
+                        <MudTd>@FormatAmount(context.LineAmount)</MudTd>
+                        <MudTd>@FormatAmount(context.TaxAmount)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+</div>
+
+@code
+{
+    [Parameter]
+    public string SourceType { get; set; } = string.Empty;
+
+    [Parameter]
+    public Guid DocumentId { get; set; }
+
+    private bool _isLoading;
+    private string? _errorText;
+    private ShellAccountingDocumentReviewSummary? _document;
+    private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+        _document = null;
+        _factRows = Array.Empty<FactRow>();
+
+        var document = await ReviewClient.GetDocumentAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
+        if (document is null)
+        {
+            _errorText = $"The {GetSourceLabel(SourceType).ToLowerInvariant()} could not be found in company {ShellState.ActiveCompany.CompanyCode}.";
+            _isLoading = false;
+            return;
+        }
+
+        _document = document;
+        _factRows = BuildFactRows(document);
+        _isLoading = false;
+    }
+
+    private static string GetSourceLabel(string? sourceType) =>
+        sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => "Invoice",
+            "credit_note" => "Credit Note",
+            "bill" => "Bill",
+            "vendor_credit" => "Vendor Credit",
+            "receive_payment" => "Receive Payment",
+            "credit_application" => "Credit Application",
+            "pay_bill" => "Pay Bill",
+            "vendor_credit_application" => "Vendor Credit Application",
+            _ => "Document"
+        };
+
+    private static bool IsSettlementDocument(ShellAccountingDocumentReviewSummary? document) =>
+        document?.SourceType is "receive_payment" or "credit_application" or "pay_bill" or "vendor_credit_application";
+
+    private static bool IsApplicationDocument(ShellAccountingDocumentReviewSummary? document) =>
+        document?.SourceType is "credit_application" or "vendor_credit_application";
+
+    private static IReadOnlyList<FactRow> BuildFactRows(ShellAccountingDocumentReviewSummary document)
+    {
+        var rows = new List<FactRow>
+        {
+            new("Entity Number", document.EntityNumber),
+            new("Status", document.Status),
+            new("Document Date", document.DocumentDate.ToString("yyyy-MM-dd")),
+            new("Due Date", document.DueDate?.ToString("yyyy-MM-dd") ?? "No due date"),
+            new("Transaction Currency", document.TransactionCurrencyCode),
+            new("Base Currency", document.BaseCurrencyCode),
+            new("Memo", string.IsNullOrWhiteSpace(document.Memo) ? "No memo" : document.Memo!)
+        };
+
+        if (document.CounterpartyId is not null)
+        {
+            rows.Add(new(document.CounterpartyLabel, document.CounterpartyId.Value.ToString("D")));
+        }
+
+        if (document.ControlAccountId is not null)
+        {
+            rows.Add(new(document.ControlAccountLabel, document.ControlAccountId.Value.ToString("D")));
+        }
+
+        return rows;
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string DisplayOpenItem(Guid? openItemId) =>
+        openItemId.HasValue ? $"Open item {openItemId.Value:D}" : "Open item unavailable";
+
+    private static string DisplayDocumentLink(string? displayNumber, string? sourceType)
+    {
+        var label = string.IsNullOrWhiteSpace(displayNumber) ? "Unavailable document" : displayNumber;
+        return $"{label} | {GetSourceLabel(sourceType)}";
+    }
+
+    private static bool TryBuildDocumentHref(string? sourceType, Guid? documentId, out string href)
+    {
+        href = string.Empty;
+        if (!documentId.HasValue)
+        {
+            return false;
+        }
+
+        href = sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => $"/documents/invoice/{documentId.Value:D}",
+            "credit_note" => $"/documents/credit_note/{documentId.Value:D}",
+            "bill" => $"/documents/bill/{documentId.Value:D}",
+            "vendor_credit" => $"/documents/vendor_credit/{documentId.Value:D}",
+            "receive_payment" => $"/documents/receive_payment/{documentId.Value:D}",
+            "credit_application" => $"/documents/credit_application/{documentId.Value:D}",
+            "pay_bill" => $"/documents/pay_bill/{documentId.Value:D}",
+            "vendor_credit_application" => $"/documents/vendor_credit_application/{documentId.Value:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static bool TryBuildOpenItemHref(string? sourceType, Guid? openItemId, out string href)
+    {
+        href = string.Empty;
+        if (!openItemId.HasValue)
+        {
+            return false;
+        }
+
+        var type = sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" or "credit_note" or "receive_payment" or "credit_application" => "ar",
+            "bill" or "vendor_credit" or "pay_bill" or "vendor_credit_application" => "ap",
+            _ => null
+        };
+
+        if (type is null)
+        {
+            return false;
+        }
+
+        href = $"/open-items/{type}/{openItemId.Value:D}";
+        return true;
+    }
+
+    private sealed record class FactRow(string Label, string Value);
+}

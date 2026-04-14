@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Repositories;
+using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
@@ -56,6 +57,85 @@ public sealed class PostgresArOpenItemRepository : IArOpenItemRepository
             dueDate: document.DueDate,
             balanceSide: "credit",
             cancellationToken: cancellationToken);
+    }
+
+    public async Task<OpenItemDrillDown?> GetDrillDownAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              oi.id as open_item_id,
+              oi.customer_id as party_id,
+              c.entity_number as party_entity_number,
+              c.display_name as party_display_name,
+              oi.source_type,
+              oi.source_id as source_document_id,
+              coalesce(i.invoice_number, cn.credit_note_number, oi.source_id::text) as source_document_display_number,
+              coalesce(i.invoice_date, cn.credit_note_date, oi.due_date) as document_date,
+              oi.due_date,
+              oi.document_currency_code,
+              oi.base_currency_code,
+              oi.balance_side,
+              oi.status,
+              oi.original_amount_tx,
+              oi.original_amount_base,
+              oi.open_amount_tx,
+              oi.open_amount_base
+            from ar_open_items oi
+            inner join customers c
+              on c.company_id = oi.company_id
+             and c.id = oi.customer_id
+            left join invoices i
+              on oi.source_type = 'invoice'
+             and i.company_id = oi.company_id
+             and i.id = oi.source_id
+            left join credit_notes cn
+              on oi.source_type = 'credit_note'
+             and cn.company_id = oi.company_id
+             and cn.id = oi.source_id
+            where oi.company_id = @company_id
+              and oi.id = @open_item_id
+            limit 1;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("open_item_id", openItemId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new OpenItemDrillDown(
+            reader.GetGuid(reader.GetOrdinal("open_item_id")),
+            "ar",
+            companyId,
+            "customer",
+            reader.GetGuid(reader.GetOrdinal("party_id")),
+            reader.GetString(reader.GetOrdinal("party_entity_number")),
+            reader.GetString(reader.GetOrdinal("party_display_name")),
+            reader.GetString(reader.GetOrdinal("source_type")),
+            reader.GetGuid(reader.GetOrdinal("source_document_id")),
+            reader.GetString(reader.GetOrdinal("source_document_display_number")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("document_date")),
+            reader.IsDBNull(reader.GetOrdinal("due_date")) ? null : reader.GetFieldValue<DateOnly>(reader.GetOrdinal("due_date")),
+            reader.GetString(reader.GetOrdinal("document_currency_code")),
+            reader.GetString(reader.GetOrdinal("base_currency_code")),
+            reader.GetString(reader.GetOrdinal("balance_side")),
+            reader.GetString(reader.GetOrdinal("status")),
+            reader.GetDecimal(reader.GetOrdinal("original_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("original_amount_base")),
+            reader.GetDecimal(reader.GetOrdinal("open_amount_tx")),
+            reader.GetDecimal(reader.GetOrdinal("open_amount_base")));
     }
 
     private async Task EnsureOpenItemAsync(

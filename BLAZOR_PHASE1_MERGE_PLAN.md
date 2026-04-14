@@ -2,7 +2,7 @@
 
 This document defines the first-stage frontend merge plan after the Citus frontend direction was updated to:
 
-- `.NET 10`
+- `.NET 11`
 - `Blazor (C# full stack)`
 - `MudBlazor`
 - `YARP`
@@ -128,7 +128,7 @@ Purpose:
 
 Recommended app type:
 
-- `.NET 10 Blazor Web App`
+- `.NET 11 Blazor Web App`
 - interactive server mode first
 
 Why:

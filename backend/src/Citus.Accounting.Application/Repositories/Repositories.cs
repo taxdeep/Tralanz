@@ -150,6 +150,7 @@ public interface IVendorCreditApplicationDocumentRepository
 public sealed record FxRevaluationDraftPreparation(
     CompanyId CompanyId,
     UserId UserId,
+    Guid? BookId,
     DateOnly RevaluationDate,
     CurrencyCode TransactionCurrencyCode,
     Guid? AcceptedFxSnapshotId,
@@ -168,6 +169,11 @@ public sealed record FxRevaluationDraftPreparationResult(
     Guid DocumentId,
     string EntityNumber,
     string DisplayNumber,
+    Guid? BookId,
+    string? BookCode,
+    string? AccountingStandard,
+    string? RevaluationProfile,
+    string? FxRoundingPolicy,
     int PreparedLineCount,
     string Status);
 
@@ -330,6 +336,12 @@ public interface IAccountingDocumentReviewRepository
         string sourceType,
         Guid documentId,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AccountingSourceDocumentListItem>> ListSourceDocumentsAsync(
+        CompanyId companyId,
+        string? sourceType,
+        int limit,
+        CancellationToken cancellationToken);
 }
 
 public sealed record AccountingDocumentReview(
@@ -365,7 +377,66 @@ public sealed record AccountingDocumentReviewLine(
     bool? IsTaxRecoverable,
     Guid? TaxAccountId,
     decimal? TxDebit,
-    decimal? TxCredit);
+    decimal? TxCredit,
+    Guid? SourceOpenItemId,
+    string? SourceDocumentType,
+    Guid? SourceDocumentId,
+    string? SourceDocumentDisplayNumber,
+    Guid? TargetOpenItemId,
+    string? TargetDocumentType,
+    Guid? TargetDocumentId,
+    string? TargetDocumentDisplayNumber);
+
+public sealed record AccountingSourceDocumentListItem(
+    string SourceType,
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly DocumentDate,
+    DateOnly? DueDate,
+    string CounterpartyRole,
+    Guid? CounterpartyId,
+    string? CounterpartyDisplayName,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    decimal TotalAmount);
+
+public sealed record OpenItemDrillDown(
+    Guid OpenItemId,
+    string OpenItemType,
+    CompanyId CompanyId,
+    string PartyRole,
+    Guid PartyId,
+    string PartyEntityNumber,
+    string PartyDisplayName,
+    string SourceType,
+    Guid SourceDocumentId,
+    string SourceDocumentDisplayNumber,
+    DateOnly DocumentDate,
+    DateOnly? DueDate,
+    string DocumentCurrencyCode,
+    string BaseCurrencyCode,
+    string BalanceSide,
+    string Status,
+    decimal OriginalAmountTx,
+    decimal OriginalAmountBase,
+    decimal OpenAmountTx,
+    decimal OpenAmountBase);
+
+public sealed record OpenItemApplicationDrillDown(
+    Guid ApplicationId,
+    string ApplicationType,
+    string SourceType,
+    Guid SourceDocumentId,
+    string SourceDocumentDisplayNumber,
+    DateOnly SourceDocumentDate,
+    decimal AppliedAmountTx,
+    decimal AppliedAmountBase,
+    decimal? SettlementFxRate,
+    decimal? RealizedFxAmount,
+    DateTimeOffset CreatedAt);
 
 public interface IFxSnapshotRepository
 {
@@ -389,6 +460,11 @@ public interface IArOpenItemRepository
         CreditNoteDocument document,
         decimal originalAmountBase,
         CancellationToken cancellationToken);
+
+    Task<OpenItemDrillDown?> GetDrillDownAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        CancellationToken cancellationToken);
 }
 
 public interface IApOpenItemRepository
@@ -401,6 +477,11 @@ public interface IApOpenItemRepository
     Task EnsureForVendorCreditAsync(
         VendorCreditDocument document,
         decimal originalAmountBase,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemDrillDown?> GetDrillDownAsync(
+        CompanyId companyId,
+        Guid openItemId,
         CancellationToken cancellationToken);
 }
 
@@ -424,6 +505,12 @@ public interface ISettlementApplicationRepository
     Task ApplyVendorCreditApplicationAsync(
         VendorCreditApplicationDocument document,
         UserId createdByUserId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<OpenItemApplicationDrillDown>> ListApplicationsAsync(
+        CompanyId companyId,
+        string targetOpenItemType,
+        Guid targetOpenItemId,
         CancellationToken cancellationToken);
 }
 

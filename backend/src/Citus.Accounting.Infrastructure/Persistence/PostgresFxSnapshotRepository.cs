@@ -37,6 +37,10 @@ public sealed class PostgresFxSnapshotRepository : IFxSnapshotRepository
                 s.base_currency_code,
                 s.quote_currency_code,
                 s.rate,
+                s.rate_type,
+                s.quote_basis,
+                s.rate_use_case,
+                s.posting_reason,
                 s.requested_date,
                 s.effective_date,
                 s.snapshot_semantics
@@ -53,6 +57,10 @@ public sealed class PostgresFxSnapshotRepository : IFxSnapshotRepository
                 s.base_currency_code,
                 s.quote_currency_code,
                 s.rate,
+                s.rate_type,
+                s.quote_basis,
+                s.rate_use_case,
+                s.posting_reason,
                 s.requested_date,
                 s.effective_date,
                 s.snapshot_semantics
@@ -90,6 +98,10 @@ public sealed class PostgresFxSnapshotRepository : IFxSnapshotRepository
             reader.GetDecimal(reader.GetOrdinal("rate")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("requested_date")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("effective_date")),
-            reader.GetString(reader.GetOrdinal("snapshot_semantics")));
+            reader.GetString(reader.GetOrdinal("snapshot_semantics")),
+            reader.GetString(reader.GetOrdinal("rate_type")),
+            reader.GetString(reader.GetOrdinal("quote_basis")),
+            reader.GetString(reader.GetOrdinal("rate_use_case")),
+            reader.GetString(reader.GetOrdinal("posting_reason")));
     }
 }

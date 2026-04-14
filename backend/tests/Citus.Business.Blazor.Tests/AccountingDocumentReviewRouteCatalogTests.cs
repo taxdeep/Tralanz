@@ -10,6 +10,10 @@ public sealed class AccountingDocumentReviewRouteCatalogTests
     [InlineData("credit_note", "accounting/document-review/credit_note/{0}", "documents/credit_note/{0}", "Credit Note")]
     [InlineData("bill", "accounting/document-review/bill/{0}", "documents/bill/{0}", "Bill")]
     [InlineData("vendor_credit", "accounting/document-review/vendor_credit/{0}", "documents/vendor_credit/{0}", "Vendor Credit")]
+    [InlineData("receive_payment", "accounting/document-review/receive_payment/{0}", "documents/receive_payment/{0}", "Receive Payment")]
+    [InlineData("credit_application", "accounting/document-review/credit_application/{0}", "documents/credit_application/{0}", "Credit Application")]
+    [InlineData("pay_bill", "accounting/document-review/pay_bill/{0}", "documents/pay_bill/{0}", "Pay Bill")]
+    [InlineData("vendor_credit_application", "accounting/document-review/vendor_credit_application/{0}", "documents/vendor_credit_application/{0}", "Vendor Credit Application")]
     public void SupportedSourceTypes_BuildApiPathAndHref(
         string sourceType,
         string apiPattern,
@@ -30,11 +34,11 @@ public sealed class AccountingDocumentReviewRouteCatalogTests
     {
         var documentId = Guid.NewGuid();
 
-        Assert.False(AccountingDocumentReviewRouteCatalog.TryBuildApiPath("receive_payment", documentId, out var apiPath));
-        Assert.False(AccountingDocumentReviewRouteCatalog.TryBuildReviewHref("receive_payment", documentId, out var href));
+        Assert.False(AccountingDocumentReviewRouteCatalog.TryBuildApiPath("unsupported_flow", documentId, out var apiPath));
+        Assert.False(AccountingDocumentReviewRouteCatalog.TryBuildReviewHref("unsupported_flow", documentId, out var href));
         Assert.Equal(string.Empty, apiPath);
         Assert.Equal(string.Empty, href);
-        Assert.Equal("Document", AccountingDocumentReviewRouteCatalog.GetSourceLabel("receive_payment"));
-        Assert.False(AccountingDocumentReviewRouteCatalog.IsSupported("receive_payment"));
+        Assert.Equal("Document", AccountingDocumentReviewRouteCatalog.GetSourceLabel("unsupported_flow"));
+        Assert.False(AccountingDocumentReviewRouteCatalog.IsSupported("unsupported_flow"));
     }
 }

@@ -18,6 +18,10 @@ public sealed class FxRateSelectionServiceTests
             new DateOnly(2026, 4, 13),
             new DateOnly(2026, 4, 13),
             1.3845m,
+            FxRateType.Spot,
+            FxQuoteBasis.Direct,
+            FxRateUseCase.General,
+            FxPostingReason.Normal,
             "ECB",
             "provider_fetched",
             FxSourceSemantics.SystemStored,
@@ -30,13 +34,15 @@ public sealed class FxRateSelectionServiceTests
             "CAD",
             new DateOnly(2026, 4, 12),
             1.3811m,
+            FxRateType.Spot,
+            FxQuoteBasis.Direct,
             DateTimeOffset.UtcNow,
             "{}");
         var store = new FakeSelectionStore(snapshot, marketRate);
         var service = new FxRateSelectionService(store);
 
         var result = await service.LoadAsync(
-            new FxRateSelectionRequest(CompanyId, null, "USD", "CAD", new DateOnly(2026, 4, 13), "ECB", 7),
+            new FxRateSelectionRequest(CompanyId, null, "USD", "CAD", new DateOnly(2026, 4, 13), "ECB", 7, FxRateType.Spot, FxQuoteBasis.Direct, FxRateUseCase.General, FxPostingReason.Normal),
             CancellationToken.None);
 
         Assert.Single(result.CompanySnapshots);
@@ -50,7 +56,7 @@ public sealed class FxRateSelectionServiceTests
         var service = new FxRateSelectionService(store);
 
         var resolution = await service.PersistManualSnapshotAsync(
-            new FxRateSelectionRequest(CompanyId, Guid.NewGuid(), "USD", "CAD", new DateOnly(2026, 4, 13), "ECB", 7),
+            new FxRateSelectionRequest(CompanyId, Guid.NewGuid(), "USD", "CAD", new DateOnly(2026, 4, 13), "ECB", 7, FxRateType.Spot, FxQuoteBasis.Direct, FxRateUseCase.General, FxPostingReason.Normal),
             1.3999m,
             CancellationToken.None);
 
@@ -106,6 +112,9 @@ public sealed class FxRateSelectionServiceTests
             DateOnly requestedDate,
             string providerKey,
             int lookbackDays,
+            string rateType,
+            string quoteBasis,
+            string rateUseCase,
             CancellationToken cancellationToken) =>
             Task.FromResult(_snapshot);
 
@@ -115,6 +124,8 @@ public sealed class FxRateSelectionServiceTests
             string quoteCurrencyCode,
             DateOnly requestedDate,
             int lookbackDays,
+            string rateType,
+            string quoteBasis,
             CancellationToken cancellationToken) =>
             Task.FromResult(_marketRate);
 
@@ -131,6 +142,10 @@ public sealed class FxRateSelectionServiceTests
             DateOnly requestedDate,
             FxMarketRateRecord marketRate,
             string providerKey,
+            string rateType,
+            string quoteBasis,
+            string rateUseCase,
+            string postingReason,
             CancellationToken cancellationToken) =>
             Task.FromResult(new FxSnapshotRecord(
                 Guid.NewGuid(),
@@ -140,6 +155,10 @@ public sealed class FxRateSelectionServiceTests
                 requestedDate,
                 marketRate.MarketDate,
                 marketRate.Rate,
+                rateType,
+                quoteBasis,
+                rateUseCase,
+                postingReason,
                 providerKey,
                 "provider_fetched",
                 FxSourceSemantics.SystemStored,
@@ -154,6 +173,10 @@ public sealed class FxRateSelectionServiceTests
             DateOnly requestedDate,
             decimal rate,
             string providerKey,
+            string rateType,
+            string quoteBasis,
+            string rateUseCase,
+            string postingReason,
             CancellationToken cancellationToken) =>
             Task.FromResult(new FxSnapshotRecord(
                 Guid.NewGuid(),
@@ -163,6 +186,10 @@ public sealed class FxRateSelectionServiceTests
                 requestedDate,
                 requestedDate,
                 rate,
+                rateType,
+                quoteBasis,
+                rateUseCase,
+                postingReason,
                 providerKey,
                 "manual",
                 FxSourceSemantics.Manual,

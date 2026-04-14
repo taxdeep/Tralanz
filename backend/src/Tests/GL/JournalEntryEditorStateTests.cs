@@ -1,4 +1,5 @@
 using Modules.GL.JournalEntry;
+using SharedKernel.Company;
 
 namespace Tests.GL;
 
@@ -52,6 +53,10 @@ public sealed class JournalEntryEditorStateTests
             new DateOnly(2026, 4, 13),
             SharedKernel.FX.FxSourceSemantics.SystemStored,
             "Local snapshot",
+            SharedKernel.FX.FxRateType.Spot,
+            SharedKernel.FX.FxQuoteBasis.Direct,
+            SharedKernel.FX.FxRateUseCase.General,
+            SharedKernel.FX.FxPostingReason.Normal,
             "ECB",
             snapshotId));
 
@@ -101,6 +106,10 @@ public sealed class JournalEntryEditorStateTests
                 state.Draft.JournalDate,
                 state.Draft.JournalDate,
                 state.Draft.FxRate,
+                SharedKernel.FX.FxRateType.Spot,
+                SharedKernel.FX.FxQuoteBasis.Direct,
+                SharedKernel.FX.FxRateUseCase.General,
+                SharedKernel.FX.FxPostingReason.Normal,
                 "ECB",
                 "provider_fetched",
                 SharedKernel.FX.FxSourceSemantics.SystemStored,
@@ -110,5 +119,27 @@ public sealed class JournalEntryEditorStateTests
 
         Assert.True(state.IsCurrentSnapshot(snapshotId));
         Assert.True(state.IsCurrentMarketRate(marketRateId, snapshots));
+    }
+
+    [Fact]
+    public void ApplyCompanyCurrencyProfile_ReplacesEnabledCurrenciesAndBaseContext()
+    {
+        var state = JournalEntryEditorState.CreateDarkModeDemo();
+
+        state.ApplyCompanyCurrencyProfile(new CompanyCurrencyProfile(
+            Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
+            "Northwind Studio Ltd.",
+            "USD",
+            true,
+            [
+                new CompanyCurrencyOption("USD", "US Dollar", true, true),
+                new CompanyCurrencyOption("CAD", "Canadian Dollar", false, true),
+                new CompanyCurrencyOption("EUR", "Euro", false, false)
+            ]));
+
+        Assert.Equal("USD", state.Draft.BaseCurrencyCode);
+        Assert.Equal("USD", state.Draft.CurrencyCode);
+        Assert.Equal(2, state.CurrencyOptions.Count);
+        Assert.DoesNotContain(state.CurrencyOptions, static option => option.Code == "EUR");
     }
 }

@@ -27,6 +27,11 @@ public sealed class FxRevaluationPostingTests
             new FxResolutionResult(document.FxSnapshot, Array.Empty<string>()),
             CancellationToken.None);
 
+        Assert.Equal("closing", document.FxSnapshot.RateType);
+        Assert.Equal("direct", document.FxSnapshot.QuoteBasis);
+        Assert.Equal("remeasurement", document.FxSnapshot.RateUseCase);
+        Assert.Equal("revaluation", document.FxSnapshot.PostingReason);
+
         Assert.Collection(
             fragments,
             control =>
@@ -251,7 +256,11 @@ public sealed class FxRevaluationPostingTests
                 1.25m,
                 new DateOnly(2026, 4, 12),
                 new DateOnly(2026, 4, 12),
-                "company_override"),
+                "company_override",
+                "closing",
+                "direct",
+                "remeasurement",
+                "revaluation"),
             unrealizedFxGainAccountId: Guid.NewGuid(),
             unrealizedFxLossAccountId: Guid.NewGuid(),
             lines:

@@ -7,4 +7,8 @@ public sealed record class FxRateLookupRequest(
     string QuoteCurrencyCode,
     DateOnly RequestedDate,
     string ProviderKey,
-    int LookbackDays);
+    int LookbackDays,
+    string RateType,
+    string QuoteBasis,
+    string RateUseCase,
+    string PostingReason);

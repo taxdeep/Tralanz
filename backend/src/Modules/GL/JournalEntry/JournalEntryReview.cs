@@ -28,6 +28,20 @@ public sealed record class JournalEntryReview
 
     public Guid? FxSnapshotId { get; init; }
 
+    public string? FxRateType { get; init; }
+
+    public string? FxQuoteBasis { get; init; }
+
+    public string? FxRateUseCase { get; init; }
+
+    public string? FxPostingReason { get; init; }
+
+    public string? FxSnapshotSemantics { get; init; }
+
+    public string? FxSnapshotRowOrigin { get; init; }
+
+    public string? FxProviderKey { get; init; }
+
     public required decimal TotalTransactionDebit { get; init; }
 
     public required decimal TotalTransactionCredit { get; init; }
@@ -87,6 +101,49 @@ public sealed record class JournalEntryReview
                 : "No persisted snapshot";
         }
     }
+
+    public string FxRateTypeLabel => string.IsNullOrWhiteSpace(FxRateType) ? "spot" : FxRateType;
+
+    public string FxQuoteBasisLabel => string.IsNullOrWhiteSpace(FxQuoteBasis) ? "direct" : FxQuoteBasis;
+
+    public string FxRateUseCaseLabel => string.IsNullOrWhiteSpace(FxRateUseCase) ? "general" : FxRateUseCase;
+
+    public string FxPostingReasonLabel => string.IsNullOrWhiteSpace(FxPostingReason) ? "normal" : FxPostingReason;
+
+    public string FxSnapshotSemanticsLabel
+    {
+        get
+        {
+            if (!IsForeignCurrency)
+            {
+                return "identity";
+            }
+
+            return string.IsNullOrWhiteSpace(FxSnapshotSemantics)
+                ? "legacy-unavailable"
+                : FxSnapshotSemantics;
+        }
+    }
+
+    public string FxSnapshotRowOriginLabel
+    {
+        get
+        {
+            if (!IsForeignCurrency)
+            {
+                return "identity";
+            }
+
+            return string.IsNullOrWhiteSpace(FxSnapshotRowOrigin)
+                ? "legacy-unavailable"
+                : FxSnapshotRowOrigin;
+        }
+    }
+
+    public string FxProviderLabel =>
+        string.IsNullOrWhiteSpace(FxProviderKey)
+            ? "No linked provider"
+            : FxProviderKey;
 
     public string FxReviewTitle => "Posted FX review";
 

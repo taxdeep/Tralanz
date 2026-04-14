@@ -34,6 +34,9 @@ public sealed class FxRateResolver : IFxRateResolver
             request.RequestedDate,
             request.ProviderKey,
             request.LookbackDays,
+            request.RateType,
+            request.QuoteBasis,
+            request.RateUseCase,
             cancellationToken);
 
         if (companySnapshot is not null)
@@ -47,19 +50,25 @@ public sealed class FxRateResolver : IFxRateResolver
             request.QuoteCurrencyCode,
             request.RequestedDate,
             request.LookbackDays,
+            request.RateType,
+            request.QuoteBasis,
             cancellationToken);
 
         if (marketRate is not null)
         {
-            var promotedSnapshot = await _store.UpsertCompanySnapshotAsync(
-                request.CompanyId,
-                request.CreatedByUserId,
-                request.BaseCurrencyCode,
-                request.QuoteCurrencyCode,
-                request.RequestedDate,
-                marketRate,
-                request.ProviderKey,
-                cancellationToken);
+        var promotedSnapshot = await _store.UpsertCompanySnapshotAsync(
+            request.CompanyId,
+            request.CreatedByUserId,
+            request.BaseCurrencyCode,
+            request.QuoteCurrencyCode,
+            request.RequestedDate,
+            marketRate,
+            request.ProviderKey,
+            request.RateType,
+            request.QuoteBasis,
+            request.RateUseCase,
+            request.PostingReason,
+            cancellationToken);
 
             return ToResolution(promotedSnapshot);
         }
@@ -99,6 +108,10 @@ public sealed class FxRateResolver : IFxRateResolver
             request.RequestedDate,
             selectedRate,
             request.ProviderKey,
+            request.RateType,
+            request.QuoteBasis,
+            request.RateUseCase,
+            request.PostingReason,
             cancellationToken);
 
         return ToResolution(storedSnapshot);
@@ -116,6 +129,10 @@ public sealed class FxRateResolver : IFxRateResolver
             snapshot.EffectiveDate,
             snapshot.SnapshotSemantics,
             statusLabel,
+            snapshot.RateType,
+            snapshot.QuoteBasis,
+            snapshot.RateUseCase,
+            snapshot.PostingReason,
             snapshot.ProviderKey,
             snapshot.Id);
     }

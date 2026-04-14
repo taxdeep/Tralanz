@@ -114,6 +114,58 @@
                             </RowTemplate>
                         </MudTable>
                     }
+                    else if (IsSettlementDocument(_document))
+                    {
+                        <MudTable Items="@_document.Lines" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh>Line</MudTh>
+                                @if (IsApplicationDocument(_document))
+                                {
+                                    <MudTh>Source</MudTh>
+                                }
+                                <MudTh>Target</MudTh>
+                                <MudTh>Applied amount</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Line">@context.LineNumber</MudTd>
+                                @if (IsApplicationDocument(_document))
+                                {
+                                    <MudTd DataLabel="Source">
+                                        <MudStack Spacing="0">
+                                            @if (TryBuildDocumentHref(context.SourceDocumentType, context.SourceDocumentId, out var sourceHref))
+                                            {
+                                                <MudLink Href="@sourceHref" Typo="Typo.body2">@DisplayDocumentLink(context.SourceDocumentDisplayNumber, context.SourceDocumentType)</MudLink>
+                                            }
+                                            else
+                                            {
+                                                <MudText Typo="Typo.body2">@DisplayDocumentLink(context.SourceDocumentDisplayNumber, context.SourceDocumentType)</MudText>
+                                            }
+                                            <MudText Typo="Typo.caption" Class="text-secondary">@DisplayOpenItem(context.SourceOpenItemId)</MudText>
+                                        </MudStack>
+                                    </MudTd>
+                                }
+                                <MudTd DataLabel="Target">
+                                    <MudStack Spacing="0">
+                                        @if (TryBuildDocumentHref(context.TargetDocumentType, context.TargetDocumentId, out var targetHref))
+                                        {
+                                            <MudLink Href="@targetHref" Typo="Typo.body2">@DisplayDocumentLink(context.TargetDocumentDisplayNumber, context.TargetDocumentType)</MudLink>
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.body2">@DisplayDocumentLink(context.TargetDocumentDisplayNumber, context.TargetDocumentType)</MudText>
+                                        }
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@DisplayOpenItem(context.TargetOpenItemId)</MudText>
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Applied amount">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@FormatAmount(context.LineAmount)</MudText>
+                                        <MudText Typo="Typo.caption" Class="text-secondary">@_document.TransactionCurrencyCode</MudText>
+                                    </MudStack>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
                     else
                     {
                         <MudTable Items="@_document.Lines" Dense="true" Hover="true" Striped="true">
@@ -298,6 +350,34 @@
 
     private static bool IsManualJournal(AccountingDocumentReviewSummary? document) =>
         document?.SourceType == "manual_journal";
+
+    private static bool IsSettlementDocument(AccountingDocumentReviewSummary? document) =>
+        document?.SourceType is "receive_payment" or "credit_application" or "pay_bill" or "vendor_credit_application";
+
+    private static bool IsApplicationDocument(AccountingDocumentReviewSummary? document) =>
+        document?.SourceType is "credit_application" or "vendor_credit_application";
+
+    private static string DisplayDocumentLink(string? displayNumber, string? sourceType)
+    {
+        var label = string.IsNullOrWhiteSpace(displayNumber) ? "Unavailable document" : displayNumber;
+        var typeLabel = AccountingDocumentReviewRouteCatalog.GetSourceLabel(sourceType);
+        return $"{label} | {typeLabel}";
+    }
+
+    private static string DisplayOpenItem(Guid? openItemId) =>
+        openItemId.HasValue ? $"Open item {openItemId.Value:D}" : "Open item unavailable";
+
+    private static bool TryBuildDocumentHref(string? sourceType, Guid? documentId, out string href)
+    {
+        href = string.Empty;
+
+        if (!documentId.HasValue)
+        {
+            return false;
+        }
+
+        return AccountingDocumentReviewRouteCatalog.TryBuildReviewHref(sourceType, documentId.Value, out href);
+    }
 
     private static IReadOnlyList<FactRow> BuildFactRows(AccountingDocumentReviewSummary document)
     {

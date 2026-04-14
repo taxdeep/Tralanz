@@ -1,0 +1,1 @@
+Payment Gateway只是received payment的一个payment method. 以此理解，是AR模块里的一个链路。Payment Gateway是另一个模块. 中间Payment Gateway只需要返回付了，没有付，付了部分，或者refund，disputed，等一系列状态。

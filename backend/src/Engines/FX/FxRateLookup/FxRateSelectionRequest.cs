@@ -8,4 +8,8 @@ public sealed record class FxRateSelectionRequest(
     DateOnly RequestedDate,
     string ProviderKey,
     int LookbackDays,
+    string RateType,
+    string QuoteBasis,
+    string RateUseCase,
+    string PostingReason,
     int Take = 6);

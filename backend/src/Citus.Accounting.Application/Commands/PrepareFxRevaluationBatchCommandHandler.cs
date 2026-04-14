@@ -28,6 +28,7 @@ public sealed class PrepareFxRevaluationBatchCommandHandler
                 new FxRevaluationDraftPreparation(
                     command.CompanyId,
                     command.UserId,
+                    command.BookId,
                     command.RevaluationDate,
                     command.TransactionCurrencyCode,
                     command.AcceptedFxSnapshotId,

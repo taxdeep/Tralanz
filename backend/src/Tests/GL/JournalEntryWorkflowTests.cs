@@ -1,4 +1,6 @@
+using Modules.Company.MultiCurrency;
 using Modules.GL.JournalEntry;
+using SharedKernel.Company;
 
 namespace Tests.GL;
 
@@ -32,8 +34,11 @@ public sealed class JournalEntryWorkflowTests
             new StubAccountCatalog(),
             new StubDraftStore(),
             new StubPostingStore(),
-            new StubFxRateSelectionService());
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
         var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
+        draft.BaseCurrencyCode = "USD";
+        draft.CurrencyCode = "USD";
         draft.Lines[0].Description = "Incomplete";
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -50,7 +55,8 @@ public sealed class JournalEntryWorkflowTests
             new StubAccountCatalog(),
             draftStore,
             new StubPostingStore(),
-            new StubFxRateSelectionService());
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
         var draft = CreateBalancedDraft();
         draft.Lines[1].CreditAmount = 90m;
 
@@ -69,8 +75,12 @@ public sealed class JournalEntryWorkflowTests
             new StubAccountCatalog(),
             draftStore,
             new StubPostingStore(),
-            fxSelectionService);
+            fxSelectionService,
+            new StubCompanyCurrencyCatalog());
         var draft = CreateBalancedDraft();
+        draft.CurrencyCode = "CAD";
+        draft.BaseCurrencyCode = "USD";
+        draft.FxRate = 1.25m;
         draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Manual;
         draft.FxSnapshotId = null;
 
@@ -88,7 +98,8 @@ public sealed class JournalEntryWorkflowTests
             new StubAccountCatalog(),
             new StubDraftStore(),
             new StubPostingStore(),
-            new StubFxRateSelectionService());
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
         var draft = CreateBalancedDraft();
         draft.Lines[0].DebitAmount = 10m;
         draft.Lines[1].CreditAmount = 9.99m;
@@ -108,7 +119,8 @@ public sealed class JournalEntryWorkflowTests
             new StubAccountCatalog(),
             draftStore,
             postingStore,
-            new StubFxRateSelectionService());
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
         var draft = CreateBalancedDraft();
 
         var result = await workflow.PostDraftAsync(draft, UserId, CancellationToken.None);
@@ -119,13 +131,161 @@ public sealed class JournalEntryWorkflowTests
         Assert.Equal("posted", draft.Status);
     }
 
+    [Fact]
+    public async Task SaveDraftAsync_RejectsCurrencyOutsideCompanyGovernance()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.CurrencyCode = "EUR";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal($"Currency EUR is not enabled for company {CompanyId:D}.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_RejectsBaseCurrencyMismatch()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.BaseCurrencyCode = "CAD";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal("Draft base currency CAD does not match company base currency USD.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_RejectsBaseCurrencyDraftWithNonIdentityFx()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.FxRate = 1.25m;
+        draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Manual;
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal("Base-currency journal entries must use identity FX semantics.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_RejectsForeignCurrencyDraftWithoutPersistedSnapshot()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(persistManualSnapshot: false),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.CurrencyCode = "CAD";
+        draft.BaseCurrencyCode = "USD";
+        draft.FxRate = 1.25m;
+        draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Manual;
+        draft.FxSnapshotId = null;
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal("Foreign-currency journal entries require a persisted FX snapshot before save or post.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_RejectsForeignCurrencyDraftWithIdentitySemantics()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.CurrencyCode = "CAD";
+        draft.BaseCurrencyCode = "USD";
+        draft.FxRate = 1.25m;
+        draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Identity;
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal("Foreign-currency journal entries cannot use identity FX semantics.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_RejectsSettlementUseCaseForManualJournal()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.CurrencyCode = "CAD";
+        draft.BaseCurrencyCode = "USD";
+        draft.FxRate = 1.25m;
+        draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.SystemStored;
+        draft.FxSnapshotId = Guid.NewGuid();
+        draft.FxEffectiveDate = draft.JournalDate;
+        draft.FxRateUseCase = SharedKernel.FX.FxRateUseCase.Settlement;
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal("Manual journal entry FX use case must stay general.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveDraftAsync_RejectsFxEffectiveDateAfterJournalDate()
+    {
+        var workflow = new JournalEntryWorkflow(
+            new StubAccountCatalog(),
+            new StubDraftStore(),
+            new StubPostingStore(),
+            new StubFxRateSelectionService(),
+            new StubCompanyCurrencyCatalog());
+        var draft = CreateBalancedDraft();
+        draft.CurrencyCode = "CAD";
+        draft.BaseCurrencyCode = "USD";
+        draft.FxRate = 1.25m;
+        draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.SystemStored;
+        draft.FxSnapshotId = Guid.NewGuid();
+        draft.FxEffectiveDate = draft.JournalDate.AddDays(1);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
+
+        Assert.Equal("FX effective date cannot be later than the journal date.", exception.Message);
+    }
+
     private static JournalEntryDraft CreateBalancedDraft()
     {
         var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
         draft.CompanyId = CompanyId;
         draft.CurrencyCode = "USD";
-        draft.BaseCurrencyCode = "CAD";
-        draft.FxRate = 1.25m;
+        draft.BaseCurrencyCode = "USD";
+        draft.FxRate = 1m;
+        draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Identity;
+        draft.FxSnapshotId = null;
+        draft.FxEffectiveDate = draft.JournalDate;
         draft.Lines[0].Account = OfficeExpense;
         draft.Lines[0].DebitAmount = 100m;
         draft.Lines[1].Account = OwnerCapital;
@@ -178,7 +338,14 @@ public sealed class JournalEntryWorkflowTests
 
     private sealed class StubFxRateSelectionService : Engines.FX.FxRateLookup.IFxRateSelectionService
     {
+        private readonly bool _persistManualSnapshot;
+
         public bool PersistManualCalled { get; private set; }
+
+        public StubFxRateSelectionService(bool persistManualSnapshot = true)
+        {
+            _persistManualSnapshot = persistManualSnapshot;
+        }
 
         public Task<Engines.FX.FxRateLookup.FxRateSelectionData> LoadAsync(
             Engines.FX.FxRateLookup.FxRateSelectionRequest request,
@@ -209,8 +376,26 @@ public sealed class JournalEntryWorkflowTests
                 request.RequestedDate,
                 SharedKernel.FX.FxSourceSemantics.Manual,
                 "Manual company snapshot",
+                request.RateType,
+                request.QuoteBasis,
+                request.RateUseCase,
+                request.PostingReason,
                 request.ProviderKey,
-                Guid.NewGuid()));
+                _persistManualSnapshot ? Guid.NewGuid() : null));
         }
+    }
+
+    private sealed class StubCompanyCurrencyCatalog : ICompanyCurrencyCatalog
+    {
+        public Task<CompanyCurrencyProfile> GetProfileAsync(Guid companyId, CancellationToken cancellationToken) =>
+            Task.FromResult(new CompanyCurrencyProfile(
+                companyId,
+                "Northwind Studio Ltd.",
+                "USD",
+                true,
+                [
+                    new CompanyCurrencyOption("USD", "US Dollar", true, true),
+                    new CompanyCurrencyOption("CAD", "Canadian Dollar", false, true)
+                ]));
     }
 }

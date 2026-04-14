@@ -11,7 +11,7 @@ They target a single-host deployment with:
 - local `PostgreSQL`
 - local frontend `SQLite`
 - `Node.js 22.x`
-- `.NET 10` from the Ubuntu 24.04 package feed
+- `.NET 11` from the Ubuntu 24.04 package feed
 - optional Let's Encrypt HTTPS via `certbot`
 - `systemd` services for:
   - Next.js frontend

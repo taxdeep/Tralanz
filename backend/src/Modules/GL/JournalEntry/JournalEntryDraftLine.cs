@@ -73,5 +73,7 @@ public sealed record class JournalEntryCurrencyOption
 
     public required decimal DefaultRateToBase { get; init; }
 
+    public bool IsBaseCurrency { get; init; }
+
     public string DisplayText => $"{Code} {Label}";
 }

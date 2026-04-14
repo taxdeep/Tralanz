@@ -3,6 +3,7 @@ namespace Citus.Accounting.Api;
 public sealed record PrepareFxRevaluationBatchHttpRequest(
     Guid CompanyId,
     Guid UserId,
+    Guid? BookId,
     DateOnly RevaluationDate,
     string TransactionCurrencyCode,
     Guid? AcceptedFxSnapshotId,
@@ -19,6 +20,92 @@ public sealed record PrepareFxRevaluationUnwindBatchHttpRequest(
 
 public sealed record FxRevaluationCascadeUnwindPlanQuery(Guid CompanyId);
 
+public sealed record CompanyBookGovernanceLookupQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate);
+
+public sealed record CompanyBookGovernedChangePreviewHttpRequest(
+    Guid CompanyId,
+    Guid? BookId,
+    DateOnly? AsOfDate,
+    bool? IsPrimary,
+    string? AccountingStandard,
+    string? BookBaseCurrencyCode,
+    string? FunctionalCurrencyCode,
+    string? PresentationCurrencyCode,
+    string? RateType,
+    string? QuoteBasis,
+    string? RateUseCase,
+    string? PostingReason,
+    string? RevaluationProfile,
+    string? FxRoundingPolicy);
+
+public sealed record PrepareCompanyBookGovernedChangeRequestHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid? BookId,
+    DateOnly? AsOfDate,
+    DateOnly EffectiveFrom,
+    bool? IsPrimary,
+    string? AccountingStandard,
+    string? BookBaseCurrencyCode,
+    string? FunctionalCurrencyCode,
+    string? PresentationCurrencyCode,
+    string? RateType,
+    string? QuoteBasis,
+    string? RateUseCase,
+    string? PostingReason,
+    string? RevaluationProfile,
+    string? FxRoundingPolicy);
+
+public sealed record CompanyBookGovernedChangeRequestLookupQuery(Guid CompanyId);
+
+public sealed record TransitionCompanyBookGovernedChangeRequestHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
+public sealed record CompanyBookGovernedChangeRequestReadinessQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate);
+
+public sealed record CompanyBookGovernanceSignalsLookupQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate);
+
+public sealed record CreateCompanyBookGovernanceSignalHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    string SignalType,
+    DateOnly SignalDate,
+    string? ReferenceLabel,
+    string? Notes);
+
+public sealed record RegisterCompanyBookClosedPeriodHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    DateOnly PeriodEndDate,
+    string? ReferenceLabel,
+    string? Notes);
+
+public sealed record RegisterCompanyBookIssuedStatementHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    DateOnly IssuedOn,
+    string StatementLabel,
+    string? Notes);
+
+public sealed record RegisterCompanyBookFiledTaxHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    DateOnly FiledOn,
+    string FilingLabel,
+    string? Notes);
+
+public sealed record CompanyBookPolicyLookupQuery(
+    Guid CompanyId,
+    Guid? BookId,
+    DateOnly? AsOfDate);
+
 public sealed record PostManualJournalHttpRequest(
     Guid CompanyId,
     Guid UserId,
@@ -28,6 +115,13 @@ public sealed record PostManualJournalHttpRequest(
 public sealed record ManualJournalLookupQuery(Guid CompanyId);
 
 public sealed record DocumentReviewLookupQuery(Guid CompanyId);
+
+public sealed record OpenItemDrillDownLookupQuery(Guid CompanyId);
+
+public sealed record SourceDocumentBrowserLookupQuery(
+    Guid CompanyId,
+    string? SourceType,
+    int? Limit);
 
 public sealed record PostInvoiceHttpRequest(
     Guid CompanyId,

@@ -72,4 +72,20 @@ public sealed record class AccountingDocumentReviewLineSummary
     public decimal? TxDebit { get; init; }
 
     public decimal? TxCredit { get; init; }
+
+    public Guid? SourceOpenItemId { get; init; }
+
+    public string? SourceDocumentType { get; init; }
+
+    public Guid? SourceDocumentId { get; init; }
+
+    public string? SourceDocumentDisplayNumber { get; init; }
+
+    public Guid? TargetOpenItemId { get; init; }
+
+    public string? TargetDocumentType { get; init; }
+
+    public Guid? TargetDocumentId { get; init; }
+
+    public string? TargetDocumentDisplayNumber { get; init; }
 }

@@ -36,6 +36,9 @@ public interface IFxRateStore
         DateOnly requestedDate,
         string providerKey,
         int lookbackDays,
+        string rateType,
+        string quoteBasis,
+        string rateUseCase,
         CancellationToken cancellationToken);
 
     Task<FxMarketRateRecord?> FindLatestMarketRateAsync(
@@ -44,6 +47,8 @@ public interface IFxRateStore
         string quoteCurrencyCode,
         DateOnly requestedDate,
         int lookbackDays,
+        string rateType,
+        string quoteBasis,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<FxMarketRateRecord>> UpsertMarketRatesAsync(
@@ -58,6 +63,10 @@ public interface IFxRateStore
         DateOnly requestedDate,
         FxMarketRateRecord marketRate,
         string providerKey,
+        string rateType,
+        string quoteBasis,
+        string rateUseCase,
+        string postingReason,
         CancellationToken cancellationToken);
 
     Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
@@ -68,5 +77,9 @@ public interface IFxRateStore
         DateOnly requestedDate,
         decimal rate,
         string providerKey,
+        string rateType,
+        string quoteBasis,
+        string rateUseCase,
+        string postingReason,
         CancellationToken cancellationToken);
 }

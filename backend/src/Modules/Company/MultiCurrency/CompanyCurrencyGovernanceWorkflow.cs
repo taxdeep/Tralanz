@@ -1,0 +1,84 @@
+using SharedKernel.Company;
+
+namespace Modules.Company.MultiCurrency;
+
+public sealed class CompanyCurrencyGovernanceWorkflow : ICompanyCurrencyGovernanceWorkflow
+{
+    private readonly ICompanyCurrencyProvisioningStore _store;
+
+    public CompanyCurrencyGovernanceWorkflow(ICompanyCurrencyProvisioningStore store)
+    {
+        _store = store ?? throw new ArgumentNullException(nameof(store));
+    }
+
+    public Task<CompanyCurrencyProfile> GetProfileAsync(
+        Guid companyId,
+        CancellationToken cancellationToken) =>
+        _store.GetProfileAsync(companyId, cancellationToken);
+
+    public async Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
+        Guid companyId,
+        string currencyCode,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        _ = userId;
+
+        var normalizedCurrencyCode = NormalizeCurrencyCode(currencyCode);
+        var profile = await _store.GetProfileAsync(companyId, cancellationToken);
+
+        if (profile.IsCurrencyEnabled(normalizedCurrencyCode))
+        {
+            return new CompanyCurrencyGovernanceResult(profile, []);
+        }
+
+        var controlAccounts = BuildControlAccounts(profile.BaseCurrencyCode, normalizedCurrencyCode);
+        return await _store.EnableCurrencyAsync(
+            companyId,
+            normalizedCurrencyCode,
+            controlAccounts,
+            cancellationToken);
+    }
+
+    private static string NormalizeCurrencyCode(string currencyCode)
+    {
+        if (string.IsNullOrWhiteSpace(currencyCode))
+        {
+            throw new InvalidOperationException("A currency code is required.");
+        }
+
+        return currencyCode.Trim().ToUpperInvariant();
+    }
+
+    private static IReadOnlyList<ControlAccountProvisioningRequest> BuildControlAccounts(
+        string baseCurrencyCode,
+        string currencyCode)
+    {
+        if (string.Equals(baseCurrencyCode, currencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        return
+        [
+            new ControlAccountProvisioningRequest(
+                Code: $"AR-{currencyCode}",
+                Name: $"Accounts Receivable (A/R) - {currencyCode}",
+                RootType: "asset",
+                DetailType: "accounts_receivable",
+                CurrencyCode: currencyCode,
+                SystemKey: $"control_account:accounts_receivable:{currencyCode}",
+                SystemRole: $"accounts_receivable:{currencyCode}",
+                AllowManualPosting: false),
+            new ControlAccountProvisioningRequest(
+                Code: $"AP-{currencyCode}",
+                Name: $"Accounts Payable (A/P) - {currencyCode}",
+                RootType: "liability",
+                DetailType: "accounts_payable",
+                CurrencyCode: currencyCode,
+                SystemKey: $"control_account:accounts_payable:{currencyCode}",
+                SystemRole: $"accounts_payable:{currencyCode}",
+                AllowManualPosting: false)
+        ];
+    }
+}

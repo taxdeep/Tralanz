@@ -65,11 +65,20 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         string status;
         string batchKind;
         Guid? reversalOfDocumentId;
+        Guid? bookId;
+        string? bookCode;
+        string? accountingStandard;
+        string? revaluationProfile;
+        string? fxRoundingPolicy;
         DateOnly revaluationDate;
         string transactionCurrencyCode;
         string baseCurrencyCode;
         Guid? fxSnapshotId;
         decimal fxRate;
+        string fxRateType;
+        string fxQuoteBasis;
+        string fxRateUseCase;
+        string fxPostingReason;
         DateOnly fxRequestedDate;
         DateOnly fxEffectiveDate;
         string fxSource;
@@ -84,11 +93,20 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                            b.status,
                            b.batch_kind,
                            b.reversal_of_fx_revaluation_batch_id,
+                           b.company_book_id,
+                           b.book_code,
+                           b.accounting_standard,
+                           b.revaluation_profile,
+                           b.fx_rounding_policy,
                            b.revaluation_date,
                            b.transaction_currency_code,
                            b.base_currency_code,
                            b.fx_rate_snapshot_id,
                            b.fx_rate,
+                           b.rate_type,
+                           b.quote_basis,
+                           b.rate_use_case,
+                           b.posting_reason,
                            b.fx_requested_date,
                            b.fx_effective_date,
                            b.fx_source,
@@ -116,6 +134,21 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             reversalOfDocumentId = reader.IsDBNull(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id"))
                 ? null
                 : reader.GetGuid(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id"));
+            bookId = reader.IsDBNull(reader.GetOrdinal("company_book_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("company_book_id"));
+            bookCode = reader.IsDBNull(reader.GetOrdinal("book_code"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("book_code"));
+            accountingStandard = reader.IsDBNull(reader.GetOrdinal("accounting_standard"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("accounting_standard"));
+            revaluationProfile = reader.IsDBNull(reader.GetOrdinal("revaluation_profile"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("revaluation_profile"));
+            fxRoundingPolicy = reader.IsDBNull(reader.GetOrdinal("fx_rounding_policy"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("fx_rounding_policy"));
             revaluationDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("revaluation_date"));
             transactionCurrencyCode = reader.GetString(reader.GetOrdinal("transaction_currency_code"));
             baseCurrencyCode = reader.GetString(reader.GetOrdinal("base_currency_code"));
@@ -123,6 +156,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 ? null
                 : reader.GetGuid(reader.GetOrdinal("fx_rate_snapshot_id"));
             fxRate = reader.GetDecimal(reader.GetOrdinal("fx_rate"));
+            fxRateType = reader.GetString(reader.GetOrdinal("rate_type"));
+            fxQuoteBasis = reader.GetString(reader.GetOrdinal("quote_basis"));
+            fxRateUseCase = reader.GetString(reader.GetOrdinal("rate_use_case"));
+            fxPostingReason = reader.GetString(reader.GetOrdinal("posting_reason"));
             fxRequestedDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_requested_date"));
             fxEffectiveDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_effective_date"));
             fxSource = reader.GetString(reader.GetOrdinal("fx_source"));
@@ -267,19 +304,28 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             new CurrencyCode(transactionCurrencyCode),
             new CurrencyCode(baseCurrencyCode),
             new FxSnapshotRef(
-                fxSnapshotId ?? Guid.Empty,
-                new CurrencyCode(baseCurrencyCode),
-                new CurrencyCode(transactionCurrencyCode),
-                fxRate,
-                fxRequestedDate,
-                fxEffectiveDate,
-                fxSource),
+                SnapshotId: fxSnapshotId ?? Guid.Empty,
+                BaseCurrencyCode: new CurrencyCode(baseCurrencyCode),
+                QuoteCurrencyCode: new CurrencyCode(transactionCurrencyCode),
+                Rate: fxRate,
+                RequestedDate: fxRequestedDate,
+                EffectiveDate: fxEffectiveDate,
+                SourceSemantics: fxSource,
+                RateType: fxRateType,
+                QuoteBasis: fxQuoteBasis,
+                RateUseCase: fxRateUseCase,
+                PostingReason: fxPostingReason),
             unrealizedFxGainAccountId.Value,
             unrealizedFxLossAccountId.Value,
             lines,
             memo,
             batchKind,
-            reversalOfDocumentId);
+            reversalOfDocumentId,
+            bookId,
+            bookCode,
+            accountingStandard,
+            revaluationProfile,
+            fxRoundingPolicy);
     }
 
     private async Task<FxRevaluationCascadeUnwindPlanResult> GetCascadeUnwindPlanCoreAsync(
@@ -342,11 +388,21 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             throw new InvalidOperationException("FX revaluation preparation requires a foreign transaction currency.");
         }
 
+        var bookPolicy = await EnsureAndLoadRemeasurementBookPolicyAsync(
+            scope,
+            request.CompanyId.Value,
+            request.BookId,
+            request.UserId.Value,
+            baseCurrencyCode,
+            request.RevaluationDate,
+            cancellationToken);
+
         var fxSnapshot = await LoadAcceptedFxSnapshotAsync(
             scope,
             request.CompanyId.Value,
             baseCurrencyCode,
             request.TransactionCurrencyCode.Value,
+            bookPolicy,
             request.RevaluationDate,
             request.AcceptedFxSnapshotId,
             cancellationToken);
@@ -441,6 +497,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             request.RevaluationDate,
             request.TransactionCurrencyCode.Value,
             baseCurrencyCode,
+            bookPolicy,
             fxSnapshot,
             request.Memo,
             cancellationToken);
@@ -450,6 +507,11 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             batchId,
             entityNumber,
             displayNumber,
+            bookPolicy.BookId,
+            bookPolicy.BookCode,
+            bookPolicy.AccountingStandard,
+            bookPolicy.RevaluationProfile,
+            bookPolicy.FxRoundingPolicy,
             preparedLines.Length,
             "draft");
     }
@@ -543,6 +605,18 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             request.UnwindDate,
             sourceBatch.TransactionCurrencyCode,
             sourceBatch.BaseCurrencyCode,
+            new ResolvedRemeasurementBookPolicy(
+                sourceBatch.BookId ?? Guid.Empty,
+                sourceBatch.BookCode ?? "PRIMARY",
+                sourceBatch.AccountingStandard ?? "ASPE",
+                sourceBatch.BookBaseCurrencyCode,
+                sourceBatch.FunctionalCurrencyCode,
+                sourceBatch.RevaluationProfile ?? "monetary_open_item_closing",
+                sourceBatch.FxRoundingPolicy ?? "currency_precision",
+                sourceBatch.RateType,
+                sourceBatch.QuoteBasis,
+                sourceBatch.RateUseCase,
+                sourceBatch.PostingReason),
             sourceBatch.FxSnapshot,
             memo,
             cancellationToken);
@@ -552,6 +626,11 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             batchId,
             entityNumber,
             displayNumber,
+            sourceBatch.BookId,
+            sourceBatch.BookCode,
+            sourceBatch.AccountingStandard,
+            sourceBatch.RevaluationProfile,
+            sourceBatch.FxRoundingPolicy,
             preparedLines.Count,
             "draft");
     }
@@ -568,6 +647,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         DateOnly revaluationDate,
         string transactionCurrencyCode,
         string baseCurrencyCode,
+        ResolvedRemeasurementBookPolicy bookPolicy,
         FxSnapshotRef fxSnapshot,
         string? memo,
         CancellationToken cancellationToken)
@@ -577,8 +657,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             insert into fx_revaluation_batches (
               id,
               company_id,
+              company_book_id,
               entity_number,
               display_number,
+              book_code,
+              accounting_standard,
+              revaluation_profile,
+              fx_rounding_policy,
               status,
               batch_kind,
               reversal_of_fx_revaluation_batch_id,
@@ -587,6 +672,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               base_currency_code,
               fx_rate_snapshot_id,
               fx_rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               fx_requested_date,
               fx_effective_date,
               fx_source,
@@ -598,8 +687,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             values (
               @id,
               @company_id,
+              @company_book_id,
               @entity_number,
               @display_number,
+              @book_code,
+              @accounting_standard,
+              @revaluation_profile,
+              @fx_rounding_policy,
               'draft',
               @batch_kind,
               @reversal_of_fx_revaluation_batch_id,
@@ -608,6 +702,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               @base_currency_code,
               @fx_rate_snapshot_id,
               @fx_rate,
+              @rate_type,
+              @quote_basis,
+              @rate_use_case,
+              @posting_reason,
               @fx_requested_date,
               @fx_effective_date,
               @fx_source,
@@ -620,8 +718,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         headerCommand.Parameters.AddWithValue("id", batchId);
         headerCommand.Parameters.AddWithValue("company_id", companyId);
+        headerCommand.Parameters.AddWithValue("company_book_id", bookPolicy.BookId == Guid.Empty ? DBNull.Value : (object)bookPolicy.BookId);
         headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
         headerCommand.Parameters.AddWithValue("display_number", displayNumber);
+        headerCommand.Parameters.AddWithValue("book_code", bookPolicy.BookCode);
+        headerCommand.Parameters.AddWithValue("accounting_standard", bookPolicy.AccountingStandard);
+        headerCommand.Parameters.AddWithValue("revaluation_profile", bookPolicy.RevaluationProfile);
+        headerCommand.Parameters.AddWithValue("fx_rounding_policy", bookPolicy.FxRoundingPolicy);
         headerCommand.Parameters.AddWithValue("batch_kind", batchKind);
         headerCommand.Parameters.AddWithValue(
             "reversal_of_fx_revaluation_batch_id",
@@ -633,6 +736,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             "fx_rate_snapshot_id",
             fxSnapshot.SnapshotId == Guid.Empty ? DBNull.Value : (object)fxSnapshot.SnapshotId);
         headerCommand.Parameters.AddWithValue("fx_rate", fxSnapshot.Rate);
+        headerCommand.Parameters.AddWithValue("rate_type", fxSnapshot.RateType);
+        headerCommand.Parameters.AddWithValue("quote_basis", fxSnapshot.QuoteBasis);
+        headerCommand.Parameters.AddWithValue("rate_use_case", fxSnapshot.RateUseCase);
+        headerCommand.Parameters.AddWithValue("posting_reason", fxSnapshot.PostingReason);
         headerCommand.Parameters.AddWithValue("fx_requested_date", fxSnapshot.RequestedDate);
         headerCommand.Parameters.AddWithValue("fx_effective_date", fxSnapshot.EffectiveDate);
         headerCommand.Parameters.AddWithValue("fx_source", fxSnapshot.SourceSemantics);
@@ -744,6 +851,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         Guid companyId,
         string baseCurrencyCode,
         string transactionCurrencyCode,
+        ResolvedRemeasurementBookPolicy bookPolicy,
         DateOnly requestedDate,
         Guid? snapshotId,
         CancellationToken cancellationToken)
@@ -755,6 +863,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 s.base_currency_code,
                 s.quote_currency_code,
                 s.rate,
+                s.rate_type,
+                s.quote_basis,
+                s.rate_use_case,
+                s.posting_reason,
                 s.requested_date,
                 s.effective_date,
                 s.snapshot_semantics
@@ -763,6 +875,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 and s.id = @snapshot_id
                 and s.base_currency_code = @base_currency_code
                 and s.quote_currency_code = @transaction_currency_code
+                and s.rate_type = @rate_type
+                and s.quote_basis = @quote_basis
+                and s.rate_use_case = @rate_use_case
+                and s.posting_reason = @posting_reason
               limit 1;
               """
             : """
@@ -771,6 +887,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 s.base_currency_code,
                 s.quote_currency_code,
                 s.rate,
+                s.rate_type,
+                s.quote_basis,
+                s.rate_use_case,
+                s.posting_reason,
                 s.requested_date,
                 s.effective_date,
                 s.snapshot_semantics
@@ -778,6 +898,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               where s.company_id = @company_id
                 and s.base_currency_code = @base_currency_code
                 and s.quote_currency_code = @transaction_currency_code
+                and s.rate_type = @rate_type
+                and s.quote_basis = @quote_basis
+                and s.rate_use_case = @rate_use_case
+                and s.posting_reason = @posting_reason
                 and s.requested_date <= @requested_date
                 and s.effective_date <= @requested_date
               order by s.requested_date desc, s.effective_date desc, s.created_at desc
@@ -788,6 +912,10 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        command.Parameters.AddWithValue("rate_type", bookPolicy.RateType);
+        command.Parameters.AddWithValue("quote_basis", bookPolicy.QuoteBasis);
+        command.Parameters.AddWithValue("rate_use_case", bookPolicy.RateUseCase);
+        command.Parameters.AddWithValue("posting_reason", bookPolicy.PostingReason);
         command.Parameters.AddWithValue("requested_date", requestedDate);
 
         if (snapshotId is { } explicitSnapshotId && explicitSnapshotId != Guid.Empty)
@@ -802,13 +930,17 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         }
 
         return new FxSnapshotRef(
-            reader.GetGuid(reader.GetOrdinal("id")),
-            new CurrencyCode(reader.GetString(reader.GetOrdinal("base_currency_code"))),
-            new CurrencyCode(reader.GetString(reader.GetOrdinal("quote_currency_code"))),
-            reader.GetDecimal(reader.GetOrdinal("rate")),
-            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("requested_date")),
-            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("effective_date")),
-            reader.GetString(reader.GetOrdinal("snapshot_semantics")));
+            SnapshotId: reader.GetGuid(reader.GetOrdinal("id")),
+            BaseCurrencyCode: new CurrencyCode(reader.GetString(reader.GetOrdinal("base_currency_code"))),
+            QuoteCurrencyCode: new CurrencyCode(reader.GetString(reader.GetOrdinal("quote_currency_code"))),
+            Rate: reader.GetDecimal(reader.GetOrdinal("rate")),
+            RequestedDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("requested_date")),
+            EffectiveDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("effective_date")),
+            SourceSemantics: reader.GetString(reader.GetOrdinal("snapshot_semantics")),
+            RateType: reader.GetString(reader.GetOrdinal("rate_type")),
+            QuoteBasis: reader.GetString(reader.GetOrdinal("quote_basis")),
+            RateUseCase: reader.GetString(reader.GetOrdinal("rate_use_case")),
+            PostingReason: reader.GetString(reader.GetOrdinal("posting_reason")));
     }
 
     private static async Task<SourceFxRevaluationBatch> LoadSourceBatchForUnwindAsync(
@@ -825,11 +957,20 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               b.status,
               b.batch_kind,
               b.posted_at,
+              b.company_book_id,
+              b.book_code,
+              b.accounting_standard,
+              b.revaluation_profile,
+              b.fx_rounding_policy,
               b.revaluation_date,
               b.transaction_currency_code,
               b.base_currency_code,
               b.fx_rate_snapshot_id,
               b.fx_rate,
+              b.rate_type,
+              b.quote_basis,
+              b.rate_use_case,
+              b.posting_reason,
               b.fx_requested_date,
               b.fx_effective_date,
               b.fx_source
@@ -856,19 +997,44 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             reader.IsDBNull(reader.GetOrdinal("posted_at"))
                 ? (DateTimeOffset?)null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+            reader.IsDBNull(reader.GetOrdinal("company_book_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("company_book_id")),
+            reader.IsDBNull(reader.GetOrdinal("book_code"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("book_code")),
+            reader.IsDBNull(reader.GetOrdinal("accounting_standard"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("accounting_standard")),
+            reader.IsDBNull(reader.GetOrdinal("revaluation_profile"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("revaluation_profile")),
+            reader.IsDBNull(reader.GetOrdinal("fx_rounding_policy"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("fx_rounding_policy")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("revaluation_date")),
             reader.GetString(reader.GetOrdinal("transaction_currency_code")),
             reader.GetString(reader.GetOrdinal("base_currency_code")),
+            reader.GetString(reader.GetOrdinal("base_currency_code")),
+            reader.GetString(reader.GetOrdinal("base_currency_code")),
             new FxSnapshotRef(
-                reader.IsDBNull(reader.GetOrdinal("fx_rate_snapshot_id"))
+                SnapshotId: reader.IsDBNull(reader.GetOrdinal("fx_rate_snapshot_id"))
                     ? Guid.Empty
                     : reader.GetGuid(reader.GetOrdinal("fx_rate_snapshot_id")),
-                new CurrencyCode(reader.GetString(reader.GetOrdinal("base_currency_code"))),
-                new CurrencyCode(reader.GetString(reader.GetOrdinal("transaction_currency_code"))),
-                reader.GetDecimal(reader.GetOrdinal("fx_rate")),
-                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_requested_date")),
-                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_effective_date")),
-                reader.GetString(reader.GetOrdinal("fx_source"))));
+                BaseCurrencyCode: new CurrencyCode(reader.GetString(reader.GetOrdinal("base_currency_code"))),
+                QuoteCurrencyCode: new CurrencyCode(reader.GetString(reader.GetOrdinal("transaction_currency_code"))),
+                Rate: reader.GetDecimal(reader.GetOrdinal("fx_rate")),
+                RequestedDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_requested_date")),
+                EffectiveDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("fx_effective_date")),
+                SourceSemantics: reader.GetString(reader.GetOrdinal("fx_source")),
+                RateType: reader.GetString(reader.GetOrdinal("rate_type")),
+                QuoteBasis: reader.GetString(reader.GetOrdinal("quote_basis")),
+                RateUseCase: reader.GetString(reader.GetOrdinal("rate_use_case")),
+                PostingReason: reader.GetString(reader.GetOrdinal("posting_reason"))),
+            reader.GetString(reader.GetOrdinal("rate_type")),
+            reader.GetString(reader.GetOrdinal("quote_basis")),
+            reader.GetString(reader.GetOrdinal("rate_use_case")),
+            reader.GetString(reader.GetOrdinal("posting_reason")));
     }
 
     private static async Task EnsureNoActiveUnwindAsync(
@@ -1440,14 +1606,271 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         decimal OpenAmountBase,
         string Status);
 
+    private static async Task<ResolvedRemeasurementBookPolicy> EnsureAndLoadRemeasurementBookPolicyAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid? requestedBookId,
+        Guid userId,
+        string companyBaseCurrencyCode,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        if (!requestedBookId.HasValue)
+        {
+            await EnsureDefaultPrimaryBookPolicyAsync(
+                scope,
+                companyId,
+                userId,
+                companyBaseCurrencyCode,
+                asOfDate,
+                cancellationToken);
+        }
+
+        var policy = await LoadRemeasurementBookPolicyAsync(
+            scope,
+            companyId,
+            requestedBookId,
+            asOfDate,
+            cancellationToken);
+
+        if (policy is null)
+        {
+            throw new InvalidOperationException(
+                requestedBookId.HasValue
+                    ? $"FX revaluation book {requestedBookId.Value:D} does not have an active governed remeasurement policy."
+                    : "FX revaluation requires an active governed primary book remeasurement policy.");
+        }
+
+        if (!string.Equals(policy.BookBaseCurrencyCode, companyBaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"FX revaluation currently supports only books whose base currency matches the active company base currency {companyBaseCurrencyCode}. Book {policy.BookCode} uses {policy.BookBaseCurrencyCode}.");
+        }
+
+        return policy;
+    }
+
+    private static async Task EnsureDefaultPrimaryBookPolicyAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        string companyBaseCurrencyCode,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        var existing = await LoadRemeasurementBookPolicyAsync(
+            scope,
+            companyId,
+            bookId: null,
+            asOfDate,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return;
+        }
+
+        await using var insertBookCommand = scope.CreateCommand(
+            """
+            insert into company_books (
+              id,
+              company_id,
+              book_code,
+              book_name,
+              book_role,
+              accounting_standard,
+              book_base_currency_code,
+              functional_currency_code,
+              presentation_currency_code,
+              is_primary,
+              is_adjustment_only,
+              effective_from,
+              is_active,
+              created_by_user_id,
+              created_at,
+              updated_at
+            )
+            select
+              gen_random_uuid(),
+              @company_id,
+              'PRIMARY',
+              'Primary Book',
+              'primary',
+              'ASPE',
+              @book_base_currency_code,
+              @functional_currency_code,
+              null,
+              true,
+              false,
+              @effective_from,
+              true,
+              @created_by_user_id,
+              now(),
+              now()
+            where not exists (
+              select 1
+              from company_books b
+              where b.company_id = @company_id
+                and b.is_active = true
+                and b.is_primary = true
+            );
+            """);
+        insertBookCommand.Parameters.AddWithValue("company_id", companyId);
+        insertBookCommand.Parameters.AddWithValue("book_base_currency_code", companyBaseCurrencyCode);
+        insertBookCommand.Parameters.AddWithValue("functional_currency_code", companyBaseCurrencyCode);
+        insertBookCommand.Parameters.AddWithValue("effective_from", asOfDate);
+        insertBookCommand.Parameters.AddWithValue("created_by_user_id", userId);
+        await insertBookCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var insertPolicyCommand = scope.CreateCommand(
+            """
+            insert into company_book_remeasurement_policies (
+              id,
+              company_id,
+              company_book_id,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
+              revaluation_profile,
+              fx_rounding_policy,
+              effective_from,
+              is_active,
+              created_by_user_id,
+              created_at,
+              updated_at
+            )
+            select
+              gen_random_uuid(),
+              @company_id,
+              b.id,
+              'closing',
+              'direct',
+              'remeasurement',
+              'revaluation',
+              'monetary_open_item_closing',
+              'currency_precision',
+              @effective_from,
+              true,
+              @created_by_user_id,
+              now(),
+              now()
+            from company_books b
+            where b.company_id = @company_id
+              and b.is_active = true
+              and b.is_primary = true
+              and not exists (
+                select 1
+                from company_book_remeasurement_policies p
+                where p.company_id = b.company_id
+                  and p.company_book_id = b.id
+                  and p.is_active = true
+              )
+            order by b.effective_from desc, b.created_at desc, b.id desc
+            limit 1;
+            """);
+        insertPolicyCommand.Parameters.AddWithValue("company_id", companyId);
+        insertPolicyCommand.Parameters.AddWithValue("effective_from", asOfDate);
+        insertPolicyCommand.Parameters.AddWithValue("created_by_user_id", userId);
+        await insertPolicyCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<ResolvedRemeasurementBookPolicy?> LoadRemeasurementBookPolicyAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid? bookId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              b.id as company_book_id,
+              b.book_code,
+              b.accounting_standard,
+              b.book_base_currency_code,
+              b.functional_currency_code,
+              p.revaluation_profile,
+              p.fx_rounding_policy,
+              p.rate_type,
+              p.quote_basis,
+              p.rate_use_case,
+              p.posting_reason
+            from company_books b
+            join company_book_remeasurement_policies p
+              on p.company_id = b.company_id
+             and p.company_book_id = b.id
+            where b.company_id = @company_id
+              and b.is_active = true
+              and p.is_active = true
+              and b.effective_from <= @as_of_date
+              and p.effective_from <= @as_of_date
+              and (@book_id::uuid is null or b.id = @book_id)
+              and (@book_id::uuid is not null or b.is_primary = true)
+            order by
+              p.effective_from desc,
+              b.effective_from desc,
+              p.created_at desc,
+              b.created_at desc,
+              p.id desc,
+              b.id desc
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("book_id", bookId.HasValue ? bookId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("as_of_date", asOfDate);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ResolvedRemeasurementBookPolicy(
+            reader.GetGuid(reader.GetOrdinal("company_book_id")),
+            reader.GetString(reader.GetOrdinal("book_code")),
+            reader.GetString(reader.GetOrdinal("accounting_standard")),
+            reader.GetString(reader.GetOrdinal("book_base_currency_code")),
+            reader.GetString(reader.GetOrdinal("functional_currency_code")),
+            reader.GetString(reader.GetOrdinal("revaluation_profile")),
+            reader.GetString(reader.GetOrdinal("fx_rounding_policy")),
+            reader.GetString(reader.GetOrdinal("rate_type")),
+            reader.GetString(reader.GetOrdinal("quote_basis")),
+            reader.GetString(reader.GetOrdinal("rate_use_case")),
+            reader.GetString(reader.GetOrdinal("posting_reason")));
+    }
+
     private sealed record SourceFxRevaluationBatch(
         Guid Id,
         string DisplayNumber,
         string Status,
         string BatchKind,
         DateTimeOffset? PostedAt,
+        Guid? BookId,
+        string? BookCode,
+        string? AccountingStandard,
+        string? RevaluationProfile,
+        string? FxRoundingPolicy,
         DateOnly RevaluationDate,
         string TransactionCurrencyCode,
         string BaseCurrencyCode,
-        FxSnapshotRef FxSnapshot);
+        string BookBaseCurrencyCode,
+        string FunctionalCurrencyCode,
+        FxSnapshotRef FxSnapshot,
+        string RateType,
+        string QuoteBasis,
+        string RateUseCase,
+        string PostingReason);
+
+    private sealed record ResolvedRemeasurementBookPolicy(
+        Guid BookId,
+        string BookCode,
+        string AccountingStandard,
+        string BookBaseCurrencyCode,
+        string FunctionalCurrencyCode,
+        string RevaluationProfile,
+        string FxRoundingPolicy,
+        string RateType,
+        string QuoteBasis,
+        string RateUseCase,
+        string PostingReason);
 }

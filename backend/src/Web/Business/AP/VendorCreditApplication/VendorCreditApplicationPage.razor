@@ -1,0 +1,404 @@
+@page "/ap/vendor-credit-application"
+@using Modules.AP.VendorCreditApplication
+@using Web.Business.AP.SettlementPosting
+@inject ICompanyAccessShellSession ShellSession
+@inject IApSettlementLookupService LookupService
+@inject IVendorCreditApplicationDraftPreparationWorkflow Workflow
+@inject ApSettlementPostingClient PostingClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Vendor Credit Application</PageTitle>
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <h1 style="margin:0 0 0.75rem 0;">Vendor Credit Application</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:56rem;">
+        Prepare governed vendor credit applications from open AP items in the active company context.
+    </p>
+
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+        Active company: @ShellSession.ActiveCompanyId
+        <br />
+        Current user: @ShellSession.CurrentUserId
+    </MudAlert>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_selectedVendorIdText">
+            @foreach (var vendor in _vendors)
+            {
+                <MudSelectItem T="string" Value="@vendor.Id.ToString()">@vendor.DisplayLabel</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="Application Date" Variant="Variant.Outlined" Editable="true" Date="@_applicationDatePicker" DateChanged="OnApplicationDateChanged" />
+        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" />
+    </div>
+
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="_isBusy" OnClick="LoadCandidatesAsync">Load Open Items</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _sourceVendorCredits.Count == 0 || _targetBills.Count == 0)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_errorText</MudAlert>
+    }
+
+    @if (_sourceVendorCredits.Count > 0 || _targetBills.Count > 0)
+    {
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:1rem;margin-bottom:1rem;">
+            <MudSelect T="string" Label="Source Vendor Credit Open Item" Variant="Variant.Outlined" @bind-Value="_selectedSourceOpenItemIdText">
+                @foreach (var source in _sourceVendorCredits)
+                {
+                    <MudSelectItem T="string" Value="@source.OpenItemId.ToString()">
+                        @($"{source.DisplayNumber} | {source.OpenAmountTx} {source.DocumentCurrencyCode}")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="string" Label="Target Bill Open Item" Variant="Variant.Outlined" @bind-Value="_selectedTargetOpenItemIdText">
+                @foreach (var target in _targetBills)
+                {
+                    <MudSelectItem T="string" Value="@target.OpenItemId.ToString()">
+                        @($"{target.DisplayNumber} | {target.OpenAmountTx} {target.DocumentCurrencyCode}")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="decimal" Label="Apply Amount" Variant="Variant.Outlined" Min="0" Immediate="true" @bind-Value="_appliedAmountTx" />
+        </div>
+
+        <MudTable Items="_sourceVendorCredits" Dense="true" Hover="true" Bordered="true" Style="margin-bottom:1rem;">
+            <HeaderContent>
+                <MudTh>Vendor Credit Source</MudTh>
+                <MudTh>Currency</MudTh>
+                <MudTh>Open Tx</MudTh>
+                <MudTh>Open Base</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.DisplayNumber</MudTd>
+                <MudTd>@context.DocumentCurrencyCode</MudTd>
+                <MudTd>@context.OpenAmountTx</MudTd>
+                <MudTd>@context.OpenAmountBase</MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <MudTable Items="_targetBills" Dense="true" Hover="true" Bordered="true" Style="margin-bottom:1rem;">
+            <HeaderContent>
+                <MudTh>Bill Target</MudTh>
+                <MudTh>Currency</MudTh>
+                <MudTh>Open Tx</MudTh>
+                <MudTh>Open Base</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.DisplayNumber</MudTd>
+                <MudTd>@context.DocumentCurrencyCode</MudTd>
+                <MudTd>@context.OpenAmountTx</MudTd>
+                <MudTd>@context.OpenAmountBase</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+
+    @if (TryGetSelectedSourceVendorCredit(out var selectedSource) && TryGetSelectedTargetBill(out var selectedTarget) && _appliedAmountTx > 0m)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6">Apply Preview</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">@($"Planned application {_appliedAmountTx:N2} {selectedSource.DocumentCurrencyCode}")</MudText>
+            <MudTable Items="new[] { selectedSource, selectedTarget }" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Role</MudTh>
+                    <MudTh>Document</MudTh>
+                    <MudTh>Open Item</MudTh>
+                    <MudTh>Open Tx</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@(context.OpenItemId == selectedSource.OpenItemId ? "Source Credit" : "Target Bill")</MudTd>
+                    <MudTd>
+                        @if (TryBuildDocumentHref(context.SourceType, context.SourceId, out var href))
+                        {
+                            <MudLink Href="@href">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudText>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudLink Href="@($"/open-items/ap/{context.OpenItemId:D}")"><span class="citus-inline-code">@context.OpenItemId</span></MudLink>
+                    </MudTd>
+                    <MudTd>@context.OpenAmountTx.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
+    @if (_preparedDraft is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.h6">Prepared Draft</MudText>
+            <MudText Typo="Typo.body2">Document Id: @_preparedDraft.DocumentId</MudText>
+            <MudText Typo="Typo.body2">Application: @_preparedDraft.ApplicationNumber</MudText>
+            <MudText Typo="Typo.body2">Entity Number: @_preparedDraft.EntityNumber</MudText>
+            <MudText Typo="Typo.body2">Currency: @_preparedDraft.DocumentCurrencyCode</MudText>
+            <MudText Typo="Typo.body2">Total: @_preparedDraft.TotalAmount</MudText>
+            <MudText Typo="Typo.body2">Realized FX Base: @_preparedDraft.RealizedFxAmountBase</MudText>
+            <MudText Typo="Typo.body2">Status: @_preparedDraft.Status</MudText>
+
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/vendor_credit_application/{_preparedDraft.DocumentId:D}")">
+                    Open Prepared Draft Detail
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           Disabled="_isBusy"
+                           OnClick="PostDraftAsync">
+                    Post Draft
+                </MudButton>
+            </div>
+
+            @if (TryGetSelectedSourceVendorCredit(out var selectedSource) && TryGetSelectedTargetBill(out var selectedTarget))
+            {
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Applied Source And Target</MudText>
+                <MudTable Items="new[] { selectedSource, selectedTarget }" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Role</MudTh>
+                        <MudTh>Document</MudTh>
+                        <MudTh>Open Item</MudTh>
+                        <MudTh>Applied</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@(context.OpenItemId == selectedSource.OpenItemId ? "Source Credit" : "Target Bill")</MudTd>
+                        <MudTd>
+                            @if (TryBuildDocumentHref(context.SourceType, context.SourceId, out var href))
+                            {
+                                <MudLink Href="@href">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudLink>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            <MudLink Href="@($"/open-items/ap/{context.OpenItemId:D}")"><span class="citus-inline-code">@context.OpenItemId</span></MudLink>
+                        </MudTd>
+                        <MudTd>@_appliedAmountTx.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+
+    @if (_postedResult is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-top:1rem;">
+            <MudText Typo="Typo.h6">Posted Review Continuity</MudText>
+            <MudText Typo="Typo.body2">Journal Entry: @_postedResult.JournalEntryDisplayNumber</MudText>
+            <MudText Typo="Typo.body2">Posted At: @_postedResult.PostedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+            <MudText Typo="Typo.body2">Status: @_postedResult.Status</MudText>
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/vendor_credit_application/{_preparedDraft!.DocumentId:D}")">
+                    Open Posted Document
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">
+                    Open Journal Entry Review
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private List<(Guid Id, string DisplayLabel, string CurrencyCode)> _vendors = [];
+    private string? _selectedVendorIdText;
+    private string? _memo;
+    private bool _isBusy;
+    private string? _errorText;
+    private DateOnly _applicationDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateTime? _applicationDatePicker = DateTime.Today;
+    private readonly List<RowState> _sourceVendorCredits = [];
+    private readonly List<RowState> _targetBills = [];
+    private string? _selectedSourceOpenItemIdText;
+    private string? _selectedTargetOpenItemIdText;
+    private decimal _appliedAmountTx;
+    private VendorCreditApplicationDraftResult? _preparedDraft;
+    private ApSettlementPostingResult? _postedResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _vendors = (await LookupService.ListVendorsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
+            if (_vendors.Count == 1)
+            {
+                _selectedVendorIdText = _vendors[0].Id.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+    }
+
+    private async Task LoadCandidatesAsync()
+    {
+        _preparedDraft = null;
+        _postedResult = null;
+        _errorText = null;
+        if (!TryParseRequiredGuid(_selectedVendorIdText, "Vendor", out var vendorId)) return;
+
+        try
+        {
+            _isBusy = true;
+            var candidates = await Workflow.ListOpenItemCandidatesAsync(ShellSession.ActiveCompanyId, vendorId, CancellationToken.None);
+            _sourceVendorCredits.Clear();
+            _targetBills.Clear();
+            _selectedSourceOpenItemIdText = null;
+            _selectedTargetOpenItemIdText = null;
+            _appliedAmountTx = 0m;
+            _sourceVendorCredits.AddRange(candidates.Where(static candidate => candidate.SourceType == "vendor_credit" && candidate.BalanceSide == "debit").Select(static candidate => new RowState(candidate)));
+            _targetBills.AddRange(candidates.Where(static candidate => candidate.SourceType == "bill" && candidate.BalanceSide == "credit").Select(static candidate => new RowState(candidate)));
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task PrepareDraftAsync()
+    {
+        _errorText = null;
+        _preparedDraft = null;
+        _postedResult = null;
+        if (!TryParseRequiredGuid(_selectedVendorIdText, "Vendor", out var vendorId)) return;
+        if (!TryParseRequiredGuid(_selectedSourceOpenItemIdText, "Source Vendor Credit Open Item", out var sourceOpenItemId) ||
+            !TryParseRequiredGuid(_selectedTargetOpenItemIdText, "Target Bill Open Item", out var targetOpenItemId))
+        {
+            return;
+        }
+        if (_appliedAmountTx <= 0m)
+        {
+            _errorText = "Apply Amount must be greater than zero.";
+            return;
+        }
+
+        var lines = new[] { new VendorCreditApplicationDraftLine(sourceOpenItemId, targetOpenItemId, _appliedAmountTx) };
+
+        try
+        {
+            _isBusy = true;
+            _preparedDraft = await Workflow.PrepareDraftAsync(
+                new VendorCreditApplicationDraftContext(ShellSession.ActiveCompanyId, ShellSession.CurrentUserId, vendorId, _applicationDate, null, _memo),
+                lines,
+                CancellationToken.None);
+            Snackbar.Add($"Prepared vendor credit application {_preparedDraft.ApplicationNumber}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task PostDraftAsync()
+    {
+        if (_preparedDraft is null)
+        {
+            _errorText = "Prepare a draft before posting.";
+            return;
+        }
+
+        try
+        {
+            _isBusy = true;
+            _errorText = null;
+            _postedResult = await PostingClient.PostVendorCreditApplicationAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _preparedDraft.DocumentId,
+                CancellationToken.None);
+            Snackbar.Add($"Posted vendor credit application to journal entry {_postedResult?.JournalEntryDisplayNumber}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnApplicationDateChanged(DateTime? value)
+    {
+        _applicationDatePicker = value;
+        _applicationDate = DateOnly.FromDateTime(value ?? DateTime.Today);
+    }
+
+    private bool TryParseRequiredGuid(string? text, string label, out Guid value)
+    {
+        if (Guid.TryParse(text, out value)) return true;
+        _errorText = $"{label} must be a valid GUID.";
+        return false;
+    }
+
+    private sealed class RowState
+    {
+        public RowState(VendorCreditApplicationOpenItemCandidate source)
+        {
+            OpenItemId = source.OpenItemId;
+            DisplayNumber = source.DisplayNumber;
+            SourceType = source.SourceType;
+            SourceId = source.SourceId;
+            DocumentCurrencyCode = source.DocumentCurrencyCode;
+            OpenAmountTx = source.OpenAmountTx;
+            OpenAmountBase = source.OpenAmountBase;
+            BalanceSide = source.BalanceSide;
+        }
+
+        public Guid OpenItemId { get; }
+        public string DisplayNumber { get; }
+        public string SourceType { get; }
+        public Guid SourceId { get; }
+        public string DocumentCurrencyCode { get; }
+        public decimal OpenAmountTx { get; }
+        public decimal OpenAmountBase { get; }
+        public string BalanceSide { get; }
+    }
+
+    private bool TryGetSelectedSourceVendorCredit(out RowState row)
+    {
+        row = _sourceVendorCredits.FirstOrDefault(candidate => candidate.OpenItemId.ToString() == _selectedSourceOpenItemIdText)!;
+        return row is not null;
+    }
+
+    private bool TryGetSelectedTargetBill(out RowState row)
+    {
+        row = _targetBills.FirstOrDefault(candidate => candidate.OpenItemId.ToString() == _selectedTargetOpenItemIdText)!;
+        return row is not null;
+    }
+
+    private static bool TryBuildDocumentHref(string sourceType, Guid documentId, out string href)
+    {
+        href = sourceType switch
+        {
+            "bill" => $"/documents/bill/{documentId:D}",
+            "vendor_credit" => $"/documents/vendor_credit/{documentId:D}",
+            "vendor_credit_application" => $"/documents/vendor_credit_application/{documentId:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static string DisplayDocumentLabel(string displayNumber, string sourceType) =>
+        sourceType switch
+        {
+            "bill" => $"{displayNumber} | Bill",
+            "vendor_credit" => $"{displayNumber} | Vendor Credit",
+            "vendor_credit_application" => $"{displayNumber} | Vendor Credit Application",
+            _ => displayNumber
+        };
+}

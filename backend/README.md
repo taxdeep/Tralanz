@@ -20,7 +20,7 @@ Current layout:
 Notes:
 
 - The current machine resolves correctly with `C:\Program Files\dotnet\dotnet.exe`, and the backend solution now builds/tests from that 64-bit host.
-- The backend now targets `.NET 10` through `backend/Directory.Build.props`, so local build/test/run no longer depends on `DOTNET_ROLL_FORWARD=Major`.
+- The backend now targets `.NET 11` through `backend/Directory.Build.props`, so local build/test/run no longer depends on `DOTNET_ROLL_FORWARD=Major`.
 - You can start and stop the API from any directory with `D:\Coding\Citus\backend\start-accounting-api.ps1` and `D:\Coding\Citus\backend\stop-accounting-api.ps1`.
 - `Citus.Accounting.Api` now wires the manual-journal, invoice, credit-note, bill, vendor-credit, receive-payment, credit-application, pay-bill, vendor-credit-application, and FX revaluation paths against PostgreSQL.
 - `Citus.Platform.Core` now provides a WebVella-inspired platform kernel for module registration and entity metadata governance.
@@ -30,7 +30,12 @@ Notes:
 - Posted invoices and credit notes create `ar_open_items`, posted bills and vendor credits create `ap_open_items`, and posted settlements update open-item balances through `settlement_applications`.
 - Foreign-currency receive-payment/pay-bill posting now uses the source document FX snapshot as the authoritative settlement rate, writes realized FX to dedicated gain/loss accounts, and reduces open-item carrying base separately from settlement base.
 - Receive-payment and pay-bill draft preparation now has dedicated backend endpoints for listing open receivables/payables by party and inserting draft source documents into `receive_payments` / `pay_bills` before the normal posting path runs.
-- FX revaluation now supports period-end draft preparation by currency, unrealized FX posting through the Posting Engine, carrying-base updates back onto foreign-currency open items, and explicit next-period unwind drafts that reverse a posted batch through the same engine path.
+- FX revaluation now supports period-end draft preparation by currency, unrealized FX posting through the Posting Engine, carrying-base updates back onto foreign-currency open items, explicit rate metadata (`rate_type`, `quote_basis`, `rate_use_case`, `posting_reason`) on the prepared batch, and next-period unwind drafts that reverse a posted batch through the same engine path.
+- Company governance now seeds a default `PRIMARY` book plus a governed remeasurement policy when none exists yet, and FX revaluation batches now carry `company_book_id`, `book_code`, `accounting_standard`, `revaluation_profile`, and `fx_rounding_policy` so the batch keeps its book-policy context.
+- Company book governance now also recognizes formal governance signals (`closed_period`, `reported_statement`, `filed_tax`) and uses them to escalate change previews and apply-readiness checks toward `new_secondary_or_adjustment_book` when historical locks already exist.
+- Company book governance signals can now be registered through backend-owned endpoints, so closed periods, issued statements, and filed-tax locks no longer need to be side-loaded before governance preview and readiness checks can enforce them.
+- `Web.Shell` now exposes a minimal `/company/book-governance` surface for reviewing active books, current policy truth, and book-governing lock registration. The shell now tries to hydrate its active company context from PostgreSQL-backed `companies` + `company_memberships` truth through `CompanyAccess`; if that membership context is unavailable, it falls back to the configured `AppHost` companies and still reloads governance data when the operator switches company in-page.
+- `Web.Shell` now also has a local business-session header pipeline for future API-backed pages: it sends `X-Citus-User-Id` plus `X-Citus-Active-Company-Id` from the current shell context and probes `/accounting/session/context` so the shell can show when API session configuration still disagrees with CompanyAccess membership truth.
 - FX revaluation cascade unwind now exposes a plan endpoint and a prepare-next-step endpoint, so an older batch can ask the system which active descendant must unwind first.
 - FX revaluation auto-post cascade unwind now allows the backend to prepare and post every required unwind step from the active chain tail back to the requested batch in one request.
 
@@ -117,6 +122,19 @@ Accounting:
 - `GET /accounting/fx-revaluation-batches/{documentId}/cascade-unwind-plan?companyId={companyId}`
 - `POST /accounting/fx-revaluation-batches/{documentId}/prepare-cascade-unwind`
 - `POST /accounting/fx-revaluation-batches/{documentId}/auto-post-cascade-unwind`
+- `GET /accounting/company-books?companyId={companyId}&asOfDate={yyyy-MM-dd?}`
+- `GET /accounting/company-books/{bookId}/governance-signals?companyId={companyId}&asOfDate={yyyy-MM-dd?}`
+- `POST /accounting/company-books/{bookId}/governance-signals`
+- `POST /accounting/company-books/{bookId}/close-periods`
+- `POST /accounting/company-books/{bookId}/issued-statements`
+- `POST /accounting/company-books/{bookId}/filed-tax`
+- `POST /accounting/company-books/governed-change-preview`
+- `POST /accounting/company-books/governed-change-requests/prepare`
+- `GET /accounting/company-books/governed-change-requests?companyId={companyId}`
+- `POST /accounting/company-books/governed-change-requests/{requestId}/submit`
+- `POST /accounting/company-books/governed-change-requests/{requestId}/cancel`
+- `GET /accounting/company-books/governed-change-requests/{requestId}/apply-readiness?companyId={companyId}&asOfDate={yyyy-MM-dd?}`
+- `GET /accounting/company-books/remeasurement-policy?companyId={companyId}&bookId={bookId?}&asOfDate={yyyy-MM-dd?}`
 - `GET /accounting/fx-revaluation-batches/{documentId}?companyId={companyId}`
 - `POST /accounting/fx-revaluation-batches/{documentId}/post`
 

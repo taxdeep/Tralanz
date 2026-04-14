@@ -39,6 +39,13 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   je.exchange_rate_date,
                   je.exchange_rate_source,
                   je.fx_rate_snapshot_id,
+                  fx.rate_type,
+                  fx.quote_basis,
+                  fx.rate_use_case,
+                  fx.posting_reason,
+                  fx.snapshot_semantics,
+                  fx.row_origin,
+                  fx.provider_key,
                   je.total_tx_debit,
                   je.total_tx_credit,
                   je.total_debit,
@@ -49,6 +56,9 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   je.created_by_user_id,
                   count(jel.id)::int as line_count
                 from journal_entries je
+                left join company_fx_rate_snapshots fx
+                  on fx.company_id = je.company_id
+                 and fx.id = je.fx_rate_snapshot_id
                 left join journal_entry_lines jel
                   on jel.company_id = je.company_id
                  and jel.journal_entry_id = je.id
@@ -68,6 +78,13 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   je.exchange_rate_date,
                   je.exchange_rate_source,
                   je.fx_rate_snapshot_id,
+                  fx.rate_type,
+                  fx.quote_basis,
+                  fx.rate_use_case,
+                  fx.posting_reason,
+                  fx.snapshot_semantics,
+                  fx.row_origin,
+                  fx.provider_key,
                   je.total_tx_debit,
                   je.total_tx_credit,
                   je.total_debit,
@@ -101,6 +118,27 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                     FxSnapshotId = reader.IsDBNull(reader.GetOrdinal("fx_rate_snapshot_id"))
                         ? null
                         : reader.GetGuid(reader.GetOrdinal("fx_rate_snapshot_id")),
+                    FxRateType = reader.IsDBNull(reader.GetOrdinal("rate_type"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("rate_type")),
+                    FxQuoteBasis = reader.IsDBNull(reader.GetOrdinal("quote_basis"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("quote_basis")),
+                    FxRateUseCase = reader.IsDBNull(reader.GetOrdinal("rate_use_case"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("rate_use_case")),
+                    FxPostingReason = reader.IsDBNull(reader.GetOrdinal("posting_reason"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("posting_reason")),
+                    FxSnapshotSemantics = reader.IsDBNull(reader.GetOrdinal("snapshot_semantics"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("snapshot_semantics")),
+                    FxSnapshotRowOrigin = reader.IsDBNull(reader.GetOrdinal("row_origin"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("row_origin")),
+                    FxProviderKey = reader.IsDBNull(reader.GetOrdinal("provider_key"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("provider_key")),
                     TotalTransactionDebit = reader.GetDecimal(reader.GetOrdinal("total_tx_debit")),
                     TotalTransactionCredit = reader.GetDecimal(reader.GetOrdinal("total_tx_credit")),
                     TotalDebit = reader.GetDecimal(reader.GetOrdinal("total_debit")),
@@ -139,6 +177,8 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                   a.name,
                   a.root_type,
                   a.detail_type,
+                  a.system_role,
+                  a.system_key,
                   jel.description,
                   jel.tx_debit,
                   jel.tx_credit,
@@ -170,6 +210,12 @@ public sealed class PostgreSqlJournalEntryReviewStore : IJournalEntryReviewStore
                     AccountName = reader.GetString(reader.GetOrdinal("name")),
                     RootType = reader.GetString(reader.GetOrdinal("root_type")),
                     DetailType = reader.GetString(reader.GetOrdinal("detail_type")),
+                    AccountSystemRole = reader.IsDBNull(reader.GetOrdinal("system_role"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("system_role")),
+                    AccountSystemKey = reader.IsDBNull(reader.GetOrdinal("system_key"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("system_key")),
                     Description = reader.IsDBNull(reader.GetOrdinal("description"))
                         ? string.Empty
                         : reader.GetString(reader.GetOrdinal("description")),

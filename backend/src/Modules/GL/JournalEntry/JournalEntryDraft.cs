@@ -38,6 +38,14 @@ public sealed class JournalEntryDraft
 
     public string FxProviderKey { get; set; } = "ECB";
 
+    public string FxRateType { get; set; } = SharedKernel.FX.FxRateType.Spot;
+
+    public string FxQuoteBasis { get; set; } = SharedKernel.FX.FxQuoteBasis.Direct;
+
+    public string FxRateUseCase { get; set; } = SharedKernel.FX.FxRateUseCase.General;
+
+    public string FxPostingReason { get; set; } = SharedKernel.FX.FxPostingReason.Normal;
+
     public string Memo { get; set; } = string.Empty;
 
     public bool IsDarkMode { get; set; }

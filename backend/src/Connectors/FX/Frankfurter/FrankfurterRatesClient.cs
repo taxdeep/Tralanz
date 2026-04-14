@@ -44,6 +44,8 @@ public sealed class FrankfurterRatesClient : IFxProviderClient
                 row.Quote.ToUpperInvariant(),
                 row.Date,
                 row.Rate,
+                FxRateType.Spot,
+                FxQuoteBasis.Direct,
                 DateTimeOffset.UtcNow,
                 JsonSerializer.Serialize(row)))
             .ToArray();

@@ -1,7 +1,9 @@
 @page "/gl/journal-entry/review/{JournalEntryId:guid}"
 @using Microsoft.AspNetCore.Components.Web
+@using Modules.CompanyAccess.SessionContext
 @using Modules.GL.JournalEntry
 @using MudBlazor
+@inject ICompanyAccessShellSession ShellSession
 @inject IJournalEntryReviewStore JournalEntryReviewStore
 @inject IManualJournalSourceReviewStore ManualJournalSourceReviewStore
 @inject IJournalEntryLifecycleWorkflow JournalEntryLifecycleWorkflow
@@ -86,12 +88,40 @@
                                 <span class="je-review-fact__value">@_review.ExchangeRateSource</span>
                             </div>
                             <div class="je-review-fact">
+                                <span class="je-review-fact__label">Rate type</span>
+                                <span class="je-review-fact__value">@_review.FxRateTypeLabel</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Quote basis</span>
+                                <span class="je-review-fact__value">@_review.FxQuoteBasisLabel</span>
+                            </div>
+                            <div class="je-review-fact">
                                 <span class="je-review-fact__label">Effective date</span>
                                 <span class="je-review-fact__value">@_review.ExchangeRateDate.ToString("yyyy-MM-dd")</span>
                             </div>
                             <div class="je-review-fact">
                                 <span class="je-review-fact__label">Exchange rate</span>
                                 <span class="je-review-fact__value">@_review.ExchangeRate.ToString("0.######")</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Use case</span>
+                                <span class="je-review-fact__value">@_review.FxRateUseCaseLabel</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Posting reason</span>
+                                <span class="je-review-fact__value">@_review.FxPostingReasonLabel</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Snapshot semantics</span>
+                                <span class="je-review-fact__value">@_review.FxSnapshotSemanticsLabel</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Row origin</span>
+                                <span class="je-review-fact__value">@_review.FxSnapshotRowOriginLabel</span>
+                            </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Linked provider</span>
+                                <span class="je-review-fact__value">@_review.FxProviderLabel</span>
                             </div>
                             <div class="je-review-fact">
                                 <span class="je-review-fact__label">Snapshot id</span>
@@ -144,6 +174,35 @@
                             </RowTemplate>
                         </MudTable>
                     </div>
+
+                    @if (_review.Lines.Any(static line => line.IsRealizedFxLine))
+                    {
+                        <div class="je-review-panel">
+                            <div class="je-review-panel__header">
+                                <div>
+                                    <div class="je-review-panel__title">Settlement FX effect</div>
+                                    <div class="je-review-panel__caption">These lines carry the realized FX result produced by settlement or application posting.</div>
+                                </div>
+                            </div>
+
+                            <MudTable Items="_review.Lines.Where(static line => line.IsRealizedFxLine)" Dense="true" Hover="true" Class="je-review-table">
+                                <HeaderContent>
+                                    <MudTh>Line</MudTh>
+                                    <MudTh>Account</MudTh>
+                                    <MudTh>Debit</MudTh>
+                                    <MudTh>Credit</MudTh>
+                                    <MudTh>Description</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Line">@context.LineNumber</MudTd>
+                                    <MudTd DataLabel="Account">@context.AccountCode @context.AccountName</MudTd>
+                                    <MudTd DataLabel="Debit">@FormatAmount(context.Debit)</MudTd>
+                                    <MudTd DataLabel="Credit">@FormatAmount(context.Credit)</MudTd>
+                                    <MudTd DataLabel="Description">@context.DisplayDescription</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </div>
+                    }
                 </div>
 
                 <div class="je-review-stack">
@@ -253,36 +312,43 @@
                         </div>
                     </div>
 
-                    @if (_sourceReview is not null)
+                    @if (_review.SourceId != Guid.Empty && TryBuildSourceReviewHref(_review.SourceType, _review.SourceId, out var sourceHref))
                     {
                         <div class="je-review-panel">
                             <div class="je-review-panel__header">
                                 <div>
                                     <div class="je-review-panel__title">Source document</div>
-                                    <div class="je-review-panel__caption">The posted JE stays linked to the original manual-journal source review.</div>
+                                    <div class="je-review-panel__caption">The posted JE stays linked to the backend-owned source review path.</div>
                                 </div>
-                                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@_sourceReview.DisplayNumber</MudChip>
+                                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@_review.SourceTypeLabel</MudChip>
                             </div>
 
                             <div class="je-review-facts">
                                 <div class="je-review-fact">
-                                    <span class="je-review-fact__label">Entry date</span>
-                                    <span class="je-review-fact__value">@_sourceReview.EntryDate.ToString("yyyy-MM-dd")</span>
+                                    <span class="je-review-fact__label">Source document id</span>
+                                    <span class="je-review-fact__value">@_review.SourceId.ToString("D")</span>
                                 </div>
-                                <div class="je-review-fact">
-                                    <span class="je-review-fact__label">Source status</span>
-                                    <span class="je-review-fact__value">@_sourceReview.Status</span>
-                                </div>
-                                <div class="je-review-fact je-review-fact--wide">
-                                    <span class="je-review-fact__label">Memo</span>
-                                    <span class="je-review-fact__value">@DisplayMemo(_sourceReview.Memo)</span>
-                                </div>
+                                @if (_sourceReview is not null)
+                                {
+                                    <div class="je-review-fact">
+                                        <span class="je-review-fact__label">Entry date</span>
+                                        <span class="je-review-fact__value">@_sourceReview.EntryDate.ToString("yyyy-MM-dd")</span>
+                                    </div>
+                                    <div class="je-review-fact">
+                                        <span class="je-review-fact__label">Source status</span>
+                                        <span class="je-review-fact__value">@_sourceReview.Status</span>
+                                    </div>
+                                    <div class="je-review-fact je-review-fact--wide">
+                                        <span class="je-review-fact__label">Memo</span>
+                                        <span class="je-review-fact__value">@DisplayMemo(_sourceReview.Memo)</span>
+                                    </div>
+                                }
                             </div>
 
                             <div class="je-review-links">
                                 <MudButton Variant="Variant.Outlined"
                                            Color="Color.Info"
-                                           Href="@BuildSourceReviewHref(_sourceReview.Id)">
+                                           Href="@sourceHref">
                                     Open source review
                                 </MudButton>
                             </div>
@@ -318,9 +384,6 @@
 
 @code
 {
-    private static readonly Guid DemoCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid DemoUserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
-
     [Parameter]
     public Guid JournalEntryId { get; set; }
 
@@ -341,15 +404,16 @@
 
         try
         {
-            _review = await JournalEntryReviewStore.GetAsync(DemoCompanyId, JournalEntryId, CancellationToken.None);
+            _review = await JournalEntryReviewStore.GetAsync(ShellSession.ActiveCompanyId, JournalEntryId, CancellationToken.None);
 
             if (_review is null)
             {
                 _errorText = $"Journal entry {JournalEntryId:D} could not be found in the active company context.";
             }
-            else if (_review.SourceId != Guid.Empty)
+            else if (string.Equals(_review.SourceType, "manual_journal", StringComparison.OrdinalIgnoreCase) &&
+                     _review.SourceId != Guid.Empty)
             {
-                _sourceReview = await ManualJournalSourceReviewStore.GetAsync(DemoCompanyId, _review.SourceId, CancellationToken.None);
+                _sourceReview = await ManualJournalSourceReviewStore.GetAsync(ShellSession.ActiveCompanyId, _review.SourceId, CancellationToken.None);
             }
         }
         catch (Exception ex)
@@ -369,7 +433,7 @@
             return;
         }
 
-        await ApplyLifecycleAsync(() => JournalEntryLifecycleWorkflow.VoidAsync(DemoCompanyId, _review.Id, DemoUserId, CancellationToken.None), "Journal entry voided.");
+        await ApplyLifecycleAsync(() => JournalEntryLifecycleWorkflow.VoidAsync(ShellSession.ActiveCompanyId, _review.Id, ShellSession.CurrentUserId, CancellationToken.None), "Journal entry voided.");
     }
 
     private async Task HandleReverseAsync()
@@ -379,7 +443,7 @@
             return;
         }
 
-        await ApplyLifecycleAsync(() => JournalEntryLifecycleWorkflow.ReverseAsync(DemoCompanyId, _review.Id, DemoUserId, CancellationToken.None), "Journal entry reversed.");
+        await ApplyLifecycleAsync(() => JournalEntryLifecycleWorkflow.ReverseAsync(ShellSession.ActiveCompanyId, _review.Id, ShellSession.CurrentUserId, CancellationToken.None), "Journal entry reversed.");
     }
 
     private async Task ApplyLifecycleAsync(
@@ -419,9 +483,6 @@
     private static string DisplayMemo(string memo) =>
         string.IsNullOrWhiteSpace(memo) ? "No memo was stored on the source document." : memo;
 
-    private static string BuildSourceReviewHref(Guid documentId) =>
-        $"/gl/journal-entry/source/{documentId:D}";
-
     private static string BuildReviewHref(Guid journalEntryId) =>
         $"/gl/journal-entry/review/{journalEntryId:D}";
 
@@ -453,6 +514,30 @@
             markers.Add($"party: {line.PartyId.Value:D}");
         }
 
+        if (line.IsRealizedFxLine)
+        {
+            markers.Add("realized fx");
+        }
+
         return string.Join(" | ", markers);
+    }
+
+    private static bool TryBuildSourceReviewHref(string sourceType, Guid documentId, out string href)
+    {
+        href = sourceType switch
+        {
+            "manual_journal" => $"/gl/journal-entry/source/{documentId:D}",
+            "invoice" => $"/documents/invoice/{documentId:D}",
+            "credit_note" => $"/documents/credit_note/{documentId:D}",
+            "bill" => $"/documents/bill/{documentId:D}",
+            "vendor_credit" => $"/documents/vendor_credit/{documentId:D}",
+            "receive_payment" => $"/documents/receive_payment/{documentId:D}",
+            "credit_application" => $"/documents/credit_application/{documentId:D}",
+            "pay_bill" => $"/documents/pay_bill/{documentId:D}",
+            "vendor_credit_application" => $"/documents/vendor_credit_application/{documentId:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
     }
 }

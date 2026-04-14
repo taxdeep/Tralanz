@@ -22,7 +22,11 @@ public sealed class FxRateResolverTests
                 "USD",
                 new DateOnly(2026, 4, 13),
                 "ECB",
-                7),
+                7,
+                FxRateType.Spot,
+                FxQuoteBasis.Direct,
+                FxRateUseCase.General,
+                FxPostingReason.Normal),
             CancellationToken.None);
 
         Assert.Equal(1m, resolution.Rate);
@@ -43,6 +47,10 @@ public sealed class FxRateResolverTests
                 new DateOnly(2026, 4, 13),
                 new DateOnly(2026, 4, 10),
                 1.3822m,
+                FxRateType.Spot,
+                FxQuoteBasis.Direct,
+                FxRateUseCase.General,
+                FxPostingReason.Normal,
                 "ECB",
                 "provider_fetched",
                 FxSourceSemantics.SystemStored,
@@ -61,7 +69,11 @@ public sealed class FxRateResolverTests
                 "CAD",
                 new DateOnly(2026, 4, 13),
                 "ECB",
-                7),
+                7,
+                FxRateType.Spot,
+                FxQuoteBasis.Direct,
+                FxRateUseCase.General,
+                FxPostingReason.Normal),
             CancellationToken.None);
 
         Assert.Equal(1.3822m, resolution.Rate);
@@ -74,8 +86,8 @@ public sealed class FxRateResolverTests
     {
         var store = new FakeFxRateStore();
         var client = new FakeFxProviderClient(
-            new FxMarketRateRecord(Guid.Empty, "ECB", "USD", "CAD", new DateOnly(2026, 4, 7), 1.3912m, DateTimeOffset.UtcNow, """{"date":"2026-04-07"}"""),
-            new FxMarketRateRecord(Guid.Empty, "ECB", "USD", "CAD", new DateOnly(2026, 4, 10), 1.3822m, DateTimeOffset.UtcNow, """{"date":"2026-04-10"}"""));
+            new FxMarketRateRecord(Guid.Empty, "ECB", "USD", "CAD", new DateOnly(2026, 4, 7), 1.3912m, FxRateType.Spot, FxQuoteBasis.Direct, DateTimeOffset.UtcNow, """{"date":"2026-04-07"}"""),
+            new FxMarketRateRecord(Guid.Empty, "ECB", "USD", "CAD", new DateOnly(2026, 4, 10), 1.3822m, FxRateType.Spot, FxQuoteBasis.Direct, DateTimeOffset.UtcNow, """{"date":"2026-04-10"}"""));
         var resolver = new FxRateResolver(store, client);
 
         var resolution = await resolver.ResolveAsync(
@@ -86,7 +98,11 @@ public sealed class FxRateResolverTests
                 "CAD",
                 new DateOnly(2026, 4, 13),
                 "ECB",
-                7),
+                7,
+                FxRateType.Spot,
+                FxQuoteBasis.Direct,
+                FxRateUseCase.General,
+                FxPostingReason.Normal),
             CancellationToken.None);
 
         Assert.Equal(1.3822m, resolution.Rate);
@@ -114,6 +130,9 @@ public sealed class FxRateResolverTests
             DateOnly requestedDate,
             string providerKey,
             int lookbackDays,
+            string rateType,
+            string quoteBasis,
+            string rateUseCase,
             CancellationToken cancellationToken)
             => Task.FromResult(CompanySnapshot);
 
@@ -132,6 +151,8 @@ public sealed class FxRateResolverTests
             string quoteCurrencyCode,
             DateOnly requestedDate,
             int lookbackDays,
+            string rateType,
+            string quoteBasis,
             CancellationToken cancellationToken)
             => Task.FromResult(MarketRate);
 
@@ -171,6 +192,10 @@ public sealed class FxRateResolverTests
             DateOnly requestedDate,
             FxMarketRateRecord marketRate,
             string providerKey,
+            string rateType,
+            string quoteBasis,
+            string rateUseCase,
+            string postingReason,
             CancellationToken cancellationToken)
         {
             PromotedSnapshot = new FxSnapshotRecord(
@@ -181,6 +206,10 @@ public sealed class FxRateResolverTests
                 requestedDate,
                 marketRate.MarketDate,
                 marketRate.Rate,
+                rateType,
+                quoteBasis,
+                rateUseCase,
+                postingReason,
                 providerKey,
                 "provider_fetched",
                 FxSourceSemantics.SystemStored,
@@ -198,6 +227,10 @@ public sealed class FxRateResolverTests
             DateOnly requestedDate,
             decimal rate,
             string providerKey,
+            string rateType,
+            string quoteBasis,
+            string rateUseCase,
+            string postingReason,
             CancellationToken cancellationToken)
         {
             PromotedSnapshot = new FxSnapshotRecord(
@@ -208,6 +241,10 @@ public sealed class FxRateResolverTests
                 requestedDate,
                 requestedDate,
                 rate,
+                rateType,
+                quoteBasis,
+                rateUseCase,
+                postingReason,
                 providerKey,
                 "manual",
                 FxSourceSemantics.Manual,

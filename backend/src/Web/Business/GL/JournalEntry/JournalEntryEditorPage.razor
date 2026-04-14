@@ -1,11 +1,14 @@
 @page "/gl/journal-entry/editor"
 @using Engines.FX.FxRateLookup
 @using Engines.Numbering.JournalEntry
+@using Modules.Company.MultiCurrency
 @using Modules.GL.JournalEntry
 @using Microsoft.AspNetCore.Components.Web
 @using MudBlazor
+@using SharedKernel.Company
 @inject IFxRateResolver FxRateResolver
 @inject IFxRateSelectionService FxRateSelectionService
+@inject ICompanyCurrencyGovernanceWorkflow CompanyCurrencyGovernanceWorkflow
 @inject IJournalEntryNumberLookup JournalEntryNumberLookup
 @inject IJournalEntryWorkflow JournalEntryWorkflow
 @inject ISnackbar Snackbar
@@ -32,6 +35,51 @@
                                 OnCurrencyChanged="HandleCurrencyChanged"
                                 OnFxRateChanged="HandleFxRateChanged"
                                 OnJournalDateChanged="HandleJournalDateChanged" />
+
+        @if (_companyCurrencyProfile is not null)
+        {
+            <div class="je-company-currency-bar">
+                <div class="je-company-currency-bar__summary">
+                    <div class="je-company-currency-bar__label">Company currencies</div>
+                    <div class="je-company-currency-bar__chips">
+                        @foreach (var currency in _companyCurrencyProfile.EnabledCurrencies)
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Variant="Variant.Outlined"
+                                     Color="@(currency.IsBaseCurrency ? Color.Success : Color.Info)">
+                                @(currency.IsBaseCurrency ? $"{currency.CurrencyCode} base" : currency.CurrencyCode)
+                            </MudChip>
+                        }
+                    </div>
+                </div>
+
+                @if (_state.CanEditJournal && _companyCurrencyProfile.Currencies.Any(currency => !currency.IsEnabled))
+                {
+                    <div class="je-company-currency-bar__enable">
+                        <MudSelect T="string"
+                                   Value="_enableCurrencyCode"
+                                   ValueChanged="HandleEnableCurrencySelectionChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   Disabled="@_isCurrencyGovernanceBusy"
+                                   Class="je-select je-select--compact">
+                            @foreach (var currency in _companyCurrencyProfile.Currencies.Where(currency => !currency.IsEnabled))
+                            {
+                                <MudSelectItem T="string" Value="@currency.CurrencyCode">@currency.DisplayText</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Info"
+                                   Disabled="@(_isCurrencyGovernanceBusy || string.IsNullOrWhiteSpace(_enableCurrencyCode))"
+                                   OnClick="HandleEnableCurrencyAsync">
+                            Enable currency
+                        </MudButton>
+                    </div>
+                }
+            </div>
+        }
 
         <JournalEntryFxReviewPanel State="_state" SelectionData="_fxSelectionData" />
 
@@ -121,14 +169,18 @@
     private static readonly Guid DemoUserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
     private readonly JournalEntryEditorState _state = JournalEntryEditorState.CreateDarkModeDemo();
     private FxRateSelectionData _fxSelectionData = new([], []);
+    private CompanyCurrencyProfile? _companyCurrencyProfile;
+    private bool _isCurrencyGovernanceBusy;
     private bool _isFxBusy;
     private bool _isSaving;
     private bool _isPosting;
     private string? _fxErrorText;
+    private string? _enableCurrencyCode;
     private Guid? _postedJournalEntryId;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadCompanyCurrencyProfileAsync();
         var accountOptions = await JournalEntryWorkflow.LoadAccountOptionsAsync(_state.Draft.CompanyId, CancellationToken.None);
         _state.ReplaceAccountOptions(accountOptions);
         _state.SetJournalNumber(await JournalEntryNumberLookup.GetNextDisplayNumberAsync(_state.Draft.CompanyId, CancellationToken.None));
@@ -145,6 +197,12 @@
     {
         _state.SetCurrency(currencyCode);
         await RefreshFxRateAsync();
+    }
+
+    private Task HandleEnableCurrencySelectionChanged(string? currencyCode)
+    {
+        _enableCurrencyCode = currencyCode;
+        return Task.CompletedTask;
     }
 
     private async Task HandleJournalDateChanged(DateOnly journalDate)
@@ -256,7 +314,11 @@
                     _state.Draft.BaseCurrencyCode,
                     _state.Draft.JournalDate,
                     _state.Draft.FxProviderKey,
-                    7),
+                    7,
+                    _state.Draft.FxRateType,
+                    _state.Draft.FxQuoteBasis,
+                    _state.Draft.FxRateUseCase,
+                    _state.Draft.FxPostingReason),
                 CancellationToken.None);
 
             _state.ApplyResolvedFxRate(resolution);
@@ -363,6 +425,61 @@
         _fxSelectionData = await FxRateSelectionService.LoadAsync(BuildSelectionRequest(), CancellationToken.None);
     }
 
+    private async Task HandleEnableCurrencyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_enableCurrencyCode))
+        {
+            return;
+        }
+
+        try
+        {
+            _isCurrencyGovernanceBusy = true;
+            StateHasChanged();
+
+            var result = await CompanyCurrencyGovernanceWorkflow.EnableCurrencyAsync(
+                _state.Draft.CompanyId,
+                _enableCurrencyCode,
+                DemoUserId,
+                CancellationToken.None);
+
+            _companyCurrencyProfile = result.Profile;
+            _state.ApplyCompanyCurrencyProfile(result.Profile);
+
+            var enabledCurrencyCode = _enableCurrencyCode;
+            _enableCurrencyCode = _companyCurrencyProfile.Currencies.FirstOrDefault(currency => !currency.IsEnabled)?.CurrencyCode;
+
+            if (!string.IsNullOrWhiteSpace(enabledCurrencyCode))
+            {
+                _state.SetCurrency(enabledCurrencyCode);
+                await RefreshFxRateAsync();
+            }
+
+            var createdCount = result.ProvisionedControlAccounts.Count(static account => account.WasCreated);
+            Snackbar.Add(
+                createdCount > 0
+                    ? $"Enabled {enabledCurrencyCode} and provisioned {createdCount} governed control account(s)."
+                    : $"Enabled {enabledCurrencyCode}. Governed control accounts were already present.",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isCurrencyGovernanceBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCompanyCurrencyProfileAsync()
+    {
+        _companyCurrencyProfile = await CompanyCurrencyGovernanceWorkflow.GetProfileAsync(_state.Draft.CompanyId, CancellationToken.None);
+        _state.ApplyCompanyCurrencyProfile(_companyCurrencyProfile);
+        _enableCurrencyCode = _companyCurrencyProfile.Currencies.FirstOrDefault(currency => !currency.IsEnabled)?.CurrencyCode;
+    }
+
     private FxRateSelectionRequest BuildSelectionRequest() =>
         new(
             _state.Draft.CompanyId,
@@ -371,7 +488,11 @@
             _state.Draft.BaseCurrencyCode,
             _state.Draft.JournalDate,
             _state.Draft.FxProviderKey,
-            7);
+            7,
+            _state.Draft.FxRateType,
+            _state.Draft.FxQuoteBasis,
+            _state.Draft.FxRateUseCase,
+            _state.Draft.FxPostingReason);
 
     private static string BuildReviewHref(Guid journalEntryId) =>
         $"/gl/journal-entry/review/{journalEntryId:D}";

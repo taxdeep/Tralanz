@@ -1,4 +1,9 @@
+@using Web.Business.AP.PayBill
+@using Web.Business.AP.VendorCreditApplication
+@using Web.Business.AR.CreditApplication
+@using Web.Business.AR.ReceivePayment
 @using Web.Business.GL.JournalEntry
+@using Web.Business.CompanyAccess.SystemSetup
 @using Web.Business.Reports.ReportType
 
 <Router AppAssembly="@typeof(Program).Assembly"
@@ -13,7 +18,12 @@
 {
     private readonly Assembly[] _additionalAssemblies =
     [
+        typeof(ReceivePaymentPage).Assembly,
+        typeof(CreditApplicationPage).Assembly,
+        typeof(PayBillPage).Assembly,
+        typeof(VendorCreditApplicationPage).Assembly,
         typeof(JournalEntryEditorPage).Assembly,
+        typeof(SystemSetupPage).Assembly,
         typeof(ReportTypeSelectorState).Assembly
     ];
 }

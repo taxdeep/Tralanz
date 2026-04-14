@@ -6,6 +6,10 @@ public sealed record class FxRateResolution(
     DateOnly EffectiveDate,
     string SourceSemantics,
     string StatusLabel,
+    string RateType,
+    string QuoteBasis,
+    string RateUseCase,
+    string PostingReason,
     string? ProviderKey,
     Guid? SnapshotId)
 {
@@ -16,6 +20,10 @@ public sealed record class FxRateResolution(
             requestedDate,
             FxSourceSemantics.Identity,
             "Base currency",
+            FxRateType.Spot,
+            FxQuoteBasis.Direct,
+            FxRateUseCase.General,
+            FxPostingReason.Normal,
             null,
             null);
 }

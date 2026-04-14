@@ -21,6 +21,9 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         DateOnly requestedDate,
         string providerKey,
         int lookbackDays,
+        string rateType,
+        string quoteBasis,
+        string rateUseCase,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -35,6 +38,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               requested_date,
               effective_date,
               rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               provider_key,
               row_origin,
               snapshot_semantics,
@@ -44,6 +51,9 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             where company_id = @company_id
               and base_currency_code = @base_currency_code
               and quote_currency_code = @quote_currency_code
+              and rate_type = @rate_type
+              and quote_basis = @quote_basis
+              and rate_use_case = @rate_use_case
               and (snapshot_semantics = 'manual' or coalesce(provider_key, '') = @provider_key)
               and requested_date <= @requested_date
               and effective_date <= @requested_date
@@ -53,6 +63,9 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
+        command.Parameters.AddWithValue("rate_type", rateType);
+        command.Parameters.AddWithValue("quote_basis", quoteBasis);
+        command.Parameters.AddWithValue("rate_use_case", rateUseCase);
         command.Parameters.AddWithValue("provider_key", providerKey);
         command.Parameters.AddWithValue("requested_date", requestedDate);
 
@@ -87,6 +100,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               requested_date,
               effective_date,
               rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               provider_key,
               row_origin,
               snapshot_semantics,
@@ -122,6 +139,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         string quoteCurrencyCode,
         DateOnly requestedDate,
         int lookbackDays,
+        string rateType,
+        string quoteBasis,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -135,12 +154,16 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               quote_currency_code,
               market_date,
               rate,
+              rate_type,
+              quote_basis,
               fetched_at,
               payload
             from system_fx_market_rates
             where provider_key = @provider_key
               and base_currency_code = @base_currency_code
               and quote_currency_code = @quote_currency_code
+              and rate_type = @rate_type
+              and quote_basis = @quote_basis
               and market_date <= @requested_date
             order by market_date desc, fetched_at desc
             limit 1;
@@ -148,6 +171,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         command.Parameters.AddWithValue("provider_key", providerKey);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
+        command.Parameters.AddWithValue("rate_type", rateType);
+        command.Parameters.AddWithValue("quote_basis", quoteBasis);
         command.Parameters.AddWithValue("requested_date", requestedDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -180,6 +205,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               quote_currency_code,
               market_date,
               rate,
+              rate_type,
+              quote_basis,
               fetched_at,
               payload
             from system_fx_market_rates
@@ -304,6 +331,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
                   quote_currency_code,
                   market_date,
                   rate,
+                  rate_type,
+                  quote_basis,
                   fetched_at,
                   payload
                 )
@@ -314,12 +343,16 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
                   @quote_currency_code,
                   @market_date,
                   @rate,
+                  @rate_type,
+                  @quote_basis,
                   @fetched_at,
                   @payload
                 )
                 on conflict (provider_key, base_currency_code, quote_currency_code, market_date)
                 do update
                   set rate = excluded.rate,
+                      rate_type = excluded.rate_type,
+                      quote_basis = excluded.quote_basis,
                       fetched_at = excluded.fetched_at,
                       payload = excluded.payload
                 returning
@@ -329,6 +362,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
                   quote_currency_code,
                   market_date,
                   rate,
+                  rate_type,
+                  quote_basis,
                   fetched_at,
                   payload;
                 """;
@@ -338,6 +373,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             command.Parameters.AddWithValue("quote_currency_code", marketRate.QuoteCurrencyCode);
             command.Parameters.AddWithValue("market_date", marketRate.MarketDate);
             command.Parameters.AddWithValue("rate", marketRate.Rate);
+            command.Parameters.AddWithValue("rate_type", marketRate.RateType);
+            command.Parameters.AddWithValue("quote_basis", marketRate.QuoteBasis);
             command.Parameters.AddWithValue("fetched_at", marketRate.FetchedAt);
             command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value =
                 string.IsNullOrWhiteSpace(marketRate.PayloadJson) ? "{}" : marketRate.PayloadJson;
@@ -361,6 +398,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         DateOnly requestedDate,
         FxMarketRateRecord marketRate,
         string providerKey,
+        string rateType,
+        string quoteBasis,
+        string rateUseCase,
+        string postingReason,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -376,6 +417,9 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
                   and base_currency_code = @base_currency_code
                   and quote_currency_code = @quote_currency_code
                   and requested_date = @requested_date
+                  and rate_type = @rate_type
+                  and quote_basis = @quote_basis
+                  and rate_use_case = @rate_use_case
                   and snapshot_semantics = 'system_stored'
                   and coalesce(provider_key, '') = @provider_key
                 limit 1;
@@ -384,6 +428,9 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             existingCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
             existingCommand.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
             existingCommand.Parameters.AddWithValue("requested_date", requestedDate);
+            existingCommand.Parameters.AddWithValue("rate_type", rateType);
+            existingCommand.Parameters.AddWithValue("quote_basis", quoteBasis);
+            existingCommand.Parameters.AddWithValue("rate_use_case", rateUseCase);
             existingCommand.Parameters.AddWithValue("provider_key", providerKey);
 
             var existingValue = await existingCommand.ExecuteScalarAsync(cancellationToken);
@@ -413,6 +460,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
                   requested_date,
                   effective_date,
                   rate,
+                  rate_type,
+                  quote_basis,
+                  rate_use_case,
+                  posting_reason,
                   provider_key,
                   row_origin,
                   snapshot_semantics,
@@ -442,6 +493,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               requested_date,
               effective_date,
               rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               provider_key,
               row_origin,
               snapshot_semantics,
@@ -458,6 +513,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               @requested_date,
               @effective_date,
               @rate,
+              @rate_type,
+              @quote_basis,
+              @rate_use_case,
+              @posting_reason,
               @provider_key,
               'provider_fetched',
               'system_stored',
@@ -474,6 +533,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               requested_date,
               effective_date,
               rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               provider_key,
               row_origin,
               snapshot_semantics,
@@ -487,6 +550,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         insertCommand.Parameters.AddWithValue("requested_date", requestedDate);
         insertCommand.Parameters.AddWithValue("effective_date", marketRate.MarketDate);
         insertCommand.Parameters.AddWithValue("rate", marketRate.Rate);
+        insertCommand.Parameters.AddWithValue("rate_type", rateType);
+        insertCommand.Parameters.AddWithValue("quote_basis", quoteBasis);
+        insertCommand.Parameters.AddWithValue("rate_use_case", rateUseCase);
+        insertCommand.Parameters.AddWithValue("posting_reason", postingReason);
         insertCommand.Parameters.AddWithValue("provider_key", providerKey);
         insertCommand.Parameters.AddWithValue("system_market_rate_id", marketRate.Id);
         insertCommand.Parameters.AddWithValue("notes", $"Frankfurter v2 {providerKey}");
@@ -505,6 +572,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         DateOnly requestedDate,
         decimal rate,
         string providerKey,
+        string rateType,
+        string quoteBasis,
+        string rateUseCase,
+        string postingReason,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -519,6 +590,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               requested_date,
               effective_date,
               rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               provider_key,
               row_origin,
               snapshot_semantics,
@@ -535,6 +610,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               @requested_date,
               @effective_date,
               @rate,
+              @rate_type,
+              @quote_basis,
+              @rate_use_case,
+              @posting_reason,
               @provider_key,
               'manual',
               'manual',
@@ -551,6 +630,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
               requested_date,
               effective_date,
               rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
               provider_key,
               row_origin,
               snapshot_semantics,
@@ -564,6 +647,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
         command.Parameters.AddWithValue("requested_date", requestedDate);
         command.Parameters.AddWithValue("effective_date", requestedDate);
         command.Parameters.AddWithValue("rate", rate);
+        command.Parameters.AddWithValue("rate_type", rateType);
+        command.Parameters.AddWithValue("quote_basis", quoteBasis);
+        command.Parameters.AddWithValue("rate_use_case", rateUseCase);
+        command.Parameters.AddWithValue("posting_reason", postingReason);
         command.Parameters.AddWithValue("provider_key", providerKey);
         command.Parameters.AddWithValue("notes", "Manual JE FX override");
         command.Parameters.Add(new NpgsqlParameter<Guid?>("created_by_user_id", NpgsqlDbType.Uuid)
@@ -585,6 +672,10 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("requested_date")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("effective_date")),
             reader.GetDecimal(reader.GetOrdinal("rate")),
+            reader.GetString(reader.GetOrdinal("rate_type")),
+            reader.GetString(reader.GetOrdinal("quote_basis")),
+            reader.GetString(reader.GetOrdinal("rate_use_case")),
+            reader.GetString(reader.GetOrdinal("posting_reason")),
             reader.IsDBNull(reader.GetOrdinal("provider_key")) ? null : reader.GetString(reader.GetOrdinal("provider_key")),
             reader.GetString(reader.GetOrdinal("row_origin")),
             reader.GetString(reader.GetOrdinal("snapshot_semantics")),
@@ -599,6 +690,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
             reader.GetString(reader.GetOrdinal("quote_currency_code")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("market_date")),
             reader.GetDecimal(reader.GetOrdinal("rate")),
+            reader.GetString(reader.GetOrdinal("rate_type")),
+            reader.GetString(reader.GetOrdinal("quote_basis")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("fetched_at")),
             reader.IsDBNull(reader.GetOrdinal("payload")) ? null : reader.GetString(reader.GetOrdinal("payload")));
 }

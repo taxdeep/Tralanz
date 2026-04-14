@@ -1,13 +1,6 @@
 # Citus
 
-QuickBooks-like accounting MVP scaffold using:
-- Next.js
-- TypeScript
-- Tailwind CSS
-- Prisma
-- SQLite
-
-The current backend direction also includes a `.NET 10` + PostgreSQL platform core that registers system modules and entity metadata for the accounting backend.
+The current backend direction also includes a `.NET 11` + PostgreSQL platform core that registers system modules and entity metadata for the accounting backend.
 
 ## Product Authority
 
@@ -41,17 +34,3 @@ Related architecture/design documents:
 - [backend/README.md](./backend/README.md)
 - [backend/Citus.Accounting.sln](./backend/Citus.Accounting.sln)
 
-## Run locally
-
-1. Install dependencies:
-   - `npm install`
-2. Create environment file:
-   - copy `.env.example` to `.env`
-3. Generate Prisma client:
-   - `npm run prisma:generate`
-4. Run first migration:
-   - `npm run prisma:migrate -- --name init`
-5. Seed a test user:
-   - `npm run db:seed`
-6. Start development server:
-   - `npm run dev`

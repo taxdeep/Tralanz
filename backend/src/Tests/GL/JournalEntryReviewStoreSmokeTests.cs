@@ -1,8 +1,10 @@
 using Engines.FX.FxRateLookup;
 using Infrastructure.PostgreSQL;
+using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.FX;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Numbering;
+using Modules.Company.MultiCurrency;
 using Modules.GL.JournalEntry;
 using Npgsql;
 
@@ -22,7 +24,9 @@ public sealed class JournalEntryReviewStoreSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(connectionFactory);
         var postingStore = new PostgreSqlJournalEntryPostingStore(connectionFactory, numberLookup);
         var fxSelectionService = new FxRateSelectionService(new PostgreSqlFxRateStore(connectionFactory));
-        var workflow = new JournalEntryWorkflow(accountCatalog, draftStore, postingStore, fxSelectionService);
+        var companyCurrencyStore = new PostgreSqlCompanyCurrencyProvisioningStore(connectionFactory);
+        var companyCurrencyWorkflow = new CompanyCurrencyGovernanceWorkflow(companyCurrencyStore);
+        var workflow = new JournalEntryWorkflow(accountCatalog, draftStore, postingStore, fxSelectionService, companyCurrencyStore);
         var reviewStore = new PostgreSqlJournalEntryReviewStore(connectionFactory);
         var sourceReviewStore = new PostgreSqlManualJournalSourceReviewStore(connectionFactory);
 
@@ -33,15 +37,16 @@ public sealed class JournalEntryReviewStoreSmokeTests
         try
         {
             var journalDate = BuildUniqueJournalDate();
+            var companyCurrency = await companyCurrencyWorkflow.EnableCurrencyAsync(CompanyId, "EUR", UserId, CancellationToken.None);
             var accounts = await accountCatalog.ListManualPostingAccountsAsync(CompanyId, CancellationToken.None);
             Assert.True(accounts.Count >= 2, "Expected at least two manual-posting accounts in the demo company.");
 
             var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
             draft.CompanyId = CompanyId;
             draft.JournalDate = journalDate;
-            draft.CurrencyCode = "USD";
-            draft.BaseCurrencyCode = "CAD";
-            draft.FxRate = 1.38725m;
+            draft.CurrencyCode = "EUR";
+            draft.BaseCurrencyCode = companyCurrency.Profile.BaseCurrencyCode;
+            draft.FxRate = 1.12125m;
             draft.FxEffectiveDate = draft.JournalDate;
             draft.FxSourceSemantics = "manual";
             draft.FxSnapshotId = null;
@@ -69,6 +74,13 @@ public sealed class JournalEntryReviewStoreSmokeTests
             Assert.Equal("manual_journal", review.SourceType);
             Assert.Equal("manual", review.ExchangeRateSource);
             Assert.Equal(snapshotId, review.FxSnapshotId);
+            Assert.Equal("spot", review.FxRateType);
+            Assert.Equal("direct", review.FxQuoteBasis);
+            Assert.Equal("general", review.FxRateUseCase);
+            Assert.Equal("normal", review.FxPostingReason);
+            Assert.Equal("manual", review.FxSnapshotSemantics);
+            Assert.Equal("manual", review.FxSnapshotRowOrigin);
+            Assert.False(string.IsNullOrWhiteSpace(review.FxProviderKey));
             Assert.Equal(2, review.LineCount);
             Assert.Equal(2, review.Lines.Count);
             Assert.Equal(150m, review.TotalTransactionDebit);
@@ -129,6 +141,26 @@ public sealed class JournalEntryReviewStoreSmokeTests
             await ExecuteDeleteAsync(connection, transaction, "delete from company_fx_rate_snapshots where id = @id;", snapshotId.Value, cancellationToken);
         }
 
+        await ExecuteNonIdDeleteAsync(
+            connection,
+            transaction,
+            """
+            delete from accounts
+            where company_id = @company_id
+              and system_role in ('accounts_receivable:EUR', 'accounts_payable:EUR');
+            """,
+            cancellationToken);
+
+        await ExecuteNonIdDeleteAsync(
+            connection,
+            transaction,
+            """
+            delete from company_currencies
+            where company_id = @company_id
+              and currency_code = 'EUR';
+            """,
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -143,6 +175,19 @@ public sealed class JournalEntryReviewStoreSmokeTests
         command.Transaction = transaction;
         command.CommandText = sql;
         command.Parameters.AddWithValue("id", id);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ExecuteNonIdDeleteAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("company_id", CompanyId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

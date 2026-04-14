@@ -32,6 +32,16 @@ public sealed class JournalEntryReviewLine
 
     public Guid? PartyId { get; init; }
 
+    public string? AccountSystemRole { get; init; }
+
+    public string? AccountSystemKey { get; init; }
+
+    public bool IsRealizedFxLine =>
+        string.Equals(AccountSystemRole, "realized_fx_gain", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(AccountSystemRole, "realized_fx_loss", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(AccountSystemKey, "fx_gain_realized", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(AccountSystemKey, "fx_loss_realized", StringComparison.OrdinalIgnoreCase);
+
     public string DisplayDescription =>
         string.IsNullOrWhiteSpace(Description) ? "No description" : Description;
 }

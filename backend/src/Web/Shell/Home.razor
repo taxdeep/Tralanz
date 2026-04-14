@@ -1,11 +1,63 @@
 @page "/"
+@inject WebShellState ShellState
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+
+@code {
+    private Citus.Ui.Shared.Business.BusinessSessionContextSummary? _apiSessionContext;
+    private string? _apiSessionWarning;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        _apiSessionContext = await SessionClient.GetContextAsync();
+        if (_apiSessionContext is null)
+        {
+            _apiSessionWarning = "Accounting API did not accept the current shell session context. Future API-backed business pages will stay blocked until session configuration and membership truth align.";
+        }
+    }
+}
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
     <h1 style="margin:0 0 0.75rem 0;font-size:1.5rem;">Citus Web Shell</h1>
     <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:48rem;">
-        This shell hosts whitelist-compliant business workspaces. The current priority surface is the dark-mode Journal Entry workbench.
+        This shell hosts whitelist-compliant business workspaces. The current priority surfaces are the dark-mode Journal Entry workbench, the governed Multi-Book control area, and the first API-backed AR/AP settlement preparation pages.
     </p>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/gl/journal-entry/editor">
-        Open Journal Entry workbench
-    </MudButton>
+    <p style="margin:0 0 1rem 0;color:#aac0cf;max-width:48rem;">
+        Active company: <strong>@ShellState.ActiveCompany.CompanyName</strong> (@ShellState.ActiveCompany.CompanyCode).
+        Available shell companies: <strong>@ShellState.AvailableCompanies.Count</strong>.
+        Context source: <strong>@ShellState.ContextSource</strong>.
+    </p>
+    <p style="margin:0 0 1rem 0;color:#8bb5d6;max-width:48rem;">
+        API session probe:
+        <strong>@(_apiSessionContext is null ? "unavailable" : $"{_apiSessionContext.ActiveCompany.CompanyName} ({_apiSessionContext.ActiveCompany.CompanyCode})")</strong>.
+    </p>
+    @if (!string.IsNullOrWhiteSpace(_apiSessionWarning))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin:0 0 1rem 0;max-width:60rem;">
+            @_apiSessionWarning
+        </MudAlert>
+    }
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Href="/company/book-governance">
+            Open Multi-Book governance
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Href="/ar/receive-payment">
+            Open Receive Payment
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Info" Href="/ap/pay-bill">
+            Open Pay Bill
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/gl/journal-entry/editor">
+            Open Journal Entry workbench
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/ar/credit-application">
+            Open Credit Application
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/ap/vendor-credit-application">
+            Open Vendor Credit Application
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/settings/user-preferences/system-setup">
+            User Preferences
+        </MudButton>
+    </div>
 </div>

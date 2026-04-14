@@ -331,8 +331,8 @@ ensure_base_packages() {
 }
 
 ensure_dotnet() {
-  log "Installing .NET 10 from the Ubuntu 24.04 package feeds."
-  apt_install dotnet-sdk-10.0 aspnetcore-runtime-10.0
+  log "Installing .NET 11 from the Ubuntu 24.04 package feeds."
+  apt_install dotnet-sdk-11.0 aspnetcore-runtime-11.0
 }
 
 detect_node_arch() {

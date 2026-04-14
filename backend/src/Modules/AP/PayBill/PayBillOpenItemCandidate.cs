@@ -1,0 +1,16 @@
+namespace Modules.AP.PayBill;
+
+public sealed record PayBillOpenItemCandidate(
+    Guid OpenItemId,
+    string SourceType,
+    Guid SourceId,
+    string DisplayNumber,
+    DateOnly DocumentDate,
+    DateOnly? DueDate,
+    string DocumentCurrencyCode,
+    string BaseCurrencyCode,
+    decimal OriginalAmountTx,
+    decimal OpenAmountTx,
+    decimal OpenAmountBase,
+    string BalanceSide,
+    string Status);

@@ -198,6 +198,91 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         }
     }
 
+    public async Task<IReadOnlyList<OpenItemApplicationDrillDown>> ListApplicationsAsync(
+        CompanyId companyId,
+        string targetOpenItemType,
+        Guid targetOpenItemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetOpenItemType);
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var items = new List<OpenItemApplicationDrillDown>();
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              sa.id as application_id,
+              sa.application_type,
+              sa.source_type,
+              sa.source_id as source_document_id,
+              coalesce(
+                rp.payment_number,
+                ca.application_number,
+                pb.payment_number,
+                vca.application_number,
+                sa.source_id::text) as source_document_display_number,
+              coalesce(
+                rp.payment_date,
+                ca.application_date,
+                pb.payment_date,
+                vca.application_date) as source_document_date,
+              sa.applied_amount_tx,
+              sa.applied_amount_base,
+              sa.settlement_fx_rate,
+              sa.realized_fx_amount,
+              sa.created_at
+            from settlement_applications sa
+            left join receive_payments rp
+              on sa.source_type = 'receive_payment'
+             and rp.company_id = sa.company_id
+             and rp.id = sa.source_id
+            left join credit_applications ca
+              on sa.source_type = 'credit_application'
+             and ca.company_id = sa.company_id
+             and ca.id = sa.source_id
+            left join pay_bills pb
+              on sa.source_type = 'pay_bill'
+             and pb.company_id = sa.company_id
+             and pb.id = sa.source_id
+            left join vendor_credit_applications vca
+              on sa.source_type = 'vendor_credit_application'
+             and vca.company_id = sa.company_id
+             and vca.id = sa.source_id
+            where sa.company_id = @company_id
+              and sa.target_open_item_type = @target_open_item_type
+              and sa.target_open_item_id = @target_open_item_id
+            order by sa.created_at asc, sa.id asc;
+            """);
+
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("target_open_item_type", targetOpenItemType);
+        command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new OpenItemApplicationDrillDown(
+                reader.GetGuid(reader.GetOrdinal("application_id")),
+                reader.GetString(reader.GetOrdinal("application_type")),
+                reader.GetString(reader.GetOrdinal("source_type")),
+                reader.GetGuid(reader.GetOrdinal("source_document_id")),
+                reader.GetString(reader.GetOrdinal("source_document_display_number")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("source_document_date")),
+                reader.GetDecimal(reader.GetOrdinal("applied_amount_tx")),
+                reader.GetDecimal(reader.GetOrdinal("applied_amount_base")),
+                reader.IsDBNull(reader.GetOrdinal("settlement_fx_rate")) ? null : reader.GetDecimal(reader.GetOrdinal("settlement_fx_rate")),
+                reader.IsDBNull(reader.GetOrdinal("realized_fx_amount")) ? null : reader.GetDecimal(reader.GetOrdinal("realized_fx_amount")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"))));
+        }
+
+        return items;
+    }
+
     private async Task<bool> HasExistingApplicationsAsync(
         Guid companyId,
         string sourceType,

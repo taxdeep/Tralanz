@@ -5,6 +5,7 @@ using Infrastructure.PostgreSQL.FX;
 using Engines.FX.FxRateLookup;
 using Modules.GL.JournalEntry;
 using Npgsql;
+using Infrastructure.PostgreSQL.Company;
 
 namespace Tests.GL;
 
@@ -22,7 +23,9 @@ public sealed class JournalEntryPersistenceSmokeTests
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(connectionFactory);
         var postingStore = new PostgreSqlJournalEntryPostingStore(connectionFactory, numberLookup);
         var fxSelectionService = new FxRateSelectionService(new PostgreSqlFxRateStore(connectionFactory));
-        var workflow = new JournalEntryWorkflow(accountCatalog, draftStore, postingStore, fxSelectionService);
+        var companyCurrencyCatalog = new PostgreSqlCompanyCurrencyProvisioningStore(connectionFactory);
+        var workflow = new JournalEntryWorkflow(accountCatalog, draftStore, postingStore, fxSelectionService, companyCurrencyCatalog);
+        var companyProfile = await companyCurrencyCatalog.GetProfileAsync(CompanyId, CancellationToken.None);
 
         Guid? documentId = null;
         Guid? journalEntryId = null;
@@ -35,11 +38,11 @@ public sealed class JournalEntryPersistenceSmokeTests
             var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
             draft.CompanyId = CompanyId;
             draft.JournalDate = new DateOnly(2026, 4, 13);
-            draft.CurrencyCode = "USD";
-            draft.BaseCurrencyCode = "CAD";
-            draft.FxRate = 1.3845m;
+            draft.CurrencyCode = companyProfile.BaseCurrencyCode;
+            draft.BaseCurrencyCode = companyProfile.BaseCurrencyCode;
+            draft.FxRate = 1m;
             draft.FxEffectiveDate = draft.JournalDate;
-            draft.FxSourceSemantics = "system_stored";
+            draft.FxSourceSemantics = "identity";
             draft.Memo = $"Smoke test {Guid.NewGuid():N}";
             draft.Lines[0].Account = accounts[0];
             draft.Lines[0].DebitAmount = 100m;

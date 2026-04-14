@@ -527,9 +527,62 @@
     padding: 0.65rem 0 0;
 }
 
+.je-company-currency-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1rem;
+    background: rgba(16, 24, 31, 0.88);
+    border: 1px solid rgba(124, 149, 168, 0.14);
+    border-top: none;
+}
+
+.je-company-currency-bar__summary {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.je-company-currency-bar__label {
+    color: #8ea2b2;
+    font-size: 0.76rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.je-company-currency-bar__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.je-company-currency-bar__enable {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.je-editor ::deep .je-select--compact {
+    min-width: 13rem;
+}
+
 @media (max-width: 1200px) {
     .je-editor ::deep .je-header-band {
         grid-template-columns: 1fr;
+    }
+
+    .je-company-currency-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .je-company-currency-bar__summary,
+    .je-company-currency-bar__enable {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .je-bottom-panels {

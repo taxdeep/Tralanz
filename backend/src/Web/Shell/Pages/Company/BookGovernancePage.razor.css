@@ -1,0 +1,193 @@
+.book-governance-page {
+    padding: 2rem 2.25rem 2.5rem;
+    color: #d9e2ea;
+}
+
+.book-governance-page__hero {
+    margin-bottom: 1.5rem;
+}
+
+.book-governance-page__context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+}
+
+.book-governance-page__eyebrow {
+    margin: 0 0 0.4rem;
+    color: #8ec5ff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.book-governance-page__hero h1 {
+    margin: 0;
+    font-size: 1.85rem;
+    line-height: 1.1;
+}
+
+.book-governance-page__lede {
+    max-width: 58rem;
+    margin: 0.75rem 0 0;
+    color: #97a8b7;
+}
+
+.book-governance-page__controls {
+    display: grid;
+    grid-template-columns: minmax(16rem, 24rem) minmax(16rem, 24rem) minmax(13rem, 16rem) auto;
+    gap: 0.9rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, rgba(19, 31, 45, 0.9), rgba(10, 18, 28, 0.92));
+    border: 1px solid rgba(132, 165, 197, 0.12);
+    border-radius: 18px;
+}
+
+.book-governance-page__context-fact {
+    display: grid;
+    gap: 0.2rem;
+    align-content: center;
+    min-height: 72px;
+    padding: 0.75rem 0.9rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(132, 165, 197, 0.08);
+}
+
+.book-governance-page__context-fact span {
+    color: #86a0b4;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.book-governance-page__context-fact strong {
+    font-size: 0.9rem;
+    line-break: anywhere;
+}
+
+.book-governance-page__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.book-governance-card {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    background:
+        radial-gradient(circle at top right, rgba(86, 127, 255, 0.12), transparent 34%),
+        linear-gradient(180deg, rgba(18, 28, 40, 0.94), rgba(9, 16, 24, 0.98));
+    border: 1px solid rgba(132, 165, 197, 0.14);
+    border-radius: 20px;
+}
+
+.book-governance-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.book-governance-card__title-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.book-governance-card__title-row h2 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.book-governance-card__meta {
+    margin: 0.35rem 0 0;
+    color: #8ea3b5;
+    font-size: 0.9rem;
+}
+
+.book-governance-card__facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.book-governance-card__facts div {
+    padding: 0.7rem 0.8rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(132, 165, 197, 0.08);
+}
+
+.book-governance-card__facts span {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #86a0b4;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.book-governance-card__facts strong {
+    font-size: 1rem;
+}
+
+.book-governance-card__signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.book-governance-card__timeline {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.book-governance-card__timeline-row {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr 1.4fr;
+    gap: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(132, 165, 197, 0.08);
+    color: #a9b8c6;
+    font-size: 0.88rem;
+}
+
+.book-governance-card__timeline-row em {
+    color: #d5dde5;
+    font-style: normal;
+}
+
+.book-governance-form {
+    display: grid;
+    gap: 0.75rem;
+    padding-top: 0.25rem;
+}
+
+@media (max-width: 900px) {
+    .book-governance-page__controls {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .book-governance-page {
+        padding: 1.25rem 1rem 1.75rem;
+    }
+
+    .book-governance-card__facts {
+        grid-template-columns: 1fr;
+    }
+
+    .book-governance-card__timeline-row {
+        grid-template-columns: 1fr;
+    }
+}

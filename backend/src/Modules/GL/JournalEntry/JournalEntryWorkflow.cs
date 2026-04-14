@@ -1,3 +1,5 @@
+using Modules.Company.MultiCurrency;
+
 namespace Modules.GL.JournalEntry;
 
 public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
@@ -6,6 +8,7 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
     private readonly IJournalEntryDraftStore _draftStore;
     private readonly IJournalEntryPostingStore _postingStore;
     private readonly Engines.FX.FxRateLookup.IFxRateSelectionService _fxRateSelectionService;
+    private readonly ICompanyCurrencyCatalog? _companyCurrencyCatalog;
 
     public JournalEntryWorkflow(
         IJournalEntryAccountCatalog accountCatalog,
@@ -17,6 +20,18 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
         _draftStore = draftStore ?? throw new ArgumentNullException(nameof(draftStore));
         _postingStore = postingStore ?? throw new ArgumentNullException(nameof(postingStore));
         _fxRateSelectionService = fxRateSelectionService ?? throw new ArgumentNullException(nameof(fxRateSelectionService));
+        _companyCurrencyCatalog = null;
+    }
+
+    public JournalEntryWorkflow(
+        IJournalEntryAccountCatalog accountCatalog,
+        IJournalEntryDraftStore draftStore,
+        IJournalEntryPostingStore postingStore,
+        Engines.FX.FxRateLookup.IFxRateSelectionService fxRateSelectionService,
+        ICompanyCurrencyCatalog companyCurrencyCatalog)
+        : this(accountCatalog, draftStore, postingStore, fxRateSelectionService)
+    {
+        _companyCurrencyCatalog = companyCurrencyCatalog ?? throw new ArgumentNullException(nameof(companyCurrencyCatalog));
     }
 
     public Task<IReadOnlyList<JournalEntryAccountOption>> LoadAccountOptionsAsync(
@@ -35,8 +50,11 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
         Guid userId,
         CancellationToken cancellationToken)
     {
+        await ValidateGovernedCurrencyAsync(draft, cancellationToken);
         ValidateDraftShape(draft);
+        ValidateGovernedFxState(draft);
         await EnsureGovernedFxSnapshotAsync(draft, userId, cancellationToken);
+        ValidatePersistedFxState(draft);
         return await _draftStore.SaveAsync(draft, userId, cancellationToken);
     }
 
@@ -45,7 +63,9 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
         Guid userId,
         CancellationToken cancellationToken)
     {
+        await ValidateGovernedCurrencyAsync(draft, cancellationToken);
         ValidateDraftShape(draft);
+        ValidateGovernedFxState(draft);
 
         var meaningfulLines = GetMeaningfulLines(draft).ToArray();
         if (meaningfulLines.Length < 2)
@@ -117,6 +137,30 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
     private static IEnumerable<JournalEntryDraftLine> GetMeaningfulLines(JournalEntryDraft draft) =>
         draft.Lines.Where(static line => line.HasContent);
 
+    private async Task ValidateGovernedCurrencyAsync(
+        JournalEntryDraft draft,
+        CancellationToken cancellationToken)
+    {
+        if (_companyCurrencyCatalog is null)
+        {
+            return;
+        }
+
+        var profile = await _companyCurrencyCatalog.GetProfileAsync(draft.CompanyId, cancellationToken);
+
+        if (!string.Equals(draft.BaseCurrencyCode, profile.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Draft base currency {draft.BaseCurrencyCode} does not match company base currency {profile.BaseCurrencyCode}.");
+        }
+
+        if (!profile.IsCurrencyEnabled(draft.CurrencyCode))
+        {
+            throw new InvalidOperationException(
+                $"Currency {draft.CurrencyCode} is not enabled for company {draft.CompanyId:D}.");
+        }
+    }
+
     private async Task EnsureGovernedFxSnapshotAsync(
         JournalEntryDraft draft,
         Guid userId,
@@ -145,7 +189,11 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
                 draft.BaseCurrencyCode,
                 draft.JournalDate,
                 draft.FxProviderKey,
-                7),
+                7,
+                draft.FxRateType,
+                draft.FxQuoteBasis,
+                draft.FxRateUseCase,
+                draft.FxPostingReason),
             draft.FxRate,
             cancellationToken);
 
@@ -153,5 +201,119 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
         draft.FxEffectiveDate = resolution.EffectiveDate;
         draft.FxSourceSemantics = resolution.SourceSemantics;
         draft.FxStatusLabel = resolution.StatusLabel;
+        draft.FxRateType = resolution.RateType;
+        draft.FxQuoteBasis = resolution.QuoteBasis;
+        draft.FxRateUseCase = resolution.RateUseCase;
+        draft.FxPostingReason = resolution.PostingReason;
     }
+
+    private static void ValidateGovernedFxState(JournalEntryDraft draft)
+    {
+        if (!IsSupportedRateType(draft.FxRateType))
+        {
+            throw new InvalidOperationException($"Unsupported FX rate type {draft.FxRateType}.");
+        }
+
+        if (!IsSupportedQuoteBasis(draft.FxQuoteBasis))
+        {
+            throw new InvalidOperationException($"Unsupported FX quote basis {draft.FxQuoteBasis}.");
+        }
+
+        if (!IsSupportedRateUseCase(draft.FxRateUseCase))
+        {
+            throw new InvalidOperationException($"Unsupported FX rate use case {draft.FxRateUseCase}.");
+        }
+
+        if (!IsSupportedPostingReason(draft.FxPostingReason))
+        {
+            throw new InvalidOperationException($"Unsupported FX posting reason {draft.FxPostingReason}.");
+        }
+
+        if (draft.IsForeignCurrency)
+        {
+            if (draft.FxRate <= 0m)
+            {
+                throw new InvalidOperationException("FX rate must be greater than zero.");
+            }
+
+            if (string.Equals(draft.FxSourceSemantics, SharedKernel.FX.FxSourceSemantics.Identity, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Foreign-currency journal entries cannot use identity FX semantics.");
+            }
+
+            if (!string.Equals(draft.FxRateUseCase, SharedKernel.FX.FxRateUseCase.General, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Manual journal entry FX use case must stay general.");
+            }
+
+            if (!string.Equals(draft.FxPostingReason, SharedKernel.FX.FxPostingReason.Normal, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Manual journal entry FX posting reason must stay normal.");
+            }
+
+            return;
+        }
+
+        if (draft.FxSnapshotId.HasValue)
+        {
+            throw new InvalidOperationException("Base-currency journal entries cannot carry an FX snapshot.");
+        }
+
+        if (!string.Equals(draft.FxSourceSemantics, SharedKernel.FX.FxSourceSemantics.Identity, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Base-currency journal entries must use identity FX semantics.");
+        }
+
+        if (draft.FxRate != 1m)
+        {
+            throw new InvalidOperationException("Base-currency journal entries must use an FX rate of 1.");
+        }
+    }
+
+    private static void ValidatePersistedFxState(JournalEntryDraft draft)
+    {
+        if (!draft.IsForeignCurrency)
+        {
+            return;
+        }
+
+        if (!draft.FxSnapshotId.HasValue)
+        {
+            throw new InvalidOperationException("Foreign-currency journal entries require a persisted FX snapshot before save or post.");
+        }
+
+        if (draft.FxEffectiveDate == default)
+        {
+            throw new InvalidOperationException("Foreign-currency journal entries require an FX effective date.");
+        }
+
+        if (draft.FxEffectiveDate > draft.JournalDate)
+        {
+            throw new InvalidOperationException("FX effective date cannot be later than the journal date.");
+        }
+    }
+
+    private static bool IsSupportedRateType(string value) =>
+        value is SharedKernel.FX.FxRateType.Spot
+            or SharedKernel.FX.FxRateType.Closing
+            or SharedKernel.FX.FxRateType.Average
+            or SharedKernel.FX.FxRateType.Historical
+            or SharedKernel.FX.FxRateType.Custom;
+
+    private static bool IsSupportedQuoteBasis(string value) =>
+        value is SharedKernel.FX.FxQuoteBasis.Direct
+            or SharedKernel.FX.FxQuoteBasis.Inverse;
+
+    private static bool IsSupportedRateUseCase(string value) =>
+        value is SharedKernel.FX.FxRateUseCase.General
+            or SharedKernel.FX.FxRateUseCase.Settlement
+            or SharedKernel.FX.FxRateUseCase.Remeasurement
+            or SharedKernel.FX.FxRateUseCase.Translation;
+
+    private static bool IsSupportedPostingReason(string value) =>
+        value is SharedKernel.FX.FxPostingReason.Normal
+            or SharedKernel.FX.FxPostingReason.Settlement
+            or SharedKernel.FX.FxPostingReason.Revaluation
+            or SharedKernel.FX.FxPostingReason.Translation
+            or SharedKernel.FX.FxPostingReason.Adjustment;
 }

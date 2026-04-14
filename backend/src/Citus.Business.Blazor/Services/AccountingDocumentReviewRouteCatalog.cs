@@ -10,6 +10,10 @@ public static class AccountingDocumentReviewRouteCatalog
             "credit_note" => "Credit Note",
             "bill" => "Bill",
             "vendor_credit" => "Vendor Credit",
+            "receive_payment" => "Receive Payment",
+            "credit_application" => "Credit Application",
+            "pay_bill" => "Pay Bill",
+            "vendor_credit_application" => "Vendor Credit Application",
             _ => "Document"
         };
 
@@ -49,6 +53,10 @@ public static class AccountingDocumentReviewRouteCatalog
             "credit_note" => "credit_note",
             "bill" => "bill",
             "vendor_credit" => "vendor_credit",
+            "receive_payment" => "receive_payment",
+            "credit_application" => "credit_application",
+            "pay_bill" => "pay_bill",
+            "vendor_credit_application" => "vendor_credit_application",
             _ => null
         };
     }

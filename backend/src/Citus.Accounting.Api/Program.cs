@@ -12,6 +12,8 @@ using Citus.Ui.Shared.Shell;
 using Citus.Accounting.Infrastructure.Fx;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
+using Infrastructure.PostgreSQL.Company;
+using Modules.Company.MultiBook;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -50,6 +52,8 @@ builder.Services.AddScoped<IAccountingReportRepository, PostgresAccountingReport
 builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccountingDocumentReviewRepository>();
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IFxSnapshotRepository, PostgresFxSnapshotRepository>();
+builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyStore>();
+builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
 builder.Services.AddScoped<IArOpenItemRepository, PostgresArOpenItemRepository>();
 builder.Services.AddScoped<IApOpenItemRepository, PostgresApOpenItemRepository>();
 builder.Services.AddScoped<ISettlementApplicationRepository, PostgresSettlementApplicationRepository>();
@@ -162,6 +166,774 @@ app.MapGet("/architecture", () => Results.Ok(new
     postingRule = "All formal accounting must go through the Posting Engine.",
     moduleRegistration = "accounting module is governed by Citus.Platform.Core metadata"
 }));
+
+accounting.MapGet(
+    "/company-books",
+    async ([AsParameters] CompanyBookGovernanceLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var results = await workflow.ListBookGovernanceAsync(
+            query.CompanyId,
+            asOfDate,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            AsOfDate = asOfDate,
+            Books = results.Select(result => new
+            {
+                Book = new
+                {
+                    result.Book.BookId,
+                    result.Book.CompanyId,
+                    result.Book.BookCode,
+                    result.Book.BookName,
+                    result.Book.BookRole,
+                    result.Book.AccountingStandard,
+                    result.Book.BookBaseCurrencyCode,
+                    result.Book.FunctionalCurrencyCode,
+                    result.Book.PresentationCurrencyCode,
+                    result.Book.IsPrimary,
+                    result.Book.IsAdjustmentOnly,
+                    result.Book.EffectiveFrom,
+                    result.Book.IsActive
+                },
+                RemeasurementPolicy = result.RemeasurementPolicy is null
+                    ? null
+                    : new
+                    {
+                        result.RemeasurementPolicy.PolicyId,
+                        result.RemeasurementPolicy.CompanyId,
+                        result.RemeasurementPolicy.BookId,
+                        result.RemeasurementPolicy.RateType,
+                        result.RemeasurementPolicy.QuoteBasis,
+                        result.RemeasurementPolicy.RateUseCase,
+                        result.RemeasurementPolicy.PostingReason,
+                        result.RemeasurementPolicy.RevaluationProfile,
+                        result.RemeasurementPolicy.FxRoundingPolicy,
+                        result.RemeasurementPolicy.EffectiveFrom,
+                        result.RemeasurementPolicy.IsActive
+                    },
+                MigrationEligibility = new
+                {
+                    result.MigrationEligibility.ChangeMode,
+                    result.MigrationEligibility.EvaluationBasis,
+                    result.MigrationEligibility.HasCompanyPostedHistory,
+                    result.MigrationEligibility.HasBookSpecificRevaluationHistory,
+                    result.MigrationEligibility.DirectEditAllowed,
+                    result.MigrationEligibility.Reason
+                },
+                GovernanceSignals = new
+                {
+                    result.GovernanceSignals.HasClosedPeriods,
+                    result.GovernanceSignals.HasIssuedReports,
+                    result.GovernanceSignals.HasFiledTax,
+                    Signals = result.GovernanceSignals.Signals.Select(signal => new
+                    {
+                        signal.SignalId,
+                        signal.CompanyId,
+                        signal.BookId,
+                        signal.SignalType,
+                        signal.SignalDate,
+                        signal.ReferenceLabel,
+                        signal.Notes,
+                        signal.CreatedByUserId,
+                        signal.CreatedAt
+                    })
+                }
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/company-books/{bookId:guid}/governance-signals",
+    async (Guid bookId, [AsParameters] CompanyBookGovernanceSignalsLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var result = await workflow.GetGovernanceSignalsAsync(
+            query.CompanyId,
+            bookId,
+            asOfDate,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            BookId = bookId,
+            AsOfDate = asOfDate,
+            result.HasClosedPeriods,
+            result.HasIssuedReports,
+            result.HasFiledTax,
+            Signals = result.Signals.Select(signal => new
+            {
+                signal.SignalId,
+                signal.CompanyId,
+                signal.BookId,
+                signal.SignalType,
+                signal.SignalDate,
+                signal.ReferenceLabel,
+                signal.Notes,
+                signal.CreatedByUserId,
+                signal.CreatedAt
+            })
+        });
+    });
+
+accounting.MapPost(
+    "/company-books/{bookId:guid}/governance-signals",
+    async (Guid bookId, CreateCompanyBookGovernanceSignalHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.CreateGovernanceSignalAsync(
+                request.CompanyId,
+                bookId,
+                request.SignalType,
+                request.SignalDate,
+                request.ReferenceLabel,
+                request.Notes,
+                request.UserId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                Signal = new
+                {
+                    result.Signal.SignalId,
+                    result.Signal.CompanyId,
+                    result.Signal.BookId,
+                    result.Signal.SignalType,
+                    result.Signal.SignalDate,
+                    result.Signal.ReferenceLabel,
+                    result.Signal.Notes,
+                    result.Signal.CreatedByUserId,
+                    result.Signal.CreatedAt
+                },
+                Summary = new
+                {
+                    result.Summary.HasClosedPeriods,
+                    result.Summary.HasIssuedReports,
+                    result.Summary.HasFiledTax,
+                    Signals = result.Summary.Signals.Select(signal => new
+                    {
+                        signal.SignalId,
+                        signal.CompanyId,
+                        signal.BookId,
+                        signal.SignalType,
+                        signal.SignalDate,
+                        signal.ReferenceLabel,
+                        signal.Notes,
+                        signal.CreatedByUserId,
+                        signal.CreatedAt
+                    })
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/company-books/{bookId:guid}/close-periods",
+    async (Guid bookId, RegisterCompanyBookClosedPeriodHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.RegisterClosedPeriodAsync(
+                request.CompanyId,
+                bookId,
+                request.PeriodEndDate,
+                request.ReferenceLabel,
+                request.Notes,
+                request.UserId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                Signal = new
+                {
+                    result.Signal.SignalId,
+                    result.Signal.CompanyId,
+                    result.Signal.BookId,
+                    result.Signal.SignalType,
+                    result.Signal.SignalDate,
+                    result.Signal.ReferenceLabel,
+                    result.Signal.Notes,
+                    result.Signal.CreatedByUserId,
+                    result.Signal.CreatedAt
+                },
+                Summary = new
+                {
+                    result.Summary.HasClosedPeriods,
+                    result.Summary.HasIssuedReports,
+                    result.Summary.HasFiledTax,
+                    Signals = result.Summary.Signals.Select(signal => new
+                    {
+                        signal.SignalId,
+                        signal.CompanyId,
+                        signal.BookId,
+                        signal.SignalType,
+                        signal.SignalDate,
+                        signal.ReferenceLabel,
+                        signal.Notes,
+                        signal.CreatedByUserId,
+                        signal.CreatedAt
+                    })
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/company-books/{bookId:guid}/issued-statements",
+    async (Guid bookId, RegisterCompanyBookIssuedStatementHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.RegisterIssuedStatementAsync(
+                request.CompanyId,
+                bookId,
+                request.IssuedOn,
+                request.StatementLabel,
+                request.Notes,
+                request.UserId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                Signal = new
+                {
+                    result.Signal.SignalId,
+                    result.Signal.CompanyId,
+                    result.Signal.BookId,
+                    result.Signal.SignalType,
+                    result.Signal.SignalDate,
+                    result.Signal.ReferenceLabel,
+                    result.Signal.Notes,
+                    result.Signal.CreatedByUserId,
+                    result.Signal.CreatedAt
+                },
+                Summary = new
+                {
+                    result.Summary.HasClosedPeriods,
+                    result.Summary.HasIssuedReports,
+                    result.Summary.HasFiledTax,
+                    Signals = result.Summary.Signals.Select(signal => new
+                    {
+                        signal.SignalId,
+                        signal.CompanyId,
+                        signal.BookId,
+                        signal.SignalType,
+                        signal.SignalDate,
+                        signal.ReferenceLabel,
+                        signal.Notes,
+                        signal.CreatedByUserId,
+                        signal.CreatedAt
+                    })
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/company-books/{bookId:guid}/filed-tax",
+    async (Guid bookId, RegisterCompanyBookFiledTaxHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.RegisterFiledTaxAsync(
+                request.CompanyId,
+                bookId,
+                request.FiledOn,
+                request.FilingLabel,
+                request.Notes,
+                request.UserId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                Signal = new
+                {
+                    result.Signal.SignalId,
+                    result.Signal.CompanyId,
+                    result.Signal.BookId,
+                    result.Signal.SignalType,
+                    result.Signal.SignalDate,
+                    result.Signal.ReferenceLabel,
+                    result.Signal.Notes,
+                    result.Signal.CreatedByUserId,
+                    result.Signal.CreatedAt
+                },
+                Summary = new
+                {
+                    result.Summary.HasClosedPeriods,
+                    result.Summary.HasIssuedReports,
+                    result.Summary.HasFiledTax,
+                    Signals = result.Summary.Signals.Select(signal => new
+                    {
+                        signal.SignalId,
+                        signal.CompanyId,
+                        signal.BookId,
+                        signal.SignalType,
+                        signal.SignalDate,
+                        signal.ReferenceLabel,
+                        signal.Notes,
+                        signal.CreatedByUserId,
+                        signal.CreatedAt
+                    })
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/company-books/governed-change-preview",
+    async (CompanyBookGovernedChangePreviewHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var result = await workflow.PreviewGovernedChangeAsync(
+                request.CompanyId,
+                request.BookId,
+                asOfDate,
+                new CompanyBookProposedChangeSet(
+                    request.IsPrimary,
+                    request.AccountingStandard,
+                    request.BookBaseCurrencyCode,
+                    request.FunctionalCurrencyCode,
+                    request.PresentationCurrencyCode,
+                    request.RateType,
+                    request.QuoteBasis,
+                    request.RateUseCase,
+                    request.PostingReason,
+                    request.RevaluationProfile,
+                    request.FxRoundingPolicy),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                AsOfDate = asOfDate,
+                Book = new
+                {
+                    result.Book.BookId,
+                    result.Book.CompanyId,
+                    result.Book.BookCode,
+                    result.Book.BookName,
+                    result.Book.BookRole,
+                    result.Book.AccountingStandard,
+                    result.Book.BookBaseCurrencyCode,
+                    result.Book.FunctionalCurrencyCode,
+                    result.Book.PresentationCurrencyCode,
+                    result.Book.IsPrimary,
+                    result.Book.IsAdjustmentOnly,
+                    result.Book.EffectiveFrom,
+                    result.Book.IsActive
+                },
+                CurrentRemeasurementPolicy = result.CurrentRemeasurementPolicy is null
+                    ? null
+                    : new
+                    {
+                        result.CurrentRemeasurementPolicy.PolicyId,
+                        result.CurrentRemeasurementPolicy.CompanyId,
+                        result.CurrentRemeasurementPolicy.BookId,
+                        result.CurrentRemeasurementPolicy.RateType,
+                        result.CurrentRemeasurementPolicy.QuoteBasis,
+                        result.CurrentRemeasurementPolicy.RateUseCase,
+                        result.CurrentRemeasurementPolicy.PostingReason,
+                        result.CurrentRemeasurementPolicy.RevaluationProfile,
+                        result.CurrentRemeasurementPolicy.FxRoundingPolicy,
+                        result.CurrentRemeasurementPolicy.EffectiveFrom,
+                        result.CurrentRemeasurementPolicy.IsActive
+                    },
+                ProposedChanges = result.ProposedChanges,
+                ChangeImpact = new
+                {
+                    result.ChangeImpact.HasAnyChange,
+                    result.ChangeImpact.ChangedFields,
+                    result.ChangeImpact.ChangeCategories,
+                    result.ChangeImpact.DirectUpdateAllowed,
+                    result.ChangeImpact.GovernedMigrationRequired,
+                    result.ChangeImpact.RecommendedPath,
+                    result.ChangeImpact.EvaluationBasis,
+                    result.ChangeImpact.Reason
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/company-books/governed-change-requests/prepare",
+    async (PrepareCompanyBookGovernedChangeRequestHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var result = await workflow.PrepareGovernedChangeRequestDraftAsync(
+                request.CompanyId,
+                request.UserId,
+                request.BookId,
+                asOfDate,
+                request.EffectiveFrom,
+                new CompanyBookProposedChangeSet(
+                    request.IsPrimary,
+                    request.AccountingStandard,
+                    request.BookBaseCurrencyCode,
+                    request.FunctionalCurrencyCode,
+                    request.PresentationCurrencyCode,
+                    request.RateType,
+                    request.QuoteBasis,
+                    request.RateUseCase,
+                    request.PostingReason,
+                    request.RevaluationProfile,
+                    request.FxRoundingPolicy),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                result.RequestId,
+                result.CompanyId,
+                result.BookId,
+                result.Status,
+                result.RequestedAction,
+                result.AsOfDate,
+                result.EffectiveFrom,
+                result.CreatedByUserId,
+                result.CreatedAt,
+                result.SubmittedByUserId,
+                result.SubmittedAt,
+                result.CancelledByUserId,
+                result.CancelledAt,
+                result.AppliedAt,
+                Book = new
+                {
+                    result.Preview.Book.BookId,
+                    result.Preview.Book.CompanyId,
+                    result.Preview.Book.BookCode,
+                    result.Preview.Book.BookName,
+                    result.Preview.Book.BookRole,
+                    result.Preview.Book.AccountingStandard,
+                    result.Preview.Book.BookBaseCurrencyCode,
+                    result.Preview.Book.FunctionalCurrencyCode,
+                    result.Preview.Book.PresentationCurrencyCode,
+                    result.Preview.Book.IsPrimary,
+                    result.Preview.Book.IsAdjustmentOnly,
+                    result.Preview.Book.EffectiveFrom,
+                    result.Preview.Book.IsActive
+                },
+                CurrentRemeasurementPolicy = result.Preview.CurrentRemeasurementPolicy is null
+                    ? null
+                    : new
+                    {
+                        result.Preview.CurrentRemeasurementPolicy.PolicyId,
+                        result.Preview.CurrentRemeasurementPolicy.CompanyId,
+                        result.Preview.CurrentRemeasurementPolicy.BookId,
+                        result.Preview.CurrentRemeasurementPolicy.RateType,
+                        result.Preview.CurrentRemeasurementPolicy.QuoteBasis,
+                        result.Preview.CurrentRemeasurementPolicy.RateUseCase,
+                        result.Preview.CurrentRemeasurementPolicy.PostingReason,
+                        result.Preview.CurrentRemeasurementPolicy.RevaluationProfile,
+                        result.Preview.CurrentRemeasurementPolicy.FxRoundingPolicy,
+                        result.Preview.CurrentRemeasurementPolicy.EffectiveFrom,
+                        result.Preview.CurrentRemeasurementPolicy.IsActive
+                    },
+                result.Preview.ProposedChanges,
+                ChangeImpact = new
+                {
+                    result.Preview.ChangeImpact.HasAnyChange,
+                    result.Preview.ChangeImpact.ChangedFields,
+                    result.Preview.ChangeImpact.ChangeCategories,
+                    result.Preview.ChangeImpact.DirectUpdateAllowed,
+                    result.Preview.ChangeImpact.GovernedMigrationRequired,
+                    result.Preview.ChangeImpact.RecommendedPath,
+                    result.Preview.ChangeImpact.EvaluationBasis,
+                    result.Preview.ChangeImpact.Reason
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapGet(
+    "/company-books/governed-change-requests",
+    async ([AsParameters] CompanyBookGovernedChangeRequestLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        var results = await workflow.ListGovernedChangeRequestDraftsAsync(query.CompanyId, cancellationToken);
+
+        return Results.Ok(new
+        {
+            Requests = results.Select(result => new
+            {
+                result.RequestId,
+                result.CompanyId,
+                result.BookId,
+                result.Status,
+                result.RequestedAction,
+                result.AsOfDate,
+                result.EffectiveFrom,
+                result.CreatedByUserId,
+                result.CreatedAt,
+                result.SubmittedByUserId,
+                result.SubmittedAt,
+                result.CancelledByUserId,
+                result.CancelledAt,
+                result.AppliedAt,
+                Book = new
+                {
+                    result.Preview.Book.BookId,
+                    result.Preview.Book.CompanyId,
+                    result.Preview.Book.BookCode,
+                    result.Preview.Book.BookName,
+                    result.Preview.Book.BookRole,
+                    result.Preview.Book.AccountingStandard,
+                    result.Preview.Book.BookBaseCurrencyCode,
+                    result.Preview.Book.FunctionalCurrencyCode,
+                    result.Preview.Book.PresentationCurrencyCode,
+                    result.Preview.Book.IsPrimary,
+                    result.Preview.Book.IsAdjustmentOnly,
+                    result.Preview.Book.EffectiveFrom,
+                    result.Preview.Book.IsActive
+                },
+                CurrentRemeasurementPolicy = result.Preview.CurrentRemeasurementPolicy is null
+                    ? null
+                    : new
+                    {
+                        result.Preview.CurrentRemeasurementPolicy.PolicyId,
+                        result.Preview.CurrentRemeasurementPolicy.CompanyId,
+                        result.Preview.CurrentRemeasurementPolicy.BookId,
+                        result.Preview.CurrentRemeasurementPolicy.RateType,
+                        result.Preview.CurrentRemeasurementPolicy.QuoteBasis,
+                        result.Preview.CurrentRemeasurementPolicy.RateUseCase,
+                        result.Preview.CurrentRemeasurementPolicy.PostingReason,
+                        result.Preview.CurrentRemeasurementPolicy.RevaluationProfile,
+                        result.Preview.CurrentRemeasurementPolicy.FxRoundingPolicy,
+                        result.Preview.CurrentRemeasurementPolicy.EffectiveFrom,
+                        result.Preview.CurrentRemeasurementPolicy.IsActive
+                    },
+                result.Preview.ProposedChanges,
+                ChangeImpact = new
+                {
+                    result.Preview.ChangeImpact.HasAnyChange,
+                    result.Preview.ChangeImpact.ChangedFields,
+                    result.Preview.ChangeImpact.ChangeCategories,
+                    result.Preview.ChangeImpact.DirectUpdateAllowed,
+                    result.Preview.ChangeImpact.GovernedMigrationRequired,
+                    result.Preview.ChangeImpact.RecommendedPath,
+                    result.Preview.ChangeImpact.EvaluationBasis,
+                    result.Preview.ChangeImpact.Reason
+                }
+            })
+        });
+    });
+
+accounting.MapPost(
+    "/company-books/governed-change-requests/{requestId:guid}/submit",
+    async (Guid requestId, TransitionCompanyBookGovernedChangeRequestHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.SubmitGovernedChangeRequestDraftAsync(
+                request.CompanyId,
+                requestId,
+                request.UserId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                result.RequestId,
+                result.CompanyId,
+                result.BookId,
+                result.Status,
+                result.RequestedAction,
+                result.AsOfDate,
+                result.EffectiveFrom,
+                result.CreatedByUserId,
+                result.CreatedAt,
+                result.SubmittedByUserId,
+                result.SubmittedAt,
+                result.CancelledByUserId,
+                result.CancelledAt,
+                result.AppliedAt
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/company-books/governed-change-requests/{requestId:guid}/cancel",
+    async (Guid requestId, TransitionCompanyBookGovernedChangeRequestHttpRequest request, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.CancelGovernedChangeRequestDraftAsync(
+                request.CompanyId,
+                requestId,
+                request.UserId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                result.RequestId,
+                result.CompanyId,
+                result.BookId,
+                result.Status,
+                result.RequestedAction,
+                result.AsOfDate,
+                result.EffectiveFrom,
+                result.CreatedByUserId,
+                result.CreatedAt,
+                result.SubmittedByUserId,
+                result.SubmittedAt,
+                result.CancelledByUserId,
+                result.CancelledAt,
+                result.AppliedAt
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapGet(
+    "/company-books/governed-change-requests/{requestId:guid}/apply-readiness",
+    async (Guid requestId, [AsParameters] CompanyBookGovernedChangeRequestReadinessQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var result = await workflow.ValidateGovernedChangeRequestApplyReadinessAsync(
+                query.CompanyId,
+                requestId,
+                asOfDate,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                result.RequestId,
+                result.Status,
+                result.EffectiveFrom,
+                result.EvaluatedAt,
+                result.CurrentTruthMatchesDraft,
+                result.IsReadyToApply,
+                result.RequiresNewBookRollout,
+                result.Blockers,
+                result.Warnings
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapGet(
+    "/company-books/remeasurement-policy",
+    async ([AsParameters] CompanyBookPolicyLookupQuery query, ICompanyBookPolicyWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var result = await workflow.GetRemeasurementPolicyAsync(
+                query.CompanyId,
+                query.BookId,
+                asOfDate,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                AsOfDate = asOfDate,
+                result.WasProvisioned,
+                Book = new
+                {
+                    result.Book.BookId,
+                    result.Book.CompanyId,
+                    result.Book.BookCode,
+                    result.Book.BookName,
+                    result.Book.BookRole,
+                    result.Book.AccountingStandard,
+                    result.Book.BookBaseCurrencyCode,
+                    result.Book.FunctionalCurrencyCode,
+                    result.Book.PresentationCurrencyCode,
+                    result.Book.IsPrimary,
+                    result.Book.IsAdjustmentOnly,
+                    result.Book.EffectiveFrom,
+                    result.Book.IsActive
+                },
+                RemeasurementPolicy = new
+                {
+                    result.RemeasurementPolicy.PolicyId,
+                    result.RemeasurementPolicy.CompanyId,
+                    result.RemeasurementPolicy.BookId,
+                    result.RemeasurementPolicy.RateType,
+                    result.RemeasurementPolicy.QuoteBasis,
+                    result.RemeasurementPolicy.RateUseCase,
+                    result.RemeasurementPolicy.PostingReason,
+                    result.RemeasurementPolicy.RevaluationProfile,
+                    result.RemeasurementPolicy.FxRoundingPolicy,
+                    result.RemeasurementPolicy.EffectiveFrom,
+                    result.RemeasurementPolicy.IsActive
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
 
 accounting.MapGet(
     "/session/context",
@@ -444,6 +1216,136 @@ accounting.MapGet(
     });
 
 accounting.MapGet(
+    "/open-items/ar/{openItemId:guid}",
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IArOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
+    {
+        var item = await openItemRepository.GetDrillDownAsync(
+            new(query.CompanyId),
+            openItemId,
+            cancellationToken);
+
+        if (item is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "AR open item was not found in the active company context."
+            });
+        }
+
+        var applications = await settlementRepository.ListApplicationsAsync(
+            new(query.CompanyId),
+            "ar_open_item",
+            openItemId,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            OpenItem = new
+            {
+                item.OpenItemId,
+                item.OpenItemType,
+                CompanyId = item.CompanyId.Value,
+                item.PartyRole,
+                item.PartyId,
+                item.PartyEntityNumber,
+                item.PartyDisplayName,
+                item.SourceType,
+                item.SourceDocumentId,
+                item.SourceDocumentDisplayNumber,
+                item.DocumentDate,
+                item.DueDate,
+                item.DocumentCurrencyCode,
+                item.BaseCurrencyCode,
+                item.BalanceSide,
+                item.Status,
+                item.OriginalAmountTx,
+                item.OriginalAmountBase,
+                item.OpenAmountTx,
+                item.OpenAmountBase
+            },
+            Applications = applications.Select(application => new
+            {
+                application.ApplicationId,
+                application.ApplicationType,
+                application.SourceType,
+                application.SourceDocumentId,
+                application.SourceDocumentDisplayNumber,
+                application.SourceDocumentDate,
+                application.AppliedAmountTx,
+                application.AppliedAmountBase,
+                application.SettlementFxRate,
+                application.RealizedFxAmount,
+                application.CreatedAt
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/open-items/ap/{openItemId:guid}",
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IApOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
+    {
+        var item = await openItemRepository.GetDrillDownAsync(
+            new(query.CompanyId),
+            openItemId,
+            cancellationToken);
+
+        if (item is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "AP open item was not found in the active company context."
+            });
+        }
+
+        var applications = await settlementRepository.ListApplicationsAsync(
+            new(query.CompanyId),
+            "ap_open_item",
+            openItemId,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            OpenItem = new
+            {
+                item.OpenItemId,
+                item.OpenItemType,
+                CompanyId = item.CompanyId.Value,
+                item.PartyRole,
+                item.PartyId,
+                item.PartyEntityNumber,
+                item.PartyDisplayName,
+                item.SourceType,
+                item.SourceDocumentId,
+                item.SourceDocumentDisplayNumber,
+                item.DocumentDate,
+                item.DueDate,
+                item.DocumentCurrencyCode,
+                item.BaseCurrencyCode,
+                item.BalanceSide,
+                item.Status,
+                item.OriginalAmountTx,
+                item.OriginalAmountBase,
+                item.OpenAmountTx,
+                item.OpenAmountBase
+            },
+            Applications = applications.Select(application => new
+            {
+                application.ApplicationId,
+                application.ApplicationType,
+                application.SourceType,
+                application.SourceDocumentId,
+                application.SourceDocumentDisplayNumber,
+                application.SourceDocumentDate,
+                application.AppliedAmountTx,
+                application.AppliedAmountBase,
+                application.SettlementFxRate,
+                application.RealizedFxAmount,
+                application.CreatedAt
+            })
+        });
+    });
+
+accounting.MapGet(
     "/document-review/{sourceType}/{documentId:guid}",
     async (
         string sourceType,
@@ -502,7 +1404,15 @@ accounting.MapGet(
                 line.IsTaxRecoverable,
                 line.TaxAccountId,
                 line.TxDebit,
-                line.TxCredit
+                line.TxCredit,
+                line.SourceOpenItemId,
+                line.SourceDocumentType,
+                line.SourceDocumentId,
+                line.SourceDocumentDisplayNumber,
+                line.TargetOpenItemId,
+                line.TargetDocumentType,
+                line.TargetDocumentId,
+                line.TargetDocumentDisplayNumber
             })
         });
     });
@@ -582,6 +1492,7 @@ accounting.MapPost(
                 new PrepareFxRevaluationBatchCommand(
                     new(request.CompanyId),
                     new(request.UserId),
+                    request.BookId,
                     request.RevaluationDate,
                     new(request.TransactionCurrencyCode),
                     request.AcceptedFxSnapshotId,
@@ -745,11 +1656,20 @@ accounting.MapGet(
             document.Status,
             document.BatchKind,
             document.ReversalOfDocumentId,
+            document.BookId,
+            document.BookCode,
+            document.AccountingStandard,
+            document.RevaluationProfile,
+            document.FxRoundingPolicy,
             document.DocumentDate,
             TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
             BaseCurrencyCode = document.BaseCurrencyCode.Value,
             FxSnapshotId = document.FxSnapshot.SnapshotId == Guid.Empty ? (Guid?)null : document.FxSnapshot.SnapshotId,
             FxRate = document.FxSnapshot.Rate,
+            FxRateType = document.FxSnapshot.RateType,
+            FxQuoteBasis = document.FxSnapshot.QuoteBasis,
+            FxRateUseCase = document.FxSnapshot.RateUseCase,
+            FxPostingReason = document.FxSnapshot.PostingReason,
             FxRequestedDate = document.FxSnapshot.RequestedDate,
             FxEffectiveDate = document.FxSnapshot.EffectiveDate,
             FxSource = document.FxSnapshot.SourceSemantics,
@@ -1572,6 +2492,10 @@ static string MapDocumentReviewSourceLabel(string sourceType) =>
         "credit_note" => "Credit Note",
         "bill" => "Bill",
         "vendor_credit" => "Vendor Credit",
+        "receive_payment" => "Receive Payment",
+        "credit_application" => "Credit Application",
+        "pay_bill" => "Pay Bill",
+        "vendor_credit_application" => "Vendor Credit Application",
         _ => "Document"
     };
 

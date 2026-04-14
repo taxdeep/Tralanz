@@ -129,6 +129,195 @@ CREATE TABLE company_currencies (
   CONSTRAINT company_currencies_unique UNIQUE (company_id, currency_code)
 );
 
+CREATE TABLE company_books (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  book_code text NOT NULL,
+  book_name text NOT NULL,
+  book_role text NOT NULL,
+  accounting_standard text NOT NULL,
+  book_base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  functional_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  presentation_currency_code char(3) REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  is_primary boolean NOT NULL DEFAULT false,
+  is_adjustment_only boolean NOT NULL DEFAULT false,
+  effective_from date NOT NULL,
+  is_active boolean NOT NULL DEFAULT true,
+  created_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_books_role_chk CHECK (
+    book_role IN ('primary', 'secondary', 'adjustment', 'tax', 'management')
+  ),
+  CONSTRAINT company_books_standard_chk CHECK (
+    accounting_standard IN ('ASPE', 'IFRS', 'US_GAAP', 'TAX', 'MANAGEMENT')
+  ),
+  CONSTRAINT company_books_primary_adjustment_chk CHECK (
+    NOT (is_primary = true AND is_adjustment_only = true)
+  ),
+  CONSTRAINT company_books_unique UNIQUE (company_id, book_code)
+);
+
+CREATE TABLE company_book_remeasurement_policies (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_book_id uuid NOT NULL REFERENCES company_books(id) ON DELETE CASCADE,
+  rate_type text NOT NULL DEFAULT 'closing',
+  quote_basis text NOT NULL DEFAULT 'direct',
+  rate_use_case text NOT NULL DEFAULT 'remeasurement',
+  posting_reason text NOT NULL DEFAULT 'revaluation',
+  revaluation_profile text NOT NULL DEFAULT 'monetary_open_item_closing',
+  fx_rounding_policy text NOT NULL DEFAULT 'currency_precision',
+  effective_from date NOT NULL,
+  is_active boolean NOT NULL DEFAULT true,
+  created_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_book_remeasurement_policies_rate_type_chk CHECK (
+    rate_type IN ('spot', 'closing', 'average', 'historical', 'custom')
+  ),
+  CONSTRAINT company_book_remeasurement_policies_quote_basis_chk CHECK (
+    quote_basis IN ('direct', 'inverse')
+  ),
+  CONSTRAINT company_book_remeasurement_policies_rate_use_case_chk CHECK (
+    rate_use_case IN ('general', 'settlement', 'remeasurement', 'translation')
+  ),
+  CONSTRAINT company_book_remeasurement_policies_posting_reason_chk CHECK (
+    posting_reason IN ('normal', 'settlement', 'revaluation', 'translation', 'adjustment')
+  ),
+  CONSTRAINT company_book_remeasurement_policies_profile_chk CHECK (
+    revaluation_profile IN ('monetary_open_item_closing')
+  ),
+  CONSTRAINT company_book_remeasurement_policies_rounding_chk CHECK (
+    fx_rounding_policy IN ('currency_precision')
+  )
+);
+
+CREATE TABLE company_book_governed_change_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_book_id uuid NOT NULL REFERENCES company_books(id) ON DELETE RESTRICT,
+  status text NOT NULL DEFAULT 'draft',
+  requested_action text NOT NULL,
+  evaluation_basis text NOT NULL,
+  as_of_date date NOT NULL,
+  effective_from date NOT NULL,
+  has_company_posted_history boolean NOT NULL DEFAULT false,
+  has_book_specific_revaluation_history boolean NOT NULL DEFAULT false,
+  current_book_code text NOT NULL,
+  current_book_name text NOT NULL,
+  current_book_role text NOT NULL,
+  current_is_primary boolean NOT NULL,
+  current_is_adjustment_only boolean NOT NULL,
+  current_accounting_standard text NOT NULL,
+  current_book_base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  current_functional_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  current_presentation_currency_code char(3) REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  current_book_effective_from date NOT NULL,
+  current_rate_type text,
+  current_quote_basis text,
+  current_rate_use_case text,
+  current_posting_reason text,
+  current_revaluation_profile text,
+  current_fx_rounding_policy text,
+  current_policy_effective_from date,
+  proposed_is_primary boolean,
+  proposed_accounting_standard text,
+  proposed_book_base_currency_code char(3) REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  proposed_functional_currency_code char(3) REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  proposed_presentation_currency_code char(3) REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  proposed_rate_type text,
+  proposed_quote_basis text,
+  proposed_rate_use_case text,
+  proposed_posting_reason text,
+  proposed_revaluation_profile text,
+  proposed_fx_rounding_policy text,
+  changed_fields text[] NOT NULL DEFAULT '{}',
+  change_categories text[] NOT NULL DEFAULT '{}',
+  reason text NOT NULL,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  submitted_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  submitted_at timestamptz,
+  cancelled_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  cancelled_at timestamptz,
+  applied_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_book_governed_change_requests_status_chk CHECK (
+    status IN ('draft', 'submitted', 'cancelled', 'applied')
+  ),
+  CONSTRAINT company_book_governed_change_requests_action_chk CHECK (
+    requested_action IN ('direct_update_in_place', 'future_dated_cutover_or_new_book', 'new_secondary_or_adjustment_book')
+  ),
+  CONSTRAINT company_book_governed_change_requests_basis_chk CHECK (
+    evaluation_basis IN ('current_book_truth', 'company_posted_history', 'company_posted_history_and_book_remeasurement_history', 'formal_governance_signals')
+  ),
+  CONSTRAINT company_book_governed_change_requests_effective_chk CHECK (
+    effective_from >= as_of_date
+  ),
+  CONSTRAINT company_book_governed_change_requests_role_chk CHECK (
+    current_book_role IN ('primary', 'secondary', 'adjustment', 'tax', 'management')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_standard_chk CHECK (
+    current_accounting_standard IN ('ASPE', 'IFRS', 'US_GAAP', 'TAX', 'MANAGEMENT')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_standard_chk CHECK (
+    proposed_accounting_standard IS NULL OR proposed_accounting_standard IN ('ASPE', 'IFRS', 'US_GAAP', 'TAX', 'MANAGEMENT')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_rate_type_chk CHECK (
+    current_rate_type IS NULL OR current_rate_type IN ('spot', 'closing', 'average', 'historical', 'custom')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_rate_type_chk CHECK (
+    proposed_rate_type IS NULL OR proposed_rate_type IN ('spot', 'closing', 'average', 'historical', 'custom')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_quote_basis_chk CHECK (
+    current_quote_basis IS NULL OR current_quote_basis IN ('direct', 'inverse')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_quote_basis_chk CHECK (
+    proposed_quote_basis IS NULL OR proposed_quote_basis IN ('direct', 'inverse')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_rate_use_case_chk CHECK (
+    current_rate_use_case IS NULL OR current_rate_use_case IN ('general', 'settlement', 'remeasurement', 'translation')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_rate_use_case_chk CHECK (
+    proposed_rate_use_case IS NULL OR proposed_rate_use_case IN ('general', 'settlement', 'remeasurement', 'translation')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_posting_reason_chk CHECK (
+    current_posting_reason IS NULL OR current_posting_reason IN ('normal', 'settlement', 'revaluation', 'translation', 'adjustment')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_posting_reason_chk CHECK (
+    proposed_posting_reason IS NULL OR proposed_posting_reason IN ('normal', 'settlement', 'revaluation', 'translation', 'adjustment')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_profile_chk CHECK (
+    current_revaluation_profile IS NULL OR current_revaluation_profile IN ('monetary_open_item_closing')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_profile_chk CHECK (
+    proposed_revaluation_profile IS NULL OR proposed_revaluation_profile IN ('monetary_open_item_closing')
+  ),
+  CONSTRAINT company_book_governed_change_requests_current_rounding_chk CHECK (
+    current_fx_rounding_policy IS NULL OR current_fx_rounding_policy IN ('currency_precision')
+  ),
+  CONSTRAINT company_book_governed_change_requests_proposed_rounding_chk CHECK (
+    proposed_fx_rounding_policy IS NULL OR proposed_fx_rounding_policy IN ('currency_precision')
+  )
+);
+
+CREATE TABLE company_book_governance_signals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_book_id uuid NOT NULL REFERENCES company_books(id) ON DELETE CASCADE,
+  signal_type text NOT NULL,
+  signal_date date NOT NULL,
+  reference_label text,
+  notes text,
+  created_by_user_id uuid REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_book_governance_signals_type_chk CHECK (
+    signal_type IN ('closed_period', 'reported_statement', 'filed_tax')
+  )
+);
+
 CREATE TABLE system_fx_market_rates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_key text NOT NULL,
@@ -136,14 +325,24 @@ CREATE TABLE system_fx_market_rates (
   quote_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   market_date date NOT NULL,
   rate numeric(20,10) NOT NULL,
+  rate_type text NOT NULL DEFAULT 'spot',
+  quote_basis text NOT NULL DEFAULT 'direct',
   fetched_at timestamptz NOT NULL DEFAULT NOW(),
   payload jsonb,
   CONSTRAINT system_fx_market_rates_positive_rate_chk CHECK (rate > 0),
+  CONSTRAINT system_fx_market_rates_rate_type_chk CHECK (
+    rate_type IN ('spot', 'closing', 'average', 'historical', 'custom')
+  ),
+  CONSTRAINT system_fx_market_rates_quote_basis_chk CHECK (
+    quote_basis IN ('direct', 'inverse')
+  ),
   CONSTRAINT system_fx_market_rates_unique UNIQUE (
     provider_key,
     base_currency_code,
     quote_currency_code,
-    market_date
+    market_date,
+    rate_type,
+    quote_basis
   )
 );
 
@@ -155,6 +354,10 @@ CREATE TABLE company_fx_rate_snapshots (
   requested_date date NOT NULL,
   effective_date date NOT NULL,
   rate numeric(20,10) NOT NULL,
+  rate_type text NOT NULL DEFAULT 'spot',
+  quote_basis text NOT NULL DEFAULT 'direct',
+  rate_use_case text NOT NULL DEFAULT 'general',
+  posting_reason text NOT NULL DEFAULT 'normal',
   provider_key text,
   row_origin text NOT NULL,
   snapshot_semantics text NOT NULL,
@@ -169,6 +372,18 @@ CREATE TABLE company_fx_rate_snapshots (
   CONSTRAINT company_fx_rate_snapshots_semantics_chk CHECK (
     snapshot_semantics IN ('identity', 'manual', 'company_override', 'system_stored', 'provider_fetched')
   ),
+  CONSTRAINT company_fx_rate_snapshots_rate_type_chk CHECK (
+    rate_type IN ('spot', 'closing', 'average', 'historical', 'custom')
+  ),
+  CONSTRAINT company_fx_rate_snapshots_quote_basis_chk CHECK (
+    quote_basis IN ('direct', 'inverse')
+  ),
+  CONSTRAINT company_fx_rate_snapshots_rate_use_case_chk CHECK (
+    rate_use_case IN ('general', 'settlement', 'remeasurement', 'translation')
+  ),
+  CONSTRAINT company_fx_rate_snapshots_posting_reason_chk CHECK (
+    posting_reason IN ('normal', 'settlement', 'revaluation', 'translation', 'adjustment')
+  ),
   CONSTRAINT company_fx_rate_snapshots_date_order_chk CHECK (effective_date <= requested_date)
 );
 
@@ -178,6 +393,9 @@ CREATE UNIQUE INDEX uq_company_fx_rate_snapshots_identity
     base_currency_code,
     quote_currency_code,
     requested_date,
+    rate_type,
+    quote_basis,
+    rate_use_case,
     snapshot_semantics,
     COALESCE(provider_key, '')
   );
@@ -878,8 +1096,13 @@ CREATE TABLE settlement_applications (
 CREATE TABLE fx_revaluation_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  company_book_id uuid REFERENCES company_books(id) ON DELETE RESTRICT,
   entity_number text NOT NULL UNIQUE,
   display_number text NOT NULL,
+  book_code text,
+  accounting_standard text,
+  revaluation_profile text,
+  fx_rounding_policy text,
   status text NOT NULL,
   batch_kind text NOT NULL DEFAULT 'revaluation',
   reversal_of_fx_revaluation_batch_id uuid REFERENCES fx_revaluation_batches(id) ON DELETE RESTRICT,
@@ -888,6 +1111,10 @@ CREATE TABLE fx_revaluation_batches (
   base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
   fx_rate_snapshot_id uuid REFERENCES company_fx_rate_snapshots(id) ON DELETE RESTRICT,
   fx_rate numeric(20,10) NOT NULL,
+  rate_type text NOT NULL DEFAULT 'spot',
+  quote_basis text NOT NULL DEFAULT 'direct',
+  rate_use_case text NOT NULL DEFAULT 'remeasurement',
+  posting_reason text NOT NULL DEFAULT 'revaluation',
   fx_requested_date date NOT NULL,
   fx_effective_date date NOT NULL,
   fx_source text NOT NULL,
@@ -908,6 +1135,27 @@ CREATE TABLE fx_revaluation_batches (
     transaction_currency_code <> base_currency_code
   ),
   CONSTRAINT fx_revaluation_batches_fx_positive_chk CHECK (fx_rate > 0),
+  CONSTRAINT fx_revaluation_batches_standard_chk CHECK (
+    accounting_standard IS NULL OR accounting_standard IN ('ASPE', 'IFRS', 'US_GAAP', 'TAX', 'MANAGEMENT')
+  ),
+  CONSTRAINT fx_revaluation_batches_rate_type_chk CHECK (
+    rate_type IN ('spot', 'closing', 'average', 'historical', 'custom')
+  ),
+  CONSTRAINT fx_revaluation_batches_quote_basis_chk CHECK (
+    quote_basis IN ('direct', 'inverse')
+  ),
+  CONSTRAINT fx_revaluation_batches_rate_use_case_chk CHECK (
+    rate_use_case IN ('general', 'settlement', 'remeasurement', 'translation')
+  ),
+  CONSTRAINT fx_revaluation_batches_posting_reason_chk CHECK (
+    posting_reason IN ('normal', 'settlement', 'revaluation', 'translation', 'adjustment')
+  ),
+  CONSTRAINT fx_revaluation_batches_profile_chk CHECK (
+    revaluation_profile IS NULL OR revaluation_profile IN ('monetary_open_item_closing')
+  ),
+  CONSTRAINT fx_revaluation_batches_rounding_chk CHECK (
+    fx_rounding_policy IS NULL OR fx_rounding_policy IN ('currency_precision')
+  ),
   CONSTRAINT fx_revaluation_batches_company_display_unique UNIQUE (company_id, display_number)
 );
 
@@ -972,10 +1220,10 @@ CREATE INDEX idx_company_currencies_company_enabled
   ON company_currencies (company_id, is_enabled);
 
 CREATE INDEX idx_system_fx_market_rates_lookup
-  ON system_fx_market_rates (provider_key, base_currency_code, quote_currency_code, market_date DESC);
+  ON system_fx_market_rates (provider_key, base_currency_code, quote_currency_code, rate_type, quote_basis, market_date DESC);
 
 CREATE INDEX idx_company_fx_rate_snapshots_lookup
-  ON company_fx_rate_snapshots (company_id, base_currency_code, quote_currency_code, requested_date DESC);
+  ON company_fx_rate_snapshots (company_id, base_currency_code, quote_currency_code, rate_type, quote_basis, rate_use_case, requested_date DESC);
 
 CREATE INDEX idx_accounts_company_root_code
   ON accounts (company_id, root_type, code);
@@ -1034,6 +1282,9 @@ CREATE INDEX idx_settlement_applications_company_target
 CREATE INDEX idx_fx_revaluation_batches_company_status_date
   ON fx_revaluation_batches (company_id, status, revaluation_date DESC);
 
+CREATE INDEX idx_fx_revaluation_batches_company_book
+  ON fx_revaluation_batches (company_id, company_book_id, revaluation_date DESC);
+
 CREATE UNIQUE INDEX idx_fx_revaluation_batches_active_reversal
   ON fx_revaluation_batches (reversal_of_fx_revaluation_batch_id)
   WHERE reversal_of_fx_revaluation_batch_id IS NOT NULL
@@ -1044,6 +1295,39 @@ CREATE INDEX idx_fx_revaluation_batch_lines_company_batch
 
 CREATE INDEX idx_fx_revaluation_batch_lines_company_target
   ON fx_revaluation_batch_lines (company_id, target_open_item_type, target_open_item_id);
+
+CREATE UNIQUE INDEX uq_company_books_active_primary
+  ON company_books (company_id)
+  WHERE is_primary = true
+    AND is_active = true;
+
+CREATE INDEX idx_company_books_company_effective
+  ON company_books (company_id, effective_from DESC, is_active);
+
+CREATE UNIQUE INDEX uq_company_book_remeasurement_policies_active_book
+  ON company_book_remeasurement_policies (company_book_id)
+  WHERE is_active = true;
+
+CREATE INDEX idx_company_book_remeasurement_policies_company_effective
+  ON company_book_remeasurement_policies (company_id, company_book_id, effective_from DESC, is_active);
+
+CREATE INDEX idx_company_book_governed_change_requests_company_created
+  ON company_book_governed_change_requests (company_id, created_at DESC, id DESC);
+
+CREATE INDEX idx_company_book_governed_change_requests_company_book_status
+  ON company_book_governed_change_requests (company_id, company_book_id, status, effective_from DESC);
+
+CREATE INDEX idx_company_book_governance_signals_company_book_date
+  ON company_book_governance_signals (company_id, company_book_id, signal_date DESC, signal_type);
+
+CREATE UNIQUE INDEX uq_company_book_governance_signals_company_book_identity
+  ON company_book_governance_signals (
+    company_id,
+    company_book_id,
+    signal_type,
+    signal_date,
+    coalesce(reference_label, '')
+  );
 
 CREATE INDEX idx_audit_logs_company_entity_created
   ON audit_logs (company_id, entity_type, entity_id, created_at DESC);
@@ -1184,6 +1468,26 @@ EXECUTE FUNCTION citus_set_updated_at();
 
 CREATE TRIGGER trg_fx_revaluation_batch_lines_set_updated_at
 BEFORE UPDATE ON fx_revaluation_batch_lines
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_company_books_set_updated_at
+BEFORE UPDATE ON company_books
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_company_book_remeasurement_policies_set_updated_at
+BEFORE UPDATE ON company_book_remeasurement_policies
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_company_book_governed_change_requests_set_updated_at
+BEFORE UPDATE ON company_book_governed_change_requests
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_company_book_governance_signals_set_updated_at
+BEFORE UPDATE ON company_book_governance_signals
 FOR EACH ROW
 EXECUTE FUNCTION citus_set_updated_at();
 

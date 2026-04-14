@@ -1,0 +1,126 @@
+@page "/settings/user-preferences/system-setup"
+@using Modules.CompanyAccess.SessionContext
+@using Modules.CompanyAccess.SystemSetup
+@using SharedKernel.CompanyAccess
+@using MudBlazor
+@inject ICompanyAccessShellSession ShellSession
+@inject ISystemSetupWorkflow SystemSetupWorkflow
+@inject ISnackbar Snackbar
+
+<PageTitle>User Preferences</PageTitle>
+
+<div class="setup-page">
+    <div class="setup-page__header">
+        <div>
+            <div class="setup-page__eyebrow">Settings / User Preferences</div>
+            <h1>System Setup</h1>
+            <p>
+                Choose how numbers, amounts, and FX rates are displayed. This is a user preference only and does not change accounting truth.
+            </p>
+        </div>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+            Current: @NumberDisplayModeDefaults.GetOption(_selectedMode).Label
+        </MudChip>
+    </div>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+        Preference owner: @ShellSession.CurrentUserId
+    </MudAlert>
+
+    <div class="setup-page__grid">
+        <div class="setup-card">
+            <div class="setup-card__title">Number Display Mode</div>
+            <div class="setup-card__subtitle">Recommended default: `1,000.00`</div>
+
+            <div class="setup-options">
+                @foreach (var option in NumberDisplayModeDefaults.Options)
+                {
+                    <button type="button"
+                            class="setup-option @(option.Mode == _selectedMode ? "setup-option--selected" : string.Empty)"
+                            @onclick="() => SelectMode(option.Mode)">
+                        <div class="setup-option__row">
+                            <span class="setup-option__label">@option.Label</span>
+                            @if (option.Mode == NumberDisplayModeDefaults.Default)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success">Default</MudChip>
+                            }
+                        </div>
+                        <div class="setup-option__example">@option.Example</div>
+                        <div class="setup-option__description">@option.Description</div>
+                    </button>
+                }
+            </div>
+
+            <div class="setup-actions">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           Disabled="_isSaving"
+                           OnClick="SaveAsync">
+                    Save preference
+                </MudButton>
+            </div>
+        </div>
+
+        <div class="setup-card">
+            <div class="setup-card__title">Preview</div>
+            <div class="setup-preview">
+                <div class="setup-preview__row">
+                    <span>Number</span>
+                    <strong>@NumberDisplayFormatting.FormatAmount(1234.56m, _selectedMode)</strong>
+                </div>
+                <div class="setup-preview__row">
+                    <span>Amount</span>
+                    <strong>@NumberDisplayFormatting.FormatAmount(1234567.89m, _selectedMode)</strong>
+                </div>
+                <div class="setup-preview__row">
+                    <span>Negative</span>
+                    <strong>@NumberDisplayFormatting.FormatAmount(-9876.54m, _selectedMode)</strong>
+                </div>
+                <div class="setup-preview__row">
+                    <span>FX Rate</span>
+                    <strong>@NumberDisplayFormatting.FormatRate(1.378875m, _selectedMode)</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code
+{
+    private NumberDisplayMode _selectedMode = NumberDisplayModeDefaults.Default;
+    private bool _isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var preference = await SystemSetupWorkflow.GetAsync(ShellSession.CurrentUserId, CancellationToken.None);
+        _selectedMode = preference.NumberDisplayMode;
+    }
+
+    private void SelectMode(NumberDisplayMode mode)
+    {
+        _selectedMode = mode;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _isSaving = true;
+            var saved = await SystemSetupWorkflow.SaveNumberDisplayModeAsync(
+                ShellSession.CurrentUserId,
+                NumberDisplayModeDefaults.ToCode(_selectedMode),
+                CancellationToken.None);
+
+            _selectedMode = saved.NumberDisplayMode;
+            Snackbar.Add("User preference saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

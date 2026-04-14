@@ -1,0 +1,379 @@
+@page "/ar/receive-payment"
+@using Modules.AR.ReceivePayment
+@using Web.Business.AR.SettlementPosting
+@inject ICompanyAccessShellSession ShellSession
+@inject IArSettlementLookupService LookupService
+@inject IReceivePaymentDraftPreparationWorkflow Workflow
+@inject ArSettlementPostingClient PostingClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Receive Payment</PageTitle>
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <h1 style="margin:0 0 0.75rem 0;">Receive Payment</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:56rem;">
+        Prepare governed AR receipt drafts from existing open receivables in the active company context.
+    </p>
+
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+        Active company: @ShellSession.ActiveCompanyId
+        <br />
+        Current user: @ShellSession.CurrentUserId
+    </MudAlert>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Customer" Variant="Variant.Outlined" @bind-Value="_selectedCustomerIdText">
+            @foreach (var customer in _customers)
+            {
+                <MudSelectItem T="string" Value="@customer.Id.ToString()">@customer.DisplayLabel</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Label="Bank Account" Variant="Variant.Outlined" @bind-Value="_selectedBankAccountIdText">
+            @foreach (var bankAccount in _bankAccounts)
+            {
+                <MudSelectItem T="string" Value="@bankAccount.Id.ToString()">@bankAccount.DisplayLabel</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="Payment Date" Variant="Variant.Outlined" Editable="true" Date="@_paymentDatePicker" DateChanged="OnPaymentDateChanged" />
+        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" />
+    </div>
+
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="_isBusy" OnClick="LoadCandidatesAsync">Load Open Receivables</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _rows.Count == 0)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_errorText</MudAlert>
+    }
+
+    @if (_rows.Count > 0)
+    {
+        <MudTable Items="_rows" Dense="true" Hover="true" Bordered="true" Style="margin-bottom:1rem;">
+            <HeaderContent>
+                <MudTh>Document</MudTh>
+                <MudTh>Currency</MudTh>
+                <MudTh>Open Tx</MudTh>
+                <MudTh>Open Base</MudTh>
+                <MudTh>Apply Amount</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.DisplayNumber</MudTd>
+                <MudTd>@context.DocumentCurrencyCode</MudTd>
+                <MudTd>@context.OpenAmountTx</MudTd>
+                <MudTd>@context.OpenAmountBase</MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="@context.OpenAmountTx" Immediate="true" @bind-Value="context.AppliedAmountTx" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+
+    @if (_rows.Any(static row => row.AppliedAmountTx > 0))
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6">Apply Preview</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                @($"{_rows.Count(static row => row.AppliedAmountTx > 0)} open item(s) selected | Total apply {_rows.Where(static row => row.AppliedAmountTx > 0).Sum(static row => row.AppliedAmountTx):N2}")
+            </MudText>
+            <MudTable Items="@_rows.Where(static row => row.AppliedAmountTx > 0)" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Source Document</MudTh>
+                    <MudTh>Open Item</MudTh>
+                    <MudTh>Due Date</MudTh>
+                    <MudTh>Apply Amount</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        @if (TryBuildDocumentHref(context.SourceType, context.SourceId, out var href))
+                        {
+                            <MudLink Href="@href">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudText>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudLink Href="@($"/open-items/ar/{context.OpenItemId:D}")"><span class="citus-inline-code">@context.OpenItemId</span></MudLink>
+                    </MudTd>
+                    <MudTd>@(context.DueDate?.ToString("yyyy-MM-dd") ?? "No due date")</MudTd>
+                    <MudTd>@context.AppliedAmountTx.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
+    @if (_preparedDraft is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.h6">Prepared Draft</MudText>
+            <MudText Typo="Typo.body2">Document Id: @_preparedDraft.DocumentId</MudText>
+            <MudText Typo="Typo.body2">Payment: @_preparedDraft.PaymentNumber</MudText>
+            <MudText Typo="Typo.body2">Entity Number: @_preparedDraft.EntityNumber</MudText>
+            <MudText Typo="Typo.body2">Currency: @_preparedDraft.DocumentCurrencyCode</MudText>
+            <MudText Typo="Typo.body2">FX: @_preparedDraft.FxRate (@_preparedDraft.FxSource)</MudText>
+            <MudText Typo="Typo.body2">Total: @_preparedDraft.TotalAmount</MudText>
+            <MudText Typo="Typo.body2">Status: @_preparedDraft.Status</MudText>
+
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/receive_payment/{_preparedDraft.DocumentId:D}")">
+                    Open Prepared Draft Detail
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           Disabled="_isBusy"
+                           OnClick="PostDraftAsync">
+                    Post Draft
+                </MudButton>
+            </div>
+
+            @if (SelectedRows.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Applied Source Documents</MudText>
+                <MudTable Items="SelectedRows" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Source Document</MudTh>
+                        <MudTh>Open Item</MudTh>
+                        <MudTh>Due Date</MudTh>
+                        <MudTh>Applied</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            @if (TryBuildDocumentHref(context.SourceType, context.SourceId, out var href))
+                            {
+                                <MudLink Href="@href">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudLink>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@DisplayDocumentLabel(context.DisplayNumber, context.SourceType)</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            <MudLink Href="@($"/open-items/ar/{context.OpenItemId:D}")"><span class="citus-inline-code">@context.OpenItemId</span></MudLink>
+                        </MudTd>
+                        <MudTd>@(context.DueDate?.ToString("yyyy-MM-dd") ?? "No due date")</MudTd>
+                        <MudTd>@context.AppliedAmountTx.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+
+    @if (_postedResult is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-top:1rem;">
+            <MudText Typo="Typo.h6">Posted Review Continuity</MudText>
+            <MudText Typo="Typo.body2">Journal Entry: @_postedResult.JournalEntryDisplayNumber</MudText>
+            <MudText Typo="Typo.body2">Posted At: @_postedResult.PostedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+            <MudText Typo="Typo.body2">Status: @_postedResult.Status</MudText>
+            @if (_postedResult.Warnings.Count > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-top:1rem;">
+                    @string.Join(" | ", _postedResult.Warnings)
+                </MudAlert>
+            }
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/receive_payment/{_preparedDraft!.DocumentId:D}")">
+                    Open Posted Document
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">
+                    Open Journal Entry Review
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private List<(Guid Id, string DisplayLabel, string CurrencyCode)> _customers = [];
+    private List<(Guid Id, string DisplayLabel)> _bankAccounts = [];
+    private string? _selectedCustomerIdText;
+    private string? _selectedBankAccountIdText;
+    private string? _memo;
+    private bool _isBusy;
+    private string? _errorText;
+    private DateOnly _paymentDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateTime? _paymentDatePicker = DateTime.Today;
+    private readonly List<RowState> _rows = [];
+    private ReceivePaymentDraftResult? _preparedDraft;
+    private ArSettlementPostingResult? _postedResult;
+    private IReadOnlyList<RowState> SelectedRows => _rows.Where(static row => row.AppliedAmountTx > 0m).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLookupOptionsAsync();
+    }
+
+    private async Task LoadLookupOptionsAsync()
+    {
+        try
+        {
+            _customers = (await LookupService.ListCustomersAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
+            _bankAccounts = (await LookupService.ListBankAccountsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
+
+            if (_customers.Count == 1)
+            {
+                _selectedCustomerIdText = _customers[0].Id.ToString();
+            }
+
+            if (_bankAccounts.Count == 1)
+            {
+                _selectedBankAccountIdText = _bankAccounts[0].Id.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+    }
+
+    private async Task LoadCandidatesAsync()
+    {
+        _preparedDraft = null;
+        _postedResult = null;
+        _errorText = null;
+        if (!TryParseRequiredGuid(_selectedCustomerIdText, "Customer", out var customerId)) return;
+
+        try
+        {
+            _isBusy = true;
+            var candidates = await Workflow.ListOpenItemCandidatesAsync(ShellSession.ActiveCompanyId, customerId, CancellationToken.None);
+            _rows.Clear();
+            _rows.AddRange(candidates.Select(static candidate => new RowState(candidate)));
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task PrepareDraftAsync()
+    {
+        _errorText = null;
+        _preparedDraft = null;
+        _postedResult = null;
+        if (!TryParseRequiredGuid(_selectedCustomerIdText, "Customer", out var customerId) ||
+            !TryParseRequiredGuid(_selectedBankAccountIdText, "Bank Account", out var bankAccountId)) return;
+
+        var lines = _rows.Where(static row => row.AppliedAmountTx > 0).Select(static row => new ReceivePaymentDraftLine(row.OpenItemId, row.AppliedAmountTx)).ToArray();
+        if (lines.Length == 0)
+        {
+            _errorText = "Enter at least one applied amount.";
+            return;
+        }
+
+        try
+        {
+            _isBusy = true;
+            _preparedDraft = await Workflow.PrepareDraftAsync(
+                new ReceivePaymentDraftContext(ShellSession.ActiveCompanyId, ShellSession.CurrentUserId, customerId, bankAccountId, _paymentDate, null, null, _memo),
+                lines,
+                CancellationToken.None);
+            Snackbar.Add($"Prepared receive payment draft {_preparedDraft.PaymentNumber}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task PostDraftAsync()
+    {
+        if (_preparedDraft is null)
+        {
+            _errorText = "Prepare a draft before posting.";
+            return;
+        }
+
+        try
+        {
+            _isBusy = true;
+            _errorText = null;
+            _postedResult = await PostingClient.PostReceivePaymentAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _preparedDraft.DocumentId,
+                _preparedDraft.FxSnapshotId,
+                CancellationToken.None);
+            Snackbar.Add($"Posted receive payment to journal entry {_postedResult?.JournalEntryDisplayNumber}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnPaymentDateChanged(DateTime? value)
+    {
+        _paymentDatePicker = value;
+        _paymentDate = DateOnly.FromDateTime(value ?? DateTime.Today);
+    }
+
+    private bool TryParseRequiredGuid(string? text, string label, out Guid value)
+    {
+        if (Guid.TryParse(text, out value)) return true;
+        _errorText = $"{label} must be selected.";
+        return false;
+    }
+
+    private sealed class RowState
+    {
+        public RowState(ReceivePaymentOpenItemCandidate source)
+        {
+            OpenItemId = source.OpenItemId;
+            SourceType = source.SourceType;
+            SourceId = source.SourceId;
+            DisplayNumber = source.DisplayNumber;
+            DueDate = source.DueDate;
+            DocumentCurrencyCode = source.DocumentCurrencyCode;
+            OpenAmountTx = source.OpenAmountTx;
+            OpenAmountBase = source.OpenAmountBase;
+        }
+
+        public Guid OpenItemId { get; }
+        public string SourceType { get; }
+        public Guid SourceId { get; }
+        public string DisplayNumber { get; }
+        public DateOnly? DueDate { get; }
+        public string DocumentCurrencyCode { get; }
+        public decimal OpenAmountTx { get; }
+        public decimal OpenAmountBase { get; }
+        public decimal AppliedAmountTx { get; set; }
+    }
+
+    private static bool TryBuildDocumentHref(string sourceType, Guid documentId, out string href)
+    {
+        href = sourceType switch
+        {
+            "invoice" => $"/documents/invoice/{documentId:D}",
+            "credit_note" => $"/documents/credit_note/{documentId:D}",
+            "receive_payment" => $"/documents/receive_payment/{documentId:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static string DisplayDocumentLabel(string displayNumber, string sourceType) =>
+        sourceType switch
+        {
+            "invoice" => $"{displayNumber} | Invoice",
+            "credit_note" => $"{displayNumber} | Credit Note",
+            "receive_payment" => $"{displayNumber} | Receive Payment",
+            _ => displayNumber
+        };
+}

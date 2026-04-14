@@ -80,4 +80,8 @@ public sealed record FxSnapshotRef(
     decimal Rate,
     DateOnly RequestedDate,
     DateOnly EffectiveDate,
-    string SourceSemantics);
+    string SourceSemantics,
+    string RateType = "spot",
+    string QuoteBasis = "direct",
+    string RateUseCase = "general",
+    string PostingReason = "normal");
