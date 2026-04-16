@@ -54,6 +54,64 @@ public sealed class SysAdminControlClient(
         }
     }
 
+    public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListOpenMfaRecoveryRequestsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ApplySessionHeader();
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<MfaRecoveryRequestSummary>>(
+                    "control/mfa-recovery-requests",
+                    cancellationToken) ??
+                Array.Empty<MfaRecoveryRequestSummary>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load MFA recovery requests.");
+            return Array.Empty<MfaRecoveryRequestSummary>();
+        }
+    }
+
+    public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
+        Guid accountId,
+        int limit = 10,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ApplySessionHeader();
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<MfaRecoveryRequestSummary>>(
+                    $"control/accounts/{accountId}/mfa-recovery-history?limit={Math.Clamp(limit, 1, 50)}",
+                    cancellationToken) ??
+                Array.Empty<MfaRecoveryRequestSummary>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load MFA recovery history for account {AccountId}.", accountId);
+            return Array.Empty<MfaRecoveryRequestSummary>();
+        }
+    }
+
+    public async Task<IReadOnlyList<PlatformMfaTimelineEntrySummary>> ListAccountMfaTimelineAsync(
+        Guid accountId,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ApplySessionHeader();
+            return await httpClient.GetFromJsonAsync<IReadOnlyList<PlatformMfaTimelineEntrySummary>>(
+                    $"control/accounts/{accountId}/mfa-timeline?limit={Math.Clamp(limit, 1, 50)}",
+                    cancellationToken) ??
+                Array.Empty<PlatformMfaTimelineEntrySummary>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load MFA timeline for account {AccountId}.", accountId);
+            return Array.Empty<PlatformMfaTimelineEntrySummary>();
+        }
+    }
+
     public async Task<IReadOnlyList<ManagedCompanyMembershipSummary>> ListCompanyMembershipsAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
@@ -266,6 +324,31 @@ public sealed class SysAdminControlClient(
             "MFA reset",
             cancellationToken);
 
+    public Task<CommandOutcome> ReviewMfaRecoveryRequestAsync(
+        Guid requestId,
+        string decision,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        SendGovernanceCommandWithOutcomeAsync(
+            static (client, request, token) => client.PutAsJsonAsync(request.Path, request.Payload, token),
+            new GovernanceCommandRequest(
+                $"control/mfa-recovery-requests/{requestId}/decision",
+                new MfaRecoveryReviewPayload(decision, reason)),
+            "MFA recovery review",
+            cancellationToken);
+
+    public Task<CommandOutcome> ExecuteMfaRecoveryRequestAsync(
+        Guid requestId,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        SendGovernanceCommandWithOutcomeAsync(
+            static (client, request, token) => client.PostAsJsonAsync(request.Path, request.Payload, token),
+            new GovernanceCommandRequest(
+                $"control/mfa-recovery-requests/{requestId}/execute",
+                new MfaRecoveryExecutePayload(reason)),
+            "MFA recovery execution",
+            cancellationToken);
+
     public async Task<bool> ChangeMembershipRoleAsync(
         Guid companyId,
         Guid membershipId,
@@ -368,6 +451,10 @@ public sealed class SysAdminControlClient(
     private sealed record PasswordResetRequestPayload(string Reason);
 
     private sealed record AccountMfaResetPayload(string Reason);
+
+    private sealed record MfaRecoveryReviewPayload(string Decision, string Reason);
+
+    private sealed record MfaRecoveryExecutePayload(string Reason);
 
     private sealed record CompanyMembershipRoleUpdatePayload(string Role, string Reason);
 

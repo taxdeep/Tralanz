@@ -26,6 +26,20 @@ public sealed record class PlatformAccountProfileSummary
 
     public string LastMfaResetByDisplayName { get; init; } = string.Empty;
 
+    public Guid? ActiveMfaRecoveryRequestId { get; init; }
+
+    public string ActiveMfaRecoveryStatus { get; init; } = string.Empty;
+
+    public DateTimeOffset? ActiveMfaRecoveryRequestedAtUtc { get; init; }
+
+    public string ActiveMfaRecoveryRequestReason { get; init; } = string.Empty;
+
+    public DateTimeOffset? ActiveMfaRecoveryReviewedAtUtc { get; init; }
+
+    public string ActiveMfaRecoveryReviewReason { get; init; } = string.Empty;
+
+    public string ActiveMfaRecoveryReviewedByDisplayName { get; init; } = string.Empty;
+
     public bool NotificationVerificationReady { get; init; }
 
     public string NotificationBlockingReason { get; init; } = string.Empty;
@@ -67,4 +81,8 @@ public sealed record class PlatformAccountProfileSummary
         PendingPasswordChangeExpiresAtUtc.HasValue;
 
     public bool HasRecordedMfaReset => LastMfaResetAtUtc.HasValue;
+
+    public bool HasActiveMfaRecoveryRequest =>
+        ActiveMfaRecoveryRequestId.HasValue &&
+        !string.IsNullOrWhiteSpace(ActiveMfaRecoveryStatus);
 }

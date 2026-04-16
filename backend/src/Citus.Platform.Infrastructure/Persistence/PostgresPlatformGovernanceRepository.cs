@@ -15,10 +15,15 @@ public sealed class PostgresPlatformGovernanceRepository(
 {
     private static readonly string[] CompanyStatuses = ["active", "inactive", "suspended", "archived"];
     private static readonly string[] AccountStatuses = ["active", "disabled", "locked", "pending_verification"];
+    private static readonly string[] MfaRecoveryStatuses = ["requested", "approved", "rejected", "executed"];
     private static readonly string[] ReviewableAuditActions =
     [
         "company_status_changed",
         "account_status_changed",
+        "account_mfa_recovery_requested",
+        "account_mfa_recovery_approved",
+        "account_mfa_recovery_rejected",
+        "account_mfa_recovery_executed",
         "account_mfa_reset",
         "profile_display_name_saved",
         "email_change_requested",
@@ -61,6 +66,35 @@ public sealed class PostgresPlatformGovernanceRepository(
             alter table users
               add column if not exists mfa_mode text not null default 'none';
 
+            create table if not exists sysadmin_accounts (
+              id uuid primary key default gen_random_uuid(),
+              email text not null unique,
+              display_name text not null default '',
+              password_hash text not null,
+              status text not null default 'active',
+              last_login_at timestamptz,
+              created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
+
+            create table if not exists account_mfa_recovery_requests (
+              id uuid primary key default gen_random_uuid(),
+              user_id uuid not null references users(id) on delete cascade,
+              requested_by_user_id uuid not null references users(id) on delete cascade,
+              current_mfa_mode text not null,
+              status text not null default 'requested',
+              request_reason text not null,
+              requested_at timestamptz not null default now(),
+              review_reason text,
+              reviewed_at timestamptz,
+              reviewed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              execution_reason text,
+              executed_at timestamptz,
+              executed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
+              constraint account_mfa_recovery_requests_current_mode_chk check (current_mfa_mode in ('none', 'email_code')),
+              constraint account_mfa_recovery_requests_status_chk check (status in ('requested', 'approved', 'rejected', 'executed'))
+            );
+
             create table if not exists business_session_mfa_challenges (
               id uuid primary key default gen_random_uuid(),
               user_id uuid not null references users(id) on delete cascade,
@@ -97,17 +131,6 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             alter table account_verification_codes
               add column if not exists payload jsonb not null default '{}'::jsonb;
-
-            create table if not exists sysadmin_accounts (
-              id uuid primary key default gen_random_uuid(),
-              email text not null unique,
-              display_name text not null default '',
-              password_hash text not null,
-              status text not null default 'active',
-              last_login_at timestamptz,
-              created_at timestamptz not null default now(),
-              updated_at timestamptz not null default now()
-            );
 
             create table if not exists platform_notification_dispatches (
               id uuid primary key default gen_random_uuid(),
@@ -157,6 +180,10 @@ public sealed class PostgresPlatformGovernanceRepository(
             create index if not exists idx_account_verification_codes_active
               on account_verification_codes (user_id, purpose, expires_at desc)
               where consumed_at is null;
+
+            create index if not exists idx_account_mfa_recovery_requests_open
+              on account_mfa_recovery_requests (status, requested_at desc)
+              where status in ('requested', 'approved');
 
             create index if not exists idx_business_session_mfa_challenges_active
               on business_session_mfa_challenges (user_id, factor, expires_at desc)
@@ -243,6 +270,89 @@ public sealed class PostgresPlatformGovernanceRepository(
         return events;
     }
 
+    public async Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
+        Guid accountId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+
+        var normalizedLimit = Math.Clamp(limit, 1, 50);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              al.id,
+              al.company_id,
+              coalesce(c.entity_number, '') as company_entity_number,
+              coalesce(c.legal_name, '') as company_legal_name,
+              al.actor_type,
+              al.actor_id,
+              coalesce(sys_actor.display_name, '') as sysadmin_display_name,
+              coalesce(sys_actor.email, '') as sysadmin_email,
+              coalesce(user_actor.username, '') as actor_username,
+              coalesce(user_actor.email, '') as actor_email,
+              al.entity_type,
+              al.entity_id,
+              coalesce(entity_user.username, '') as entity_username,
+              coalesce(entity_user.email, '') as entity_email,
+              coalesce(entity_sysadmin.display_name, '') as entity_sysadmin_display_name,
+              coalesce(entity_sysadmin.email, '') as entity_sysadmin_email,
+              coalesce(membership_user.username, '') as membership_username,
+              coalesce(membership_user.email, '') as membership_email,
+              al.action,
+              al.payload::text as payload,
+              al.created_at
+            from audit_logs al
+            left join companies c on c.id = al.company_id
+            left join sysadmin_accounts sys_actor
+              on sys_actor.id = al.actor_id
+             and al.actor_type = 'sysadmin'
+            left join users user_actor
+              on user_actor.id = al.actor_id
+             and al.actor_type = 'user'
+            left join users entity_user
+              on entity_user.id = al.entity_id
+             and al.entity_type = 'platform_account'
+            left join sysadmin_accounts entity_sysadmin
+              on entity_sysadmin.id = al.entity_id
+             and al.entity_type = 'sysadmin_account'
+            left join company_memberships membership
+              on membership.id = al.entity_id
+             and al.entity_type = 'company_membership'
+            left join users membership_user on membership_user.id = membership.user_id
+            where al.entity_type = 'platform_account'
+              and al.entity_id = @account_id
+              and al.action = any(@actions)
+            order by al.created_at desc
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue(
+            "actions",
+            new[]
+            {
+                "profile_mfa_mode_saved",
+                "account_mfa_recovery_requested",
+                "account_mfa_recovery_approved",
+                "account_mfa_recovery_rejected",
+                "account_mfa_recovery_executed",
+                "account_mfa_reset"
+            });
+        command.Parameters.AddWithValue("limit", normalizedLimit);
+
+        var events = new List<PlatformAuditEvent>(normalizedLimit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(ReadAuditEvent(reader));
+        }
+
+        return events;
+    }
+
     public async Task<IReadOnlyList<ManagedPlatformAccountSummary>> ListManagedUsersAsync(
         CancellationToken cancellationToken)
     {
@@ -294,6 +404,134 @@ public sealed class PostgresPlatformGovernanceRepository(
         }
 
         return users;
+    }
+
+    public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListOpenMfaRecoveryRequestsAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              r.id,
+              r.user_id,
+              coalesce(nullif(u.display_name, ''), nullif(u.username, ''), u.email) as display_name,
+              u.email,
+              coalesce(nullif(u.username, ''), u.email) as username,
+              r.current_mfa_mode,
+              r.status,
+              r.request_reason,
+              r.requested_at,
+              coalesce(r.review_reason, '') as review_reason,
+              r.reviewed_at,
+              coalesce(sa.display_name, sa.email, '') as reviewed_by_display_name
+            from account_mfa_recovery_requests r
+            inner join users u on u.id = r.user_id
+            left join sysadmin_accounts sa on sa.id = r.reviewed_by_sysadmin_account_id
+            where r.status in ('requested', 'approved')
+            order by
+              case when r.status = 'requested' then 0 else 1 end,
+              r.requested_at desc;
+            """;
+
+        var requests = new List<MfaRecoveryRequestSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            requests.Add(new MfaRecoveryRequestSummary
+            {
+                RequestId = reader.GetGuid(reader.GetOrdinal("id")),
+                AccountId = reader.GetGuid(reader.GetOrdinal("user_id")),
+                DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
+                Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
+                Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
+                CurrentMfaMode = NormalizeMfaMode(reader.GetString(reader.GetOrdinal("current_mfa_mode"))),
+                Status = reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+                RequestReason = reader.GetString(reader.GetOrdinal("request_reason")).Trim(),
+                RequestedAtUtc = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("requested_at"))),
+                ReviewReason = reader.GetString(reader.GetOrdinal("review_reason")).Trim(),
+                ReviewedAtUtc = reader.IsDBNull(reader.GetOrdinal("reviewed_at"))
+                    ? null
+                    : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("reviewed_at"))),
+                ReviewedByDisplayName = reader.GetString(reader.GetOrdinal("reviewed_by_display_name")).Trim()
+            });
+        }
+
+        return requests;
+    }
+
+    public async Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
+        Guid accountId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+
+        var normalizedLimit = Math.Clamp(limit, 1, 50);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              r.id,
+              r.user_id,
+              coalesce(nullif(u.display_name, ''), nullif(u.username, ''), u.email) as display_name,
+              u.email,
+              coalesce(nullif(u.username, ''), u.email) as username,
+              r.current_mfa_mode,
+              r.status,
+              r.request_reason,
+              r.requested_at,
+              coalesce(r.review_reason, '') as review_reason,
+              r.reviewed_at,
+              coalesce(review_sa.display_name, review_sa.email, '') as reviewed_by_display_name,
+              coalesce(r.execution_reason, '') as execution_reason,
+              r.executed_at,
+              coalesce(execute_sa.display_name, execute_sa.email, '') as executed_by_display_name
+            from account_mfa_recovery_requests r
+            inner join users u on u.id = r.user_id
+            left join sysadmin_accounts review_sa on review_sa.id = r.reviewed_by_sysadmin_account_id
+            left join sysadmin_accounts execute_sa on execute_sa.id = r.executed_by_sysadmin_account_id
+            where r.user_id = @account_id
+            order by r.requested_at desc
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue("limit", normalizedLimit);
+
+        var requests = new List<MfaRecoveryRequestSummary>(normalizedLimit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            requests.Add(new MfaRecoveryRequestSummary
+            {
+                RequestId = reader.GetGuid(reader.GetOrdinal("id")),
+                AccountId = reader.GetGuid(reader.GetOrdinal("user_id")),
+                DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
+                Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
+                Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
+                CurrentMfaMode = NormalizeMfaMode(reader.GetString(reader.GetOrdinal("current_mfa_mode"))),
+                Status = reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+                RequestReason = reader.GetString(reader.GetOrdinal("request_reason")).Trim(),
+                RequestedAtUtc = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("requested_at"))),
+                ReviewReason = reader.GetString(reader.GetOrdinal("review_reason")).Trim(),
+                ReviewedAtUtc = reader.IsDBNull(reader.GetOrdinal("reviewed_at"))
+                    ? null
+                    : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("reviewed_at"))),
+                ReviewedByDisplayName = reader.GetString(reader.GetOrdinal("reviewed_by_display_name")).Trim(),
+                ExecutionReason = reader.GetString(reader.GetOrdinal("execution_reason")).Trim(),
+                ExecutedAtUtc = reader.IsDBNull(reader.GetOrdinal("executed_at"))
+                    ? null
+                    : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("executed_at"))),
+                ExecutedByDisplayName = reader.GetString(reader.GetOrdinal("executed_by_display_name")).Trim()
+            });
+        }
+
+        return requests;
     }
 
     public async Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
@@ -676,67 +914,230 @@ public sealed class PostgresPlatformGovernanceRepository(
             return null;
         }
 
-        var revokedChallengeCount = await RevokeActiveMfaChallengesAsync(
+        var activeRecoveryRequest = await ReadOpenMfaRecoveryRequestForAccountAsync(
             connection,
             transaction,
             accountId,
             cancellationToken);
-
-        var previousMfaMode = NormalizeMfaMode(current.MfaMode);
-        if (!string.Equals(previousMfaMode, "none", StringComparison.Ordinal) || revokedChallengeCount > 0)
+        if (activeRecoveryRequest is not null)
         {
-            await using (var update = connection.CreateCommand())
-            {
-                update.Transaction = transaction;
-                update.CommandText =
-                    """
-                    update users
-                    set mfa_mode = 'none',
-                        security_stamp = gen_random_uuid()::text,
-                        updated_at = now()
-                    where id = @account_id;
-                    """;
-                update.Parameters.AddWithValue("account_id", accountId);
-                await update.ExecuteNonQueryAsync(cancellationToken);
-            }
-
-            await InsertAuditAsync(
-                connection,
-                transaction,
-                companyId: null,
-                sysAdminAccountId,
-                "platform_account",
-                accountId,
-                "account_mfa_reset",
-                """
-                jsonb_build_object(
-                  'previous_mfa_mode', @previous_mfa_mode,
-                  'mfa_mode', 'none',
-                  'revoked_challenge_count', @revoked_challenge_count,
-                  'reason', @reason
-                )
-                """,
-                command =>
-                {
-                    command.Parameters.AddWithValue("previous_mfa_mode", previousMfaMode);
-                    command.Parameters.AddWithValue("revoked_challenge_count", revokedChallengeCount);
-                    command.Parameters.AddWithValue("reason", normalizedReason);
-                },
-                cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("MFA reset is blocked because the account has a pending recovery review.");
         }
+
+        var reset = await ResetAccountMfaCoreAsync(
+            connection,
+            transaction,
+            current,
+            normalizedReason,
+            sysAdminAccountId,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
-        return new AccountMfaResetGovernanceResult
+        return reset;
+    }
+
+    public async Task<MfaRecoveryReviewResult?> ReviewMfaRecoveryRequestAsync(
+        Guid requestId,
+        string decision,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedDecision = NormalizeRecoveryDecision(decision);
+        var normalizedReason = NormalizeReason(reason, $"MFA recovery {normalizedDecision} by SysAdmin.");
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var request = await ReadMfaRecoveryRequestAsync(connection, transaction, requestId, cancellationToken);
+        if (request is null)
         {
-            AccountId = accountId,
-            Email = current.Email,
-            Username = current.Username,
-            PreviousMfaMode = previousMfaMode,
-            MfaMode = "none",
-            RevokedChallengeCount = revokedChallengeCount,
-            Reason = normalizedReason,
-            UpdatedAtUtc = DateTimeOffset.UtcNow
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        if (!string.Equals(request.Status, "requested", StringComparison.Ordinal))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("MFA recovery request is no longer awaiting review.");
+        }
+
+        var reviewedAtUtc = DateTimeOffset.UtcNow;
+        var targetStatus = normalizedDecision switch
+        {
+            "approve" => "approved",
+            _ => "rejected"
+        };
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                update account_mfa_recovery_requests
+                set status = @status,
+                    review_reason = @review_reason,
+                    reviewed_at = @reviewed_at,
+                    reviewed_by_sysadmin_account_id = @reviewed_by_sysadmin_account_id
+                where id = @id;
+                """;
+            command.Parameters.AddWithValue("id", requestId);
+            command.Parameters.AddWithValue("status", targetStatus);
+            command.Parameters.AddWithValue("review_reason", normalizedReason);
+            command.Parameters.AddWithValue("reviewed_at", reviewedAtUtc);
+            command.Parameters.AddWithValue(
+                "reviewed_by_sysadmin_account_id",
+                sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            companyId: null,
+            sysAdminAccountId,
+            "platform_account",
+            request.AccountId,
+            targetStatus switch
+            {
+                "approved" => "account_mfa_recovery_approved",
+                _ => "account_mfa_recovery_rejected"
+            },
+            """
+            jsonb_build_object(
+              'request_id', @request_id,
+              'current_mfa_mode', @current_mfa_mode,
+              'status', @status,
+              'reason', @reason
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("request_id", requestId);
+                command.Parameters.AddWithValue("current_mfa_mode", request.CurrentMfaMode);
+                command.Parameters.AddWithValue("status", targetStatus);
+                command.Parameters.AddWithValue("reason", normalizedReason);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new MfaRecoveryReviewResult
+        {
+            RequestId = requestId,
+            AccountId = request.AccountId,
+            Status = targetStatus,
+            ReviewReason = normalizedReason,
+            ReviewedAtUtc = reviewedAtUtc
+        };
+    }
+
+    public async Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
+        Guid requestId,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReason = NormalizeReason(reason, "Approved MFA recovery executed by SysAdmin.");
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var request = await ReadMfaRecoveryRequestAsync(connection, transaction, requestId, cancellationToken);
+        if (request is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        if (!string.Equals(request.Status, "approved", StringComparison.Ordinal))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("MFA recovery request must be approved before execution.");
+        }
+
+        var account = await ReadAccountAsync(connection, transaction, request.AccountId, cancellationToken);
+        if (account is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var reset = await ResetAccountMfaCoreAsync(
+            connection,
+            transaction,
+            account,
+            normalizedReason,
+            sysAdminAccountId,
+            cancellationToken);
+
+        var executedAtUtc = DateTimeOffset.UtcNow;
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                update account_mfa_recovery_requests
+                set status = 'executed',
+                    execution_reason = @execution_reason,
+                    executed_at = @executed_at,
+                    executed_by_sysadmin_account_id = @executed_by_sysadmin_account_id
+                where id = @id;
+                """;
+            command.Parameters.AddWithValue("id", requestId);
+            command.Parameters.AddWithValue("execution_reason", normalizedReason);
+            command.Parameters.AddWithValue("executed_at", executedAtUtc);
+            command.Parameters.AddWithValue(
+                "executed_by_sysadmin_account_id",
+                sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            companyId: null,
+            sysAdminAccountId,
+            "platform_account",
+            request.AccountId,
+            "account_mfa_recovery_executed",
+            """
+            jsonb_build_object(
+              'request_id', @request_id,
+              'previous_mfa_mode', @previous_mfa_mode,
+              'mfa_mode', @mfa_mode,
+              'revoked_challenge_count', @revoked_challenge_count,
+              'reason', @reason
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("request_id", requestId);
+                command.Parameters.AddWithValue("previous_mfa_mode", reset.PreviousMfaMode);
+                command.Parameters.AddWithValue("mfa_mode", reset.MfaMode);
+                command.Parameters.AddWithValue("revoked_challenge_count", reset.RevokedChallengeCount);
+                command.Parameters.AddWithValue("reason", normalizedReason);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new MfaRecoveryExecutionResult
+        {
+            RequestId = requestId,
+            AccountId = request.AccountId,
+            PreviousMfaMode = reset.PreviousMfaMode,
+            MfaMode = reset.MfaMode,
+            RevokedChallengeCount = reset.RevokedChallengeCount,
+            ExecutionReason = normalizedReason,
+            ExecutedAtUtc = executedAtUtc
         };
     }
 
@@ -801,6 +1202,77 @@ public sealed class PostgresPlatformGovernanceRepository(
             NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))));
     }
 
+    private static async Task<MfaRecoveryRequestRecord?> ReadMfaRecoveryRequestAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              id,
+              user_id,
+              current_mfa_mode,
+              status,
+              request_reason,
+              requested_at,
+              coalesce(review_reason, '') as review_reason,
+              reviewed_at
+            from account_mfa_recovery_requests
+            where id = @id
+            limit 1
+            for update;
+            """;
+        command.Parameters.AddWithValue("id", requestId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new MfaRecoveryRequestRecord(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetGuid(reader.GetOrdinal("user_id")),
+            NormalizeMfaMode(reader.GetString(reader.GetOrdinal("current_mfa_mode"))),
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+            reader.GetString(reader.GetOrdinal("request_reason")).Trim(),
+            CoerceTimestamp(reader.GetValue(reader.GetOrdinal("requested_at"))),
+            reader.GetString(reader.GetOrdinal("review_reason")).Trim(),
+            reader.IsDBNull(reader.GetOrdinal("reviewed_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("reviewed_at"))));
+    }
+
+    private static async Task<Guid?> ReadOpenMfaRecoveryRequestForAccountAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id
+            from account_mfa_recovery_requests
+            where user_id = @user_id
+              and status in ('requested', 'approved')
+            order by requested_at desc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("user_id", accountId);
+
+        return await command.ExecuteScalarAsync(cancellationToken) switch
+        {
+            Guid requestId => requestId,
+            _ => null
+        };
+    }
+
     private static ManagedPlatformAccountSummary ReadManagedUserSummary(NpgsqlDataReader reader)
     {
         var companyCodes = reader.GetString(reader.GetOrdinal("company_codes"))
@@ -820,6 +1292,76 @@ public sealed class PostgresPlatformGovernanceRepository(
                 : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("last_mfa_reset_at_utc"))),
             LastMfaResetReason = reader.GetString(reader.GetOrdinal("last_mfa_reset_reason")).Trim(),
             CompanyCodes = companyCodes
+        };
+    }
+
+    private static async Task<AccountMfaResetGovernanceResult> ResetAccountMfaCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        AccountRecord current,
+        string normalizedReason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var revokedChallengeCount = await RevokeActiveMfaChallengesAsync(
+            connection,
+            transaction,
+            current.Id,
+            cancellationToken);
+
+        var previousMfaMode = NormalizeMfaMode(current.MfaMode);
+        if (!string.Equals(previousMfaMode, "none", StringComparison.Ordinal) || revokedChallengeCount > 0)
+        {
+            await using (var update = connection.CreateCommand())
+            {
+                update.Transaction = transaction;
+                update.CommandText =
+                    """
+                    update users
+                    set mfa_mode = 'none',
+                        security_stamp = gen_random_uuid()::text,
+                        updated_at = now()
+                    where id = @account_id;
+                    """;
+                update.Parameters.AddWithValue("account_id", current.Id);
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await InsertAuditAsync(
+                connection,
+                transaction,
+                companyId: null,
+                sysAdminAccountId,
+                "platform_account",
+                current.Id,
+                "account_mfa_reset",
+                """
+                jsonb_build_object(
+                  'previous_mfa_mode', @previous_mfa_mode,
+                  'mfa_mode', 'none',
+                  'revoked_challenge_count', @revoked_challenge_count,
+                  'reason', @reason
+                )
+                """,
+                command =>
+                {
+                    command.Parameters.AddWithValue("previous_mfa_mode", previousMfaMode);
+                    command.Parameters.AddWithValue("revoked_challenge_count", revokedChallengeCount);
+                    command.Parameters.AddWithValue("reason", normalizedReason);
+                },
+                cancellationToken);
+        }
+
+        return new AccountMfaResetGovernanceResult
+        {
+            AccountId = current.Id,
+            Email = current.Email,
+            Username = current.Username,
+            PreviousMfaMode = previousMfaMode,
+            MfaMode = "none",
+            RevokedChallengeCount = revokedChallengeCount,
+            Reason = normalizedReason,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
         };
     }
 
@@ -1023,6 +1565,10 @@ public sealed class PostgresPlatformGovernanceRepository(
                 ReadString(payload, "previous_status"),
                 ReadString(payload, "status")),
             "account_status_changed" => BuildAccountStatusDetail(payload),
+            "account_mfa_recovery_requested" => BuildMfaRecoveryDetail(payload),
+            "account_mfa_recovery_approved" => BuildMfaRecoveryDetail(payload),
+            "account_mfa_recovery_rejected" => BuildMfaRecoveryDetail(payload),
+            "account_mfa_recovery_executed" => BuildAccountMfaResetDetail(payload),
             "account_mfa_reset" => BuildAccountMfaResetDetail(payload),
             "email_change_requested" => BuildPasswordResetDetail(payload),
             "email_change_dispatched" => BuildPasswordResetDeliveryOutcomeDetail(payload),
@@ -1098,6 +1644,17 @@ public sealed class PostgresPlatformGovernanceRepository(
             : $"{detail} | revoked challenges: {revokedChallengeCount}";
     }
 
+    private static string BuildMfaRecoveryDetail(JsonElement payload)
+    {
+        var currentMfaMode = ReadString(payload, "current_mfa_mode");
+        var status = ReadString(payload, "status");
+
+        var segments = new List<string>();
+        AddIfPresent(segments, currentMfaMode);
+        AddIfPresent(segments, status);
+        return string.Join(" | ", segments);
+    }
+
     private static string BuildPasswordResetDetail(JsonElement payload)
     {
         var deliveryStatus = ReadString(payload, "delivery_status");
@@ -1150,6 +1707,19 @@ public sealed class PostgresPlatformGovernanceRepository(
                 break;
 
             case "account_mfa_reset":
+                AddIfPresent(highlights, ReadString(payload, "previous_mfa_mode"));
+                AddIfPresent(highlights, ReadString(payload, "mfa_mode"));
+                AddIfPresent(highlights, ReadString(payload, "revoked_challenge_count"));
+                break;
+
+            case "account_mfa_recovery_requested":
+            case "account_mfa_recovery_approved":
+            case "account_mfa_recovery_rejected":
+                AddIfPresent(highlights, ReadString(payload, "current_mfa_mode"));
+                AddIfPresent(highlights, ReadString(payload, "status"));
+                break;
+
+            case "account_mfa_recovery_executed":
                 AddIfPresent(highlights, ReadString(payload, "previous_mfa_mode"));
                 AddIfPresent(highlights, ReadString(payload, "mfa_mode"));
                 AddIfPresent(highlights, ReadString(payload, "revoked_challenge_count"));
@@ -1421,6 +1991,17 @@ public sealed class PostgresPlatformGovernanceRepository(
             ? "none"
             : mfaMode.Trim().ToLowerInvariant();
 
+    private static string NormalizeRecoveryDecision(string decision)
+    {
+        var normalized = NormalizeRequired(decision, "MFA recovery decision");
+        return normalized switch
+        {
+            "approve" or "approved" => "approve",
+            "reject" or "rejected" => "reject",
+            _ => throw new InvalidOperationException("MFA recovery decision must be approve or reject.")
+        };
+    }
+
     private static string NormalizeReason(string reason, string fallback) =>
         string.IsNullOrWhiteSpace(reason) ? fallback : reason.Trim();
 
@@ -1496,4 +2077,14 @@ public sealed class PostgresPlatformGovernanceRepository(
         string Username,
         string Status,
         string MfaMode);
+
+    private sealed record MfaRecoveryRequestRecord(
+        Guid Id,
+        Guid AccountId,
+        string CurrentMfaMode,
+        string Status,
+        string RequestReason,
+        DateTimeOffset RequestedAtUtc,
+        string ReviewReason,
+        DateTimeOffset? ReviewedAtUtc);
 }

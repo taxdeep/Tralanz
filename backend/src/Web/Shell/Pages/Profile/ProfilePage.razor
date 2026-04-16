@@ -218,6 +218,34 @@
                             }
                         </MudAlert>
                     }
+                    @if (_profile.HasActiveMfaRecoveryRequest)
+                    {
+                        <MudAlert Severity="@GetMfaRecoverySeverity(_profile.ActiveMfaRecoveryStatus)"
+                                  Variant="Variant.Outlined"
+                                  Dense="true"
+                                  Class="mb-3">
+                            MFA recovery request status: @_profile.ActiveMfaRecoveryStatus
+                            requested @_profile.ActiveMfaRecoveryRequestedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            @if (!string.IsNullOrWhiteSpace(_profile.ActiveMfaRecoveryRequestReason))
+                            {
+                                <span> Request reason: @_profile.ActiveMfaRecoveryRequestReason</span>
+                            }
+                            @if (_profile.ActiveMfaRecoveryReviewedAtUtc.HasValue)
+                            {
+                                <span>
+                                    Review:
+                                    @(!string.IsNullOrWhiteSpace(_profile.ActiveMfaRecoveryReviewedByDisplayName)
+                                        ? _profile.ActiveMfaRecoveryReviewedByDisplayName
+                                        : "SysAdmin")
+                                    at @_profile.ActiveMfaRecoveryReviewedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                                </span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_profile.ActiveMfaRecoveryReviewReason))
+                            {
+                                <span> Review reason: @_profile.ActiveMfaRecoveryReviewReason</span>
+                            }
+                        </MudAlert>
+                    }
                 }
                 @if (!string.IsNullOrWhiteSpace(MfaBlockingReason))
                 {
@@ -241,6 +269,27 @@
                                Disabled="@MfaSaveDisabled"
                                OnClick="SaveMfaModeAsync">
                         Save MFA Mode
+                    </MudButton>
+                </div>
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle2">Lost second factor access?</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary" Style="margin-bottom:0.75rem;">
+                    Recovery is a governed request. Submit a reason here, then wait for SysAdmin review and controlled execution.
+                </MudText>
+                <MudTextField T="string"
+                              Label="Recovery Reason"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Lines="3"
+                              Value="@_mfaRecoveryReason"
+                              ValueChanged="@(value => _mfaRecoveryReason = value ?? string.Empty)"
+                              Disabled="@MfaRecoveryDisabled" />
+                <div style="margin-top:0.75rem;">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Warning"
+                               Disabled="@MfaRecoveryDisabled"
+                               OnClick="RequestMfaRecoveryAsync">
+                        Request MFA Recovery Review
                     </MudButton>
                 </div>
             </MudPaper>
@@ -326,14 +375,66 @@
                 </MudButton>
             </MudPaper>
         </MudItem>
+
+        <MudItem xs="12">
+            <MudPaper Elevation="0" Class="pa-4">
+                <h2 style="margin-top:0;">MFA Governance Timeline</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    This timeline shows platform-owned MFA events for your account: mode changes, recovery requests, reviews, and governed resets.
+                </p>
+                @if (_mfaTimeline.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        No MFA governance events have been recorded for this platform account yet.
+                    </MudAlert>
+                }
+                else
+                {
+                    <div style="display:grid;gap:0.75rem;">
+                        @foreach (var entry in _mfaTimeline)
+                        {
+                            <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                                <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                                    <div style="display:grid;gap:0.35rem;">
+                                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                                            <MudChip T="string"
+                                                     Variant="Variant.Outlined"
+                                                     Color="@GetTimelineColor(entry.Action)">
+                                                @entry.ActionLabel
+                                            </MudChip>
+                                            <MudChip T="string" Variant="Variant.Text" Color="Color.Default">
+                                                @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
+                                            </MudChip>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(entry.Detail))
+                                        {
+                                            <MudText Typo="Typo.body2">@entry.Detail</MudText>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                        {
+                                            <MudText Typo="Typo.caption" Class="text-secondary">Reason: @entry.Reason</MudText>
+                                        }
+                                    </div>
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        @entry.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")
+                                    </MudText>
+                                </div>
+                            </MudPaper>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
     </MudGrid>
 </div>
 
 @code {
     private PlatformAccountProfileSummary? _profile;
     private NotificationReadinessSummary? _notificationReadiness;
+    private IReadOnlyList<PlatformMfaTimelineEntry> _mfaTimeline = Array.Empty<PlatformMfaTimelineEntry>();
     private string _displayName = string.Empty;
     private string _selectedMfaMode = "none";
+    private string _mfaRecoveryReason = string.Empty;
     private string _newEmail = string.Empty;
     private string _emailChangeCode = string.Empty;
     private string _newPassword = string.Empty;
@@ -360,6 +461,14 @@
         string.Equals(_selectedMfaMode, _profile.MfaMode, StringComparison.OrdinalIgnoreCase) ||
         (!string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase) &&
          !string.IsNullOrWhiteSpace(MfaBlockingReason));
+
+    private bool MfaRecoveryDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null ||
+        !_profile.IsMfaEnabled ||
+        _profile.HasActiveMfaRecoveryRequest ||
+        string.IsNullOrWhiteSpace(_mfaRecoveryReason);
 
     private string? MfaBlockingReason =>
         _profile is null
@@ -393,6 +502,12 @@
             return;
         }
 
+        var timelineResult = await ProfileClient.GetMfaTimelineAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(timelineResult, CancellationToken.None))
+        {
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(profileResult.ErrorMessage))
         {
             _errorText = profileResult.ErrorMessage;
@@ -404,8 +519,14 @@
             _errorText = notificationResult.ErrorMessage;
         }
 
+        if (!string.IsNullOrWhiteSpace(timelineResult.ErrorMessage))
+        {
+            _errorText = timelineResult.ErrorMessage;
+        }
+
         _profile = profileResult.Value;
         _notificationReadiness = notificationResult.Value;
+        _mfaTimeline = timelineResult.Value ?? Array.Empty<PlatformMfaTimelineEntry>();
         if (_profile is not null)
         {
             _displayName = _profile.DisplayName;
@@ -431,6 +552,7 @@
 
                 _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
                 await RefreshShellStateAsync();
+                await RefreshMfaTimelineAsync();
                 Snackbar.Add("Display name saved.", Severity.Success);
             });
     }
@@ -453,6 +575,7 @@
 
                 _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
                 _selectedMfaMode = _profile.MfaMode;
+                await RefreshMfaTimelineAsync();
                 Snackbar.Add(
                     string.Equals(_profile.MfaMode, "none", StringComparison.OrdinalIgnoreCase)
                         ? "MFA disabled for future business sign-ins."
@@ -464,6 +587,32 @@
     private void OnMfaModeChanged(string? value)
     {
         _selectedMfaMode = value ?? "none";
+    }
+
+    private async Task RequestMfaRecoveryAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.RequestMfaRecoveryAsync(_mfaRecoveryReason, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                var value = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _profile = value.Profile;
+                _mfaRecoveryReason = string.Empty;
+                await RefreshMfaTimelineAsync();
+                Snackbar.Add(
+                    $"MFA recovery request recorded at {value.RequestedAtUtc:yyyy-MM-dd HH:mm:ss} UTC. Wait for SysAdmin review before retrying sign-in.",
+                    Severity.Success);
+            });
     }
 
     private async Task RequestEmailChangeAsync()
@@ -602,4 +751,40 @@
             return;
         }
     }
+
+    private async Task RefreshMfaTimelineAsync()
+    {
+        var timelineResult = await ProfileClient.GetMfaTimelineAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(timelineResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(timelineResult.ErrorMessage))
+        {
+            throw new InvalidOperationException(timelineResult.ErrorMessage);
+        }
+
+        _mfaTimeline = timelineResult.Value ?? Array.Empty<PlatformMfaTimelineEntry>();
+    }
+
+    private static Severity GetMfaRecoverySeverity(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => Severity.Success,
+            "rejected" => Severity.Error,
+            _ => Severity.Warning
+        };
+
+    private static Color GetTimelineColor(string? action) =>
+        action?.Trim().ToLowerInvariant() switch
+        {
+            "profile_mfa_mode_saved" => Color.Primary,
+            "account_mfa_recovery_requested" => Color.Warning,
+            "account_mfa_recovery_approved" => Color.Success,
+            "account_mfa_recovery_rejected" => Color.Error,
+            "account_mfa_recovery_executed" => Color.Secondary,
+            "account_mfa_reset" => Color.Warning,
+            _ => Color.Default
+        };
 }

@@ -43,6 +43,10 @@ public sealed record class PlatformAuditEvent
         {
             "company_status_changed" => "Company Status Changed",
             "account_status_changed" => "Account Status Changed",
+            "account_mfa_recovery_requested" => "Account MFA Recovery Requested",
+            "account_mfa_recovery_approved" => "Account MFA Recovery Approved",
+            "account_mfa_recovery_rejected" => "Account MFA Recovery Rejected",
+            "account_mfa_recovery_executed" => "Account MFA Recovery Executed",
             "profile_display_name_saved" => "Profile Display Name Saved",
             "email_change_requested" => "Email Change Requested",
             "email_change_dispatched" => "Email Change Delivered",

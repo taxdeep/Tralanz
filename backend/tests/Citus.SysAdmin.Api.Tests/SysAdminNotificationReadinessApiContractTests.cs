@@ -836,6 +836,267 @@ public sealed class SysAdminNotificationReadinessApiContractTests
     }
 
     [Fact]
+    public async Task ListOpenMfaRecoveryRequests_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/control/mfa-recovery-requests");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(0, factory.GovernanceRepository.ListOpenMfaRecoveryRequestsCallCount);
+    }
+
+    [Fact]
+    public async Task ListOpenMfaRecoveryRequests_ReturnsQueue_WhenAuthenticated()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        factory.GovernanceRepository.OnListOpenMfaRecoveryRequests = static _ =>
+            Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(
+            [
+                new Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary
+                {
+                    RequestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117"),
+                    AccountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0"),
+                    DisplayName = "Morgan Hale",
+                    Email = "user@example.com",
+                    Username = "user.one",
+                    CurrentMfaMode = "email_code",
+                    Status = "requested",
+                    RequestReason = "Lost access to verified mailbox device.",
+                    RequestedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 20, 0, TimeSpan.Zero)
+                }
+            ]);
+
+        var response = await client.GetAsync("/control/mfa-recovery-requests");
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<IReadOnlyList<Citus.Ui.Shared.Control.MfaRecoveryRequestSummary>>();
+
+        Assert.NotNull(payload);
+        Assert.Single(payload!);
+        Assert.Equal(1, factory.GovernanceRepository.ListOpenMfaRecoveryRequestsCallCount);
+        Assert.Equal("Morgan Hale", payload[0].DisplayName);
+        Assert.Equal("requested", payload[0].Status);
+    }
+
+    [Fact]
+    public async Task ListAccountMfaTimeline_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var response = await client.GetAsync($"/control/accounts/{accountId}/mfa-timeline");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(factory.GovernanceRepository.LastMfaTimelineAccountId);
+    }
+
+    [Fact]
+    public async Task ListAccountMfaTimeline_ReturnsTimeline_WhenAuthenticated()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnListAccountMfaTimeline = static (_, _, _) =>
+            Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(
+            [
+                new PlatformAuditEvent
+                {
+                    Action = "account_mfa_recovery_requested",
+                    ActionLabel = "Account MFA Recovery Requested",
+                    Detail = "email_code | requested",
+                    Reason = "Lost access to verified mailbox device.",
+                    ActorType = "user",
+                    ActorDisplayName = "Morgan Hale",
+                    CreatedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 55, 0, TimeSpan.Zero)
+                }
+            ]);
+
+        var response = await client.GetAsync($"/control/accounts/{accountId}/mfa-timeline?limit=7");
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<IReadOnlyList<PlatformMfaTimelineEntrySummary>>();
+
+        Assert.NotNull(payload);
+        Assert.Single(payload!);
+        Assert.Equal(accountId, factory.GovernanceRepository.LastMfaTimelineAccountId);
+        Assert.Equal(7, factory.GovernanceRepository.LastMfaTimelineLimit);
+        Assert.Equal("Account MFA Recovery Requested", payload[0].ActionLabel);
+        Assert.Equal("Morgan Hale", payload[0].ActorDisplayName);
+    }
+
+    [Fact]
+    public async Task ListAccountMfaRecoveryHistory_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var response = await client.GetAsync($"/control/accounts/{accountId}/mfa-recovery-history");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(factory.GovernanceRepository.LastMfaRecoveryHistoryAccountId);
+    }
+
+    [Fact]
+    public async Task ListAccountMfaRecoveryHistory_ReturnsHistory_WhenAuthenticated()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnListAccountMfaRecoveryHistory = static (requestedAccountId, _, _) =>
+            Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(
+            [
+                new Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary
+                {
+                    RequestId = Guid.Parse("3f6701b7-bd37-44ff-8f82-7c6324b2e1d0"),
+                    AccountId = requestedAccountId,
+                    DisplayName = "Morgan Hale",
+                    Email = "user@example.com",
+                    Username = "user.one",
+                    CurrentMfaMode = "email_code",
+                    Status = "executed",
+                    RequestReason = "Lost access to verified mailbox device.",
+                    RequestedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 20, 0, TimeSpan.Zero),
+                    ReviewReason = "Identity verified over support callback.",
+                    ReviewedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 30, 0, TimeSpan.Zero),
+                    ReviewedByDisplayName = "SysAdmin Operator",
+                    ExecutionReason = "Approved MFA recovery executed by SysAdmin.",
+                    ExecutedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 40, 0, TimeSpan.Zero),
+                    ExecutedByDisplayName = "SysAdmin Operator"
+                }
+            ]);
+
+        var response = await client.GetAsync($"/control/accounts/{accountId}/mfa-recovery-history?limit=6");
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<IReadOnlyList<Citus.Ui.Shared.Control.MfaRecoveryRequestSummary>>();
+
+        Assert.NotNull(payload);
+        Assert.Single(payload!);
+        Assert.Equal(accountId, factory.GovernanceRepository.LastMfaRecoveryHistoryAccountId);
+        Assert.Equal(6, factory.GovernanceRepository.LastMfaRecoveryHistoryLimit);
+        Assert.Equal("executed", payload[0].Status);
+        Assert.Equal("Approved MFA recovery executed by SysAdmin.", payload[0].ExecutionReason);
+        Assert.Equal("SysAdmin Operator", payload[0].ExecutedByDisplayName);
+        Assert.Equal(new DateTimeOffset(2026, 4, 16, 23, 40, 0, TimeSpan.Zero), payload[0].ExecutedAtUtc);
+    }
+
+    [Fact]
+    public async Task ReviewMfaRecoveryRequest_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var requestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117");
+        var response = await client.PutAsJsonAsync(
+            $"/control/mfa-recovery-requests/{requestId}/decision",
+            new MfaRecoveryReviewRequest
+            {
+                Decision = "approve",
+                Reason = "Approved recovery."
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(factory.GovernanceRepository.LastReviewedMfaRecoveryRequestId);
+    }
+
+    [Fact]
+    public async Task ReviewMfaRecoveryRequest_ReturnsOkPayload_WhenGovernanceSucceeds()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var requestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117");
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnReviewMfaRecoveryRequest = (requestedRequestId, decision, reason, _, _) =>
+            Task.FromResult<MfaRecoveryReviewResult?>(
+                new MfaRecoveryReviewResult
+                {
+                    RequestId = requestedRequestId,
+                    AccountId = accountId,
+                    Status = decision == "approve" ? "approved" : "rejected",
+                    ReviewReason = reason,
+                    ReviewedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 40, 0, TimeSpan.Zero)
+                });
+
+        var response = await client.PutAsJsonAsync(
+            $"/control/mfa-recovery-requests/{requestId}/decision",
+            new MfaRecoveryReviewRequest
+            {
+                Decision = "approve",
+                Reason = "Recovery evidence checked.",
+                SysAdminAccountId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd")
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<MfaRecoveryReviewResult>();
+
+        Assert.NotNull(payload);
+        Assert.Equal(requestId, factory.GovernanceRepository.LastReviewedMfaRecoveryRequestId);
+        Assert.Equal("approve", factory.GovernanceRepository.LastReviewedMfaRecoveryDecision);
+        Assert.Equal("Recovery evidence checked.", factory.GovernanceRepository.LastReviewedMfaRecoveryReason);
+        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastReviewedMfaRecoverySysAdminAccountId);
+        Assert.Equal("approved", payload!.Status);
+    }
+
+    [Fact]
+    public async Task ExecuteMfaRecoveryRequest_ReturnsOkPayload_WhenGovernanceSucceeds()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var requestId = Guid.Parse("5ee30770-a50e-4f19-a27f-8990202f8117");
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnExecuteMfaRecoveryRequest = (requestedRequestId, reason, _, _) =>
+            Task.FromResult<MfaRecoveryExecutionResult?>(
+                new MfaRecoveryExecutionResult
+                {
+                    RequestId = requestedRequestId,
+                    AccountId = accountId,
+                    PreviousMfaMode = "email_code",
+                    MfaMode = "none",
+                    RevokedChallengeCount = 3,
+                    ExecutionReason = reason,
+                    ExecutedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 50, 0, TimeSpan.Zero)
+                });
+
+        var response = await client.PostAsJsonAsync(
+            $"/control/mfa-recovery-requests/{requestId}/execute",
+            new MfaRecoveryExecuteRequest
+            {
+                Reason = "Approved recovery executed by operator.",
+                SysAdminAccountId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<MfaRecoveryExecutionResult>();
+
+        Assert.NotNull(payload);
+        Assert.Equal(requestId, factory.GovernanceRepository.LastExecutedMfaRecoveryRequestId);
+        Assert.Equal("Approved recovery executed by operator.", factory.GovernanceRepository.LastExecutedMfaRecoveryReason);
+        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastExecutedMfaRecoverySysAdminAccountId);
+        Assert.Equal("none", payload!.MfaMode);
+        Assert.Equal(3, payload.RevokedChallengeCount);
+    }
+
+    [Fact]
     public async Task SendNotificationTest_ReturnsUnauthorized_WhenSessionHeaderMissing()
     {
         using var factory = new SysAdminNotificationApiApplicationFactory();
@@ -1100,6 +1361,12 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Func<int, CancellationToken, Task<IReadOnlyList<PlatformAuditEvent>>> OnListRecentAuditEvents { get; set; } =
             static (_, _) => Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(Array.Empty<PlatformAuditEvent>());
 
+        public Func<Guid, int, CancellationToken, Task<IReadOnlyList<PlatformAuditEvent>>> OnListAccountMfaTimeline { get; set; } =
+            static (_, _, _) => Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(Array.Empty<PlatformAuditEvent>());
+
+        public Func<Guid, int, CancellationToken, Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>> OnListAccountMfaRecoveryHistory { get; set; } =
+            static (_, _, _) => Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(Array.Empty<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>());
+
         public Func<Guid, string, string, Guid?, CancellationToken, Task<CompanyStatusGovernanceResult?>> OnSetCompanyStatus { get; set; } =
             static (_, _, _, _, _) => Task.FromResult<CompanyStatusGovernanceResult?>(null);
 
@@ -1112,7 +1379,24 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Func<Guid, string, Guid?, CancellationToken, Task<AccountMfaResetGovernanceResult?>> OnResetAccountMfa { get; set; } =
             static (_, _, _, _) => Task.FromResult<AccountMfaResetGovernanceResult?>(null);
 
+        public Func<CancellationToken, Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>> OnListOpenMfaRecoveryRequests { get; set; } =
+            static _ => Task.FromResult<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>>(Array.Empty<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>());
+
+        public Func<Guid, string, string, Guid?, CancellationToken, Task<MfaRecoveryReviewResult?>> OnReviewMfaRecoveryRequest { get; set; } =
+            static (_, _, _, _, _) => Task.FromResult<MfaRecoveryReviewResult?>(null);
+
+        public Func<Guid, string, Guid?, CancellationToken, Task<MfaRecoveryExecutionResult?>> OnExecuteMfaRecoveryRequest { get; set; } =
+            static (_, _, _, _) => Task.FromResult<MfaRecoveryExecutionResult?>(null);
+
         public int? LastAuditLimit { get; private set; }
+
+        public Guid? LastMfaTimelineAccountId { get; private set; }
+
+        public int? LastMfaTimelineLimit { get; private set; }
+
+        public Guid? LastMfaRecoveryHistoryAccountId { get; private set; }
+
+        public int? LastMfaRecoveryHistoryLimit { get; private set; }
 
         public Guid? LastCompanyStatusCompanyId { get; private set; }
 
@@ -1144,7 +1428,23 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public Guid? LastMfaResetSysAdminAccountId { get; private set; }
 
+        public Guid? LastReviewedMfaRecoveryRequestId { get; private set; }
+
+        public string LastReviewedMfaRecoveryDecision { get; private set; } = string.Empty;
+
+        public string LastReviewedMfaRecoveryReason { get; private set; } = string.Empty;
+
+        public Guid? LastReviewedMfaRecoverySysAdminAccountId { get; private set; }
+
+        public Guid? LastExecutedMfaRecoveryRequestId { get; private set; }
+
+        public string LastExecutedMfaRecoveryReason { get; private set; } = string.Empty;
+
+        public Guid? LastExecutedMfaRecoverySysAdminAccountId { get; private set; }
+
         public int ListManagedUsersCallCount { get; private set; }
+
+        public int ListOpenMfaRecoveryRequestsCallCount { get; private set; }
 
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -1160,6 +1460,26 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         {
             LastAuditLimit = limit;
             return OnListRecentAuditEvents(limit, cancellationToken);
+        }
+
+        public Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
+            Guid accountId,
+            int limit,
+            CancellationToken cancellationToken)
+        {
+            LastMfaTimelineAccountId = accountId;
+            LastMfaTimelineLimit = limit;
+            return OnListAccountMfaTimeline(accountId, limit, cancellationToken);
+        }
+
+        public Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
+            Guid accountId,
+            int limit,
+            CancellationToken cancellationToken)
+        {
+            LastMfaRecoveryHistoryAccountId = accountId;
+            LastMfaRecoveryHistoryLimit = limit;
+            return OnListAccountMfaRecoveryHistory(accountId, limit, cancellationToken);
         }
 
         public Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
@@ -1214,6 +1534,39 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             LastMfaResetReason = reason;
             LastMfaResetSysAdminAccountId = sysAdminAccountId;
             return OnResetAccountMfa(accountId, reason, sysAdminAccountId, cancellationToken);
+        }
+
+        public Task<IReadOnlyList<Citus.Platform.Core.Runtime.MfaRecoveryRequestSummary>> ListOpenMfaRecoveryRequestsAsync(
+            CancellationToken cancellationToken)
+        {
+            ListOpenMfaRecoveryRequestsCallCount++;
+            return OnListOpenMfaRecoveryRequests(cancellationToken);
+        }
+
+        public Task<MfaRecoveryReviewResult?> ReviewMfaRecoveryRequestAsync(
+            Guid requestId,
+            string decision,
+            string reason,
+            Guid? sysAdminAccountId,
+            CancellationToken cancellationToken)
+        {
+            LastReviewedMfaRecoveryRequestId = requestId;
+            LastReviewedMfaRecoveryDecision = decision;
+            LastReviewedMfaRecoveryReason = reason;
+            LastReviewedMfaRecoverySysAdminAccountId = sysAdminAccountId;
+            return OnReviewMfaRecoveryRequest(requestId, decision, reason, sysAdminAccountId, cancellationToken);
+        }
+
+        public Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
+            Guid requestId,
+            string reason,
+            Guid? sysAdminAccountId,
+            CancellationToken cancellationToken)
+        {
+            LastExecutedMfaRecoveryRequestId = requestId;
+            LastExecutedMfaRecoveryReason = reason;
+            LastExecutedMfaRecoverySysAdminAccountId = sysAdminAccountId;
+            return OnExecuteMfaRecoveryRequest(requestId, reason, sysAdminAccountId, cancellationToken);
         }
     }
 

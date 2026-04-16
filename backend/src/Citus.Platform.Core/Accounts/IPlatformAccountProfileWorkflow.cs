@@ -4,6 +4,8 @@ public interface IPlatformAccountProfileWorkflow
 {
     Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken);
+
     Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
         Guid userId,
         string displayName,
@@ -12,6 +14,11 @@ public interface IPlatformAccountProfileWorkflow
     Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
         Guid userId,
         string mfaMode,
+        CancellationToken cancellationToken);
+
+    Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
+        Guid userId,
+        string reason,
         CancellationToken cancellationToken);
 
     Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(

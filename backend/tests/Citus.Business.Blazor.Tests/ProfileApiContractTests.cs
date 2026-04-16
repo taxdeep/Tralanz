@@ -120,6 +120,45 @@ public sealed class ProfileApiContractTests
     }
 
     [Fact]
+    public async Task RequestMfaRecovery_ReturnsRequestPayload_WhenAuthenticated()
+    {
+        using var factory = new ProfileApiApplicationFactory();
+        var userId = Guid.Parse("dc444247-6a04-4546-b4eb-3add9921eb2c");
+        var requestedAt = new DateTimeOffset(2026, 4, 16, 21, 45, 0, TimeSpan.Zero);
+        factory.BusinessSessions.ValidateResult = CreateSession(userId);
+        factory.Workflow.OnRequestMfaRecovery = static (actorUserId, reason, _) =>
+            Task.FromResult<PlatformMfaRecoveryRequestResult?>(
+                new()
+                {
+                    RequestId = Guid.Parse("3693cc53-83ea-4958-9c1f-fd445cb181e5"),
+                    Status = "requested",
+                    Reason = reason,
+                    RequestedAtUtc = new DateTimeOffset(2026, 4, 16, 21, 45, 0, TimeSpan.Zero),
+                    Profile = CreateProfile(actorUserId, mfaMode: "email_code")
+                });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-22B");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/platform/profile/mfa-recovery/request",
+            new
+            {
+                reason = "Lost access to the mailbox device used for MFA."
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<PlatformMfaRecoveryRequestResult>();
+
+        Assert.NotNull(payload);
+        Assert.Equal(userId, factory.Workflow.LastUserId);
+        Assert.Equal("Lost access to the mailbox device used for MFA.", factory.Workflow.LastMfaRecoveryReason);
+        Assert.Equal("requested", payload!.Status);
+        Assert.Equal(requestedAt, payload.RequestedAtUtc);
+    }
+
+    [Fact]
     public async Task RequestEmailChange_ReturnsRequestPayload_WhenAuthenticated()
     {
         using var factory = new ProfileApiApplicationFactory();
@@ -275,6 +314,43 @@ public sealed class ProfileApiContractTests
     }
 
     [Fact]
+    public async Task GetMfaTimeline_ReturnsTimelineEntries_WhenAuthenticated()
+    {
+        using var factory = new ProfileApiApplicationFactory();
+        var userId = Guid.Parse("f9eb43b4-12fb-4843-b46e-c3246ca994fc");
+        factory.BusinessSessions.ValidateResult = CreateSession(userId);
+        factory.Workflow.OnGetMfaTimeline = static (actorUserId, _) =>
+            Task.FromResult<IReadOnlyList<PlatformMfaTimelineEntry>>(
+            [
+                new PlatformMfaTimelineEntry
+                {
+                    Action = "account_mfa_recovery_requested",
+                    ActionLabel = "Account MFA Recovery Requested",
+                    Detail = "email_code | requested",
+                    Reason = "Lost access to verified mailbox device.",
+                    ActorType = "user",
+                    ActorDisplayName = $"actor:{actorUserId}",
+                    CreatedAtUtc = new DateTimeOffset(2026, 4, 16, 22, 15, 0, TimeSpan.Zero)
+                }
+            ]);
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-28A");
+
+        var response = await client.GetAsync("/api/platform/profile/mfa-timeline");
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<IReadOnlyList<PlatformMfaTimelineEntry>>();
+
+        Assert.NotNull(payload);
+        Assert.Single(payload!);
+        Assert.Equal(userId, factory.Workflow.LastUserId);
+        Assert.Equal("account_mfa_recovery_requested", payload[0].Action);
+        Assert.Equal("Lost access to verified mailbox device.", payload[0].Reason);
+    }
+
+    [Fact]
     public async Task GetNotificationReadiness_ReturnsReadinessSummary_WhenAuthenticated()
     {
         using var factory = new ProfileApiApplicationFactory();
@@ -382,6 +458,9 @@ public sealed class ProfileApiContractTests
         public Func<Guid, CancellationToken, Task<PlatformAccountProfileSummary?>> OnGet { get; set; } =
             static (_, _) => Task.FromResult<PlatformAccountProfileSummary?>(null);
 
+        public Func<Guid, CancellationToken, Task<IReadOnlyList<PlatformMfaTimelineEntry>>> OnGetMfaTimeline { get; set; } =
+            static (_, _) => Task.FromResult<IReadOnlyList<PlatformMfaTimelineEntry>>(Array.Empty<PlatformMfaTimelineEntry>());
+
         public Func<Guid, string, CancellationToken, Task<PlatformAccountProfileSummary?>> OnSaveDisplayName { get; set; } =
             static (_, _, _) => Task.FromResult<PlatformAccountProfileSummary?>(null);
 
@@ -390,6 +469,9 @@ public sealed class ProfileApiContractTests
 
         public Func<Guid, string, CancellationToken, Task<PlatformProfileChangeRequestResult?>> OnRequestEmailChange { get; set; } =
             static (_, _, _) => Task.FromResult<PlatformProfileChangeRequestResult?>(null);
+
+        public Func<Guid, string, CancellationToken, Task<PlatformMfaRecoveryRequestResult?>> OnRequestMfaRecovery { get; set; } =
+            static (_, _, _) => Task.FromResult<PlatformMfaRecoveryRequestResult?>(null);
 
         public Func<Guid, string, CancellationToken, Task<PlatformProfileChangeRequestResult?>> OnRequestPasswordChange { get; set; } =
             static (_, _, _) => Task.FromResult<PlatformProfileChangeRequestResult?>(null);
@@ -408,6 +490,8 @@ public sealed class ProfileApiContractTests
 
         public string? LastEmail { get; private set; }
 
+        public string? LastMfaRecoveryReason { get; private set; }
+
         public string? LastPassword { get; private set; }
 
         public string? LastVerificationCode { get; private set; }
@@ -416,6 +500,12 @@ public sealed class ProfileApiContractTests
         {
             LastUserId = userId;
             return await OnGet(userId, cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            LastUserId = userId;
+            return await OnGetMfaTimeline(userId, cancellationToken);
         }
 
         public async Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
@@ -446,6 +536,16 @@ public sealed class ProfileApiContractTests
             LastUserId = userId;
             LastEmail = newEmail;
             return await OnRequestEmailChange(userId, newEmail, cancellationToken);
+        }
+
+        public async Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
+            Guid userId,
+            string reason,
+            CancellationToken cancellationToken)
+        {
+            LastUserId = userId;
+            LastMfaRecoveryReason = reason;
+            return await OnRequestMfaRecovery(userId, reason, cancellationToken);
         }
 
         public async Task<PlatformProfileChangeRequestResult?> RequestPasswordChangeAsync(

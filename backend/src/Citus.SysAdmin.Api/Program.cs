@@ -392,6 +392,74 @@ control.MapGet(
     });
 
 control.MapGet(
+    "/mfa-recovery-requests",
+    async (
+        IPlatformGovernanceRepository governanceRepository,
+        CancellationToken cancellationToken) =>
+    {
+        var requests = await governanceRepository.ListOpenMfaRecoveryRequestsAsync(cancellationToken);
+        return Results.Ok(requests.Select(request => new Citus.Ui.Shared.Control.MfaRecoveryRequestSummary
+        {
+            RequestId = request.RequestId,
+            AccountId = request.AccountId,
+            DisplayName = request.DisplayName,
+            Email = request.Email,
+            Username = request.Username,
+            CurrentMfaMode = request.CurrentMfaMode,
+            Status = request.Status,
+            RequestReason = request.RequestReason,
+            RequestedAtUtc = request.RequestedAtUtc,
+            ReviewReason = request.ReviewReason,
+            ReviewedAtUtc = request.ReviewedAtUtc,
+            ReviewedByDisplayName = request.ReviewedByDisplayName,
+            ExecutionReason = request.ExecutionReason,
+            ExecutedAtUtc = request.ExecutedAtUtc,
+            ExecutedByDisplayName = request.ExecutedByDisplayName
+        }));
+    });
+
+control.MapGet(
+    "/accounts/{accountId:guid}/mfa-recovery-history",
+    async (
+        Guid accountId,
+        IPlatformGovernanceRepository governanceRepository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var requests = await governanceRepository.ListAccountMfaRecoveryHistoryAsync(accountId, limit ?? 10, cancellationToken);
+        return Results.Ok(requests.Select(request => new Citus.Ui.Shared.Control.MfaRecoveryRequestSummary
+        {
+            RequestId = request.RequestId,
+            AccountId = request.AccountId,
+            DisplayName = request.DisplayName,
+            Email = request.Email,
+            Username = request.Username,
+            CurrentMfaMode = request.CurrentMfaMode,
+            Status = request.Status,
+            RequestReason = request.RequestReason,
+            RequestedAtUtc = request.RequestedAtUtc,
+            ReviewReason = request.ReviewReason,
+            ReviewedAtUtc = request.ReviewedAtUtc,
+            ReviewedByDisplayName = request.ReviewedByDisplayName,
+            ExecutionReason = request.ExecutionReason,
+            ExecutedAtUtc = request.ExecutedAtUtc,
+            ExecutedByDisplayName = request.ExecutedByDisplayName
+        }));
+    });
+
+control.MapGet(
+    "/accounts/{accountId:guid}/mfa-timeline",
+    async (
+        Guid accountId,
+        IPlatformGovernanceRepository governanceRepository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var events = await governanceRepository.ListAccountMfaTimelineAsync(accountId, limit ?? 20, cancellationToken);
+        return Results.Ok(events.Select(ToPlatformMfaTimelineEntrySummary));
+    });
+
+control.MapGet(
     "/companies/{companyId:guid}/memberships",
     async (
         Guid companyId,
@@ -676,6 +744,73 @@ control.MapPost(
     });
 
 control.MapPut(
+    "/mfa-recovery-requests/{requestId:guid}/decision",
+    async (
+        Guid requestId,
+        HttpContext httpContext,
+        MfaRecoveryReviewRequest request,
+        IPlatformGovernanceRepository governanceRepository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await governanceRepository.ReviewMfaRecoveryRequestAsync(
+                requestId,
+                request.Decision,
+                request.Reason,
+                GetAuthenticatedSession(httpContext).SysAdminAccountId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new
+                {
+                    message = $"MFA recovery request '{requestId}' was not found."
+                })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+control.MapPost(
+    "/mfa-recovery-requests/{requestId:guid}/execute",
+    async (
+        Guid requestId,
+        HttpContext httpContext,
+        MfaRecoveryExecuteRequest request,
+        IPlatformGovernanceRepository governanceRepository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await governanceRepository.ExecuteMfaRecoveryRequestAsync(
+                requestId,
+                request.Reason,
+                GetAuthenticatedSession(httpContext).SysAdminAccountId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new
+                {
+                    message = $"MFA recovery request '{requestId}' was not found."
+                })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+control.MapPut(
     "/companies/{companyId:guid}/memberships/{membershipId:guid}/role",
     async (
         Guid companyId,
@@ -844,5 +979,17 @@ static PlatformAuditEventSummary ToPlatformAuditEventSummary(PlatformAuditEvent 
         Detail = auditEvent.Detail,
         Reason = auditEvent.Reason,
         Highlights = auditEvent.Highlights,
+        CreatedAtUtc = auditEvent.CreatedAtUtc
+    };
+
+static PlatformMfaTimelineEntrySummary ToPlatformMfaTimelineEntrySummary(PlatformAuditEvent auditEvent) =>
+    new()
+    {
+        Action = auditEvent.Action,
+        ActionLabel = auditEvent.ActionLabel,
+        Detail = auditEvent.Detail,
+        Reason = auditEvent.Reason,
+        ActorType = auditEvent.ActorType,
+        ActorDisplayName = auditEvent.ActorDisplayName,
         CreatedAtUtc = auditEvent.CreatedAtUtc
     };

@@ -10,7 +10,20 @@ public interface IPlatformGovernanceRepository
         int limit,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<PlatformAuditEvent>> ListAccountMfaTimelineAsync(
+        Guid accountId,
+        int limit,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<ManagedPlatformAccountSummary>> ListManagedUsersAsync(
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListOpenMfaRecoveryRequestsAsync(
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<MfaRecoveryRequestSummary>> ListAccountMfaRecoveryHistoryAsync(
+        Guid accountId,
+        int limit,
         CancellationToken cancellationToken);
 
     Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
@@ -36,6 +49,19 @@ public interface IPlatformGovernanceRepository
 
     Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
         Guid accountId,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken);
+
+    Task<MfaRecoveryReviewResult?> ReviewMfaRecoveryRequestAsync(
+        Guid requestId,
+        string decision,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken);
+
+    Task<MfaRecoveryExecutionResult?> ExecuteMfaRecoveryRequestAsync(
+        Guid requestId,
         string reason,
         Guid? sysAdminAccountId,
         CancellationToken cancellationToken);

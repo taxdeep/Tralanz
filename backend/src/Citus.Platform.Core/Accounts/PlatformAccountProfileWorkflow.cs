@@ -14,6 +14,12 @@ public sealed class PlatformAccountProfileWorkflow(
         return repository.GetAsync(userId, cancellationToken);
     }
 
+    public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        EnsureUserId(userId);
+        return repository.GetMfaTimelineAsync(userId, cancellationToken);
+    }
+
     public Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
         Guid userId,
         string displayName,
@@ -35,6 +41,18 @@ public sealed class PlatformAccountProfileWorkflow(
         return repository.SaveMfaModeAsync(
             userId,
             NormalizeMfaMode(mfaMode),
+            cancellationToken);
+    }
+
+    public Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
+        Guid userId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        EnsureUserId(userId);
+        return repository.RequestMfaRecoveryAsync(
+            userId,
+            NormalizeRecoveryReason(reason),
             cancellationToken);
     }
 
@@ -169,6 +187,22 @@ public sealed class PlatformAccountProfileWorkflow(
         if (normalized.Length != 6)
         {
             throw new InvalidOperationException("Verification code must be 6 characters.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeRecoveryReason(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new InvalidOperationException("Recovery reason is required.");
+        }
+
+        var normalized = reason.Trim();
+        if (normalized.Length > 400)
+        {
+            throw new InvalidOperationException("Recovery reason must be 400 characters or fewer.");
         }
 
         return normalized;

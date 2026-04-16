@@ -19,6 +19,13 @@ public sealed class PlatformProfileClient(
             "/api/platform/profile",
             cancellationToken);
 
+    public Task<WebShellAuthenticatedApiResult<IReadOnlyList<PlatformMfaTimelineEntry>>> GetMfaTimelineAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<IReadOnlyList<PlatformMfaTimelineEntry>>(
+            static request => request.Method = HttpMethod.Get,
+            "/api/platform/profile/mfa-timeline",
+            cancellationToken);
+
     public Task<WebShellAuthenticatedApiResult<NotificationReadinessSummary>> GetNotificationReadinessAsync(
         CancellationToken cancellationToken = default)
         => SendAsync<NotificationReadinessSummary>(
@@ -43,6 +50,15 @@ public sealed class PlatformProfileClient(
             "/api/platform/profile/mfa-mode",
             cancellationToken,
             new SaveMfaModeRequest(mfaMode));
+
+    public Task<WebShellAuthenticatedApiResult<PlatformMfaRecoveryRequestResult>> RequestMfaRecoveryAsync(
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PlatformMfaRecoveryRequestResult>(
+            request => request.Method = HttpMethod.Post,
+            "/api/platform/profile/mfa-recovery/request",
+            cancellationToken,
+            new RequestMfaRecoveryRequest(reason));
 
     public Task<WebShellAuthenticatedApiResult<PlatformProfileChangeRequestResult>> RequestEmailChangeAsync(
         string newEmail,
@@ -156,6 +172,8 @@ public sealed class PlatformProfileClient(
     private sealed record SaveDisplayNameRequest(string DisplayName);
 
     private sealed record SaveMfaModeRequest(string MfaMode);
+
+    private sealed record RequestMfaRecoveryRequest(string Reason);
 
     private sealed record RequestEmailChangeRequest(string NewEmail);
 

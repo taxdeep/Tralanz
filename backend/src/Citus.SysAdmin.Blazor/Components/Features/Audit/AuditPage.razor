@@ -1,6 +1,7 @@
 @page "/audit"
 
 @inject AppShellState ShellState
+@inject NavigationManager NavigationManager
 @inject ISnackbar Snackbar
 @inject SysAdminControlClient SysAdminControlClient
 
@@ -15,8 +16,106 @@
 
 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
     This timeline is the formal governance read model for company status, platform account status,
-    password reset requests, and company membership changes.
+    password reset requests, company membership changes, and account MFA governance.
 </MudAlert>
+
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Spacing="2">
+        <MudStack Spacing="1">
+            <MudText Typo="Typo.h6">Account MFA Timeline</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Review one platform account's MFA mode changes, recovery request/review/execute actions, and emergency resets from the formal audit trail.
+            </MudText>
+        </MudStack>
+
+        @if (_users.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No managed users are available for account-scoped MFA audit review yet.
+            </MudAlert>
+        }
+        else
+        {
+            <MudStack Row="true" Spacing="2" Class="align-end flex-wrap">
+                <MudSelect T="Guid?"
+                           Label="Select account"
+                           Value="_selectedTimelineAccountId"
+                           ValueChanged="OnSelectedTimelineAccountChangedAsync"
+                           Clearable="true"
+                           Dense="true"
+                           Style="min-width: 320px;">
+                    @foreach (var user in _users.OrderBy(static user => user.DisplayName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        <MudSelectItem T="Guid?" Value="@user.Id">@BuildUserOptionLabel(user)</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (_selectedTimelineUser is not null)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Default"
+                               Size="Size.Small"
+                               OnClick="ClearSelectedTimeline">
+                        Clear
+                    </MudButton>
+                }
+            </MudStack>
+
+            @if (_selectedTimelineUser is not null)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    @_selectedTimelineUser.DisplayName (@_selectedTimelineUser.Username | @_selectedTimelineUser.Email)
+                </MudText>
+            }
+
+            @if (_isTimelineLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+            }
+            else if (_selectedTimelineUser is not null && _selectedMfaTimeline.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    No MFA governance events have been recorded for this account yet.
+                </MudAlert>
+            }
+            else if (_selectedMfaTimeline.Count > 0)
+            {
+                <div style="display:grid;gap:0.75rem;">
+                    @foreach (var entry in _selectedMfaTimeline)
+                    {
+                        <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                                <div style="display:grid;gap:0.35rem;">
+                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                                        <MudChip T="string"
+                                                 Variant="Variant.Outlined"
+                                                 Color="@GetMfaTimelineColor(entry.Action)">
+                                            @entry.ActionLabel
+                                        </MudChip>
+                                        <MudChip T="string" Variant="Variant.Text" Color="Color.Default">
+                                            @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
+                                        </MudChip>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(entry.Detail))
+                                    {
+                                        <MudText Typo="Typo.body2">@entry.Detail</MudText>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                    {
+                                        <MudText Typo="Typo.caption" Class="text-secondary">Reason: @entry.Reason</MudText>
+                                    }
+                                </div>
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    @entry.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")
+                                </MudText>
+                            </div>
+                        </MudPaper>
+                    }
+                </div>
+            }
+        }
+    </MudStack>
+</MudPaper>
 
 @if (_events.Count == 0)
 {
@@ -103,19 +202,38 @@ else
 
 @code
 {
+    [SupplyParameterFromQuery(Name = "accountId")]
+    public Guid? AccountId { get; set; }
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Operations",
         Title = "Audit",
-        Subtitle = "Review company, account, password-reset, and membership governance actions."
+        Subtitle = "Review company, account, password-reset, membership, and MFA governance actions."
     };
 
     private bool _isLoading = true;
     private IReadOnlyList<PlatformAuditEventSummary> _events = Array.Empty<PlatformAuditEventSummary>();
+    private IReadOnlyList<ManagedUserSummary> _users = Array.Empty<ManagedUserSummary>();
+    private Guid? _selectedTimelineAccountId;
+    private ManagedUserSummary? _selectedTimelineUser;
+    private IReadOnlyList<PlatformMfaTimelineEntrySummary> _selectedMfaTimeline = Array.Empty<PlatformMfaTimelineEntrySummary>();
+    private bool _isTimelineLoading;
+    private Guid? _lastAppliedQueryAccountId;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_isLoading &&
+            _users.Count > 0 &&
+            _lastAppliedQueryAccountId != AccountId)
+        {
+            await ApplySelectedAccountAsync(AccountId, updateQuery: false);
+        }
     }
 
     private async Task LoadAsync()
@@ -124,7 +242,14 @@ else
 
         try
         {
-            _events = await SysAdminControlClient.ListRecentAuditEventsAsync();
+            var eventsTask = SysAdminControlClient.ListRecentAuditEventsAsync();
+            var usersTask = SysAdminControlClient.ListUsersAsync();
+
+            await Task.WhenAll(eventsTask, usersTask);
+
+            _events = await eventsTask;
+            _users = await usersTask;
+            await ApplySelectedAccountAsync(AccountId, updateQuery: false);
         }
         catch (Exception ex)
         {
@@ -135,6 +260,66 @@ else
             _isLoading = false;
         }
     }
+
+    private async Task OnSelectedTimelineAccountChangedAsync(Guid? accountId)
+    {
+        await ApplySelectedAccountAsync(accountId, updateQuery: true);
+    }
+
+    private async Task ApplySelectedAccountAsync(Guid? accountId, bool updateQuery)
+    {
+        _selectedTimelineAccountId = accountId;
+        _lastAppliedQueryAccountId = accountId;
+
+        if (updateQuery)
+        {
+            NavigationManager.NavigateTo(
+                accountId.HasValue ? $"audit?accountId={accountId.Value}" : "audit",
+                replace: true);
+        }
+
+        if (!accountId.HasValue)
+        {
+            ClearSelectedTimeline();
+            return;
+        }
+
+        _selectedTimelineUser = _users.FirstOrDefault(user => user.Id == accountId.Value);
+
+        if (_selectedTimelineUser is null)
+        {
+            _selectedMfaTimeline = Array.Empty<PlatformMfaTimelineEntrySummary>();
+            return;
+        }
+
+        _isTimelineLoading = true;
+        _selectedMfaTimeline = Array.Empty<PlatformMfaTimelineEntrySummary>();
+
+        try
+        {
+            _selectedMfaTimeline = await SysAdminControlClient.ListAccountMfaTimelineAsync(accountId.Value);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unable to load MFA timeline. {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _isTimelineLoading = false;
+        }
+    }
+
+    private void ClearSelectedTimeline()
+    {
+        _selectedTimelineAccountId = null;
+        _lastAppliedQueryAccountId = null;
+        _selectedTimelineUser = null;
+        _selectedMfaTimeline = Array.Empty<PlatformMfaTimelineEntrySummary>();
+        _isTimelineLoading = false;
+    }
+
+    private static string BuildUserOptionLabel(ManagedUserSummary user) =>
+        $"{user.DisplayName} ({user.Username} | {user.Email})";
 
     private static Color GetActionColor(string action) =>
         action switch
@@ -148,6 +333,18 @@ else
             "membership_permissions_saved" => Color.Primary,
             "sysadmin_first_account_created" => Color.Info,
             "sysadmin_password_rotated" => Color.Warning,
+            _ => Color.Default
+        };
+
+    private static Color GetMfaTimelineColor(string? action) =>
+        action switch
+        {
+            "profile_mfa_mode_saved" => Color.Primary,
+            "account_mfa_recovery_requested" => Color.Warning,
+            "account_mfa_recovery_approved" => Color.Success,
+            "account_mfa_recovery_rejected" => Color.Error,
+            "account_mfa_recovery_executed" => Color.Secondary,
+            "account_mfa_reset" => Color.Warning,
             _ => Color.Default
         };
 

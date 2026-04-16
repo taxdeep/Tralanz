@@ -11,8 +11,10 @@ public static class PlatformProfileApi
         var profile = endpoints.MapGroup("/api/platform/profile");
 
         profile.MapGet(string.Empty, GetAsync);
+        profile.MapGet("/mfa-timeline", GetMfaTimelineAsync);
         profile.MapPut("/display-name", SaveDisplayNameAsync);
         profile.MapPut("/mfa-mode", SaveMfaModeAsync);
+        profile.MapPost("/mfa-recovery/request", RequestMfaRecoveryAsync);
         profile.MapPost("/email-change/request", RequestEmailChangeAsync);
         profile.MapPost("/email-change/confirm", ConfirmEmailChangeAsync);
         profile.MapPost("/password-change/request", RequestPasswordChangeAsync);
@@ -44,6 +46,17 @@ public static class PlatformProfileApi
             (userId, token) => workflow.SaveDisplayNameAsync(userId, request.DisplayName, token),
             cancellationToken);
 
+    private static Task<IResult> GetMfaTimelineAsync(
+        HttpContext httpContext,
+        IPlatformBusinessSessionRepository businessSessions,
+        IPlatformAccountProfileWorkflow workflow,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            httpContext,
+            businessSessions,
+            async (userId, token) => (IReadOnlyList<PlatformMfaTimelineEntry>?)await workflow.GetMfaTimelineAsync(userId, token),
+            cancellationToken);
+
     private static Task<IResult> SaveMfaModeAsync(
         SaveMfaModeRequest request,
         HttpContext httpContext,
@@ -66,6 +79,18 @@ public static class PlatformProfileApi
             httpContext,
             businessSessions,
             (userId, token) => workflow.RequestEmailChangeAsync(userId, request.NewEmail, token),
+            cancellationToken);
+
+    private static Task<IResult> RequestMfaRecoveryAsync(
+        RequestMfaRecoveryRequest request,
+        HttpContext httpContext,
+        IPlatformBusinessSessionRepository businessSessions,
+        IPlatformAccountProfileWorkflow workflow,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            httpContext,
+            businessSessions,
+            (userId, token) => workflow.RequestMfaRecoveryAsync(userId, request.Reason, token),
             cancellationToken);
 
     private static Task<IResult> ConfirmEmailChangeAsync(
@@ -143,6 +168,8 @@ public static class PlatformProfileApi
     private sealed record SaveMfaModeRequest(string MfaMode);
 
     private sealed record RequestEmailChangeRequest(string NewEmail);
+
+    private sealed record RequestMfaRecoveryRequest(string Reason);
 
     private sealed record ConfirmEmailChangeRequest(string VerificationCode);
 

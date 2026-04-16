@@ -57,6 +57,17 @@ public sealed class PlatformAccountProfileWorkflowTests
     }
 
     [Fact]
+    public async Task RequestMfaRecoveryNormalizesReasonBeforePersisting()
+    {
+        var repository = new InMemoryPlatformAccountProfileRepository();
+        var workflow = new PlatformAccountProfileWorkflow(repository, new SysAdminPasswordHasher());
+
+        await workflow.RequestMfaRecoveryAsync(UserId, "  Lost access to the mailbox device used for MFA.  ", CancellationToken.None);
+
+        Assert.Equal("Lost access to the mailbox device used for MFA.", repository.RequestedMfaRecoveryReason);
+    }
+
+    [Fact]
     public async Task ConfirmEmailChangeNormalizesVerificationCode()
     {
         var repository = new InMemoryPlatformAccountProfileRepository();
@@ -77,10 +88,15 @@ public sealed class PlatformAccountProfileWorkflowTests
 
         public string? SavedMfaMode { get; private set; }
 
+        public string? RequestedMfaRecoveryReason { get; private set; }
+
         public string? ConfirmedEmailChangeCode { get; private set; }
 
         public Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken) =>
             Task.FromResult<PlatformAccountProfileSummary?>(new PlatformAccountProfileSummary { UserId = userId });
+
+        public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<PlatformMfaTimelineEntry>>(Array.Empty<PlatformMfaTimelineEntry>());
 
         public Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
             Guid userId,
@@ -98,6 +114,22 @@ public sealed class PlatformAccountProfileWorkflowTests
         {
             SavedMfaMode = mfaMode;
             return Task.FromResult<PlatformAccountProfileSummary?>(new PlatformAccountProfileSummary { UserId = userId, MfaMode = mfaMode });
+        }
+
+        public Task<PlatformMfaRecoveryRequestResult?> RequestMfaRecoveryAsync(
+            Guid userId,
+            string reason,
+            CancellationToken cancellationToken)
+        {
+            RequestedMfaRecoveryReason = reason;
+            return Task.FromResult<PlatformMfaRecoveryRequestResult?>(new PlatformMfaRecoveryRequestResult
+            {
+                RequestId = Guid.NewGuid(),
+                Status = "requested",
+                Reason = reason,
+                RequestedAtUtc = DateTimeOffset.UtcNow,
+                Profile = new PlatformAccountProfileSummary { UserId = userId, MfaMode = "email_code" }
+            });
         }
 
         public Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
