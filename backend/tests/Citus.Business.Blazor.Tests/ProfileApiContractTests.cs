@@ -35,7 +35,13 @@ public sealed class ProfileApiContractTests
         var userId = Guid.Parse("71428232-81ae-4f76-87cb-bdc7fd6bbc16");
         factory.BusinessSessions.ValidateResult = CreateSession(userId);
         factory.Workflow.OnGet = static (actorUserId, _) =>
-            Task.FromResult<PlatformAccountProfileSummary?>(CreateProfile(actorUserId, displayName: "Morgan Hale"));
+            Task.FromResult<PlatformAccountProfileSummary?>(
+                CreateProfile(
+                    actorUserId,
+                    displayName: "Morgan Hale",
+                    lastMfaResetAtUtc: new DateTimeOffset(2026, 4, 16, 23, 45, 0, TimeSpan.Zero),
+                    lastMfaResetReason: "Operator recovery reset",
+                    lastMfaResetByDisplayName: "Platform Operator"));
 
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-21");
@@ -51,6 +57,8 @@ public sealed class ProfileApiContractTests
         Assert.Equal(userId, factory.Workflow.LastUserId);
         Assert.Equal(userId, profile!.UserId);
         Assert.Equal("Morgan Hale", profile.DisplayName);
+        Assert.Equal("Operator recovery reset", profile.LastMfaResetReason);
+        Assert.Equal("Platform Operator", profile.LastMfaResetByDisplayName);
     }
 
     [Fact]
@@ -314,7 +322,10 @@ public sealed class ProfileApiContractTests
         string email = "taylor.rowan@example.com",
         string mfaMode = "none",
         DateTimeOffset? lastMfaModeChangedAtUtc = null,
-        string previousMfaMode = "") =>
+        string previousMfaMode = "",
+        DateTimeOffset? lastMfaResetAtUtc = null,
+        string lastMfaResetReason = "",
+        string lastMfaResetByDisplayName = "") =>
         new()
         {
             UserId = userId,
@@ -326,6 +337,9 @@ public sealed class ProfileApiContractTests
             MfaMode = mfaMode,
             LastMfaModeChangedAtUtc = lastMfaModeChangedAtUtc,
             PreviousMfaMode = previousMfaMode,
+            LastMfaResetAtUtc = lastMfaResetAtUtc,
+            LastMfaResetReason = lastMfaResetReason,
+            LastMfaResetByDisplayName = lastMfaResetByDisplayName,
             NotificationVerificationReady = true,
             NotificationBlockingReason = string.Empty
         };

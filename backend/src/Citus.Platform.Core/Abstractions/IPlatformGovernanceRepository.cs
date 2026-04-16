@@ -10,6 +10,9 @@ public interface IPlatformGovernanceRepository
         int limit,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ManagedPlatformAccountSummary>> ListManagedUsersAsync(
+        CancellationToken cancellationToken);
+
     Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
         Guid companyId,
         string status,

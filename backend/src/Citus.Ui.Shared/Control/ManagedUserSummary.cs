@@ -14,7 +14,20 @@ public sealed record class ManagedUserSummary
 
     public bool IsSysAdmin { get; init; }
 
+    public string MfaMode { get; init; } = "none";
+
+    public DateTimeOffset? LastMfaResetAtUtc { get; init; }
+
+    public string LastMfaResetReason { get; init; } = string.Empty;
+
     public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> CompanyCodes { get; init; } = Array.Empty<string>();
+
+    public string MfaModeLabel =>
+        MfaMode.Trim().ToLowerInvariant() switch
+        {
+            "email_code" => "Email code",
+            _ => "Disabled"
+        };
 }

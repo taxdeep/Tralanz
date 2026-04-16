@@ -20,6 +20,12 @@ public sealed record class PlatformAccountProfileSummary
 
     public string PreviousMfaMode { get; init; } = string.Empty;
 
+    public DateTimeOffset? LastMfaResetAtUtc { get; init; }
+
+    public string LastMfaResetReason { get; init; } = string.Empty;
+
+    public string LastMfaResetByDisplayName { get; init; } = string.Empty;
+
     public bool NotificationVerificationReady { get; init; }
 
     public string NotificationBlockingReason { get; init; } = string.Empty;
@@ -59,4 +65,6 @@ public sealed record class PlatformAccountProfileSummary
     public bool HasPendingPasswordChange =>
         !string.IsNullOrWhiteSpace(PendingPasswordChangeMaskedDestination) &&
         PendingPasswordChangeExpiresAtUtc.HasValue;
+
+    public bool HasRecordedMfaReset => LastMfaResetAtUtc.HasValue;
 }

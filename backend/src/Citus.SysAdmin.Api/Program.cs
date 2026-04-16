@@ -362,7 +362,34 @@ control.MapGet(
 
 control.MapGet(
     "/users",
-    (SysAdminControlState state) => Results.Ok(state.GetUsers()));
+    async (
+        SysAdminControlState state,
+        IPlatformGovernanceRepository governanceRepository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var users = await governanceRepository.ListManagedUsersAsync(cancellationToken);
+            return Results.Ok(users.Select(user => new ManagedUserSummary
+            {
+                Id = user.AccountId,
+                DisplayName = user.DisplayName,
+                Email = user.Email,
+                Username = user.Username,
+                IsActive = string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase),
+                IsSysAdmin = false,
+                MfaMode = user.MfaMode,
+                LastMfaResetAtUtc = user.LastMfaResetAtUtc,
+                LastMfaResetReason = user.LastMfaResetReason,
+                Roles = Array.Empty<string>(),
+                CompanyCodes = user.CompanyCodes
+            }));
+        }
+        catch
+        {
+            return Results.Ok(state.GetUsers());
+        }
+    });
 
 control.MapGet(
     "/companies/{companyId:guid}/memberships",

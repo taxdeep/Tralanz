@@ -372,6 +372,56 @@ public sealed class SysAdminNotificationReadinessApiContractTests
     }
 
     [Fact]
+    public async Task ListUsers_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/control/users");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(0, factory.GovernanceRepository.ListManagedUsersCallCount);
+    }
+
+    [Fact]
+    public async Task ListUsers_ReturnsManagedUserReadModel_WhenAuthenticated()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        factory.GovernanceRepository.OnListManagedUsers = static _ =>
+            Task.FromResult<IReadOnlyList<ManagedPlatformAccountSummary>>(
+            [
+                new ManagedPlatformAccountSummary
+                {
+                    AccountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0"),
+                    DisplayName = "Morgan Hale",
+                    Email = "user@example.com",
+                    Username = "user.one",
+                    Status = "active",
+                    MfaMode = "email_code",
+                    LastMfaResetAtUtc = new DateTimeOffset(2026, 4, 16, 23, 30, 0, TimeSpan.Zero),
+                    LastMfaResetReason = "Operator recovery reset",
+                    CompanyCodes = ["EN202600000123"]
+                }
+            ]);
+
+        var response = await client.GetAsync("/control/users");
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<IReadOnlyList<ManagedUserSummary>>();
+
+        Assert.NotNull(payload);
+        Assert.Single(payload!);
+        Assert.Equal(1, factory.GovernanceRepository.ListManagedUsersCallCount);
+        Assert.Equal("Morgan Hale", payload[0].DisplayName);
+        Assert.Equal("email_code", payload[0].MfaMode);
+        Assert.Equal("Operator recovery reset", payload[0].LastMfaResetReason);
+    }
+
+    [Fact]
     public async Task ListAuditEvents_ReturnsUnauthorized_WhenSessionHeaderMissing()
     {
         using var factory = new SysAdminNotificationApiApplicationFactory();
@@ -1044,6 +1094,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
     private sealed class FakePlatformGovernanceRepository : IPlatformGovernanceRepository
     {
+        public Func<CancellationToken, Task<IReadOnlyList<ManagedPlatformAccountSummary>>> OnListManagedUsers { get; set; } =
+            static _ => Task.FromResult<IReadOnlyList<ManagedPlatformAccountSummary>>(Array.Empty<ManagedPlatformAccountSummary>());
+
         public Func<int, CancellationToken, Task<IReadOnlyList<PlatformAuditEvent>>> OnListRecentAuditEvents { get; set; } =
             static (_, _) => Task.FromResult<IReadOnlyList<PlatformAuditEvent>>(Array.Empty<PlatformAuditEvent>());
 
@@ -1091,7 +1144,15 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public Guid? LastMfaResetSysAdminAccountId { get; private set; }
 
+        public int ListManagedUsersCallCount { get; private set; }
+
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<ManagedPlatformAccountSummary>> ListManagedUsersAsync(CancellationToken cancellationToken)
+        {
+            ListManagedUsersCallCount++;
+            return OnListManagedUsers(cancellationToken);
+        }
 
         public Task<IReadOnlyList<PlatformAuditEvent>> ListRecentAuditEventsAsync(
             int limit,

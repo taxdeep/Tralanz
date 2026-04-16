@@ -243,6 +243,59 @@ public sealed class PostgresPlatformGovernanceRepository(
         return events;
     }
 
+    public async Task<IReadOnlyList<ManagedPlatformAccountSummary>> ListManagedUsersAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              u.id,
+              coalesce(nullif(u.display_name, ''), nullif(u.username, ''), u.email) as display_name,
+              u.email,
+              coalesce(nullif(u.username, ''), u.email) as username,
+              u.status,
+              u.mfa_mode,
+              coalesce(memberships.company_codes, '') as company_codes,
+              mfa_reset.created_at as last_mfa_reset_at_utc,
+              coalesce(mfa_reset.reason, '') as last_mfa_reset_reason
+            from users u
+            left join lateral (
+              select string_agg(distinct coalesce(c.entity_number, ''), ',' order by coalesce(c.entity_number, '')) as company_codes
+              from company_memberships m
+              left join companies c on c.id = m.company_id
+              where m.user_id = u.id
+                and m.is_active = true
+            ) memberships on true
+            left join lateral (
+              select
+                created_at,
+                coalesce(payload ->> 'reason', '') as reason
+              from audit_logs
+              where entity_type = 'platform_account'
+                and entity_id = u.id
+                and action = 'account_mfa_reset'
+              order by created_at desc
+              limit 1
+            ) mfa_reset on true
+            order by
+              coalesce(nullif(u.display_name, ''), nullif(u.username, ''), u.email),
+              u.email;
+            """;
+
+        var users = new List<ManagedPlatformAccountSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            users.Add(ReadManagedUserSummary(reader));
+        }
+
+        return users;
+    }
+
     public async Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
         Guid companyId,
         string status,
@@ -746,6 +799,28 @@ public sealed class PostgresPlatformGovernanceRepository(
             reader.GetString(reader.GetOrdinal("username")).Trim(),
             reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
             NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))));
+    }
+
+    private static ManagedPlatformAccountSummary ReadManagedUserSummary(NpgsqlDataReader reader)
+    {
+        var companyCodes = reader.GetString(reader.GetOrdinal("company_codes"))
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var status = reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant();
+
+        return new ManagedPlatformAccountSummary
+        {
+            AccountId = reader.GetGuid(reader.GetOrdinal("id")),
+            DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
+            Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
+            Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
+            Status = status,
+            MfaMode = NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))),
+            LastMfaResetAtUtc = reader.IsDBNull(reader.GetOrdinal("last_mfa_reset_at_utc"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("last_mfa_reset_at_utc"))),
+            LastMfaResetReason = reader.GetString(reader.GetOrdinal("last_mfa_reset_reason")).Trim(),
+            CompanyCodes = companyCodes
+        };
     }
 
     private static async Task<int> RevokeActiveMfaChallengesAsync(

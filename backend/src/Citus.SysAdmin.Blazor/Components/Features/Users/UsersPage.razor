@@ -36,6 +36,7 @@ else
             <HeaderContent>
                 <MudTh>User</MudTh>
                 <MudTh>Status</MudTh>
+                <MudTh>MFA</MudTh>
                 <MudTh>System Role</MudTh>
                 <MudTh>Platform Roles</MudTh>
                 <MudTh>Companies</MudTh>
@@ -52,6 +53,25 @@ else
                              Color="@(context.IsActive ? Color.Success : Color.Default)">
                         @(context.IsActive ? "Active" : "Disabled")
                     </MudChip>
+                </MudTd>
+                <MudTd DataLabel="MFA">
+                    <MudStack Spacing="0">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@(string.Equals(context.MfaMode, "none", StringComparison.OrdinalIgnoreCase) ? Color.Default : Color.Info)">
+                            @context.MfaModeLabel
+                        </MudChip>
+                        @if (context.LastMfaResetAtUtc.HasValue)
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                Reset @context.LastMfaResetAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(context.LastMfaResetReason))
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.LastMfaResetReason</MudText>
+                            }
+                        }
+                    </MudStack>
                 </MudTd>
                 <MudTd DataLabel="System Role">
                     <MudChip T="string"
@@ -367,6 +387,7 @@ else
                 return;
             }
 
+            _users = await SysAdminControlClient.ListUsersAsync();
             Snackbar.Add($"MFA reset applied for {user.Username}.", Severity.Success);
         }
         finally

@@ -656,6 +656,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             MfaMode = NormalizeMfaMode(record.MfaMode),
             LastMfaModeChangedAtUtc = record.LastMfaModeChangedAtUtc,
             PreviousMfaMode = NormalizeMfaMode(record.PreviousMfaMode),
+            LastMfaResetAtUtc = record.LastMfaResetAtUtc,
+            LastMfaResetReason = record.LastMfaResetReason,
+            LastMfaResetByDisplayName = record.LastMfaResetByDisplayName,
             NotificationVerificationReady = notificationReady,
             NotificationBlockingReason = blockingReason,
             PendingEmailChangeMaskedDestination = string.IsNullOrWhiteSpace(record.PendingEmailChangeDestination)
@@ -1040,6 +1043,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               u.mfa_mode,
               mfa_change.previous_mfa_mode,
               mfa_change.created_at as last_mfa_mode_changed_at,
+              mfa_reset.created_at as last_mfa_reset_at,
+              coalesce(mfa_reset.reason, '') as last_mfa_reset_reason,
+              coalesce(mfa_reset.actor_display_name, '') as last_mfa_reset_by_display_name,
               email_change.destination as pending_email_change_destination,
               email_change.expires_at as pending_email_change_expires_at,
               password_change.destination as pending_password_change_destination,
@@ -1056,6 +1062,20 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               order by created_at desc
               limit 1
             ) mfa_change on true
+            left join lateral (
+              select
+                al.created_at,
+                coalesce(al.payload ->> 'reason', '') as reason,
+                coalesce(sa.display_name, sa.email, 'SysAdmin') as actor_display_name
+              from audit_logs al
+              left join sysadmin_accounts sa on sa.id = al.actor_id
+              where al.entity_type = 'platform_account'
+                and al.entity_id = u.id
+                and al.action = 'account_mfa_reset'
+                and al.actor_type = 'sysadmin'
+              order by al.created_at desc
+              limit 1
+            ) mfa_reset on true
             left join lateral (
               select destination, expires_at
               from account_verification_codes
@@ -1102,6 +1122,15 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             reader.IsDBNull(reader.GetOrdinal("previous_mfa_mode"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("previous_mfa_mode")).Trim(),
+            reader.IsDBNull(reader.GetOrdinal("last_mfa_reset_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("last_mfa_reset_at"))),
+            reader.IsDBNull(reader.GetOrdinal("last_mfa_reset_reason"))
+                ? string.Empty
+                : reader.GetString(reader.GetOrdinal("last_mfa_reset_reason")).Trim(),
+            reader.IsDBNull(reader.GetOrdinal("last_mfa_reset_by_display_name"))
+                ? string.Empty
+                : reader.GetString(reader.GetOrdinal("last_mfa_reset_by_display_name")).Trim(),
             reader.IsDBNull(reader.GetOrdinal("pending_email_change_destination"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("pending_email_change_destination")).Trim(),
@@ -1268,6 +1297,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string MfaMode,
         DateTimeOffset? LastMfaModeChangedAtUtc,
         string PreviousMfaMode,
+        DateTimeOffset? LastMfaResetAtUtc,
+        string LastMfaResetReason,
+        string LastMfaResetByDisplayName,
         string PendingEmailChangeDestination,
         DateTimeOffset? PendingEmailChangeExpiresAtUtc,
         string PendingPasswordChangeDestination,

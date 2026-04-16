@@ -204,6 +204,20 @@
                             at @_profile.LastMfaModeChangedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
                         </MudAlert>
                     }
+                    @if (_profile.HasRecordedMfaReset)
+                    {
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                            Most recent MFA reset:
+                            @(!string.IsNullOrWhiteSpace(_profile.LastMfaResetByDisplayName)
+                                ? $"{_profile.LastMfaResetByDisplayName} reset MFA"
+                                : "A SysAdmin operator reset MFA")
+                            at @_profile.LastMfaResetAtUtc!.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            @if (!string.IsNullOrWhiteSpace(_profile.LastMfaResetReason))
+                            {
+                                <span> Reason: @_profile.LastMfaResetReason</span>
+                            }
+                        </MudAlert>
+                    }
                 }
                 @if (!string.IsNullOrWhiteSpace(MfaBlockingReason))
                 {
