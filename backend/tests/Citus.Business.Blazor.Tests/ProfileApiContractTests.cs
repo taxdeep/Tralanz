@@ -312,7 +312,9 @@ public sealed class ProfileApiContractTests
         Guid userId,
         string displayName = "Taylor Rowan",
         string email = "taylor.rowan@example.com",
-        string mfaMode = "none") =>
+        string mfaMode = "none",
+        DateTimeOffset? lastMfaModeChangedAtUtc = null,
+        string previousMfaMode = "") =>
         new()
         {
             UserId = userId,
@@ -322,6 +324,8 @@ public sealed class ProfileApiContractTests
             Status = "active",
             EmailVerifiedAtUtc = new DateTimeOffset(2026, 4, 10, 8, 0, 0, TimeSpan.Zero),
             MfaMode = mfaMode,
+            LastMfaModeChangedAtUtc = lastMfaModeChangedAtUtc,
+            PreviousMfaMode = previousMfaMode,
             NotificationVerificationReady = true,
             NotificationBlockingReason = string.Empty
         };

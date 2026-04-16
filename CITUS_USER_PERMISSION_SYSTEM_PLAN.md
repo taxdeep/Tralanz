@@ -821,3 +821,4 @@ Checkpoint summary (2026-04-16):
 
 - Platform-owned profile now surfaces and governs `mfa_mode` for the current account through the same authenticated business-session contract as other profile actions. The first supported modes are `none` and `email_code`.
 - MFA enablement is now constrained at the platform profile boundary as well as the sign-in boundary: enabling email_code requires a verified email address plus verified notification readiness, and the interactive Profile page now makes those prerequisites visible before the user saves the mode.
+- Platform profile now also surfaces the most recent MFA mode-change audit timestamp and previous mode, so MFA governance is not just configurable but visibly traceable to the current account owner.

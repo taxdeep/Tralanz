@@ -654,6 +654,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             Status = record.Status,
             EmailVerifiedAtUtc = record.EmailVerifiedAtUtc,
             MfaMode = NormalizeMfaMode(record.MfaMode),
+            LastMfaModeChangedAtUtc = record.LastMfaModeChangedAtUtc,
+            PreviousMfaMode = NormalizeMfaMode(record.PreviousMfaMode),
             NotificationVerificationReady = notificationReady,
             NotificationBlockingReason = blockingReason,
             PendingEmailChangeMaskedDestination = string.IsNullOrWhiteSpace(record.PendingEmailChangeDestination)
@@ -1036,11 +1038,24 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               u.status,
               u.email_verified_at,
               u.mfa_mode,
+              mfa_change.previous_mfa_mode,
+              mfa_change.created_at as last_mfa_mode_changed_at,
               email_change.destination as pending_email_change_destination,
               email_change.expires_at as pending_email_change_expires_at,
               password_change.destination as pending_password_change_destination,
               password_change.expires_at as pending_password_change_expires_at
             from users u
+            left join lateral (
+              select
+                payload ->> 'previous_mfa_mode' as previous_mfa_mode,
+                created_at
+              from audit_logs
+              where entity_type = 'platform_account'
+                and entity_id = u.id
+                and action = 'profile_mfa_mode_saved'
+              order by created_at desc
+              limit 1
+            ) mfa_change on true
             left join lateral (
               select destination, expires_at
               from account_verification_codes
@@ -1081,6 +1096,12 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                 ? null
                 : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("email_verified_at"))),
             NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))),
+            reader.IsDBNull(reader.GetOrdinal("last_mfa_mode_changed_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("last_mfa_mode_changed_at"))),
+            reader.IsDBNull(reader.GetOrdinal("previous_mfa_mode"))
+                ? string.Empty
+                : reader.GetString(reader.GetOrdinal("previous_mfa_mode")).Trim(),
             reader.IsDBNull(reader.GetOrdinal("pending_email_change_destination"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("pending_email_change_destination")).Trim(),
@@ -1245,6 +1266,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string Status,
         DateTimeOffset? EmailVerifiedAtUtc,
         string MfaMode,
+        DateTimeOffset? LastMfaModeChangedAtUtc,
+        string PreviousMfaMode,
         string PendingEmailChangeDestination,
         DateTimeOffset? PendingEmailChangeExpiresAtUtc,
         string PendingPasswordChangeDestination,

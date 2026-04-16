@@ -16,6 +16,10 @@ public sealed record class PlatformAccountProfileSummary
 
     public string MfaMode { get; init; } = "none";
 
+    public DateTimeOffset? LastMfaModeChangedAtUtc { get; init; }
+
+    public string PreviousMfaMode { get; init; } = string.Empty;
+
     public bool NotificationVerificationReady { get; init; }
 
     public string NotificationBlockingReason { get; init; } = string.Empty;
@@ -38,6 +42,14 @@ public sealed record class PlatformAccountProfileSummary
         {
             "email_code" => "Email verification code",
             _ => "Disabled"
+        };
+
+    public string PreviousMfaModeLabel =>
+        PreviousMfaMode.Trim().ToLowerInvariant() switch
+        {
+            "email_code" => "Email verification code",
+            "none" => "Disabled",
+            _ => string.Empty
         };
 
     public bool HasPendingEmailChange =>

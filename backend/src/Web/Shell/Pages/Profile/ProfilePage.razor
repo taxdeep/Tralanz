@@ -194,6 +194,16 @@
                             @(_profile.NotificationVerificationReady ? "Verification Delivery Ready" : "Verification Delivery Blocked")
                         </MudChip>
                     </div>
+                    @if (_profile.LastMfaModeChangedAtUtc.HasValue)
+                    {
+                        <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                            Most recent MFA mode change:
+                            @(!string.IsNullOrWhiteSpace(_profile.PreviousMfaModeLabel)
+                                ? $"{_profile.PreviousMfaModeLabel} -> {_profile.MfaModeLabel}"
+                                : _profile.MfaModeLabel)
+                            at @_profile.LastMfaModeChangedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                        </MudAlert>
+                    }
                 }
                 @if (!string.IsNullOrWhiteSpace(MfaBlockingReason))
                 {
