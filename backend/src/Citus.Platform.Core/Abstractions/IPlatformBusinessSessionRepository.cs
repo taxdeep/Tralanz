@@ -23,6 +23,14 @@ public interface IPlatformBusinessSessionRepository
         Guid activeCompanyId,
         CancellationToken cancellationToken);
 
+    Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(
+        Guid challengeId,
+        string verificationCode,
+        TimeSpan sessionLifetime,
+        string? remoteIp,
+        string? userAgent,
+        CancellationToken cancellationToken);
+
     Task RevokeSessionAsync(
         string sessionToken,
         CancellationToken cancellationToken);

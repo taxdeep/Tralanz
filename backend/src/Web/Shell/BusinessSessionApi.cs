@@ -17,6 +17,7 @@ public static class BusinessSessionApi
         var sessions = endpoints.MapGroup("/api/business/session");
 
         sessions.MapPost("/sign-in", SignInAsync);
+        sessions.MapPost("/mfa/complete", CompleteSecondFactorAsync);
         sessions.MapGet(string.Empty, GetSessionAsync);
         sessions.MapGet("/context", GetContextAsync);
         sessions.MapPut("/active-company", SwitchActiveCompanyAsync);
@@ -81,6 +82,32 @@ public static class BusinessSessionApi
             includeSessionToken: false);
     }
 
+    private static async Task<IResult> CompleteSecondFactorAsync(
+        CompleteSecondFactorRequest request,
+        HttpContext httpContext,
+        IOptions<WebShellAppHostOptions> options,
+        IPlatformBusinessSessionRepository repository,
+        ICompanySessionContextWorkflow workflow,
+        IPlatformRuntimeStateRepository runtimeStateRepository,
+        CancellationToken cancellationToken)
+    {
+        var result = await repository.CompleteSecondFactorAsync(
+            request.ChallengeId,
+            request.VerificationCode,
+            TimeSpan.FromHours(Math.Max(options.Value.BusinessSessionHours, 1)),
+            httpContext.Connection.RemoteIpAddress?.ToString(),
+            httpContext.Request.Headers.UserAgent.ToString(),
+            cancellationToken);
+
+        return await ToAuthResultAsync(
+            result,
+            repository,
+            workflow,
+            runtimeStateRepository,
+            cancellationToken,
+            includeSessionToken: true);
+    }
+
     private static async Task<IResult> GetContextAsync(
         HttpContext httpContext,
         IPlatformBusinessSessionRepository repository,
@@ -97,6 +124,20 @@ public static class BusinessSessionApi
         if (!result.Succeeded)
         {
             return ToFailureResult(result);
+        }
+
+        if (result.RequiresSecondFactor)
+        {
+            return Results.Ok(new WebShellBusinessSignInResponse
+            {
+                AuthenticationStage = string.IsNullOrWhiteSpace(result.AuthenticationStage)
+                    ? "challenge_required"
+                    : result.AuthenticationStage,
+                RequiresSecondFactor = true,
+                MfaChallengeId = result.MfaChallengeId?.ToString("D"),
+                MfaChallengeExpiresAtUtc = result.MfaChallengeExpiresAtUtc,
+                AvailableSecondFactors = result.AvailableSecondFactors
+            });
         }
 
         var context = await BuildContextAsync(
@@ -170,6 +211,20 @@ public static class BusinessSessionApi
             return ToFailureResult(result);
         }
 
+        if (result.RequiresSecondFactor)
+        {
+            return Results.Ok(new WebShellBusinessSignInResponse
+            {
+                AuthenticationStage = string.IsNullOrWhiteSpace(result.AuthenticationStage)
+                    ? "challenge_required"
+                    : result.AuthenticationStage,
+                RequiresSecondFactor = true,
+                MfaChallengeId = result.MfaChallengeId?.ToString("D"),
+                MfaChallengeExpiresAtUtc = result.MfaChallengeExpiresAtUtc,
+                AvailableSecondFactors = result.AvailableSecondFactors
+            });
+        }
+
         var context = await BuildContextAsync(
             result.UserId,
             result.ActiveCompanyId,
@@ -192,7 +247,10 @@ public static class BusinessSessionApi
             {
                 SessionToken = result.SessionToken,
                 Context = context,
-                ExpiresAtUtc = result.ExpiresAtUtc
+                ExpiresAtUtc = result.ExpiresAtUtc,
+                AuthenticationStage = string.IsNullOrWhiteSpace(result.AuthenticationStage)
+                    ? "authenticated"
+                    : result.AuthenticationStage
             })
             : Results.Ok(new WebShellBusinessSessionStateResponse
             {
@@ -209,6 +267,9 @@ public static class BusinessSessionApi
             "no_company_access" => Results.Json(
                 new ErrorResponse(result.FailureMessage),
                 statusCode: StatusCodes.Status403Forbidden),
+            "mfa_not_ready" or "mfa_delivery_failed" => Results.Json(
+                new ErrorResponse(result.FailureMessage),
+                statusCode: StatusCodes.Status503ServiceUnavailable),
             _ => Results.BadRequest(new ErrorResponse(result.FailureMessage))
         };
 
@@ -294,6 +355,8 @@ public static class BusinessSessionApi
             : status.Trim().ToLowerInvariant();
 
     private sealed record SignInRequest(string Login, string Password);
+
+    private sealed record CompleteSecondFactorRequest(Guid ChallengeId, string VerificationCode);
 
     private sealed record SwitchActiveCompanyRequest(Guid CompanyId);
 

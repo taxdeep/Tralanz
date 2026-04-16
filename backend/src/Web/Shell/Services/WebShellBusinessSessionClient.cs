@@ -95,6 +95,36 @@ public sealed class WebShellBusinessSessionClient(
         }
     }
 
+    public async Task<(WebShellBusinessSignInResponse? Result, string? Error)> CompleteSecondFactorAsync(
+        Guid challengeId,
+        string verificationCode,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "/api/business/session/mfa/complete",
+                new
+                {
+                    challengeId,
+                    verificationCode
+                },
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return (await response.Content.ReadFromJsonAsync<WebShellBusinessSignInResponse>(cancellationToken), null);
+            }
+
+            return (null, await ReadErrorAsync(response, cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to complete the Web.Shell business MFA challenge.");
+            return (null, "Unable to reach the business MFA verification API.");
+        }
+    }
+
     public async Task<WebShellBusinessSessionStateResponse?> ResumeSessionAsync(
         string sessionToken,
         CancellationToken cancellationToken = default)

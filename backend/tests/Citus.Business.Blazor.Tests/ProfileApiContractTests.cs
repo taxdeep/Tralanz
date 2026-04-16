@@ -443,6 +443,8 @@ public sealed class ProfileApiContractTests
     {
         public PlatformBusinessSessionResult AuthenticateResult { get; set; } = new();
 
+        public PlatformBusinessSessionResult CompleteSecondFactorResult { get; set; } = new();
+
         public PlatformBusinessSessionResult ValidateResult { get; set; } = new();
 
         public PlatformBusinessSessionResult SwitchResult { get; set; } = new();
@@ -459,6 +461,15 @@ public sealed class ProfileApiContractTests
             string? userAgent,
             CancellationToken cancellationToken) =>
             Task.FromResult(AuthenticateResult);
+
+        public Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(
+            Guid challengeId,
+            string verificationCode,
+            TimeSpan sessionLifetime,
+            string? remoteIp,
+            string? userAgent,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(CompleteSecondFactorResult);
 
         public Task<PlatformBusinessSessionResult> ValidateSessionAsync(
             string sessionToken,

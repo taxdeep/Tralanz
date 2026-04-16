@@ -113,6 +113,7 @@ public sealed class SmtpPlatformVerificationNotificationSender(
         purpose.Trim().ToLowerInvariant() switch
         {
             "notification_test" => "Citus notification test",
+            "business_sign_in_mfa" => "Citus sign-in verification",
             "email_change" => "Citus email change verification",
             "password_change" => "Citus password change verification",
             "password_reset" => "Citus password reset verification",
@@ -126,6 +127,8 @@ public sealed class SmtpPlatformVerificationNotificationSender(
         {
             "notification_test" =>
                 "This is a platform notification test for your Citus environment.",
+            "business_sign_in_mfa" =>
+                "A business sign-in verification was requested for your Citus account.",
             "email_change" =>
                 $"Confirm the new email address for your Citus account: {message.Destination.Trim()}.",
             "password_change" =>

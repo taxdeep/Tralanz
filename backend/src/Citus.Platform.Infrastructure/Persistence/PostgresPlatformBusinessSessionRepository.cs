@@ -9,8 +9,13 @@ namespace Citus.Platform.Infrastructure.Persistence;
 
 public sealed class PostgresPlatformBusinessSessionRepository(
     PlatformPostgresConnectionFactory connectionFactory,
-    SysAdminPasswordHasher passwordHasher) : IPlatformBusinessSessionRepository
+    SysAdminPasswordHasher passwordHasher,
+    IPlatformRuntimeStateRepository runtimeStateRepository,
+    IPlatformVerificationNotificationSender notificationSender) : IPlatformBusinessSessionRepository
 {
+    private const string NoMfaMode = "none";
+    private const string EmailCodeMfaMode = "email_code";
+
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
         const string sql = """
@@ -21,6 +26,9 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
             alter table users
               add column if not exists locked_until timestamptz;
+
+            alter table users
+              add column if not exists mfa_mode text not null default 'none';
 
             create table if not exists business_sessions (
               id uuid primary key default gen_random_uuid(),
@@ -44,6 +52,31 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
             create index if not exists idx_business_sessions_token_expiry
               on business_sessions (token_hash, expires_at desc);
+
+            create table if not exists business_session_mfa_challenges (
+              id uuid primary key default gen_random_uuid(),
+              user_id uuid not null references users(id) on delete cascade,
+              active_company_id uuid not null references companies(id) on delete restrict,
+              membership_id uuid not null references company_memberships(id) on delete cascade,
+              role text not null,
+              permissions jsonb not null default '[]'::jsonb,
+              company_status text not null,
+              factor text not null,
+              destination text not null,
+              code_hash text not null,
+              expires_at timestamptz not null,
+              consumed_at timestamptz,
+              failed_attempts integer not null default 0,
+              created_at timestamptz not null default now(),
+              constraint business_session_mfa_challenges_role_chk check (role in ('owner', 'user')),
+              constraint business_session_mfa_challenges_permissions_array_chk check (jsonb_typeof(permissions) = 'array'),
+              constraint business_session_mfa_challenges_company_status_chk check (company_status in ('active', 'inactive', 'suspended', 'archived')),
+              constraint business_session_mfa_challenges_factor_chk check (factor in ('email_code'))
+            );
+
+            create index if not exists idx_business_session_mfa_challenges_active
+              on business_session_mfa_challenges (user_id, factor, expires_at desc)
+              where consumed_at is null;
             """;
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
@@ -107,6 +140,68 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             return Failed("no_company_access", "This platform account does not currently have access to an active business company.");
         }
 
+        var normalizedMfaMode = NormalizeMfaMode(account.MfaMode);
+        if (string.Equals(normalizedMfaMode, EmailCodeMfaMode, StringComparison.Ordinal))
+        {
+            var blockingReason = await GetMfaBlockingReasonAsync(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(blockingReason))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Failed("mfa_not_ready", blockingReason);
+            }
+
+            await InvalidateActiveMfaChallengesAsync(connection, transaction, account.Id, cancellationToken);
+
+            var challengeId = Guid.NewGuid();
+            var verificationCode = CreateVerificationCode();
+            var verificationCodeHash = HashVerificationCode(verificationCode);
+            var challengeExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10);
+
+            await InsertMfaChallengeAsync(
+                connection,
+                transaction,
+                challengeId,
+                account.Id,
+                account.Email,
+                membership,
+                verificationCodeHash,
+                challengeExpiresAtUtc,
+                cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+
+            var sendResult = await notificationSender.SendVerificationAsync(
+                new PlatformVerificationNotificationMessage
+                {
+                    DispatchId = challengeId,
+                    UserId = account.Id,
+                    Purpose = "business_sign_in_mfa",
+                    Destination = account.Email,
+                    RecipientDisplayName = account.DisplayName,
+                    VerificationCode = verificationCode,
+                    ExpiresAtUtc = challengeExpiresAtUtc
+                },
+                cancellationToken);
+
+            if (!sendResult.Succeeded)
+            {
+                await DeleteMfaChallengeAsync(challengeId, cancellationToken);
+                return Failed("mfa_delivery_failed", "Second-factor delivery could not be completed.");
+            }
+
+            return new PlatformBusinessSessionResult
+            {
+                Succeeded = true,
+                UserId = account.Id,
+                ActiveCompanyId = membership.CompanyId,
+                AuthenticationStage = "challenge_required",
+                RequiresSecondFactor = true,
+                MfaChallengeId = challengeId,
+                MfaChallengeExpiresAtUtc = challengeExpiresAtUtc,
+                AvailableSecondFactors = [EmailCodeMfaMode]
+            };
+        }
+
         var sessionToken = CreateSessionToken();
         var expiresAtUtc = DateTimeOffset.UtcNow.Add(sessionLifetime);
 
@@ -127,7 +222,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             SessionToken = sessionToken,
             UserId = account.Id,
             ActiveCompanyId = membership.CompanyId,
-            ExpiresAtUtc = expiresAtUtc
+            ExpiresAtUtc = expiresAtUtc,
+            AuthenticationStage = "authenticated"
         };
     }
 
@@ -192,7 +288,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             Succeeded = true,
             UserId = session.UserId,
             ActiveCompanyId = membership.CompanyId,
-            ExpiresAtUtc = session.ExpiresAtUtc
+            ExpiresAtUtc = session.ExpiresAtUtc,
+            AuthenticationStage = "authenticated"
         };
     }
 
@@ -250,7 +347,98 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             Succeeded = true,
             UserId = session.UserId,
             ActiveCompanyId = membership.CompanyId,
-            ExpiresAtUtc = session.ExpiresAtUtc
+            ExpiresAtUtc = session.ExpiresAtUtc,
+            AuthenticationStage = "authenticated"
+        };
+    }
+
+    public async Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(
+        Guid challengeId,
+        string verificationCode,
+        TimeSpan sessionLifetime,
+        string? remoteIp,
+        string? userAgent,
+        CancellationToken cancellationToken)
+    {
+        if (challengeId == Guid.Empty || string.IsNullOrWhiteSpace(verificationCode))
+        {
+            return Failed("invalid_mfa_challenge", "MFA challenge id and verification code are required.");
+        }
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var challenge = await ReadMfaChallengeAsync(connection, transaction, challengeId, cancellationToken);
+        if (challenge is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Failed("invalid_mfa_challenge", "Second-factor challenge was not found.");
+        }
+
+        if (!string.Equals(challenge.AccountStatus, "active", StringComparison.Ordinal))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Failed("account_not_active", $"Platform account is {challenge.AccountStatus}.");
+        }
+
+        if (challenge.LockedUntilUtc.HasValue && challenge.LockedUntilUtc.Value > DateTimeOffset.UtcNow)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Failed("account_locked", "Platform account is locked.");
+        }
+
+        if (challenge.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+        {
+            await ConsumeMfaChallengeAsync(connection, transaction, challenge.Id, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Failed("expired_mfa_challenge", "Second-factor challenge has expired.");
+        }
+
+        if (!string.Equals(HashVerificationCode(verificationCode), challenge.CodeHash, StringComparison.Ordinal))
+        {
+            await IncrementMfaChallengeFailuresAsync(connection, transaction, challenge.Id, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Failed("invalid_mfa_code", "Verification code is invalid.");
+        }
+
+        var membership = await ResolveMembershipContextAsync(
+            connection,
+            transaction,
+            challenge.UserId,
+            challenge.ActiveCompanyId,
+            cancellationToken);
+        if (membership is null)
+        {
+            await ConsumeMfaChallengeAsync(connection, transaction, challenge.Id, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Failed("no_company_access", "This platform account does not currently have access to an active business company.");
+        }
+
+        var sessionToken = CreateSessionToken();
+        var expiresAtUtc = DateTimeOffset.UtcNow.Add(sessionLifetime);
+
+        await InsertSessionAsync(
+            connection,
+            transaction,
+            HashSessionToken(sessionToken),
+            challenge.UserId,
+            membership,
+            expiresAtUtc,
+            cancellationToken);
+
+        await ConsumeMfaChallengeAsync(connection, transaction, challenge.Id, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new PlatformBusinessSessionResult
+        {
+            Succeeded = true,
+            SessionToken = sessionToken,
+            UserId = challenge.UserId,
+            ActiveCompanyId = membership.CompanyId,
+            ExpiresAtUtc = expiresAtUtc,
+            AuthenticationStage = "authenticated"
         };
     }
 
@@ -310,9 +498,11 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             select id,
                    email,
                    username,
+                   coalesce(nullif(display_name, ''), nullif(username, ''), email) as display_name,
                    password_hash,
                    status,
-                   locked_until
+                   locked_until,
+                   mfa_mode
             from users
             where lower(email) = @login
                or lower(coalesce(username, '')) = @login
@@ -333,11 +523,13 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             reader.IsDBNull(reader.GetOrdinal("username"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("username")).Trim(),
+            reader.GetString(reader.GetOrdinal("display_name")).Trim(),
             reader.GetString(reader.GetOrdinal("password_hash")).Trim(),
             reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
             reader.IsDBNull(reader.GetOrdinal("locked_until"))
                 ? null
-                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("locked_until")));
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("locked_until")),
+            reader.GetString(reader.GetOrdinal("mfa_mode")).Trim().ToLowerInvariant());
     }
 
     private static async Task<Guid?> ReadPreferredActiveCompanyIdAsync(
@@ -592,13 +784,225 @@ public sealed class PostgresPlatformBusinessSessionRepository(
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("locked_until")));
     }
 
+    private async Task<string?> GetMfaBlockingReasonAsync(CancellationToken cancellationToken)
+    {
+        var readiness = await runtimeStateRepository.GetNotificationReadinessStateAsync(cancellationToken);
+        if (readiness is null || !readiness.VerificationReady)
+        {
+            return "Second-factor delivery is not ready for business sign-in.";
+        }
+
+        var configurationError = notificationSender.GetConfigurationError();
+        return string.IsNullOrWhiteSpace(configurationError)
+            ? null
+            : "Second-factor delivery is not ready for business sign-in.";
+    }
+
+    private static string NormalizeMfaMode(string? mfaMode) =>
+        string.IsNullOrWhiteSpace(mfaMode)
+            ? NoMfaMode
+            : mfaMode.Trim().ToLowerInvariant();
+
+    private static async Task InsertMfaChallengeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid challengeId,
+        Guid userId,
+        string destination,
+        MembershipContextRecord membership,
+        string codeHash,
+        DateTimeOffset expiresAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            insert into business_session_mfa_challenges (
+              id,
+              user_id,
+              active_company_id,
+              membership_id,
+              role,
+              permissions,
+              company_status,
+              factor,
+              destination,
+              code_hash,
+              expires_at
+            )
+            values (
+              @id,
+              @user_id,
+              @active_company_id,
+              @membership_id,
+              @role,
+              @permissions::jsonb,
+              @company_status,
+              @factor,
+              @destination,
+              @code_hash,
+              @expires_at
+            );
+            """;
+        command.Parameters.AddWithValue("id", challengeId);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("active_company_id", membership.CompanyId);
+        command.Parameters.AddWithValue("membership_id", membership.MembershipId);
+        command.Parameters.AddWithValue("role", membership.Role);
+        command.Parameters.AddWithValue("permissions", membership.PermissionsJson);
+        command.Parameters.AddWithValue("company_status", membership.CompanyStatus);
+        command.Parameters.AddWithValue("factor", EmailCodeMfaMode);
+        command.Parameters.AddWithValue("destination", destination);
+        command.Parameters.AddWithValue("code_hash", codeHash);
+        command.Parameters.AddWithValue("expires_at", expiresAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InvalidateActiveMfaChallengesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update business_session_mfa_challenges
+            set consumed_at = now()
+            where user_id = @user_id
+              and consumed_at is null;
+            """;
+        command.Parameters.AddWithValue("user_id", userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task DeleteMfaChallengeAsync(Guid challengeId, CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            delete from business_session_mfa_challenges
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", challengeId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<MfaChallengeRecord?> ReadMfaChallengeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid challengeId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select c.id,
+                   c.user_id,
+                   c.active_company_id,
+                   c.code_hash,
+                   c.expires_at,
+                   u.status as account_status,
+                   u.locked_until
+            from business_session_mfa_challenges c
+            inner join users u on u.id = c.user_id
+            where c.id = @id
+              and c.consumed_at is null
+            limit 1
+            for update;
+            """;
+        command.Parameters.AddWithValue("id", challengeId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new MfaChallengeRecord(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetGuid(reader.GetOrdinal("user_id")),
+            reader.GetGuid(reader.GetOrdinal("active_company_id")),
+            reader.GetString(reader.GetOrdinal("code_hash")).Trim(),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("expires_at")),
+            reader.GetString(reader.GetOrdinal("account_status")).Trim().ToLowerInvariant(),
+            reader.IsDBNull(reader.GetOrdinal("locked_until"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("locked_until")));
+    }
+
+    private static async Task IncrementMfaChallengeFailuresAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid challengeId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update business_session_mfa_challenges
+            set failed_attempts = failed_attempts + 1
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", challengeId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ConsumeMfaChallengeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid challengeId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update business_session_mfa_challenges
+            set consumed_at = now()
+            where id = @id
+              and consumed_at is null;
+            """;
+        command.Parameters.AddWithValue("id", challengeId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string CreateVerificationCode()
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        Span<byte> randomBytes = stackalloc byte[6];
+        RandomNumberGenerator.Fill(randomBytes);
+
+        Span<char> code = stackalloc char[6];
+        for (var index = 0; index < code.Length; index++)
+        {
+            code[index] = alphabet[randomBytes[index] % alphabet.Length];
+        }
+
+        return new string(code);
+    }
+
+    private static string HashVerificationCode(string code)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(hash);
+    }
+
     private sealed record AccountRecord(
         Guid Id,
         string Email,
         string Username,
+        string DisplayName,
         string PasswordHash,
         string Status,
-        DateTimeOffset? LockedUntilUtc);
+        DateTimeOffset? LockedUntilUtc,
+        string MfaMode);
 
     private sealed record MembershipContextRecord(
         Guid MembershipId,
@@ -611,6 +1015,15 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         Guid SessionId,
         Guid UserId,
         Guid ActiveCompanyId,
+        DateTimeOffset ExpiresAtUtc,
+        string AccountStatus,
+        DateTimeOffset? LockedUntilUtc);
+
+    private sealed record MfaChallengeRecord(
+        Guid Id,
+        Guid UserId,
+        Guid ActiveCompanyId,
+        string CodeHash,
         DateTimeOffset ExpiresAtUtc,
         string AccountStatus,
         DateTimeOffset? LockedUntilUtc);

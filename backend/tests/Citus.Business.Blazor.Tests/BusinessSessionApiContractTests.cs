@@ -59,6 +59,48 @@ public sealed class BusinessSessionApiContractTests
     }
 
     [Fact]
+    public async Task SignIn_ReturnsMfaChallenge_WhenSecondFactorIsRequired()
+    {
+        using var factory = new BusinessSessionApiApplicationFactory();
+        var userId = Guid.Parse("93b9aec7-5e1f-44e1-a58b-170261f2b4ef");
+        var companyId = Guid.Parse("d55bf2df-2bc6-456b-80ba-1b44321aa0e7");
+        var challengeId = Guid.Parse("91867a27-4a11-42c6-a847-7c4f3f7bbb2b");
+        factory.BusinessSessions.AuthenticateResult = new PlatformBusinessSessionResult
+        {
+            Succeeded = true,
+            UserId = userId,
+            ActiveCompanyId = companyId,
+            AuthenticationStage = "challenge_required",
+            RequiresSecondFactor = true,
+            MfaChallengeId = challengeId,
+            MfaChallengeExpiresAtUtc = new DateTimeOffset(2026, 4, 17, 5, 0, 0, TimeSpan.Zero),
+            AvailableSecondFactors = ["email_code"]
+        };
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/business/session/sign-in",
+            new
+            {
+                login = "morgan@example.com",
+                password = "Sup3rSecret!"
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<Web.Shell.Services.WebShellBusinessSignInResponse>();
+
+        Assert.NotNull(payload);
+        Assert.True(payload!.RequiresSecondFactor);
+        Assert.Equal("challenge_required", payload.AuthenticationStage);
+        Assert.Equal(challengeId.ToString("D"), payload.MfaChallengeId);
+        Assert.Equal(new DateTimeOffset(2026, 4, 17, 5, 0, 0, TimeSpan.Zero), payload.MfaChallengeExpiresAtUtc);
+        Assert.Contains("email_code", payload.AvailableSecondFactors);
+        Assert.Null(payload.Context);
+        Assert.True(string.IsNullOrWhiteSpace(payload.SessionToken));
+    }
+
+    [Fact]
     public async Task SignIn_ReturnsLocked_WhenMaintenanceIsEnabled()
     {
         using var factory = new BusinessSessionApiApplicationFactory();
@@ -171,6 +213,44 @@ public sealed class BusinessSessionApiContractTests
         Assert.Equal("BUSINESS-TOKEN-04", factory.BusinessSessions.LastRevokedSessionToken);
     }
 
+    [Fact]
+    public async Task CompleteSecondFactor_ReturnsSessionTokenAndResolvedContext_WhenChallengeIsValid()
+    {
+        using var factory = new BusinessSessionApiApplicationFactory();
+        var userId = Guid.Parse("2fe8ac62-eb72-49e1-949f-f7ff4dca7577");
+        var companyId = Guid.Parse("6af2e359-6dfe-4dc0-b1df-63ffad646976");
+        var challengeId = Guid.Parse("1cd4297d-e549-47a5-9961-60f4b8d0b6a9");
+        factory.BusinessSessions.CompleteSecondFactorResult = new PlatformBusinessSessionResult
+        {
+            Succeeded = true,
+            SessionToken = "BUSINESS-TOKEN-MFA-01",
+            UserId = userId,
+            ActiveCompanyId = companyId,
+            ExpiresAtUtc = new DateTimeOffset(2026, 4, 17, 8, 0, 0, TimeSpan.Zero)
+        };
+        factory.CompanyContext.ContextFactory = (_, preferredCompanyId, _) =>
+            Task.FromResult<CompanyAccessSessionContext?>(CreateContext(userId, preferredCompanyId ?? companyId));
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/business/session/mfa/complete",
+            new
+            {
+                challengeId,
+                verificationCode = "AB12CD"
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<Web.Shell.Services.WebShellBusinessSignInResponse>();
+
+        Assert.NotNull(payload);
+        Assert.Equal("BUSINESS-TOKEN-MFA-01", payload!.SessionToken);
+        Assert.NotNull(payload.Context);
+        Assert.Equal(challengeId, factory.BusinessSessions.LastCompletedChallengeId);
+        Assert.Equal("AB12CD", factory.BusinessSessions.LastCompletedVerificationCode);
+    }
+
     private static CompanyAccessSessionContext CreateContext(Guid userId, Guid activeCompanyId)
     {
         var activeCompany = new CompanyAccessCompanySummary
@@ -250,6 +330,8 @@ public sealed class BusinessSessionApiContractTests
 
         public PlatformBusinessSessionResult SwitchResult { get; set; } = new();
 
+        public PlatformBusinessSessionResult CompleteSecondFactorResult { get; set; } = new();
+
         public string? LastLogin { get; private set; }
 
         public string? LastPassword { get; private set; }
@@ -261,6 +343,10 @@ public sealed class BusinessSessionApiContractTests
         public Guid? LastSwitchedCompanyId { get; private set; }
 
         public string? LastRevokedSessionToken { get; private set; }
+
+        public Guid? LastCompletedChallengeId { get; private set; }
+
+        public string? LastCompletedVerificationCode { get; private set; }
 
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -293,6 +379,19 @@ public sealed class BusinessSessionApiContractTests
             LastSwitchedSessionToken = sessionToken;
             LastSwitchedCompanyId = activeCompanyId;
             return Task.FromResult(SwitchResult);
+        }
+
+        public Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(
+            Guid challengeId,
+            string verificationCode,
+            TimeSpan sessionLifetime,
+            string? remoteIp,
+            string? userAgent,
+            CancellationToken cancellationToken)
+        {
+            LastCompletedChallengeId = challengeId;
+            LastCompletedVerificationCode = verificationCode;
+            return Task.FromResult(CompleteSecondFactorResult);
         }
 
         public Task RevokeSessionAsync(string sessionToken, CancellationToken cancellationToken)

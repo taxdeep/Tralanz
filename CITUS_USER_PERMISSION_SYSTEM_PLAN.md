@@ -807,6 +807,8 @@ Phase 6 progress note:
 - `PlatformProfileClient` and the interactive Profile page now also use the shared authenticated API result model instead of tuple-plus-string auth checks, so profile reads and verification request/confirm actions follow the same `401 -> session expired -> clear token -> return to /login` path as the rest of the shell.
 - Future MFA integration must remain challenge-first and session-second: primary credential validation may return `RequiresSecondFactor = true` plus challenge metadata, but no `business_sessions` token should be issued until the second factor succeeds.
 - MFA must stay subordinate to existing truth boundaries: platform identity proves the actor, CompanyAccess still resolves active company and company-scoped authorization only after the business session is fully authenticated, and MFA may not bypass maintenance mode, company inactive/read-only gates, or company membership legality.
+- Business sign-in now has a formal MFA challenge contract skeleton: when `users.mfa_mode = 'email_code'`, primary credential validation may return `AuthenticationStage = challenge_required` plus `MfaChallengeId`, `MfaChallengeExpiresAtUtc`, and available factor metadata instead of immediately issuing a business session.
+- `POST /api/business/session/mfa/complete` is now the formal second step for business MFA. The session token is issued only after the challenge code is confirmed, which keeps the shell aligned with the “challenge-first, session-second” rule already recorded in authority.
 
 Checkpoint summary (2026-04-16):
 

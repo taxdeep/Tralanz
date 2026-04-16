@@ -35,6 +35,28 @@
                        OnClick="SignInAsync">
                 @(_isSubmitting ? "Signing in..." : "Sign in")
             </MudButton>
+
+            @if (_mfaChallengeId.HasValue)
+            {
+                <MudDivider />
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    Second factor is required before session issuance.
+                    @if (_mfaChallengeExpiresAtUtc.HasValue)
+                    {
+                        <text> Challenge expires @_mfaChallengeExpiresAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").</text>
+                    }
+                </MudAlert>
+                <MudTextField @bind-Value="_mfaVerificationCode"
+                              Label="Verification code"
+                              Variant="Variant.Outlined"
+                              Immediate="true" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           Disabled="_isSubmitting"
+                           OnClick="CompleteSecondFactorAsync">
+                    @(_isSubmitting ? "Verifying..." : "Complete MFA")
+                </MudButton>
+            }
         </MudStack>
     </MudForm>
 </MudPaper>
@@ -44,6 +66,9 @@
     private MudForm? _form;
     private string _login = string.Empty;
     private string _password = string.Empty;
+    private Guid? _mfaChallengeId;
+    private DateTimeOffset? _mfaChallengeExpiresAtUtc;
+    private string _mfaVerificationCode = string.Empty;
     private bool _isSubmitting;
 
     private async Task SignInAsync()
@@ -64,6 +89,9 @@
             var (result, error) = await SessionClient.SignInAsync(_login, _password);
             if (result?.RequiresSecondFactor == true)
             {
+                _mfaChallengeId = Guid.TryParse(result.MfaChallengeId, out var challengeId) ? challengeId : null;
+                _mfaChallengeExpiresAtUtc = result.MfaChallengeExpiresAtUtc;
+                _mfaVerificationCode = string.Empty;
                 var availableFactors = result.AvailableSecondFactors.Count == 0
                     ? "configured second factor"
                     : string.Join(", ", result.AvailableSecondFactors);
@@ -83,17 +111,66 @@
                 return;
             }
 
-            ShellState.ApplyAuthenticatedSession(result.SessionToken, result.Context, result.ExpiresAtUtc);
-            await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", result.SessionToken);
-
-            Snackbar.Add(
-                $"Signed in as {result.Context.User.DisplayName} in {result.Context.ActiveCompany.CompanyName}.",
-                Severity.Success);
-            NavigationManager.NavigateTo("/");
+            await CompleteAuthenticatedSessionAsync(result);
         }
         finally
         {
             _isSubmitting = false;
         }
+    }
+
+    private async Task CompleteSecondFactorAsync()
+    {
+        if (!_mfaChallengeId.HasValue)
+        {
+            Snackbar.Add("No active MFA challenge is pending.", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_mfaVerificationCode))
+        {
+            Snackbar.Add("Verification code is required.", Severity.Warning);
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var (result, error) = await SessionClient.CompleteSecondFactorAsync(
+                _mfaChallengeId.Value,
+                _mfaVerificationCode);
+
+            if (result is null || string.IsNullOrWhiteSpace(result.SessionToken) || result.Context is null)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(error)
+                        ? "Unable to complete MFA verification."
+                        : error,
+                    Severity.Warning);
+                return;
+            }
+
+            await CompleteAuthenticatedSessionAsync(result);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task CompleteAuthenticatedSessionAsync(Web.Shell.Services.WebShellBusinessSignInResponse result)
+    {
+        _mfaChallengeId = null;
+        _mfaChallengeExpiresAtUtc = null;
+        _mfaVerificationCode = string.Empty;
+
+        ShellState.ApplyAuthenticatedSession(result.SessionToken, result.Context!, result.ExpiresAtUtc);
+        await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", result.SessionToken);
+
+        Snackbar.Add(
+            $"Signed in as {result.Context!.User.DisplayName} in {result.Context.ActiveCompany.CompanyName}.",
+            Severity.Success);
+        NavigationManager.NavigateTo("/");
     }
 }

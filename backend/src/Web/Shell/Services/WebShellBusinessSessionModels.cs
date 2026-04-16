@@ -16,6 +16,8 @@ public sealed record class WebShellBusinessSignInResponse
 
     public string? MfaChallengeId { get; init; }
 
+    public DateTimeOffset? MfaChallengeExpiresAtUtc { get; init; }
+
     public IReadOnlyList<string> AvailableSecondFactors { get; init; } = [];
 }
 
