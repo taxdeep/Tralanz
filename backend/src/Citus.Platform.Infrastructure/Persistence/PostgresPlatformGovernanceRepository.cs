@@ -1,0 +1,1251 @@
+using Citus.Platform.Core.Abstractions;
+using Citus.Platform.Core.Runtime;
+using Citus.Platform.Infrastructure.Notifications;
+using Npgsql;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace Citus.Platform.Infrastructure.Persistence;
+
+public sealed class PostgresPlatformGovernanceRepository(
+    PlatformPostgresConnectionFactory connectionFactory,
+    IPlatformRuntimeStateRepository runtimeStateRepository,
+    IPlatformVerificationNotificationSender notificationSender) : IPlatformGovernanceRepository
+{
+    private static readonly string[] CompanyStatuses = ["active", "inactive", "suspended", "archived"];
+    private static readonly string[] AccountStatuses = ["active", "disabled", "locked", "pending_verification"];
+    private static readonly string[] ReviewableAuditActions =
+    [
+        "company_status_changed",
+        "account_status_changed",
+        "profile_display_name_saved",
+        "email_change_requested",
+        "email_change_dispatched",
+        "email_change_dispatch_failed",
+        "email_change_confirmed",
+        "password_change_requested",
+        "password_change_dispatched",
+        "password_change_dispatch_failed",
+        "password_change_confirmed",
+        "password_reset_requested",
+        "password_reset_dispatched",
+        "password_reset_dispatch_failed",
+        "membership_role_changed",
+        "membership_permissions_saved",
+        "sysadmin_first_account_created",
+        "sysadmin_password_rotated"
+    ];
+
+    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            create extension if not exists pgcrypto;
+
+            alter table users
+              add column if not exists display_name text;
+
+            alter table users
+              add column if not exists status text not null default 'active';
+
+            alter table users
+              add column if not exists email_verified_at timestamptz;
+
+            alter table users
+              add column if not exists locked_until timestamptz;
+
+            alter table users
+              add column if not exists security_stamp text not null default gen_random_uuid()::text;
+
+            create table if not exists account_verification_codes (
+              id uuid primary key default gen_random_uuid(),
+              user_id uuid not null references users(id) on delete cascade,
+              purpose text not null,
+              destination text,
+              code_hash text not null,
+              expires_at timestamptz not null,
+              consumed_at timestamptz,
+              failed_attempts integer not null default 0,
+              created_at timestamptz not null default now(),
+              payload jsonb not null default '{}'::jsonb
+            );
+
+            alter table account_verification_codes
+              add column if not exists payload jsonb not null default '{}'::jsonb;
+
+            create table if not exists sysadmin_accounts (
+              id uuid primary key default gen_random_uuid(),
+              email text not null unique,
+              display_name text not null default '',
+              password_hash text not null,
+              status text not null default 'active',
+              last_login_at timestamptz,
+              created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
+
+            create table if not exists platform_notification_dispatches (
+              id uuid primary key default gen_random_uuid(),
+              notification_type text not null,
+              destination text not null,
+              status text not null default 'queued',
+              provider_key text,
+              attempt_count integer not null default 0,
+              sent_at timestamptz,
+              failed_at timestamptz,
+              last_error text,
+              payload jsonb not null default '{}'::jsonb,
+              created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
+
+            alter table platform_notification_dispatches
+              add column if not exists provider_key text;
+
+            alter table platform_notification_dispatches
+              add column if not exists attempt_count integer not null default 0;
+
+            alter table platform_notification_dispatches
+              add column if not exists sent_at timestamptz;
+
+            alter table platform_notification_dispatches
+              add column if not exists failed_at timestamptz;
+
+            alter table platform_notification_dispatches
+              add column if not exists last_error text;
+
+            create table if not exists audit_logs (
+              id uuid primary key default gen_random_uuid(),
+              company_id uuid null,
+              actor_type text not null,
+              actor_id uuid null,
+              entity_type text not null,
+              entity_id uuid not null,
+              action text not null,
+              payload jsonb not null default '{}'::jsonb,
+              created_at timestamptz not null default now()
+            );
+
+            create index if not exists idx_users_status_email
+              on users (status, email);
+
+            create index if not exists idx_account_verification_codes_active
+              on account_verification_codes (user_id, purpose, expires_at desc)
+              where consumed_at is null;
+
+            create index if not exists idx_platform_notification_dispatches_status
+              on platform_notification_dispatches (status, created_at desc);
+
+            create index if not exists idx_audit_logs_action_created_at
+              on audit_logs (action, created_at desc);
+            """;
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PlatformAuditEvent>> ListRecentAuditEventsAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+
+        var normalizedLimit = Math.Clamp(limit, 1, 200);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              al.id,
+              al.company_id,
+              coalesce(c.entity_number, '') as company_entity_number,
+              coalesce(c.legal_name, '') as company_legal_name,
+              al.actor_type,
+              al.actor_id,
+              coalesce(sys_actor.display_name, '') as sysadmin_display_name,
+              coalesce(sys_actor.email, '') as sysadmin_email,
+              coalesce(user_actor.username, '') as actor_username,
+              coalesce(user_actor.email, '') as actor_email,
+              al.entity_type,
+              al.entity_id,
+              coalesce(entity_user.username, '') as entity_username,
+              coalesce(entity_user.email, '') as entity_email,
+              coalesce(entity_sysadmin.display_name, '') as entity_sysadmin_display_name,
+              coalesce(entity_sysadmin.email, '') as entity_sysadmin_email,
+              coalesce(membership_user.username, '') as membership_username,
+              coalesce(membership_user.email, '') as membership_email,
+              al.action,
+              al.payload::text as payload,
+              al.created_at
+            from audit_logs al
+            left join companies c on c.id = al.company_id
+            left join sysadmin_accounts sys_actor
+              on sys_actor.id = al.actor_id
+             and al.actor_type = 'sysadmin'
+            left join users user_actor
+              on user_actor.id = al.actor_id
+             and al.actor_type = 'user'
+            left join users entity_user
+              on entity_user.id = al.entity_id
+             and al.entity_type = 'platform_account'
+            left join sysadmin_accounts entity_sysadmin
+              on entity_sysadmin.id = al.entity_id
+             and al.entity_type = 'sysadmin_account'
+            left join company_memberships membership
+              on membership.id = al.entity_id
+             and al.entity_type = 'company_membership'
+            left join users membership_user on membership_user.id = membership.user_id
+            where al.action = any(@actions)
+            order by al.created_at desc
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("actions", ReviewableAuditActions);
+        command.Parameters.AddWithValue("limit", normalizedLimit);
+
+        var events = new List<PlatformAuditEvent>(normalizedLimit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(ReadAuditEvent(reader));
+        }
+
+        return events;
+    }
+
+    public async Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
+        Guid companyId,
+        string status,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStatus = NormalizeRequired(status, "Company status");
+        EnsureAllowed(normalizedStatus, CompanyStatuses, "company status");
+        var normalizedReason = NormalizeReason(reason, "Company status updated by SysAdmin.");
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadCompanyAsync(connection, transaction, companyId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                update companies
+                set status = @status,
+                    updated_at = now()
+                where id = @company_id;
+                """;
+            update.Parameters.AddWithValue("company_id", companyId);
+            update.Parameters.AddWithValue("status", normalizedStatus);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            companyId,
+            sysAdminAccountId,
+            "company",
+            companyId,
+            "company_status_changed",
+            """
+            jsonb_build_object(
+              'previous_status', @previous_status,
+              'status', @status,
+              'reason', @reason
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("previous_status", current.Status);
+                command.Parameters.AddWithValue("status", normalizedStatus);
+                command.Parameters.AddWithValue("reason", normalizedReason);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CompanyStatusGovernanceResult
+        {
+            CompanyId = companyId,
+            EntityNumber = current.EntityNumber,
+            LegalName = current.LegalName,
+            PreviousStatus = current.Status,
+            Status = normalizedStatus,
+            Reason = normalizedReason,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
+    }
+
+    public async Task<AccountStatusGovernanceResult?> SetAccountStatusAsync(
+        Guid accountId,
+        string status,
+        DateTimeOffset? lockedUntilUtc,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStatus = NormalizeRequired(status, "Account status");
+        EnsureAllowed(normalizedStatus, AccountStatuses, "account status");
+        var normalizedReason = NormalizeReason(reason, "Account status updated by SysAdmin.");
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadAccountAsync(connection, transaction, accountId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                update users
+                set status = @status,
+                    locked_until = @locked_until,
+                    security_stamp = gen_random_uuid()::text,
+                    updated_at = now()
+                where id = @account_id;
+                """;
+            update.Parameters.AddWithValue("account_id", accountId);
+            update.Parameters.AddWithValue("status", normalizedStatus);
+            update.Parameters.AddWithValue(
+                "locked_until",
+                lockedUntilUtc.HasValue ? lockedUntilUtc.Value : DBNull.Value);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            companyId: null,
+            sysAdminAccountId,
+            "platform_account",
+            accountId,
+            "account_status_changed",
+            """
+            jsonb_build_object(
+              'previous_status', @previous_status,
+              'status', @status,
+              'locked_until_utc', @locked_until_utc,
+              'reason', @reason
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("previous_status", current.Status);
+                command.Parameters.AddWithValue("status", normalizedStatus);
+                command.Parameters.AddWithValue(
+                    "locked_until_utc",
+                    lockedUntilUtc.HasValue ? lockedUntilUtc.Value : DBNull.Value);
+                command.Parameters.AddWithValue("reason", normalizedReason);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AccountStatusGovernanceResult
+        {
+            AccountId = accountId,
+            Email = current.Email,
+            Username = current.Username,
+            PreviousStatus = current.Status,
+            Status = normalizedStatus,
+            LockedUntilUtc = lockedUntilUtc,
+            Reason = normalizedReason,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
+    }
+
+    public async Task<PasswordResetGovernanceResult?> RequestPasswordResetAsync(
+        Guid accountId,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReason = NormalizeReason(reason, "Password reset requested by SysAdmin.");
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        var notificationReadiness = await runtimeStateRepository.GetNotificationReadinessStateAsync(cancellationToken);
+        if (notificationReadiness is null || !notificationReadiness.IsVerificationDeliveryReady)
+        {
+            var blockingReason = notificationReadiness?.GetBlockingReason() ?? "Notification readiness has not been configured.";
+            throw new InvalidOperationException(
+                $"Password reset is blocked because notification readiness is not verified. {blockingReason}");
+        }
+
+        var configurationError = notificationSender.GetConfigurationError();
+        if (!string.IsNullOrWhiteSpace(configurationError))
+        {
+            throw new InvalidOperationException(
+                $"Password reset is blocked because the notification provider is not configured. {configurationError}");
+        }
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadAccountAsync(connection, transaction, accountId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                update users
+                set security_stamp = gen_random_uuid()::text,
+                    updated_at = now()
+                where id = @account_id;
+                """;
+            update.Parameters.AddWithValue("account_id", accountId);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var verificationCodeId = Guid.NewGuid();
+        var verificationCode = CreateVerificationCode();
+        var verificationCodeHash = HashVerificationCode(verificationCode);
+        var expiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(15);
+
+        await using (var insertVerificationCode = connection.CreateCommand())
+        {
+            insertVerificationCode.Transaction = transaction;
+            insertVerificationCode.CommandText =
+                """
+                insert into account_verification_codes (
+                  id,
+                  user_id,
+                  purpose,
+                  destination,
+                  code_hash,
+                  expires_at
+                )
+                values (
+                  @id,
+                  @user_id,
+                  'password_reset',
+                  @destination,
+                  @code_hash,
+                  @expires_at
+                );
+                """;
+            insertVerificationCode.Parameters.AddWithValue("id", verificationCodeId);
+            insertVerificationCode.Parameters.AddWithValue("user_id", accountId);
+            insertVerificationCode.Parameters.AddWithValue("destination", current.Email);
+            insertVerificationCode.Parameters.AddWithValue("code_hash", verificationCodeHash);
+            insertVerificationCode.Parameters.AddWithValue("expires_at", expiresAtUtc);
+            await insertVerificationCode.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var dispatchId = Guid.NewGuid();
+
+        await using (var insertDispatch = connection.CreateCommand())
+        {
+            insertDispatch.Transaction = transaction;
+            insertDispatch.CommandText =
+                """
+                insert into platform_notification_dispatches (
+                  id,
+                  notification_type,
+                  destination,
+                  status,
+                  payload
+                )
+                values (
+                  @id,
+                  'password_reset_verification',
+                  @destination,
+                  'queued',
+                  jsonb_build_object(
+                    'account_id', @account_id,
+                    'verification_code_id', @verification_code_id,
+                    'purpose', 'password_reset',
+                    'masked_destination', @masked_destination,
+                    'delivery_mode', 'smtp_provider_pending'
+                  )
+                );
+                """;
+            insertDispatch.Parameters.AddWithValue("id", dispatchId);
+            insertDispatch.Parameters.AddWithValue("destination", current.Email);
+            insertDispatch.Parameters.AddWithValue("account_id", accountId);
+            insertDispatch.Parameters.AddWithValue("verification_code_id", verificationCodeId);
+            insertDispatch.Parameters.AddWithValue("masked_destination", MaskEmail(current.Email));
+            await insertDispatch.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var requestId = await InsertAuditAsync(
+            connection,
+            transaction,
+            companyId: null,
+            sysAdminAccountId,
+            "platform_account",
+            accountId,
+            "password_reset_requested",
+            """
+            jsonb_build_object(
+              'reason', @reason,
+              'delivery_status', 'verification_code_issued_dispatch_queued',
+              'verification_code_id', @verification_code_id,
+              'notification_dispatch_id', @notification_dispatch_id,
+              'expires_at_utc', @expires_at_utc,
+              'masked_destination', @masked_destination
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("reason", normalizedReason);
+                command.Parameters.AddWithValue("verification_code_id", verificationCodeId);
+                command.Parameters.AddWithValue("notification_dispatch_id", dispatchId);
+                command.Parameters.AddWithValue("expires_at_utc", expiresAtUtc);
+                command.Parameters.AddWithValue("masked_destination", MaskEmail(current.Email));
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sendResult = await notificationSender.SendPasswordResetAsync(
+            new PasswordResetNotificationMessage
+            {
+                DispatchId = dispatchId,
+                Destination = current.Email,
+                RecipientDisplayName = string.IsNullOrWhiteSpace(current.Username) ? current.Email : current.Username,
+                VerificationCode = verificationCode,
+                ExpiresAtUtc = expiresAtUtc
+            },
+            cancellationToken);
+
+        if (sendResult.Succeeded)
+        {
+            await FinalizeDispatchAsSentAsync(
+                connection,
+                dispatchId,
+                requestId,
+                accountId,
+                sysAdminAccountId,
+                current.Email,
+                sendResult,
+                cancellationToken);
+
+            return new PasswordResetGovernanceResult
+            {
+                RequestId = requestId,
+                AccountId = accountId,
+                Email = current.Email,
+                Username = current.Username,
+                DeliveryStatus = "verification_code_sent",
+                Reason = normalizedReason,
+                RequestedAtUtc = DateTimeOffset.UtcNow
+            };
+        }
+
+        await FinalizeDispatchAsFailedAsync(
+            connection,
+            dispatchId,
+            requestId,
+            accountId,
+            sysAdminAccountId,
+            current.Email,
+            sendResult,
+            cancellationToken);
+
+        throw new PlatformNotificationDeliveryException(
+            $"Password reset delivery failed. {sendResult.FailureMessage}");
+    }
+
+    private static async Task<CompanyRecord?> ReadCompanyAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id, entity_number, legal_name, status
+            from companies
+            where id = @company_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new CompanyRecord(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("entity_number")).Trim(),
+            reader.GetString(reader.GetOrdinal("legal_name")).Trim(),
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant());
+    }
+
+    private static async Task<AccountRecord?> ReadAccountAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select id, email, coalesce(username, '') as username, status
+            from users
+            where id = @account_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("account_id", accountId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new AccountRecord(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("email")).Trim(),
+            reader.GetString(reader.GetOrdinal("username")).Trim(),
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant());
+    }
+
+    private static async Task<Guid> InsertAuditAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid? companyId,
+        Guid? sysAdminAccountId,
+        string entityType,
+        Guid entityId,
+        string action,
+        string payloadExpression,
+        Action<NpgsqlCommand> bindPayload,
+        CancellationToken cancellationToken)
+    {
+        var auditId = Guid.NewGuid();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"""
+            insert into audit_logs (
+              id,
+              company_id,
+              actor_type,
+              actor_id,
+              entity_type,
+              entity_id,
+              action,
+              payload,
+              created_at
+            )
+            values (
+              @id,
+              @company_id,
+              'sysadmin',
+              @actor_id,
+              @entity_type,
+              @entity_id,
+              @action,
+              {payloadExpression},
+              now()
+            );
+            """;
+        command.Parameters.AddWithValue("id", auditId);
+        command.Parameters.AddWithValue("company_id", companyId.HasValue ? companyId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("entity_type", entityType);
+        command.Parameters.AddWithValue("entity_id", entityId);
+        command.Parameters.AddWithValue("action", action);
+        bindPayload(command);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return auditId;
+    }
+
+    private static PlatformAuditEvent ReadAuditEvent(NpgsqlDataReader reader)
+    {
+        using var payloadDocument = JsonDocument.Parse(reader.GetString(reader.GetOrdinal("payload")));
+        var payload = payloadDocument.RootElement;
+        var action = reader.GetString(reader.GetOrdinal("action")).Trim().ToLowerInvariant();
+        var entityType = reader.GetString(reader.GetOrdinal("entity_type")).Trim().ToLowerInvariant();
+        var companyCode = reader.GetString(reader.GetOrdinal("company_entity_number")).Trim();
+        var companyName = reader.GetString(reader.GetOrdinal("company_legal_name")).Trim();
+        var highlights = BuildHighlights(action, payload);
+
+        return new PlatformAuditEvent
+        {
+            AuditId = reader.GetGuid(reader.GetOrdinal("id")),
+            CompanyId = reader.IsDBNull(reader.GetOrdinal("company_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyCode = companyCode,
+            CompanyName = companyName,
+            ScopeLabel = PlatformAuditEvent.BuildScopeLabel(companyName, companyCode),
+            ActorType = reader.GetString(reader.GetOrdinal("actor_type")).Trim().ToLowerInvariant(),
+            ActorId = reader.IsDBNull(reader.GetOrdinal("actor_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            ActorDisplayName = ResolveActorDisplayName(reader),
+            ActorEmail = ResolveActorEmail(reader),
+            EntityType = entityType,
+            EntityId = reader.GetGuid(reader.GetOrdinal("entity_id")),
+            EntityLabel = ResolveEntityLabel(entityType, reader),
+            Action = action,
+            ActionLabel = PlatformAuditEvent.GetActionLabel(action),
+            Detail = BuildDetail(action, payload),
+            Reason = ReadString(payload, "reason", "Reason"),
+            Highlights = highlights,
+            CreatedAtUtc = CoerceTimestamp(reader.GetValue(reader.GetOrdinal("created_at")))
+        };
+    }
+
+    private static string ResolveActorDisplayName(NpgsqlDataReader reader)
+    {
+        var actorType = reader.GetString(reader.GetOrdinal("actor_type")).Trim().ToLowerInvariant();
+        var sysAdminDisplayName = reader.GetString(reader.GetOrdinal("sysadmin_display_name")).Trim();
+        if (!string.IsNullOrWhiteSpace(sysAdminDisplayName))
+        {
+            return sysAdminDisplayName;
+        }
+
+        var actorUsername = reader.GetString(reader.GetOrdinal("actor_username")).Trim();
+        if (!string.IsNullOrWhiteSpace(actorUsername))
+        {
+            return actorUsername;
+        }
+
+        if (string.Equals(actorType, "system", StringComparison.Ordinal))
+        {
+            return "System";
+        }
+
+        return ResolveActorEmail(reader);
+    }
+
+    private static string ResolveActorEmail(NpgsqlDataReader reader)
+    {
+        var sysAdminEmail = reader.GetString(reader.GetOrdinal("sysadmin_email")).Trim();
+        if (!string.IsNullOrWhiteSpace(sysAdminEmail))
+        {
+            return sysAdminEmail;
+        }
+
+        return reader.GetString(reader.GetOrdinal("actor_email")).Trim();
+    }
+
+    private static string ResolveEntityLabel(string entityType, NpgsqlDataReader reader) =>
+        entityType switch
+        {
+            "company" => PlatformAuditEvent.BuildScopeLabel(
+                reader.GetString(reader.GetOrdinal("company_legal_name")).Trim(),
+                reader.GetString(reader.GetOrdinal("company_entity_number")).Trim()),
+            "platform_account" => BuildUserLabel(
+                reader.GetString(reader.GetOrdinal("entity_username")).Trim(),
+                reader.GetString(reader.GetOrdinal("entity_email")).Trim(),
+                fallback: "Platform Account"),
+            "company_membership" => BuildUserLabel(
+                reader.GetString(reader.GetOrdinal("membership_username")).Trim(),
+                reader.GetString(reader.GetOrdinal("membership_email")).Trim(),
+                fallback: "Company Membership"),
+            "sysadmin_account" => BuildUserLabel(
+                reader.GetString(reader.GetOrdinal("entity_sysadmin_display_name")).Trim(),
+                reader.GetString(reader.GetOrdinal("entity_sysadmin_email")).Trim(),
+                fallback: "SysAdmin Account"),
+            _ => entityType
+        };
+
+    private static string BuildUserLabel(string username, string email, string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(email))
+        {
+            return $"{username} ({email})";
+        }
+
+        if (!string.IsNullOrWhiteSpace(username))
+        {
+            return username;
+        }
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            return email;
+        }
+
+        return fallback;
+    }
+
+    private static string BuildDetail(string action, JsonElement payload) =>
+        action switch
+        {
+            "company_status_changed" => BuildTransitionDetail(
+                ReadString(payload, "previous_status"),
+                ReadString(payload, "status")),
+            "account_status_changed" => BuildAccountStatusDetail(payload),
+            "email_change_requested" => BuildPasswordResetDetail(payload),
+            "email_change_dispatched" => BuildPasswordResetDeliveryOutcomeDetail(payload),
+            "email_change_dispatch_failed" => BuildPasswordResetDeliveryOutcomeDetail(payload),
+            "password_change_requested" => BuildPasswordResetDetail(payload),
+            "password_change_dispatched" => BuildPasswordResetDeliveryOutcomeDetail(payload),
+            "password_change_dispatch_failed" => BuildPasswordResetDeliveryOutcomeDetail(payload),
+            "password_reset_requested" => BuildPasswordResetDetail(payload),
+            "password_reset_dispatched" => BuildPasswordResetDeliveryOutcomeDetail(payload),
+            "password_reset_dispatch_failed" => BuildPasswordResetDeliveryOutcomeDetail(payload),
+            "membership_role_changed" => BuildTransitionDetail(
+                ReadString(payload, "previous_role", "PreviousRole"),
+                ReadString(payload, "role", "Role")),
+            "membership_permissions_saved" => PlatformAuditEvent.BuildPermissionChangeDetail(
+                ReadTokens(payload, "added_permission_tokens", "AddedPermissionTokens"),
+                ReadTokens(payload, "removed_permission_tokens", "RemovedPermissionTokens")),
+            "sysadmin_first_account_created" => ReadString(payload, "provisioning_mode"),
+            "sysadmin_password_rotated" => ReadString(payload, "rotation_mode"),
+            _ => string.Empty
+        };
+
+    private static string BuildTransitionDetail(string previousValue, string currentValue)
+    {
+        if (string.IsNullOrWhiteSpace(previousValue) && string.IsNullOrWhiteSpace(currentValue))
+        {
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(previousValue))
+        {
+            return currentValue;
+        }
+
+        if (string.IsNullOrWhiteSpace(currentValue))
+        {
+            return previousValue;
+        }
+
+        return $"{previousValue} -> {currentValue}";
+    }
+
+    private static string BuildAccountStatusDetail(JsonElement payload)
+    {
+        var detail = BuildTransitionDetail(
+            ReadString(payload, "previous_status"),
+            ReadString(payload, "status"));
+        var lockedUntil = ReadString(payload, "locked_until_utc");
+
+        if (string.IsNullOrWhiteSpace(lockedUntil))
+        {
+            return detail;
+        }
+
+        return string.IsNullOrWhiteSpace(detail)
+            ? $"Locked until {lockedUntil}"
+            : $"{detail} | locked until {lockedUntil}";
+    }
+
+    private static string BuildPasswordResetDetail(JsonElement payload)
+    {
+        var deliveryStatus = ReadString(payload, "delivery_status");
+        var maskedDestination = ReadString(payload, "masked_destination");
+        var expiresAt = ReadString(payload, "expires_at_utc");
+
+        var segments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(deliveryStatus))
+        {
+            segments.Add(deliveryStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(maskedDestination))
+        {
+            segments.Add(maskedDestination);
+        }
+
+        if (!string.IsNullOrWhiteSpace(expiresAt))
+        {
+            segments.Add($"expires {expiresAt}");
+        }
+
+        return string.Join(" | ", segments);
+    }
+
+    private static string BuildPasswordResetDeliveryOutcomeDetail(JsonElement payload)
+    {
+        var providerKey = ReadString(payload, "provider_key");
+        var maskedDestination = ReadString(payload, "masked_destination");
+        var failure = ReadString(payload, "failure_message");
+
+        var segments = new List<string>();
+        AddIfPresent(segments, providerKey);
+        AddIfPresent(segments, maskedDestination);
+        AddIfPresent(segments, failure);
+        return string.Join(" | ", segments);
+    }
+
+    private static IReadOnlyList<string> BuildHighlights(string action, JsonElement payload)
+    {
+        var highlights = new List<string>();
+
+        switch (action)
+        {
+            case "company_status_changed":
+            case "account_status_changed":
+                AddIfPresent(highlights, ReadString(payload, "previous_status"));
+                AddIfPresent(highlights, ReadString(payload, "status"));
+                AddIfPresent(highlights, ReadString(payload, "locked_until_utc"));
+                break;
+
+            case "password_reset_requested":
+            case "email_change_requested":
+            case "password_change_requested":
+                AddIfPresent(highlights, ReadString(payload, "delivery_status"));
+                AddIfPresent(highlights, ReadString(payload, "masked_destination"));
+                break;
+
+            case "password_reset_dispatched":
+            case "password_reset_dispatch_failed":
+            case "email_change_dispatched":
+            case "email_change_dispatch_failed":
+            case "password_change_dispatched":
+            case "password_change_dispatch_failed":
+                AddIfPresent(highlights, ReadString(payload, "provider_key"));
+                AddIfPresent(highlights, ReadString(payload, "masked_destination"));
+                AddIfPresent(highlights, ReadString(payload, "failure_message"));
+                break;
+
+            case "membership_role_changed":
+                AddIfPresent(highlights, ReadString(payload, "previous_role", "PreviousRole"));
+                AddIfPresent(highlights, ReadString(payload, "role", "Role"));
+                break;
+
+            case "membership_permissions_saved":
+                highlights.AddRange(
+                    ReadTokens(payload, "added_permission_tokens", "AddedPermissionTokens")
+                        .Select(static token => $"+ {token}"));
+                highlights.AddRange(
+                    ReadTokens(payload, "removed_permission_tokens", "RemovedPermissionTokens")
+                        .Select(static token => $"- {token}"));
+                break;
+
+            case "sysadmin_first_account_created":
+            case "sysadmin_password_rotated":
+                AddIfPresent(highlights, ReadString(payload, "email"));
+                AddIfPresent(highlights, ReadString(payload, "provisioning_mode"));
+                AddIfPresent(highlights, ReadString(payload, "rotation_mode"));
+                break;
+        }
+
+        return highlights;
+    }
+
+    private static void AddIfPresent(List<string> highlights, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            highlights.Add(value);
+        }
+    }
+
+    private static async Task FinalizeDispatchAsSentAsync(
+        NpgsqlConnection connection,
+        Guid dispatchId,
+        Guid requestAuditId,
+        Guid accountId,
+        Guid? sysAdminAccountId,
+        string destination,
+        PlatformNotificationSendResult sendResult,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        await using (var updateDispatch = connection.CreateCommand())
+        {
+            updateDispatch.CommandText =
+                """
+                update platform_notification_dispatches
+                set status = 'sent',
+                    provider_key = @provider_key,
+                    attempt_count = attempt_count + 1,
+                    sent_at = @sent_at,
+                    failed_at = null,
+                    last_error = null,
+                    updated_at = now(),
+                    payload = payload || jsonb_build_object(
+                      'provider_key', @provider_key,
+                      'delivery_mode', 'smtp_provider',
+                      'delivery_status', 'sent',
+                      'sent_at_utc', @sent_at,
+                      'external_reference', @external_reference
+                    )
+                where id = @id;
+                """;
+            updateDispatch.Parameters.AddWithValue("id", dispatchId);
+            updateDispatch.Parameters.AddWithValue("provider_key", sendResult.ProviderKey);
+            updateDispatch.Parameters.AddWithValue("sent_at", now);
+            updateDispatch.Parameters.AddWithValue(
+                "external_reference",
+                string.IsNullOrWhiteSpace(sendResult.ExternalReference)
+                    ? DBNull.Value
+                    : sendResult.ExternalReference);
+            await updateDispatch.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await AppendPasswordResetDeliveryAuditAsync(
+            connection,
+            requestAuditId,
+            accountId,
+            sysAdminAccountId,
+            "password_reset_dispatched",
+            destination,
+            sendResult,
+            failureMessage: null,
+            cancellationToken);
+    }
+
+    private static async Task FinalizeDispatchAsFailedAsync(
+        NpgsqlConnection connection,
+        Guid dispatchId,
+        Guid requestAuditId,
+        Guid accountId,
+        Guid? sysAdminAccountId,
+        string destination,
+        PlatformNotificationSendResult sendResult,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        await using (var updateDispatch = connection.CreateCommand())
+        {
+            updateDispatch.CommandText =
+                """
+                update platform_notification_dispatches
+                set status = 'failed',
+                    provider_key = @provider_key,
+                    attempt_count = attempt_count + 1,
+                    failed_at = @failed_at,
+                    last_error = @last_error,
+                    updated_at = now(),
+                    payload = payload || jsonb_build_object(
+                      'provider_key', @provider_key,
+                      'delivery_mode', 'smtp_provider',
+                      'delivery_status', 'failed',
+                      'failed_at_utc', @failed_at,
+                      'failure_message', @last_error
+                    )
+                where id = @id;
+                """;
+            updateDispatch.Parameters.AddWithValue("id", dispatchId);
+            updateDispatch.Parameters.AddWithValue("provider_key", sendResult.ProviderKey);
+            updateDispatch.Parameters.AddWithValue("failed_at", now);
+            updateDispatch.Parameters.AddWithValue("last_error", sendResult.FailureMessage);
+            await updateDispatch.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await AppendPasswordResetDeliveryAuditAsync(
+            connection,
+            requestAuditId,
+            accountId,
+            sysAdminAccountId,
+            "password_reset_dispatch_failed",
+            destination,
+            sendResult,
+            sendResult.FailureMessage,
+            cancellationToken);
+    }
+
+    private static async Task AppendPasswordResetDeliveryAuditAsync(
+        NpgsqlConnection connection,
+        Guid requestAuditId,
+        Guid accountId,
+        Guid? sysAdminAccountId,
+        string action,
+        string destination,
+        PlatformNotificationSendResult sendResult,
+        string? failureMessage,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            insert into audit_logs (
+              id,
+              company_id,
+              actor_type,
+              actor_id,
+              entity_type,
+              entity_id,
+              action,
+              payload,
+              created_at
+            )
+            values (
+              @id,
+              null,
+              'sysadmin',
+              @actor_id,
+              'platform_account',
+              @entity_id,
+              @action,
+              jsonb_build_object(
+                'request_audit_id', @request_audit_id,
+                'provider_key', @provider_key,
+                'masked_destination', @masked_destination,
+                'failure_message', @failure_message
+              ),
+              now()
+            );
+            """;
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("entity_id", accountId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("request_audit_id", requestAuditId);
+        command.Parameters.AddWithValue("provider_key", sendResult.ProviderKey);
+        command.Parameters.AddWithValue("masked_destination", MaskEmail(destination));
+        command.Parameters.AddWithValue(
+            "failure_message",
+            string.IsNullOrWhiteSpace(failureMessage) ? DBNull.Value : failureMessage);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string ReadString(JsonElement payload, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (payload.TryGetProperty(propertyName, out var value) &&
+                value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString()?.Trim() ?? string.Empty;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static IReadOnlyList<string> ReadTokens(JsonElement payload, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!payload.TryGetProperty(propertyName, out var value) ||
+                value.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            return value
+                .EnumerateArray()
+                .Where(static element => element.ValueKind == JsonValueKind.String)
+                .Select(static element => element.GetString())
+                .Where(static token => !string.IsNullOrWhiteSpace(token))
+                .Select(static token => token!.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static token => token, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        return Array.Empty<string>();
+    }
+
+    private static string NormalizeRequired(string value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"{fieldName} is required.");
+        }
+
+        return value.Trim().ToLowerInvariant();
+    }
+
+    private static string NormalizeReason(string reason, string fallback) =>
+        string.IsNullOrWhiteSpace(reason) ? fallback : reason.Trim();
+
+    private static string CreateVerificationCode()
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        Span<byte> randomBytes = stackalloc byte[6];
+        RandomNumberGenerator.Fill(randomBytes);
+
+        Span<char> code = stackalloc char[6];
+        for (var index = 0; index < code.Length; index++)
+        {
+            code[index] = alphabet[randomBytes[index] % alphabet.Length];
+        }
+
+        return new string(code);
+    }
+
+    private static string HashVerificationCode(string code)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(hash);
+    }
+
+    private static string MaskEmail(string email)
+    {
+        var normalized = email.Trim();
+        var atIndex = normalized.IndexOf('@');
+        if (atIndex <= 1)
+        {
+            return "***";
+        }
+
+        return $"{normalized[..1]}***{normalized[(atIndex - 1)..]}";
+    }
+
+    private static DateTimeOffset CoerceTimestamp(object? value)
+    {
+        if (value is DateTimeOffset offset)
+        {
+            return offset;
+        }
+
+        if (value is DateTime dateTime)
+        {
+            var normalized = dateTime.Kind == DateTimeKind.Utc
+                ? dateTime
+                : DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+            return new DateTimeOffset(normalized);
+        }
+
+        return DateTimeOffset.UtcNow;
+    }
+
+    private static void EnsureAllowed(string value, IReadOnlyCollection<string> allowed, string fieldName)
+    {
+        if (!allowed.Contains(value, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException($"Unsupported {fieldName} '{value}'.");
+        }
+    }
+
+    private sealed record CompanyRecord(
+        Guid Id,
+        string EntityNumber,
+        string LegalName,
+        string Status);
+
+    private sealed record AccountRecord(
+        Guid Id,
+        string Email,
+        string Username,
+        string Status);
+}

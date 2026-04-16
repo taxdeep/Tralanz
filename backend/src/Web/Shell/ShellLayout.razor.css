@@ -1,3 +1,8 @@
+.ws-appbar {
+    background: linear-gradient(180deg, rgba(16, 24, 33, 0.98), rgba(12, 18, 25, 0.98));
+    border-bottom: 1px solid rgba(124, 149, 168, 0.15);
+}
+
 .ws-drawer {
     background:
         linear-gradient(180deg, rgba(16, 24, 33, 0.98), rgba(10, 15, 21, 0.98));
@@ -31,4 +36,8 @@
 
 .ws-main {
     min-height: 100vh;
+}
+
+.ws-main--login {
+    padding-top: 4rem;
 }

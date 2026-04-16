@@ -232,6 +232,19 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
         }
 
+        if (document is OpenItemAdjustmentDocument adjustment)
+        {
+            if (adjustment.AdjustmentLines.Count == 0)
+            {
+                throw new InvalidOperationException("Open item adjustment document must contain at least one line before posting.");
+            }
+
+            if (adjustment.AdjustmentLines.Any(static line => line.AdjustmentAmountTx <= 0m || line.AdjustmentAmountBase <= 0m))
+            {
+                throw new InvalidOperationException("Open item adjustment lines must carry positive transaction and base amounts.");
+            }
+        }
+
         return Task.CompletedTask;
     }
 }
@@ -276,6 +289,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildPayBillFragments(payBill, fxResult).AsReadOnly()),
             FxRevaluationDocument fxRevaluation => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildFxRevaluationFragments(fxRevaluation).AsReadOnly()),
+            OpenItemAdjustmentDocument adjustment => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildOpenItemAdjustmentFragments(adjustment).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -660,6 +675,61 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         foreach (var line in fxRevaluation.RevaluationLines)
         {
             AppendBalanceSideAwareRevaluationFragments(fxRevaluation, line, fragments);
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    private static List<PostingFragment> BuildOpenItemAdjustmentFragments(
+        OpenItemAdjustmentDocument adjustment)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var line in adjustment.AdjustmentLines)
+        {
+            if (line.ReducesDebitBalance)
+            {
+                fragments.Add(new PostingFragment(
+                    line.OffsetAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    0m,
+                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}"));
+                fragments.Add(new PostingFragment(
+                    line.ControlAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    0m,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    line.Description,
+                    ControlRole: line.ControlRole,
+                    PartyId: line.PartyId));
+            }
+            else
+            {
+                fragments.Add(new PostingFragment(
+                    line.ControlAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    0m,
+                    line.Description,
+                    ControlRole: line.ControlRole,
+                    PartyId: line.PartyId));
+                fragments.Add(new PostingFragment(
+                    line.OffsetAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    0m,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}"));
+            }
         }
 
         EnsureBalancedBaseCurrency(fragments);

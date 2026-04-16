@@ -31,7 +31,8 @@ else
                 <MudTh>Status</MudTh>
                 <MudTh>Multi-Currency</MudTh>
                 <MudTh>Members</MudTh>
-                <MudTh></MudTh>
+                <MudTh>Context</MudTh>
+                <MudTh>Governance</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Company">
@@ -48,7 +49,7 @@ else
                 </MudTd>
                 <MudTd DataLabel="Multi-Currency">@(context.MultiCurrencyEnabled ? "Enabled" : "Base only")</MudTd>
                 <MudTd DataLabel="Members">@context.MemberCount</MudTd>
-                <MudTd DataLabel="Actions">
+                <MudTd DataLabel="Context">
                     @if (ShellState.ActiveCompany.CompanyId == context.Id)
                     {
                         <MudChip T="string" Color="Color.Info" Variant="Variant.Filled">Active</MudChip>
@@ -59,6 +60,48 @@ else
                             Switch here
                         </MudButton>
                     }
+                </MudTd>
+                <MudTd DataLabel="Governance">
+                    <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                        @if (string.Equals(context.Status, "active", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Warning"
+                                       Size="Size.Small"
+                                       Disabled="@IsStatusUpdating(context.Id)"
+                                       OnClick="@(() => SetCompanyStatusAsync(context, "inactive"))">
+                                Set inactive
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       Disabled="@IsStatusUpdating(context.Id)"
+                                       OnClick="@(() => SetCompanyStatusAsync(context, "suspended"))">
+                                Suspend
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Success"
+                                       Size="Size.Small"
+                                       Disabled="@IsStatusUpdating(context.Id)"
+                                       OnClick="@(() => SetCompanyStatusAsync(context, "active"))">
+                                Reactivate
+                            </MudButton>
+                        }
+
+                        @if (!string.Equals(context.Status, "archived", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       Disabled="@IsStatusUpdating(context.Id)"
+                                       OnClick="@(() => SetCompanyStatusAsync(context, "archived"))">
+                                Archive
+                            </MudButton>
+                        }
+                    </MudStack>
                 </MudTd>
             </RowTemplate>
         </MudTable>
@@ -76,6 +119,7 @@ else
 
     private bool _isLoading = true;
     private IReadOnlyList<CompanyWorkspaceSummary> _companies = Array.Empty<CompanyWorkspaceSummary>();
+    private readonly HashSet<Guid> _statusUpdates = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -95,5 +139,30 @@ else
 
         ShellState.ApplyControlContext(context);
         Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+    }
+
+    private bool IsStatusUpdating(Guid companyId) => _statusUpdates.Contains(companyId);
+
+    private async Task SetCompanyStatusAsync(CompanyWorkspaceSummary company, string status)
+    {
+        _statusUpdates.Add(company.Id);
+        var reason = $"SysAdmin set company status from {company.Status} to {status} from the control shell.";
+
+        try
+        {
+            var updated = await SysAdminControlClient.SetCompanyStatusAsync(company.Id, status, reason);
+            if (!updated)
+            {
+                Snackbar.Add($"Unable to set {company.CompanyCode} to {status}.", Severity.Warning);
+                return;
+            }
+
+            _companies = await SysAdminControlClient.ListCompaniesAsync();
+            Snackbar.Add($"{company.CompanyCode} status changed to {status}.", Severity.Success);
+        }
+        finally
+        {
+            _statusUpdates.Remove(company.Id);
+        }
     }
 }

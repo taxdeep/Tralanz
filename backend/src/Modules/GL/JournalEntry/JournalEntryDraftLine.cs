@@ -50,6 +50,10 @@ public sealed record class JournalEntryAccountOption
 
     public required string Name { get; init; }
 
+    public string RootType { get; init; } = string.Empty;
+
+    public string DetailType { get; init; } = string.Empty;
+
     public required string TypeLabel { get; init; }
 
     public required string CurrencyCode { get; init; }

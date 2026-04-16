@@ -1,0 +1,175 @@
+@page "/audit"
+
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Audit | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+@if (_isLoading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+}
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+    This timeline is the formal governance read model for company status, platform account status,
+    password reset requests, and company membership changes.
+</MudAlert>
+
+@if (_events.Count == 0)
+{
+    <CitusEmptyState
+        Title="No governance audit events"
+        Message="The SysAdmin audit surface has not returned any reviewable governance events yet."
+        ActionLabel="Open users"
+        ActionHref="users" />
+}
+else
+{
+    <MudPaper Class="pa-4">
+        <MudTable Items="_events" Dense="true" Hover="true" Breakpoint="Breakpoint.Md">
+            <HeaderContent>
+                <MudTh>When</MudTh>
+                <MudTh>Scope</MudTh>
+                <MudTh>Action</MudTh>
+                <MudTh>Entity</MudTh>
+                <MudTh>Actor</MudTh>
+                <MudTh>Detail</MudTh>
+                <MudTh>Reason</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="When">
+                    <MudText Typo="Typo.body2">@context.CreatedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Scope">
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(context.CompanyId.HasValue ? Color.Default : Color.Info)">
+                        @context.ScopeLabel
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Action">
+                    <MudStack Spacing="1">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@GetActionColor(context.Action)">
+                            @context.ActionLabel
+                        </MudChip>
+                        <MudText Typo="Typo.caption" Class="text-secondary">@context.Action</MudText>
+                    </MudStack>
+                </MudTd>
+                <MudTd DataLabel="Entity">
+                    <MudText Typo="Typo.body2">@context.EntityLabel</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.EntityType</MudText>
+                </MudTd>
+                <MudTd DataLabel="Actor">
+                    <MudText Typo="Typo.body2">@GetActorLabel(context)</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.ActorType</MudText>
+                </MudTd>
+                <MudTd DataLabel="Detail">
+                    <MudStack Spacing="1">
+                        @if (!string.IsNullOrWhiteSpace(context.Detail))
+                        {
+                            <MudText Typo="Typo.body2">@context.Detail</MudText>
+                        }
+
+                        @if (context.Highlights.Count > 0)
+                        {
+                            <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                                @foreach (var highlight in context.Highlights)
+                                {
+                                    <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@highlight</MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudStack>
+                </MudTd>
+                <MudTd DataLabel="Reason">
+                    @if (string.IsNullOrWhiteSpace(context.Reason))
+                    {
+                        <MudText Typo="Typo.caption" Class="text-secondary">No explicit reason</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.Reason</MudText>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Audit",
+        Subtitle = "Review company, account, password-reset, and membership governance actions."
+    };
+
+    private bool _isLoading = true;
+    private IReadOnlyList<PlatformAuditEventSummary> _events = Array.Empty<PlatformAuditEventSummary>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        try
+        {
+            _events = await SysAdminControlClient.ListRecentAuditEventsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unable to load audit events. {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static Color GetActionColor(string action) =>
+        action switch
+        {
+            "company_status_changed" => Color.Warning,
+            "account_status_changed" => Color.Warning,
+            "password_reset_requested" => Color.Info,
+            "password_reset_dispatched" => Color.Success,
+            "password_reset_dispatch_failed" => Color.Error,
+            "membership_role_changed" => Color.Success,
+            "membership_permissions_saved" => Color.Primary,
+            "sysadmin_first_account_created" => Color.Info,
+            "sysadmin_password_rotated" => Color.Warning,
+            _ => Color.Default
+        };
+
+    private static string GetActorLabel(PlatformAuditEventSummary auditEvent)
+    {
+        if (!string.IsNullOrWhiteSpace(auditEvent.ActorDisplayName) &&
+            !string.IsNullOrWhiteSpace(auditEvent.ActorEmail) &&
+            !string.Equals(auditEvent.ActorDisplayName, auditEvent.ActorEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{auditEvent.ActorDisplayName} ({auditEvent.ActorEmail})";
+        }
+
+        if (!string.IsNullOrWhiteSpace(auditEvent.ActorDisplayName))
+        {
+            return auditEvent.ActorDisplayName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(auditEvent.ActorEmail))
+        {
+            return auditEvent.ActorEmail;
+        }
+
+        return "Unknown actor";
+    }
+}

@@ -11,4 +11,10 @@ public interface IPlatformRuntimeStateRepository
     Task<PlatformMaintenanceState> UpsertMaintenanceStateAsync(
         PlatformMaintenanceState state,
         CancellationToken cancellationToken);
+
+    Task<PlatformNotificationReadinessState?> GetNotificationReadinessStateAsync(CancellationToken cancellationToken);
+
+    Task<PlatformNotificationReadinessState> UpsertNotificationReadinessStateAsync(
+        PlatformNotificationReadinessState state,
+        CancellationToken cancellationToken);
 }

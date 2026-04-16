@@ -1,11 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 
 namespace Web.Shell.Services;
 
 public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, ILogger<ShellAccountingDocumentReviewClient> logger)
 {
-    public async Task<ShellAccountingDocumentReviewSummary?> GetDocumentAsync(
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReviewSummary>> GetDocumentAsync(
         Guid companyId,
         string sourceType,
         Guid documentId,
@@ -14,33 +15,343 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         if (!TryBuildApiPath(sourceType, documentId, out var requestPath))
         {
             logger.LogInformation("Unsupported accounting document review source type {SourceType}.", sourceType);
-            return null;
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReviewSummary>.Failure(
+                "Unsupported accounting document review source type.");
         }
 
-        var requestUri = $"{requestPath}?companyId={companyId:D}";
+        return await GetOptionalAsync<ShellAccountingDocumentReviewSummary>(
+            $"{requestPath}?companyId={companyId:D}",
+            "accounting document review",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
 
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildReverseRequestApiPath(sourceType, documentId, out var requestPath))
+        {
+            logger.LogInformation("Unsupported accounting document reverse request source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>.Failure(
+                "Unsupported accounting document reverse request source type.");
+        }
+
+        return await GetOptionalAsync<ShellAccountingDocumentReverseRequestSummary>(
+            $"{requestPath}?companyId={companyId:D}",
+            "accounting reverse request",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>> RequestReverseAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildReverseApiPath(sourceType, documentId, out var requestPath))
+        {
+            logger.LogInformation("Unsupported accounting document reverse command source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>.Failure(
+                "Unsupported accounting document reverse command source type.");
+        }
+
+        return await PostReverseCommandAsync(
+            $"{requestPath}?companyId={companyId:D}",
+            "request reverse",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>> SubmitReverseRequestAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildReverseRequestTransitionApiPath(sourceType, documentId, requestId, "submit", out var requestPath))
+        {
+            logger.LogInformation("Unsupported accounting document reverse submit source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>.Failure(
+                "Unsupported accounting document reverse submit source type.");
+        }
+
+        return await PostReverseCommandAsync(
+            $"{requestPath}?companyId={companyId:D}",
+            "submit reverse request",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>> ExecuteReverseRequestAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildReverseRequestTransitionApiPath(sourceType, documentId, requestId, "execute", out var requestPath))
+        {
+            logger.LogInformation("Unsupported accounting document reverse execute source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>.Failure(
+                "Unsupported accounting document reverse execute source type.");
+        }
+
+        return await PostReverseCommandAsync(
+            $"{requestPath}?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            "execute reverse request",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseApplyReadinessSummary>> GetReverseRequestApplyReadinessAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildReverseRequestTransitionApiPath(sourceType, documentId, requestId, "apply-readiness", out var requestPath))
+        {
+            logger.LogInformation("Unsupported accounting document reverse readiness source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseApplyReadinessSummary>.Failure(
+                "Unsupported accounting document reverse readiness source type.");
+        }
+
+        return await GetOptionalAsync<ShellAccountingDocumentReverseApplyReadinessSummary>(
+            $"{requestPath}?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            "reverse apply-readiness",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseExecutionPlanSummary>> GetReverseRequestExecutionPlanAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildReverseRequestTransitionApiPath(sourceType, documentId, requestId, "execution-plan", out var requestPath))
+        {
+            logger.LogInformation("Unsupported accounting document reverse execution plan source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseExecutionPlanSummary>.Failure(
+                "Unsupported accounting document reverse execution plan source type.");
+        }
+
+        return await GetOptionalAsync<ShellAccountingDocumentReverseExecutionPlanSummary>(
+            $"{requestPath}?companyId={companyId:D}&asOfDate={asOfDate:yyyy-MM-dd}",
+            "reverse execution plan",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellSettlementApplicationReversalSummary>>> ListSettlementApplicationReversalsAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildSettlementApplicationReversalsApiPath(sourceType, documentId, out var requestPath))
+        {
+            logger.LogInformation("Unsupported settlement application reversal source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<IReadOnlyList<ShellSettlementApplicationReversalSummary>>.Failure(
+                "Unsupported settlement application reversal source type.");
+        }
+
+        return await GetListAsync<ShellSettlementApplicationReversalSummary>(
+            $"{requestPath}?companyId={companyId:D}",
+            "settlement application reversals",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    public async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellSubledgerReverseBlockerSummary>>> ListSubledgerReverseBlockersAsync(
+        Guid companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryBuildSubledgerReverseBlockersApiPath(sourceType, documentId, out var requestPath))
+        {
+            logger.LogInformation("Unsupported subledger reverse blocker source type {SourceType}.", sourceType);
+            return WebShellAuthenticatedApiResult<IReadOnlyList<ShellSubledgerReverseBlockerSummary>>.Failure(
+                "Unsupported subledger reverse blocker source type.");
+        }
+
+        return await GetListAsync<ShellSubledgerReverseBlockerSummary>(
+            $"{requestPath}?companyId={companyId:D}",
+            "subledger reverse blockers",
+            sourceType,
+            documentId,
+            cancellationToken);
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>> PostReverseCommandAsync(
+        string requestUri,
+        string operationLabel,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
-
-            if (response.StatusCode == HttpStatusCode.NotFound)
+            using var response = await httpClient.PostAsync(requestUri, content: null, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
-                logger.LogInformation(
-                    "Accounting document review is unavailable because {SourceType} {DocumentId} was not found in company {CompanyId}.",
-                    sourceType,
-                    documentId,
-                    companyId);
-                return null;
+                return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>.RequiresAuthentication();
             }
 
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<ShellAccountingDocumentReviewSummary>(cancellationToken);
+            var result = await response.Content.ReadFromJsonAsync<ShellAccountingDocumentReverseCommandResultSummary>(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogInformation(
+                    "Unable to {OperationLabel} for {SourceType} {DocumentId}. Status code {StatusCode}.",
+                    operationLabel,
+                    sourceType,
+                    documentId,
+                    response.StatusCode);
+            }
+
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>.Success(
+                result ?? new ShellAccountingDocumentReverseCommandResultSummary
+                {
+                    OutcomeCode = response.IsSuccessStatusCode ? "accepted" : "request_failed",
+                    Message = response.IsSuccessStatusCode
+                        ? "The reverse command completed, but no response body was returned."
+                        : $"The reverse command returned HTTP {(int)response.StatusCode}."
+                });
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Unable to load accounting document review for {SourceType} {DocumentId}.", sourceType, documentId);
-            return null;
+            logger.LogWarning(ex, "Unable to {OperationLabel} for {SourceType} {DocumentId}.", operationLabel, sourceType, documentId);
+            return WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
         }
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<T>> GetOptionalAsync<T>(
+        string requestUri,
+        string operationLabel,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<T>.RequiresAuthentication();
+            }
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return WebShellAuthenticatedApiResult<T>.NotFound();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<T>.Failure(await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+            return payload is null
+                ? WebShellAuthenticatedApiResult<T>.Failure($"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<T>.Success(payload);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load {OperationLabel} for {SourceType} {DocumentId}.", operationLabel, sourceType, documentId);
+            return WebShellAuthenticatedApiResult<T>.Failure(
+                $"Unable to load {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>> GetListAsync<TItem>(
+        string requestUri,
+        string operationLabel,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.RequiresAuthentication();
+            }
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.Success(Array.Empty<TItem>());
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.Failure(await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<TItem[]>(cancellationToken);
+            return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.Success(payload ?? Array.Empty<TItem>());
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load {OperationLabel} for {SourceType} {DocumentId}.", operationLabel, sourceType, documentId);
+            return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.Failure(
+                $"Unable to load {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return WebShellBusinessSessionClient.AuthenticationRequiredError;
+        }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return "The requested accounting document resource was not found in the active company context.";
+        }
+
+        try
+        {
+            var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
+            if (payload?["message"]?.GetValue<string>() is { Length: > 0 } message)
+            {
+                return message;
+            }
+
+            if (payload?["error"]?.GetValue<string>() is { Length: > 0 } error)
+            {
+                return error;
+            }
+        }
+        catch
+        {
+        }
+
+        return $"Accounting document review returned HTTP {(int)response.StatusCode}.";
     }
 
     private static bool TryBuildApiPath(string? sourceType, Guid documentId, out string requestPath)
@@ -49,6 +360,61 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         requestPath = normalized is null
             ? string.Empty
             : $"accounting/document-review/{normalized}/{documentId:D}";
+
+        return normalized is not null;
+    }
+
+    private static bool TryBuildReverseApiPath(string? sourceType, Guid documentId, out string requestPath)
+    {
+        var normalized = Normalize(sourceType);
+        requestPath = normalized is null
+            ? string.Empty
+            : $"accounting/source-document-lifecycle/{normalized}/{documentId:D}/reverse";
+
+        return normalized is not null;
+    }
+
+    private static bool TryBuildReverseRequestApiPath(string? sourceType, Guid documentId, out string requestPath)
+    {
+        var normalized = Normalize(sourceType);
+        requestPath = normalized is null
+            ? string.Empty
+            : $"accounting/source-document-lifecycle/{normalized}/{documentId:D}/reverse-request";
+
+        return normalized is not null;
+    }
+
+    private static bool TryBuildReverseRequestTransitionApiPath(
+        string? sourceType,
+        Guid documentId,
+        Guid requestId,
+        string transition,
+        out string requestPath)
+    {
+        var normalized = Normalize(sourceType);
+        requestPath = normalized is null
+            ? string.Empty
+            : $"accounting/source-document-lifecycle/{normalized}/{documentId:D}/reverse-request/{requestId:D}/{transition}";
+
+        return normalized is not null;
+    }
+
+    private static bool TryBuildSubledgerReverseBlockersApiPath(string? sourceType, Guid documentId, out string requestPath)
+    {
+        var normalized = Normalize(sourceType);
+        requestPath = normalized is null
+            ? string.Empty
+            : $"accounting/source-document-lifecycle/{normalized}/{documentId:D}/reverse-blockers";
+
+        return normalized is not null;
+    }
+
+    private static bool TryBuildSettlementApplicationReversalsApiPath(string? sourceType, Guid documentId, out string requestPath)
+    {
+        var normalized = Normalize(sourceType);
+        requestPath = normalized is null
+            ? string.Empty
+            : $"accounting/source-document-lifecycle/{normalized}/{documentId:D}/settlement-application-reversals";
 
         return normalized is not null;
     }

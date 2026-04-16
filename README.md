@@ -1,6 +1,6 @@
 # Citus
 
-The current backend direction also includes a `.NET 11` + PostgreSQL platform core that registers system modules and entity metadata for the accounting backend.
+The current backend direction also includes a `.NET 11 + C# 15` + PostgreSQL platform core that registers system modules and entity metadata for the accounting backend.
 
 ## Product Authority
 
@@ -33,4 +33,3 @@ Related architecture/design documents:
 
 - [backend/README.md](./backend/README.md)
 - [backend/Citus.Accounting.sln](./backend/Citus.Accounting.sln)
-

@@ -74,6 +74,43 @@ public sealed class CompanySessionContextWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task GetAsync_IncludesMembershipPermissionTokensInUserRoles()
+    {
+        var userId = Guid.NewGuid();
+        var companyId = Guid.NewGuid();
+        var entityNumber = BuildEntityNumber();
+        var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var store = new PostgreSqlCompanySessionContextStore(connectionFactory);
+        var workflow = new CompanySessionContextWorkflow(store);
+
+        try
+        {
+            await using (var connection = await connectionFactory.OpenAsync(CancellationToken.None))
+            {
+                await InsertUserAsync(connection, userId, CancellationToken.None);
+                await InsertCompanyAsync(connection, companyId, entityNumber, "Permission Session Co.", "USD", false, CancellationToken.None);
+                await InsertMembershipAsync(
+                    connection,
+                    companyId,
+                    userId,
+                    "user",
+                    true,
+                    CancellationToken.None,
+                    """["company_book_governance","ap"]""");
+            }
+
+            var context = await workflow.GetAsync(userId, companyId, CancellationToken.None);
+
+            Assert.NotNull(context);
+            Assert.Equal(["ap", "company_book_governance", "user"], context!.User.Roles);
+        }
+        finally
+        {
+            await CleanupAsync(connectionFactory, userId, companyId, null, CancellationToken.None);
+        }
+    }
+
     private static string GetConnectionString() =>
         Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
         ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
@@ -177,10 +214,30 @@ public sealed class CompanySessionContextWorkflowTests
         Guid userId,
         string role,
         bool isActive,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? permissionsJson = null)
     {
+        var hasPermissionsColumn = await HasMembershipPermissionsColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = hasPermissionsColumn
+            ?
+            """
+            insert into company_memberships (
+              company_id,
+              user_id,
+              role,
+              permissions,
+              is_active
+            )
+            values (
+              @company_id,
+              @user_id,
+              @role,
+              @permissions::jsonb,
+              @is_active
+            );
+            """
+            :
             """
             insert into company_memberships (
               company_id,
@@ -198,8 +255,32 @@ public sealed class CompanySessionContextWorkflowTests
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("user_id", userId);
         command.Parameters.AddWithValue("role", role);
+        if (hasPermissionsColumn)
+        {
+            command.Parameters.AddWithValue("permissions", permissionsJson ?? "[]");
+        }
+
         command.Parameters.AddWithValue("is_active", isActive);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> HasMembershipPermissionsColumnAsync(
+        Npgsql.NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select exists (
+              select 1
+              from information_schema.columns
+              where table_schema = 'public'
+                and table_name = 'company_memberships'
+                and column_name = 'permissions'
+            );
+            """;
+
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     private static async Task CleanupAsync(

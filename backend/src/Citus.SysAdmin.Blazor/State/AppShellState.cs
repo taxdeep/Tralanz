@@ -7,6 +7,12 @@ namespace Citus.SysAdmin.Blazor.State;
 
 public sealed class AppShellState
 {
+    public SysAdminAuthSessionSummary? AuthSession { get; private set; }
+
+    public string SessionToken { get; private set; } = string.Empty;
+
+    public bool IsAuthenticated => AuthSession is not null && !string.IsNullOrWhiteSpace(SessionToken);
+
     public SysAdminOperatorSummary Operator { get; private set; } = new()
     {
         DisplayName = "Platform Administrator",
@@ -48,6 +54,8 @@ public sealed class AppShellState
             [
                 new NavMenuItem { Title = "Companies", Href = "companies", Icon = Icons.Material.Filled.Domain },
                 new NavMenuItem { Title = "Users", Href = "users", Icon = Icons.Material.Filled.People },
+                new NavMenuItem { Title = "Audit", Href = "audit", Icon = Icons.Material.Filled.FactCheck },
+                new NavMenuItem { Title = "Security", Href = "security", Icon = Icons.Material.Filled.AdminPanelSettings },
                 new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = Icons.Material.Filled.BuildCircle },
                 new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = Icons.Material.Filled.MonitorHeart }
             ]
@@ -62,6 +70,37 @@ public sealed class AppShellState
     public void SetActiveCompany(CompanyContextSummary company)
     {
         ActiveCompany = company;
+    }
+
+    public void ApplyAuthenticatedSession(string sessionToken, SysAdminAuthSessionSummary session)
+    {
+        SessionToken = sessionToken.Trim();
+        AuthSession = session;
+        Operator = new SysAdminOperatorSummary
+        {
+            DisplayName = session.DisplayName,
+            Email = session.Email,
+            Roles = session.Roles
+        };
+    }
+
+    public void ClearAuthenticatedSession()
+    {
+        AuthSession = null;
+        SessionToken = string.Empty;
+        Operator = new SysAdminOperatorSummary
+        {
+            DisplayName = "Platform Administrator",
+            Email = "sysadmin@citus.local",
+            Roles = ["sysadmin"]
+        };
+        ActiveCompany = new CompanyContextSummary
+        {
+            CompanyCode = "SYS",
+            CompanyName = "Platform Control",
+            IsSystemScope = true
+        };
+        AvailableCompanies = Array.Empty<CompanyWorkspaceSummary>();
     }
 
     public void ApplyControlContext(SysAdminControlContextSummary context)

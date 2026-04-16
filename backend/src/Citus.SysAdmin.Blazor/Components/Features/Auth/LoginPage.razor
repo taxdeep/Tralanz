@@ -1,0 +1,227 @@
+@page "/login"
+
+@inject AppShellState ShellState
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+@inject SysAdminAuthenticationClient SysAdminAuthenticationClient
+@inject SysAdminControlClient SysAdminControlClient
+
+<PageTitle>Login | Citus SysAdmin</PageTitle>
+
+<MudPaper Class="pa-6 mt-10">
+    @if (_isLoadingSetup)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    }
+
+    @if (_setupStatus?.SetupRequired == true)
+    {
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">PlatformOps</MudText>
+            <MudText Typo="Typo.h4">Create First SysAdmin</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                No SysAdmin operator exists yet. Provision the first independent platform admin before protected control surfaces can be used.
+            </MudText>
+        </MudStack>
+
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
+            Bootstrap credential seeding is not the primary path here. This setup flow is the governed way to create the first SysAdmin operator.
+        </MudAlert>
+
+        <MudForm Class="mt-6" @ref="_setupForm">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_setupDisplayName"
+                              Label="Display name"
+                              Variant="Variant.Outlined"
+                              Required="true"
+                              Immediate="true" />
+                <MudTextField @bind-Value="_setupEmail"
+                              Label="Email"
+                              Variant="Variant.Outlined"
+                              Required="true"
+                              Immediate="true" />
+                <MudTextField @bind-Value="_setupPassword"
+                              Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Password"
+                              Required="true" />
+                <MudTextField @bind-Value="_setupPasswordConfirm"
+                              Label="Confirm password"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Password"
+                              Required="true" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="_isSubmitting"
+                           OnClick="ProvisionFirstAccountAsync">
+                    @(_isSubmitting ? "Provisioning..." : "Create first SysAdmin")
+                </MudButton>
+            </MudStack>
+        </MudForm>
+    }
+    else
+    {
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">PlatformOps</MudText>
+            <MudText Typo="Typo.h4">SysAdmin Sign In</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Independent platform governance session for maintenance, company lifecycle, and account control.
+            </MudText>
+        </MudStack>
+
+        @if (_setupStatus?.BootstrapSeedingActive == true)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
+                Development bootstrap seeding is active for `@_setupStatus.BootstrapEmailHint`. Use it only as a local bootstrap path and rotate the secret immediately after sign-in.
+            </MudAlert>
+        }
+
+        <MudForm Class="mt-6" @ref="_signInForm">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_email"
+                              Label="Email"
+                              Variant="Variant.Outlined"
+                              Required="true"
+                              Immediate="true" />
+                <MudTextField @bind-Value="_password"
+                              Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Password"
+                              Required="true" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="_isSubmitting"
+                           OnClick="SignInAsync">
+                    @(_isSubmitting ? "Signing in..." : "Sign in")
+                </MudButton>
+            </MudStack>
+        </MudForm>
+    }
+</MudPaper>
+
+@code
+{
+    private MudForm? _signInForm;
+    private MudForm? _setupForm;
+    private SysAdminAuthenticationClient.SetupStatusResponse? _setupStatus;
+    private string _email = "sysadmin@citus.local";
+    private string _password = "change-me-now";
+    private string _setupDisplayName = "Platform Administrator";
+    private string _setupEmail = "sysadmin@citus.local";
+    private string _setupPassword = string.Empty;
+    private string _setupPasswordConfirm = string.Empty;
+    private bool _isSubmitting;
+    private bool _isLoadingSetup = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSetupStateAsync();
+    }
+
+    private async Task LoadSetupStateAsync()
+    {
+        _isLoadingSetup = true;
+
+        try
+        {
+            _setupStatus = await SysAdminAuthenticationClient.GetSetupStatusAsync();
+            if (_setupStatus is not null && !string.IsNullOrWhiteSpace(_setupStatus.BootstrapEmailHint))
+            {
+                _email = _setupStatus.BootstrapEmailHint;
+                _setupEmail = _setupStatus.BootstrapEmailHint;
+            }
+        }
+        finally
+        {
+            _isLoadingSetup = false;
+        }
+    }
+
+    private async Task ProvisionFirstAccountAsync()
+    {
+        if (_setupForm is not null)
+        {
+            await _setupForm.ValidateAsync();
+            if (!_setupForm.IsValid)
+            {
+                return;
+            }
+        }
+
+        if (!string.Equals(_setupPassword, _setupPasswordConfirm, StringComparison.Ordinal))
+        {
+            Snackbar.Add("Password confirmation does not match.", Severity.Warning);
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var outcome = await SysAdminAuthenticationClient.ProvisionFirstAccountAsync(
+                _setupEmail,
+                _setupDisplayName,
+                _setupPassword);
+
+            if (!outcome.Succeeded)
+            {
+                Snackbar.Add(outcome.Message, Severity.Warning);
+                return;
+            }
+
+            Snackbar.Add("First SysAdmin operator provisioned.", Severity.Success);
+            _email = _setupEmail;
+            _password = _setupPassword;
+            _setupPassword = string.Empty;
+            _setupPasswordConfirm = string.Empty;
+
+            await LoadSetupStateAsync();
+            await SignInAsync();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task SignInAsync()
+    {
+        if (_signInForm is not null)
+        {
+            await _signInForm.ValidateAsync();
+            if (!_signInForm.IsValid)
+            {
+                return;
+            }
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var response = await SysAdminAuthenticationClient.SignInAsync(_email, _password);
+            if (response is null || string.IsNullOrWhiteSpace(response.SessionToken))
+            {
+                Snackbar.Add("Unable to sign in. Check the SysAdmin secret and account status.", Severity.Warning);
+                return;
+            }
+
+            ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session);
+            await JS.InvokeVoidAsync("citusSysAdminAuth.setSessionToken", response.SessionToken);
+
+            var context = await SysAdminControlClient.GetContextAsync();
+            if (context is not null)
+            {
+                ShellState.ApplyControlContext(context);
+            }
+
+            Snackbar.Add($"Welcome back, {response.Session.DisplayName}.", Severity.Success);
+            NavigationManager.NavigateTo("overview");
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

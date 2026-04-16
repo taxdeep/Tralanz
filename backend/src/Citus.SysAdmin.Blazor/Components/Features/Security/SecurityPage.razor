@@ -1,0 +1,121 @@
+@page "/security"
+
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject SysAdminAuthenticationClient SysAdminAuthenticationClient
+
+<PageTitle>Security | Citus SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<MudPaper Class="pa-4">
+    <MudStack Spacing="1" Class="mb-4">
+        <MudText Typo="Typo.h6">Rotate SysAdmin Secret</MudText>
+        <MudText Typo="Typo.body2" Class="text-secondary">
+            Rotate the current platform operator secret and revoke existing SysAdmin sessions.
+        </MudText>
+    </MudStack>
+
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+        After a successful secret rotation, the current SysAdmin session is revoked and you will sign in again with the new secret.
+    </MudAlert>
+
+    <MudForm @ref="_form">
+        <MudStack Spacing="3">
+            <MudTextField Value="@ShellState.Operator.DisplayName"
+                          Label="Operator"
+                          Variant="Variant.Outlined"
+                          Disabled="true" />
+            <MudTextField Value="@ShellState.Operator.Email"
+                          Label="Email"
+                          Variant="Variant.Outlined"
+                          Disabled="true" />
+            <MudTextField @bind-Value="_currentPassword"
+                          Label="Current password"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          Required="true" />
+            <MudTextField @bind-Value="_newPassword"
+                          Label="New password"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          Required="true" />
+            <MudTextField @bind-Value="_confirmPassword"
+                          Label="Confirm new password"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          Required="true" />
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="_isSubmitting"
+                       OnClick="RotateSecretAsync">
+                @(_isSubmitting ? "Rotating..." : "Rotate secret")
+            </MudButton>
+        </MudStack>
+    </MudForm>
+</MudPaper>
+
+@code
+{
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Security",
+        Subtitle = "Rotate the current SysAdmin secret and close existing platform sessions."
+    };
+
+    private MudForm? _form;
+    private string _currentPassword = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private bool _isSubmitting;
+
+    private async Task RotateSecretAsync()
+    {
+        if (_form is not null)
+        {
+            await _form.ValidateAsync();
+            if (!_form.IsValid)
+            {
+                return;
+            }
+        }
+
+        if (!string.Equals(_newPassword, _confirmPassword, StringComparison.Ordinal))
+        {
+            Snackbar.Add("Password confirmation does not match.", Severity.Warning);
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var outcome = await SysAdminAuthenticationClient.RotateSecretAsync(
+                ShellState.SessionToken,
+                _currentPassword,
+                _newPassword);
+
+            if (!outcome.Succeeded)
+            {
+                Snackbar.Add(outcome.Message, Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("citusSysAdminAuth.clearSessionToken");
+            ShellState.ClearAuthenticatedSession();
+            _currentPassword = string.Empty;
+            _newPassword = string.Empty;
+            _confirmPassword = string.Empty;
+
+            Snackbar.Add("SysAdmin secret rotated. Sign in again with the new secret.", Severity.Success);
+            NavigationManager.NavigateTo("login", forceLoad: true);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

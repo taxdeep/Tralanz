@@ -49,47 +49,46 @@ Citus aims to provide a system that is:
 - stable enough for long-term expansion
 
 ### 1.4 核心技术栈（ABP 治理版，适合 AI 主导开发）
-- 框架：.NET 11 (ASP.NET Core)
-- **总体架构**：**ABP-based Modular Monolith（基于 ABP 的模块化单体） + DDD（领域驱动设计） + CQRS（读写分离） + Vertical Slice Architecture（按功能切片）**
-  - ABP 负责平台治理与通用基础设施。
+- 框架：.NET 11 + C# 15（当前按 preview SDK / preview language features 基线推进）(ASP.NET Core)
+- **总体架构**：**Modular Monolith + DDD（领域驱动设计） + CQRS（读写分离） + Vertical Slice Architecture（按功能切片）**
+
   - Citus 自研模块负责 accounting truth、posting/tax/FX/reconciliation 等核心业务真相。
-  - DDD 应用于规则密集的核心域；简单后台管理与配置型模块保持务实，不为了模式而模式。
-  - 首期不强制按每个模块拆成大量独立项目；先在单体内保持清晰边界，等模块稳定后再提升可复用度。
+  - 采用模块化单体结构（Modular Monolith），每个业务领域形成清晰的模块边界（例如 Accounting Module、Multi-Book Module、Reconciliation Module 等）
+  - 核心规则密集域（Posting Engine、Tax Engine、FX Conversion Engine、Reconciliation Control）采用严格 DDD（Aggregate Root、Domain Service、Value Object、Domain Events）
+  - 简单配置型模块（Settings、Profile、基本 CRUD）采用轻量 Vertical Slice，避免过度抽象
+  - 模块之间通过明确接口和领域事件解耦，保持高内聚、低耦合，便于未来按需拆分为微服务。
+  - 首期在单体内实现清晰物理和逻辑隔离，待核心引擎稳定后再逐步提升模块独立性。
 - 数据库：PostgreSQL
 - ORM：EF Core 为主，Dapper 为辅
   - 写操作（Commands）：统一使用 EF Core，负责事务、Change Tracking、迁移、领域验证。
   - 读操作（Queries）：默认使用 EF Core（AsNoTracking / Projection / Raw SQL）。
   - 只有在报表、大分页、复杂聚合、性能热点被确认后，再引入 Dapper。
 - 前端：Blazor Web App + MudBlazor
-  - 优先面向内部 ERP / Back Office 场景，保持 C# 全栈，降低学习与维护成本。
-  - 首期不把 React/Vue + TypeScript 作为主路线。
-  - 若未来需要独立客户门户、公开站点、移动端配套或前端团队独立演进，再评估 React/Vue + TypeScript。
-- 身份认证 / 账户：优先复用 ABP Identity / Account
+  - 保持 C# 全栈，最大化模型共享、类型安全和维护性，降低学习与长期维护成本。
+  - 优先服务内部 ERP / Back Office 场景
+  - 首期不把 React/Vue + TypeScript 作为主路线。若未来需要独立客户门户、公开站点、移动端配套或前端团队独立演进，再评估 React/Vue + TypeScript。
+- 身份认证 / 账户：借鉴 ABP 的权限与多租户理念
+  - 实现细粒度权限系统（支持 AR、AP、Reports、Approval 等领域权限）。
+  - 严格的多公司隔离（Company Isolation）：每个会话必须有明确的 active_company_id，所有数据操作必须强制过滤。
+  - 使用基于策略的授权（Policy-based Authorization），便于未来扩展复杂业务规则权限
   - 若未来出现独立 AuthServer、第三方 API 客户端、SSO、单点登出等需求，再引入 OpenIddict 体系。
-- 平台治理基础设施：优先复用 ABP / ABP Commercial 模块
-  - Permission Management
-  - Setting Management
-  - Feature Management
-  - Audit Logging
-  - Background Jobs / Background Workers
-  - Blob Storing
-  - Text Template Management
-  - Tenant Management / SaaS（仅在 SaaS 化时启用）
+- 平台治理基础设施：借鉴 ABP 核心理念，自行实现或轻量引入
+  - 审计日志：所有关键操作（Posting、Reconciliation、FX Override、状态变更）必须记录完整审计轨迹（Actor、Before/After、CompanyId、Reason）。
+  - 设置管理：公司级和系统级设置统一管理（Numbering、Currencies、Multi-Book 配置、Report Default 等）。
+  - 后台任务：使用 Background Jobs + Outbox 模式处理非实时任务（报表生成、通知、FX rate refresh、审计同步）。
+  - 多租户隔离：在基础设施层强制实现公司级数据隔离（可参考 ABP 的 Tenant Filter 思想，使用 EF Core Global Query Filter 或自定义过滤中间件）。
+  - 缓存管理：分层缓存（HybridCache + Redis），所有缓存 Key 必须携带 company_id，严格遵守 Cache = Acceleration ONLY 原则，写操作必须主动失效。
 - API 网关：首期不强制引入
   - 单体阶段可不使用独立网关。
   - 当系统拆分为多个独立服务、需要统一入口、转发、限流或鉴权编排时，再引入 YARP。
-- 缓存：分阶段引入
-  - Phase 1：IMemoryCache / ABP Distributed Cache（配置、字典、低频变化主数据）
-  - Phase 2：HybridCache + Redis（高频只读、SmartPicker、报表加速）
-  - 当 ABP multi-tenancy 启用时，所有缓存 key 必须同时带 `tenant_id` 与 `company_id`；未启用时至少带 `company_id`。
-  - 缓存只加速，不作为 truth；写操作必须主动失效。
-- 异步 / 后台任务：**ABP Background Jobs / Background Workers + Outbox 模式优先**
+
+- 异步与后台任务：BackgroundService + Outbox 模式优先
   - 用于报表生成、通知发送、审计日志同步、FX rate refresh 等非实时任务。
   - 首期不强制引入 MassTransit / RabbitMQ。
   - 只有在出现多服务可靠投递、复杂工作流或 Saga 需求后，再升级到 MassTransit。
 - 监控 / 可观测性：`ILogger` + HealthChecks + OpenTelemetry
   - 首先保证错误日志、请求链路、健康检查可见。
-  - Prometheus / Grafana 作为第二阶段增强，而不是首发硬依赖。
+  - 后续逐步引入 Prometheus / Grafana 等可视化工具。
 
 ### 1.5 Multi-Book Accounting 支持（single-book first, multi-book capable；NetSuite 风格，但术语更严格，IFRS / US GAAP / ASPE 友好）
 
@@ -570,6 +569,7 @@ Company membership and company-scoped authorization are business-module-governed
 Rules:
 
 - authentication, password, login flows, and platform identity infrastructure belong to the platform layer
+- MFA / second-factor challenge lifecycle also belongs to the platform layer; it is part of identity assurance, not company-scoped business authorization
 - company membership, invitations, owner/user assignment, active company resolution, and company-scoped authorization belong to `CompanyAccess`
 - global user disable, password reset, maintenance control, and platform lifecycle actions belong to `SysAdmin`
 - a generic business module named `Users`, `UserManagement`, or `Identity` is forbidden unless explicitly approved as a platform module
@@ -1838,6 +1838,24 @@ Settings should reserve room for future rules such as:
 - unusual IP login alert
 - more security policies
 - notification readiness dependency
+
+### 18.4 Multi-Factor Authentication
+
+Multi-factor authentication (MFA) is a platform identity control, not a business-domain permission system.
+
+Rules:
+
+- MFA belongs to Platform Identity / Account and SysAdmin authentication, not to `CompanyAccess`, `AP`, `AR`, `GL`, or other business root modules.
+- MFA proves actor identity only. It does not grant company membership, active company, company-scoped permissions, posting authority, or approval legality.
+- When MFA is required, successful primary-credential validation may produce a governed challenge state, but it must not issue a final `business_sessions` or `sysadmin_sessions` token until the second factor succeeds.
+- Active company resolution and company-scoped authorization must happen only after authentication is fully completed, including MFA where required.
+- MFA must remain subordinate to existing system truth:
+  - maintenance mode may still block normal business sign-in
+  - company inactive / read-only state may still block writes
+  - `CompanyAccess` membership and permission checks still decide company-scoped legality
+- Email or SMS based second factors may only be offered when the corresponding notification channel is configured, tested, and verification-ready.
+- MFA enrollment, reset, recovery, backup-code issuance, device replacement, and disable actions must be backend-owned and auditable.
+- SysAdmin authentication should be governed more strictly than normal business-user authentication; production-grade SysAdmin access should require MFA by policy.
 
 ## 19. Settings Architecture
 

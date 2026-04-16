@@ -49,6 +49,8 @@ public sealed class PostgreSqlJournalEntryAccountCatalog : IJournalEntryAccountC
                 AccountId = reader.GetGuid(reader.GetOrdinal("id")),
                 Code = reader.GetString(reader.GetOrdinal("code")),
                 Name = reader.GetString(reader.GetOrdinal("name")),
+                RootType = reader.GetString(reader.GetOrdinal("root_type")),
+                DetailType = detailType,
                 TypeLabel = ToTitle(detailType),
                 CurrencyCode = reader.GetString(reader.GetOrdinal("currency_code")),
                 AllowManualPosting = reader.GetBoolean(reader.GetOrdinal("allow_manual_posting"))

@@ -40,17 +40,13 @@ public sealed class SysAdminControlState
         };
     }
 
-    public SysAdminControlContextSummary GetContext()
+    public SysAdminControlContextSummary GetContext() => GetContext(operatorOverride: null);
+
+    public SysAdminControlContextSummary GetContext(SysAdminOperatorSummary? operatorOverride)
     {
         lock (_sync)
         {
-            return new SysAdminControlContextSummary
-            {
-                Operator = _operator,
-                ActiveCompany = ResolveActiveCompanyContext(),
-                MaintenanceState = _maintenanceState,
-                AvailableCompanies = _companies
-            };
+            return BuildContext(operatorOverride);
         }
     }
 
@@ -78,7 +74,13 @@ public sealed class SysAdminControlState
         }
     }
 
-    public bool TrySetActiveCompany(Guid companyId, out SysAdminControlContextSummary? context)
+    public bool TrySetActiveCompany(Guid companyId, out SysAdminControlContextSummary? context) =>
+        TrySetActiveCompany(companyId, operatorOverride: null, out context);
+
+    public bool TrySetActiveCompany(
+        Guid companyId,
+        SysAdminOperatorSummary? operatorOverride,
+        out SysAdminControlContextSummary? context)
     {
         lock (_sync)
         {
@@ -89,13 +91,7 @@ public sealed class SysAdminControlState
             }
 
             _activeCompanyId = companyId;
-            context = new SysAdminControlContextSummary
-            {
-                Operator = _operator,
-                ActiveCompany = ResolveActiveCompanyContext(),
-                MaintenanceState = _maintenanceState,
-                AvailableCompanies = _companies
-            };
+            context = BuildContext(operatorOverride);
 
             return true;
         }
@@ -132,6 +128,15 @@ public sealed class SysAdminControlState
             };
         }
     }
+
+    private SysAdminControlContextSummary BuildContext(SysAdminOperatorSummary? operatorOverride) =>
+        new()
+        {
+            Operator = operatorOverride ?? _operator,
+            ActiveCompany = ResolveActiveCompanyContext(),
+            MaintenanceState = _maintenanceState,
+            AvailableCompanies = _companies
+        };
 
     private CompanyContextSummary ResolveActiveCompanyContext()
     {

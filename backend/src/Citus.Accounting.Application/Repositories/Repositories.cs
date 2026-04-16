@@ -24,6 +24,10 @@ public interface IInvoiceDocumentRepository
         CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        InvoiceDraftSaveModel draft,
+        CancellationToken cancellationToken);
 }
 
 public interface ICreditNoteDocumentRepository
@@ -31,6 +35,10 @@ public interface ICreditNoteDocumentRepository
     Task<CreditNoteDocument?> GetForPostingAsync(
         CompanyId companyId,
         Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        CreditNoteDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
 
@@ -40,6 +48,10 @@ public interface IBillDocumentRepository
         CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        BillDraftSaveModel draft,
+        CancellationToken cancellationToken);
 }
 
 public interface IVendorCreditDocumentRepository
@@ -48,7 +60,117 @@ public interface IVendorCreditDocumentRepository
         CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        VendorCreditDraftSaveModel draft,
+        CancellationToken cancellationToken);
 }
+
+public sealed record SourceDocumentDraftSaveResult(
+    Guid DocumentId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status);
+
+public sealed record InvoiceDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid CustomerId,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<InvoiceDraftLineSaveModel> Lines);
+
+public sealed record InvoiceDraftLineSaveModel(
+    int LineNumber,
+    Guid RevenueAccountId,
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    Guid? TaxCodeId,
+    decimal TaxAmount);
+
+public sealed record CreditNoteDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid CustomerId,
+    DateOnly CreditNoteDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<CreditNoteDraftLineSaveModel> Lines);
+
+public sealed record CreditNoteDraftLineSaveModel(
+    int LineNumber,
+    Guid RevenueAccountId,
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    Guid? TaxCodeId,
+    decimal TaxAmount);
+
+public sealed record BillDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid VendorId,
+    DateOnly BillDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<BillDraftLineSaveModel> Lines);
+
+public sealed record BillDraftLineSaveModel(
+    int LineNumber,
+    Guid ExpenseAccountId,
+    string Description,
+    decimal LineAmount,
+    Guid? TaxCodeId,
+    decimal TaxAmount,
+    bool IsTaxRecoverable);
+
+public sealed record VendorCreditDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid VendorId,
+    DateOnly VendorCreditDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<VendorCreditDraftLineSaveModel> Lines);
+
+public sealed record VendorCreditDraftLineSaveModel(
+    int LineNumber,
+    Guid ExpenseAccountId,
+    string Description,
+    decimal LineAmount,
+    Guid? TaxCodeId,
+    decimal TaxAmount,
+    bool IsTaxRecoverable);
 
 public interface IReceivePaymentDocumentRepository
 {
@@ -337,9 +459,115 @@ public interface IAccountingDocumentReviewRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<AccountingDocumentLifecyclePreview?> GetLifecyclePreviewAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleActionPreview?> GetLifecycleActionPreviewAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        string actionCode,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleCommandAttempt?> AttemptVoidAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleCommandAttempt?> AttemptReverseAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestRecord?> GetReverseRequestAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestRecord?> GetLatestReverseRequestAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestTransitionResult?> SubmitReverseRequestAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestTransitionResult?> CancelReverseRequestAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestReadiness?> GetReverseRequestApplyReadinessAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestExecutionResult?> ExecuteReverseRequestAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        Guid? actorId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleRequestExecutionResult?> CompleteReverseRequestExecutionAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        Guid? actorId,
+        Guid compensationJournalEntryId,
+        string compensationJournalEntryDisplayNumber,
+        string compensationSourceType,
+        DateTimeOffset executedAt,
+        CancellationToken cancellationToken);
+
+    Task<AccountingDocumentLifecycleExecutionPlan?> GetReverseRequestExecutionPlanAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AccountingDocumentSubledgerReverseBlocker>> ListSubledgerReverseBlockersAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AccountingDocumentSettlementApplicationReversal>> ListSettlementApplicationReversalsAsync(
+        CompanyId companyId,
+        string sourceType,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<AccountingSourceDocumentListItem>> ListSourceDocumentsAsync(
         CompanyId companyId,
         string? sourceType,
+        string? counterpartyRole,
+        Guid? counterpartyId,
         int limit,
         CancellationToken cancellationToken);
 }
@@ -356,6 +584,17 @@ public sealed record AccountingDocumentReview(
     string CounterpartyRole,
     Guid? CounterpartyId,
     Guid? ControlAccountId,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? JournalEntryStatus,
+    DateTimeOffset? JournalEntryPostedAt,
+    DateTimeOffset? JournalEntryVoidedAt,
+    DateTimeOffset? JournalEntryReversedAt,
+    string LifecycleMode,
+    bool CanEditDraft,
+    bool CanPostDraft,
+    string LifecycleReason,
+    IReadOnlyList<AccountingDocumentLifecycleAction> LifecycleActions,
     string TransactionCurrencyCode,
     string BaseCurrencyCode,
     decimal SubtotalAmount,
@@ -403,6 +642,202 @@ public sealed record AccountingSourceDocumentListItem(
     string BaseCurrencyCode,
     decimal TotalAmount);
 
+public sealed record AccountingDocumentLifecycleAction(
+    string ActionCode,
+    string ActionLabel,
+    string AvailabilityMode,
+    bool IsAvailable,
+    string Reason);
+
+public sealed record AccountingDocumentLifecyclePreview(
+    string SourceType,
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? JournalEntryStatus,
+    DateTimeOffset? JournalEntryPostedAt,
+    DateTimeOffset? JournalEntryVoidedAt,
+    DateTimeOffset? JournalEntryReversedAt,
+    string LifecycleMode,
+    bool CanEditDraft,
+    bool CanPostDraft,
+    string LifecycleReason,
+    IReadOnlyList<AccountingDocumentLifecycleAction> LifecycleActions);
+
+public sealed record AccountingDocumentLifecycleActionPreview(
+    string SourceType,
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? JournalEntryStatus,
+    DateTimeOffset? JournalEntryPostedAt,
+    DateTimeOffset? JournalEntryVoidedAt,
+    DateTimeOffset? JournalEntryReversedAt,
+    string LifecycleMode,
+    bool CanEditDraft,
+    bool CanPostDraft,
+    string LifecycleReason,
+    string ActionCode,
+    string ActionLabel,
+    string AvailabilityMode,
+    bool IsAvailable,
+    string Reason);
+
+public sealed record AccountingDocumentLifecycleCommandAttempt(
+    string SourceType,
+    Guid Id,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? JournalEntryStatus,
+    string LifecycleMode,
+    string ActionCode,
+    string ActionLabel,
+    string AvailabilityMode,
+    string ExecutionMode,
+    bool CommandAccepted,
+    bool Executed,
+    Guid? RequestId,
+    bool Persisted,
+    string OutcomeCode,
+    string Message);
+
+public sealed record AccountingDocumentLifecycleRequestRecord(
+    Guid RequestId,
+    CompanyId CompanyId,
+    string SourceType,
+    Guid DocumentId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? JournalEntryStatus,
+    string LifecycleMode,
+    string ActionCode,
+    string ActionLabel,
+    string AvailabilityMode,
+    bool IsAvailable,
+    string Reason,
+    string RequestStatus,
+    string RequestedByActorType,
+    Guid? RequestedByActorId,
+    DateTimeOffset RequestedAt,
+    string? SubmittedByActorType,
+    Guid? SubmittedByActorId,
+    DateTimeOffset? SubmittedAt,
+    string? CancelledByActorType,
+    Guid? CancelledByActorId,
+    DateTimeOffset? CancelledAt,
+    string ExecutionStatus,
+    string? ExecutionRequestedByActorType,
+    Guid? ExecutionRequestedByActorId,
+    DateTimeOffset? ExecutionRequestedAt,
+    string? ExecutionCompletedByActorType,
+    Guid? ExecutionCompletedByActorId,
+    DateTimeOffset? ExecutionCompletedAt,
+    Guid? CompensationJournalEntryId,
+    string? CompensationJournalEntryDisplayNumber,
+    string? CompensationSourceType);
+
+public sealed record AccountingDocumentLifecycleRequestTransitionResult(
+    AccountingDocumentLifecycleRequestRecord Request,
+    string TransitionCode,
+    string OutcomeCode,
+    string Message);
+
+public sealed record AccountingDocumentLifecycleRequestReadiness(
+    AccountingDocumentLifecycleRequestRecord Request,
+    DateOnly AsOfDate,
+    bool GovernanceReady,
+    bool ApplyReady,
+    string ExecutionMode,
+    string AvailabilityMode,
+    bool IsAvailable,
+    string Reason);
+
+public sealed record AccountingDocumentLifecycleRequestExecutionResult(
+    AccountingDocumentLifecycleRequestRecord Request,
+    DateOnly AsOfDate,
+    string ExecutionMode,
+    bool CommandAccepted,
+    bool Executed,
+    bool Persisted,
+    string OutcomeCode,
+    string Message,
+    Guid? CompensationJournalEntryId,
+    string? CompensationJournalEntryDisplayNumber,
+    string? CompensationSourceType);
+
+public sealed record AccountingDocumentLifecycleExecutionPlan(
+    AccountingDocumentLifecycleRequestRecord Request,
+    DateOnly AsOfDate,
+    string ExecutionMode,
+    bool CanExecute,
+    string OverallStatus,
+    string Reason,
+    IReadOnlyList<AccountingDocumentLifecycleExecutionPlanStep> Steps);
+
+public sealed record AccountingDocumentLifecycleExecutionPlanStep(
+    int StepNumber,
+    string StepCode,
+    string StepLabel,
+    string StepStatus,
+    string Reason);
+
+public sealed record AccountingDocumentSubledgerReverseBlocker(
+    Guid SettlementApplicationId,
+    string ApplicationType,
+    string SettlementSourceType,
+    Guid SettlementSourceId,
+    string SettlementSourceDisplayNumber,
+    DateOnly? SettlementSourceDocumentDate,
+    string TargetOpenItemType,
+    Guid TargetOpenItemId,
+    string TargetSourceType,
+    Guid TargetSourceId,
+    string TargetSourceDisplayNumber,
+    decimal AppliedAmountTx,
+    decimal AppliedAmountBase,
+    decimal? SettlementFxRate,
+    decimal? RealizedFxAmount,
+    DateTimeOffset AppliedAt,
+    Guid? ReverseRequestId,
+    string ReverseRequestStatus,
+    string ReverseExecutionStatus,
+    DateTimeOffset? ReverseRequestedAt);
+
+public sealed record AccountingDocumentSettlementApplicationReversal(
+    Guid ReversalEventId,
+    Guid RequestId,
+    Guid SettlementApplicationId,
+    string ApplicationType,
+    string SourceType,
+    Guid SourceId,
+    string TargetOpenItemType,
+    Guid TargetOpenItemId,
+    decimal AppliedAmountTx,
+    decimal AppliedAmountBase,
+    decimal? SettlementFxRate,
+    decimal? RealizedFxAmount,
+    DateTimeOffset OriginalApplicationCreatedAt,
+    Guid? OriginalApplicationCreatedByUserId,
+    DateTimeOffset ReversedAt,
+    string ReversedByActorType,
+    Guid? ReversedByActorId,
+    string ReversalMode);
+
 public sealed record OpenItemDrillDown(
     Guid OpenItemId,
     string OpenItemType,
@@ -449,6 +884,66 @@ public interface IFxSnapshotRepository
         CancellationToken cancellationToken);
 }
 
+public interface IOpenItemAdjustmentAccountMappingRepository
+{
+    Task EnsureSchemaAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<OpenItemAdjustmentAccountMappingRecord>> ListAsync(
+        CompanyId companyId,
+        string? openItemType,
+        string? adjustmentType,
+        bool includeInactive,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentAccountMappingSaveResult> SaveAsync(
+        OpenItemAdjustmentAccountMappingSaveRequest request,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentAccountMappingTransitionResult?> DeactivateAsync(
+        CompanyId companyId,
+        Guid mappingId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+}
+
+public sealed record OpenItemAdjustmentAccountMappingRecord(
+    Guid MappingId,
+    CompanyId CompanyId,
+    Guid? BookId,
+    string? BookCode,
+    string? AccountingStandard,
+    string OpenItemType,
+    string AdjustmentType,
+    Guid AdjustmentAccountId,
+    string AdjustmentAccountCode,
+    string AdjustmentAccountName,
+    string AdjustmentAccountRootType,
+    bool IsActive,
+    Guid? CreatedByUserId,
+    Guid? UpdatedByUserId,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? DeactivatedAt);
+
+public sealed record OpenItemAdjustmentAccountMappingSaveRequest(
+    CompanyId CompanyId,
+    Guid? BookId,
+    string OpenItemType,
+    string AdjustmentType,
+    Guid AdjustmentAccountId,
+    Guid? ActorId);
+
+public sealed record OpenItemAdjustmentAccountMappingSaveResult(
+    OpenItemAdjustmentAccountMappingRecord Mapping,
+    string OutcomeCode,
+    string Message);
+
+public sealed record OpenItemAdjustmentAccountMappingTransitionResult(
+    OpenItemAdjustmentAccountMappingRecord Mapping,
+    string TransitionCode,
+    string OutcomeCode,
+    string Message);
+
 public interface IArOpenItemRepository
 {
     Task EnsureForInvoiceAsync(
@@ -464,6 +959,89 @@ public interface IArOpenItemRepository
     Task<OpenItemDrillDown?> GetDrillDownAsync(
         CompanyId companyId,
         Guid openItemId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentPreview?> GetAdjustmentPreviewAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        string adjustmentType,
+        DateOnly adjustmentDate,
+        decimal? adjustmentAmountTx,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestAttempt?> RequestAdjustmentAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        string adjustmentType,
+        DateOnly adjustmentDate,
+        decimal? adjustmentAmountTx,
+        Guid? actorId,
+        string? reason,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestRecord?> GetLatestAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> SubmitAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> CancelAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> ApproveAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> RejectAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestReadiness?> GetAdjustmentRequestReadinessAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentExecutionPlan?> GetAdjustmentRequestExecutionPlanAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentExecutionPreparation?> PrepareAdjustmentExecutionAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid adjustmentAccountId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentExecutionResult?> CompleteAdjustmentExecutionAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        Guid journalEntryId,
+        string journalEntryDisplayNumber,
+        DateTimeOffset executedAt,
         CancellationToken cancellationToken);
 }
 
@@ -483,7 +1061,219 @@ public interface IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentPreview?> GetAdjustmentPreviewAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        string adjustmentType,
+        DateOnly adjustmentDate,
+        decimal? adjustmentAmountTx,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestAttempt?> RequestAdjustmentAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        string adjustmentType,
+        DateOnly adjustmentDate,
+        decimal? adjustmentAmountTx,
+        Guid? actorId,
+        string? reason,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestRecord?> GetLatestAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> SubmitAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> CancelAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> ApproveAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestTransitionResult?> RejectAdjustmentRequestAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentRequestReadiness?> GetAdjustmentRequestReadinessAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentExecutionPlan?> GetAdjustmentRequestExecutionPlanAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentExecutionPreparation?> PrepareAdjustmentExecutionAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid adjustmentAccountId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken);
+
+    Task<OpenItemAdjustmentExecutionResult?> CompleteAdjustmentExecutionAsync(
+        CompanyId companyId,
+        Guid openItemId,
+        Guid requestId,
+        Guid? actorId,
+        Guid journalEntryId,
+        string journalEntryDisplayNumber,
+        DateTimeOffset executedAt,
+        CancellationToken cancellationToken);
 }
+
+public sealed record OpenItemAdjustmentPreview(
+    Guid OpenItemId,
+    string OpenItemType,
+    CompanyId CompanyId,
+    string PartyRole,
+    Guid PartyId,
+    string SourceType,
+    Guid SourceDocumentId,
+    string SourceDocumentDisplayNumber,
+    string SourceDocumentStatus,
+    DateOnly DocumentDate,
+    DateOnly? DueDate,
+    string DocumentCurrencyCode,
+    string BaseCurrencyCode,
+    string BalanceSide,
+    string Status,
+    decimal OpenAmountTx,
+    decimal OpenAmountBase,
+    decimal RequestedAdjustmentAmountTx,
+    decimal RequestedAdjustmentAmountBase,
+    decimal RemainingAmountTx,
+    decimal RemainingAmountBase,
+    int ApplicationCount,
+    string AdjustmentType,
+    DateOnly AdjustmentDate,
+    bool RequiresApproval,
+    string ApprovalStatus,
+    string ApprovalReason,
+    string ActionCode,
+    string ActionLabel,
+    string AvailabilityMode,
+    bool IsAvailable,
+    string ExecutionMode,
+    string Reason);
+
+public sealed record OpenItemAdjustmentRequestRecord(
+    Guid RequestId,
+    Guid OpenItemId,
+    string OpenItemType,
+    CompanyId CompanyId,
+    string AdjustmentType,
+    DateOnly AdjustmentDate,
+    decimal RequestedAdjustmentAmountTx,
+    decimal RequestedAdjustmentAmountBase,
+    bool RequiresApproval,
+    string ApprovalStatus,
+    string? ApprovedByActorType,
+    Guid? ApprovedByActorId,
+    DateTimeOffset? ApprovedAt,
+    string? RejectedByActorType,
+    Guid? RejectedByActorId,
+    DateTimeOffset? RejectedAt,
+    string RequestStatus,
+    string ExecutionStatus,
+    string RequestedByActorType,
+    Guid? RequestedByActorId,
+    DateTimeOffset RequestedAt,
+    string? SubmittedByActorType,
+    Guid? SubmittedByActorId,
+    DateTimeOffset? SubmittedAt,
+    string? CancelledByActorType,
+    Guid? CancelledByActorId,
+    DateTimeOffset? CancelledAt,
+    string? Reason);
+
+public sealed record OpenItemAdjustmentRequestAttempt(
+    OpenItemAdjustmentPreview Preview,
+    bool CommandAccepted,
+    bool Executed,
+    bool Persisted,
+    string OutcomeCode,
+    string Message,
+    OpenItemAdjustmentRequestRecord? Request);
+
+public sealed record OpenItemAdjustmentRequestTransitionResult(
+    OpenItemAdjustmentRequestRecord Request,
+    string TransitionCode,
+    string OutcomeCode,
+    string Message);
+
+public sealed record OpenItemAdjustmentRequestReadiness(
+    OpenItemAdjustmentRequestRecord Request,
+    DateOnly AsOfDate,
+    bool GovernanceReady,
+    bool OpenItemReady,
+    bool PostingExecutionReady,
+    string ExecutionMode,
+    string AvailabilityMode,
+    bool IsAvailable,
+    string Reason);
+
+public sealed record OpenItemAdjustmentExecutionPlan(
+    OpenItemAdjustmentRequestRecord Request,
+    DateOnly AsOfDate,
+    string ExecutionMode,
+    bool CanExecute,
+    string OverallStatus,
+    string Reason,
+    IReadOnlyList<OpenItemAdjustmentExecutionPlanStep> Steps);
+
+public sealed record OpenItemAdjustmentExecutionPlanStep(
+    int StepNumber,
+    string StepCode,
+    string StepLabel,
+    string StepStatus,
+    string Reason);
+
+public sealed record OpenItemAdjustmentExecutionPreparation(
+    OpenItemAdjustmentRequestReadiness Readiness,
+    OpenItemAdjustmentDocument Document,
+    Guid AdjustmentAccountId,
+    decimal AdjustmentAmountTx,
+    decimal AdjustmentAmountBase);
+
+public sealed record OpenItemAdjustmentExecutionResult(
+    OpenItemAdjustmentRequestRecord Request,
+    DateOnly AsOfDate,
+    string ExecutionMode,
+    bool CommandAccepted,
+    bool Executed,
+    bool Persisted,
+    string OutcomeCode,
+    string Message,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? CompensationSourceType,
+    decimal AdjustmentAmountTx,
+    decimal AdjustmentAmountBase);
 
 public interface ISettlementApplicationRepository
 {

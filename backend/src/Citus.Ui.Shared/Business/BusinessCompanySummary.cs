@@ -11,4 +11,8 @@ public sealed record class BusinessCompanySummary
     public string BaseCurrencyCode { get; init; } = string.Empty;
 
     public bool MultiCurrencyEnabled { get; init; }
+
+    public string Status { get; init; } = "active";
+
+    public bool IsReadOnly { get; init; }
 }

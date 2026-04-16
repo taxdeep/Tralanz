@@ -1,6 +1,7 @@
 @page "/gl/journal-entry/editor"
 @using Engines.FX.FxRateLookup
 @using Engines.Numbering.JournalEntry
+@using Modules.CompanyAccess.SessionContext
 @using Modules.Company.MultiCurrency
 @using Modules.GL.JournalEntry
 @using Microsoft.AspNetCore.Components.Web
@@ -9,6 +10,7 @@
 @inject IFxRateResolver FxRateResolver
 @inject IFxRateSelectionService FxRateSelectionService
 @inject ICompanyCurrencyGovernanceWorkflow CompanyCurrencyGovernanceWorkflow
+@inject ICompanyAccessShellSession ShellSession
 @inject IJournalEntryNumberLookup JournalEntryNumberLookup
 @inject IJournalEntryWorkflow JournalEntryWorkflow
 @inject ISnackbar Snackbar
@@ -28,6 +30,13 @@
                 <MudChip T="string" Variant="Variant.Text" Color="Color.Info">Excel-style grid</MudChip>
             </div>
         </div>
+
+        @if (WritesBlocked)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                @ShellSession.WriteBlockMessage
+            </MudAlert>
+        }
 
         <JournalEntryHeaderBand State="_state"
                                 IsFxBusy="_isFxBusy"
@@ -54,7 +63,7 @@
                     </div>
                 </div>
 
-                @if (_state.CanEditJournal && _companyCurrencyProfile.Currencies.Any(currency => !currency.IsEnabled))
+                @if (_state.CanEditJournal && !WritesBlocked && _companyCurrencyProfile.Currencies.Any(currency => !currency.IsEnabled))
                 {
                     <div class="je-company-currency-bar__enable">
                         <MudSelect T="string"
@@ -83,7 +92,7 @@
 
         <JournalEntryFxReviewPanel State="_state" SelectionData="_fxSelectionData" />
 
-        @if (_state.Draft.IsForeignCurrency && _state.CanEditJournal)
+        @if (_state.Draft.IsForeignCurrency && _state.CanEditJournal && !WritesBlocked)
         {
             <JournalEntryFxSelectionPanel State="_state"
                                           SelectionData="_fxSelectionData"
@@ -119,7 +128,7 @@
         <div class="je-action-bar">
             <div class="je-action-bar__left">
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/">Cancel</MudButton>
-                <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@(!_state.CanEditJournal)" OnClick="ClearLines">Clear</MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@(!_state.CanEditJournal || WritesBlocked)" OnClick="ClearLines">Clear</MudButton>
             </div>
 
             <div class="je-action-bar__center">
@@ -143,19 +152,19 @@
             <div class="je-action-bar__right">
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Success"
-                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal)"
+                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal || WritesBlocked)"
                            OnClick="HandleSaveClickAsync">
                     Save
                 </MudButton>
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Warning"
-                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal)"
+                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal || WritesBlocked)"
                            OnClick="PostDraftAsync">
                     Post
                 </MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Success"
-                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal)"
+                           Disabled="@(_isSaving || _isPosting || !_state.CanEditJournal || WritesBlocked)"
                            OnClick="HandleSaveAndCloseClickAsync">
                     Save and close
                 </MudButton>
@@ -177,9 +186,11 @@
     private string? _fxErrorText;
     private string? _enableCurrencyCode;
     private Guid? _postedJournalEntryId;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
 
     protected override async Task OnInitializedAsync()
     {
+        await EnsureWriteGateStateAsync();
         await LoadCompanyCurrencyProfileAsync();
         var accountOptions = await JournalEntryWorkflow.LoadAccountOptionsAsync(_state.Draft.CompanyId, CancellationToken.None);
         _state.ReplaceAccountOptions(accountOptions);
@@ -221,6 +232,11 @@
 
     private Task ClearLines()
     {
+        if (TryBlockWrites())
+        {
+            return Task.CompletedTask;
+        }
+
         _state.ClearAllLines();
         StateHasChanged();
         return Task.CompletedTask;
@@ -239,6 +255,11 @@
 
     private async Task<bool> SaveDraftCoreAsync()
     {
+        if (TryBlockWrites())
+        {
+            return false;
+        }
+
         try
         {
             _isSaving = true;
@@ -265,6 +286,11 @@
 
     private async Task PostDraftAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         try
         {
             _isPosting = true;
@@ -337,6 +363,11 @@
 
     private async Task HandleUseSnapshotAsync(Guid snapshotId)
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         try
         {
             _isFxBusy = true;
@@ -363,6 +394,11 @@
 
     private async Task HandleUseMarketRateAsync(Guid marketRateId)
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         try
         {
             _isFxBusy = true;
@@ -389,6 +425,11 @@
 
     private async Task HandlePersistManualSnapshotAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         try
         {
             _isFxBusy = true;
@@ -427,6 +468,11 @@
 
     private async Task HandleEnableCurrencyAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_enableCurrencyCode))
         {
             return;
@@ -496,4 +542,20 @@
 
     private static string BuildReviewHref(Guid journalEntryId) =>
         $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private async Task EnsureWriteGateStateAsync()
+    {
+        await ShellSession.RefreshAsync(CancellationToken.None);
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
 }

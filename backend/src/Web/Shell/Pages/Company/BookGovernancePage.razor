@@ -1,8 +1,11 @@
 @page "/company/book-governance"
 @using Modules.Company.MultiBook
 @using SharedKernel.Company
+@using Web.Shell.Services
 @rendermode InteractiveServer
 @inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ICompanyBookPolicyWorkflow Workflow
 @inject ISnackbar Snackbar
 
@@ -68,6 +71,13 @@
     {
         <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true">
             @_pageError
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
         </MudAlert>
     }
 
@@ -157,6 +167,7 @@
                                 <MudDatePicker Label="Period End"
                                                Variant="Variant.Outlined"
                                                Margin="Margin.Dense"
+                                               Disabled="@(_isBusy || WritesBlocked)"
                                                Editable="true"
                                                Date="@item.ClosePeriodDatePicker"
                                                DateChanged="date => OnClosePeriodDateChanged(item, date)" />
@@ -165,16 +176,18 @@
                                               HelperText="Optional. Defaults to Period close YYYY-MM-DD."
                                               Variant="Variant.Outlined"
                                               Margin="Margin.Dense"
+                                              Disabled="@(_isBusy || WritesBlocked)"
                                               @bind-Value="item.ClosePeriodReferenceLabel" />
                                 <MudTextField T="string"
                                               Label="Notes"
                                               Variant="Variant.Outlined"
                                               Margin="Margin.Dense"
+                                              Disabled="@(_isBusy || WritesBlocked)"
                                               Lines="2"
                                               @bind-Value="item.ClosePeriodNotes" />
                                 <MudButton Variant="Variant.Filled"
                                            Color="Color.Warning"
-                                           Disabled="_isBusy"
+                                           Disabled="@(_isBusy || WritesBlocked)"
                                            OnClick="() => RegisterClosedPeriodAsync(item)">
                                     Register Close
                                 </MudButton>
@@ -185,6 +198,7 @@
                                 <MudDatePicker Label="Issued On"
                                                Variant="Variant.Outlined"
                                                Margin="Margin.Dense"
+                                               Disabled="@(_isBusy || WritesBlocked)"
                                                Editable="true"
                                                Date="@item.StatementIssuedOnPicker"
                                                DateChanged="date => OnStatementIssuedOnChanged(item, date)" />
@@ -193,16 +207,18 @@
                                               HelperText="Required."
                                               Variant="Variant.Outlined"
                                               Margin="Margin.Dense"
+                                              Disabled="@(_isBusy || WritesBlocked)"
                                               @bind-Value="item.StatementLabel" />
                                 <MudTextField T="string"
                                               Label="Notes"
                                               Variant="Variant.Outlined"
                                               Margin="Margin.Dense"
+                                              Disabled="@(_isBusy || WritesBlocked)"
                                               Lines="2"
                                               @bind-Value="item.StatementNotes" />
                                 <MudButton Variant="Variant.Filled"
                                            Color="Color.Info"
-                                           Disabled="_isBusy"
+                                           Disabled="@(_isBusy || WritesBlocked)"
                                            OnClick="() => RegisterIssuedStatementAsync(item)">
                                     Mark Issued
                                 </MudButton>
@@ -213,6 +229,7 @@
                                 <MudDatePicker Label="Filed On"
                                                Variant="Variant.Outlined"
                                                Margin="Margin.Dense"
+                                               Disabled="@(_isBusy || WritesBlocked)"
                                                Editable="true"
                                                Date="@item.FiledTaxOnPicker"
                                                DateChanged="date => OnFiledTaxOnChanged(item, date)" />
@@ -221,16 +238,18 @@
                                               HelperText="Required."
                                               Variant="Variant.Outlined"
                                               Margin="Margin.Dense"
+                                              Disabled="@(_isBusy || WritesBlocked)"
                                               @bind-Value="item.FilingLabel" />
                                 <MudTextField T="string"
                                               Label="Notes"
                                               Variant="Variant.Outlined"
                                               Margin="Margin.Dense"
+                                              Disabled="@(_isBusy || WritesBlocked)"
                                               Lines="2"
                                               @bind-Value="item.FilingNotes" />
                                 <MudButton Variant="Variant.Filled"
                                            Color="Color.Error"
-                                           Disabled="_isBusy"
+                                           Disabled="@(_isBusy || WritesBlocked)"
                                            OnClick="() => RegisterFiledTaxAsync(item)">
                                     Mark Filed
                                 </MudButton>
@@ -249,15 +268,25 @@
     private bool _isBusy;
     private string? _pageError;
     private List<BookGovernanceCardState> _books = [];
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
 
     protected override async Task OnInitializedAsync()
     {
-        await ShellState.EnsureHydratedAsync();
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return;
+        }
+
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return;
+        }
+
         _pageError = null;
         _isBusy = true;
         try
@@ -277,6 +306,11 @@
 
     private async Task RegisterClosedPeriodAsync(BookGovernanceCardState item)
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         _isBusy = true;
         try
         {
@@ -303,6 +337,11 @@
 
     private async Task RegisterIssuedStatementAsync(BookGovernanceCardState item)
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         _isBusy = true;
         try
         {
@@ -329,6 +368,11 @@
 
     private async Task RegisterFiledTaxAsync(BookGovernanceCardState item)
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         _isBusy = true;
         try
         {
@@ -369,6 +413,35 @@
 
         Snackbar.Add($"Governance context switched to {ShellState.ActiveCompany.CompanyName}.", Severity.Info);
         await LoadAsync();
+    }
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync(CancellationToken.None);
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _pageError = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _pageError = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
     }
 
     private static void OnClosePeriodDateChanged(BookGovernanceCardState item, DateTime? value)

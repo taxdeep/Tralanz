@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Modules.CompanyAccess.SessionContext;
 using Npgsql;
 using SharedKernel.CompanyAccess;
@@ -35,7 +36,15 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         var activeCompany = ResolveActiveCompany(preferredActiveCompanyId, companies);
         return new CompanyAccessSessionContext
         {
-            User = user with { Roles = companies.Select(company => company.MembershipRole).Distinct(StringComparer.Ordinal).OrderBy(static role => role, StringComparer.Ordinal).ToArray() },
+            User = user with
+            {
+                Roles = companies
+                    .SelectMany(static company => company.PermissionTokens.Prepend(company.MembershipRole))
+                    .Where(static role => !string.IsNullOrWhiteSpace(role))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(static role => role, StringComparer.Ordinal)
+                    .ToArray()
+            },
             ActiveCompany = ToSummary(activeCompany),
             AvailableCompanies = companies.Select(ToSummary).ToArray()
         };
@@ -48,7 +57,9 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
             CompanyCode = company.CompanyCode,
             CompanyName = company.CompanyName,
             BaseCurrencyCode = company.BaseCurrencyCode,
-            MultiCurrencyEnabled = company.MultiCurrencyEnabled
+            MultiCurrencyEnabled = company.MultiCurrencyEnabled,
+            Status = company.Status,
+            IsReadOnly = !string.Equals(company.Status, "active", StringComparison.Ordinal)
         };
 
     private static CompanyMembershipCompanyRecord ResolveActiveCompany(
@@ -64,7 +75,8 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
             }
         }
 
-        return companies[0];
+        return companies.FirstOrDefault(static company => string.Equals(company.Status, "active", StringComparison.Ordinal))
+            ?? companies[0];
     }
 
     private static async Task<CompanyAccessUserSummary?> ReadUserAsync(
@@ -72,13 +84,26 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         Guid userId,
         CancellationToken cancellationToken)
     {
+        var hasStatusColumn = await HasColumnAsync(connection, "users", "status", cancellationToken);
+        var hasLockedUntilColumn = await HasColumnAsync(connection, "users", "locked_until", cancellationToken);
+        var hasDisplayNameColumn = await HasColumnAsync(connection, "users", "display_name", cancellationToken);
+
         await using var command = connection.CreateCommand();
+        var displayNameProjection = hasDisplayNameColumn
+            ? "display_name"
+            : "null::text as display_name";
+        var accountStatusPredicate = hasStatusColumn
+            ? hasLockedUntilColumn
+                ? "status = 'active' and (locked_until is null or locked_until <= now())"
+                : "status = 'active'"
+            : "is_active = true";
+
         command.CommandText =
-            """
-            select id, email, username
+            $"""
+            select id, email, username, {displayNameProjection}
             from users
             where id = @user_id
-              and is_active = true
+              and {accountStatusPredicate}
             limit 1;
             """;
         command.Parameters.AddWithValue("user_id", userId);
@@ -93,13 +118,18 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         var username = reader.IsDBNull(reader.GetOrdinal("username"))
             ? string.Empty
             : reader.GetString(reader.GetOrdinal("username")).Trim();
+        var displayName = reader.IsDBNull(reader.GetOrdinal("display_name"))
+            ? string.Empty
+            : reader.GetString(reader.GetOrdinal("display_name")).Trim();
 
         return new CompanyAccessUserSummary
         {
             Id = reader.GetGuid(reader.GetOrdinal("id")),
             Email = email,
             Username = username,
-            DisplayName = !string.IsNullOrWhiteSpace(username) ? username : email
+            DisplayName = !string.IsNullOrWhiteSpace(displayName)
+                ? displayName
+                : !string.IsNullOrWhiteSpace(username) ? username : email
         };
     }
 
@@ -108,8 +138,10 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         Guid userId,
         CancellationToken cancellationToken)
     {
+        var hasPermissionsColumn = await HasMembershipPermissionsColumnAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = hasPermissionsColumn
+            ?
             """
             select
               c.id,
@@ -117,12 +149,32 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
               c.legal_name,
               c.base_currency_code,
               c.multi_currency_enabled,
-              m.role
+              c.status,
+              m.role,
+              m.permissions::text as permissions
             from company_memberships m
             inner join companies c on c.id = m.company_id
             where m.user_id = @user_id
               and m.is_active = true
-              and c.status = 'active'
+              and c.status in ('active', 'inactive')
+            order by c.entity_number, c.legal_name;
+            """
+            :
+            """
+            select
+              c.id,
+              c.entity_number,
+              c.legal_name,
+              c.base_currency_code,
+              c.multi_currency_enabled,
+              c.status,
+              m.role,
+              null::text as permissions
+            from company_memberships m
+            inner join companies c on c.id = m.company_id
+            where m.user_id = @user_id
+              and m.is_active = true
+              and c.status in ('active', 'inactive')
             order by c.entity_number, c.legal_name;
             """;
         command.Parameters.AddWithValue("user_id", userId);
@@ -138,10 +190,130 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
                     reader.GetString(reader.GetOrdinal("legal_name")).Trim(),
                     reader.GetString(reader.GetOrdinal("base_currency_code")).Trim().ToUpperInvariant(),
                     reader.GetBoolean(reader.GetOrdinal("multi_currency_enabled")),
-                    reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant()));
+                    reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+                    reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
+                    ParsePermissionTokens(reader.IsDBNull(reader.GetOrdinal("permissions"))
+                        ? null
+                        : reader.GetString(reader.GetOrdinal("permissions")))));
         }
 
         return companies;
+    }
+
+    private static async Task<bool> HasMembershipPermissionsColumnAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+        => await HasColumnAsync(connection, "company_memberships", "permissions", cancellationToken);
+
+    private static async Task<bool> HasColumnAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select exists (
+              select 1
+              from information_schema.columns
+              where table_schema = 'public'
+                and table_name = @table_name
+                and column_name = @column_name
+            );
+            """;
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("column_name", columnName);
+
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    private static IReadOnlyList<string> ParsePermissionTokens(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.Array => document.RootElement
+                    .EnumerateArray()
+                    .Select(TryReadPermissionToken)
+                    .OfType<string>()
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(static token => token, StringComparer.Ordinal)
+                    .ToArray(),
+                JsonValueKind.Object => ReadObjectPermissionTokens(document.RootElement),
+                JsonValueKind.String => NormalizePermissionToken(document.RootElement.GetString()),
+                _ => Array.Empty<string>()
+            };
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static IReadOnlyList<string> ReadObjectPermissionTokens(JsonElement element)
+    {
+        var permissions = new List<string>();
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.True)
+            {
+                AddPermissionToken(permissions, property.Name);
+                continue;
+            }
+
+            if (property.Value.ValueKind == JsonValueKind.String)
+            {
+                AddPermissionToken(permissions, property.Value.GetString());
+                continue;
+            }
+
+            if (property.Value.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var item in property.Value.EnumerateArray())
+            {
+                AddPermissionToken(permissions, TryReadPermissionToken(item));
+            }
+        }
+
+        return permissions
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static token => token, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string? TryReadPermissionToken(JsonElement element) =>
+        element.ValueKind == JsonValueKind.String
+            ? NormalizePermissionToken(element.GetString()).FirstOrDefault()
+            : null;
+
+    private static IReadOnlyList<string> NormalizePermissionToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        return [value.Trim().ToLowerInvariant()];
+    }
+
+    private static void AddPermissionToken(List<string> permissions, string? value)
+    {
+        var normalized = NormalizePermissionToken(value);
+        if (normalized.Count > 0)
+        {
+            permissions.Add(normalized[0]);
+        }
     }
 
     private sealed record CompanyMembershipCompanyRecord(
@@ -150,5 +322,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         string CompanyName,
         string BaseCurrencyCode,
         bool MultiCurrencyEnabled,
-        string MembershipRole);
+        string Status,
+        string MembershipRole,
+        IReadOnlyList<string> PermissionTokens);
 }

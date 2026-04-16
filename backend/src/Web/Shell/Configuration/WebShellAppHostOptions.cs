@@ -6,6 +6,8 @@ public sealed class WebShellAppHostOptions
 
     public string AccountingApiBaseUrl { get; set; } = "http://127.0.0.1:5088/";
 
+    public int BusinessSessionHours { get; set; } = 12;
+
     public Guid BootstrapUserId { get; set; } = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
 
     public string BootstrapUserDisplayName { get; set; } = "Alice Rowan";
@@ -18,6 +20,8 @@ public sealed class WebShellAppHostOptions
 
     public Guid? DefaultActiveCompanyId { get; set; } = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
 
+    public bool DisableRazorComponents { get; set; }
+
     public WebShellCompanyOption[] Companies { get; set; } =
     [
         new()
@@ -26,7 +30,9 @@ public sealed class WebShellAppHostOptions
             CompanyCode = "NORTHWIND",
             CompanyName = "Northwind Studio Ltd.",
             BaseCurrencyCode = "USD",
-            MultiCurrencyEnabled = true
+            MultiCurrencyEnabled = true,
+            Status = "active",
+            IsReadOnly = false
         }
     ];
 }

@@ -4,7 +4,7 @@ namespace Web.Shell.Services;
 
 public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<ShellSettlementPostingClient> logger)
 {
-    public Task<ShellSettlementPostingResult?> PostReceivePaymentAsync(
+    public Task<WebShellAuthenticatedApiResult<ShellSettlementPostingResult>> PostReceivePaymentAsync(
         Guid companyId,
         Guid userId,
         Guid documentId,
@@ -21,7 +21,7 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
             },
             cancellationToken);
 
-    public Task<ShellSettlementPostingResult?> PostPayBillAsync(
+    public Task<WebShellAuthenticatedApiResult<ShellSettlementPostingResult>> PostPayBillAsync(
         Guid companyId,
         Guid userId,
         Guid documentId,
@@ -38,7 +38,7 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
             },
             cancellationToken);
 
-    public Task<ShellSettlementPostingResult?> PostCreditApplicationAsync(
+    public Task<WebShellAuthenticatedApiResult<ShellSettlementPostingResult>> PostCreditApplicationAsync(
         Guid companyId,
         Guid userId,
         Guid documentId,
@@ -53,7 +53,7 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
             },
             cancellationToken);
 
-    public Task<ShellSettlementPostingResult?> PostVendorCreditApplicationAsync(
+    public Task<WebShellAuthenticatedApiResult<ShellSettlementPostingResult>> PostVendorCreditApplicationAsync(
         Guid companyId,
         Guid userId,
         Guid documentId,
@@ -68,7 +68,7 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
             },
             cancellationToken);
 
-    private async Task<ShellSettlementPostingResult?> PostAsync(
+    private async Task<WebShellAuthenticatedApiResult<ShellSettlementPostingResult>> PostAsync(
         string requestUri,
         object payload,
         CancellationToken cancellationToken)
@@ -77,18 +77,26 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
         {
             using var response = await httpClient.PostAsJsonAsync(requestUri, payload, cancellationToken);
 
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.RequiresAuthentication();
+            }
+
             if (response.IsSuccessStatusCode)
             {
-                return await response.Content.ReadFromJsonAsync<ShellSettlementPostingResult>(cancellationToken);
+                var result = await response.Content.ReadFromJsonAsync<ShellSettlementPostingResult>(cancellationToken);
+                return result is null
+                    ? WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Failure("Posting succeeded but no settlement result was returned.")
+                    : WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Success(result);
             }
 
             var error = await ReadErrorMessageAsync(response, cancellationToken);
-            throw new InvalidOperationException(error);
+            return WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Failure(error);
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex)
         {
             logger.LogWarning(ex, "Unable to post settlement document using request {RequestUri}.", requestUri);
-            throw new InvalidOperationException("Posting failed because the settlement request could not be completed.", ex);
+            return WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Failure("Posting failed because the settlement request could not be completed.");
         }
     }
 

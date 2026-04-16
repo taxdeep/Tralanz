@@ -1,3 +1,7 @@
+@inject WebShellState ShellState
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+
 <nav class="ws-nav">
     <NavLink href="/" Match="NavLinkMatch.All" class="ws-nav__link">
         Home
@@ -8,19 +12,96 @@
     <NavLink href="/ar/credit-application" class="ws-nav__link">
         Credit Application
     </NavLink>
+    <NavLink href="/documents/source-browser" class="ws-nav__link">
+        Source Documents
+    </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            Invoice Draft (Blocked)
+        </span>
+        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            Credit Note Draft (Blocked)
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/invoice/draft-editor" class="ws-nav__link">
+            Invoice Draft
+        </NavLink>
+        <NavLink href="/documents/credit-note/draft-editor" class="ws-nav__link">
+            Credit Note Draft
+        </NavLink>
+    }
     <NavLink href="/ap/pay-bill" class="ws-nav__link">
         Pay Bill
     </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            Bill Draft (Blocked)
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/bill/draft-editor" class="ws-nav__link">
+            Bill Draft
+        </NavLink>
+    }
     <NavLink href="/ap/vendor-credit-application" class="ws-nav__link">
         Vendor Credit Application
     </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            Vendor Credit Draft (Blocked)
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/vendor-credit/draft-editor" class="ws-nav__link">
+            Vendor Credit Draft
+        </NavLink>
+    }
     <NavLink href="/company/book-governance" class="ws-nav__link">
         Book Governance
     </NavLink>
-    <NavLink href="/gl/journal-entry/editor" class="ws-nav__link">
-        Journal Entry Editor
+    <NavLink href="/company/membership-permissions" class="ws-nav__link">
+        Membership Permissions
+    </NavLink>
+    <NavLink href="/company/open-item-adjustment-account-mappings" class="ws-nav__link">
+        Adjustment Mapping
+    </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            Journal Entry Editor (Blocked)
+        </span>
+    }
+    else
+    {
+        <NavLink href="/gl/journal-entry/editor" class="ws-nav__link">
+            Journal Entry Editor
+        </NavLink>
+    }
+    <NavLink href="/profile" class="ws-nav__link">
+        Profile
     </NavLink>
     <NavLink href="/settings/user-preferences/system-setup" class="ws-nav__link">
         User Preferences
     </NavLink>
 </nav>
+
+@code {
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+    }
+}

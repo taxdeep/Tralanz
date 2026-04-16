@@ -1,0 +1,513 @@
+@page "/profile"
+@using Citus.Platform.Core.Accounts
+@using Citus.Ui.Shared.Control
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.PlatformProfileClient ProfileClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Profile</PageTitle>
+
+<div style="padding:1.5rem 1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+            <div style="max-width:52rem;">
+                <div style="font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--mud-palette-text-secondary);">Profile</div>
+                <h1 style="margin:0.35rem 0 0.65rem 0;">Platform Account & Verification</h1>
+                <p style="margin:0;color:var(--mud-palette-text-secondary);max-width:48rem;">
+                    Manage your platform display name directly, and route email or password changes through governed verification delivery.
+                    This page stays platform-owned even when the shell is operating inside a specific active company context.
+                </p>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+                <MudChip T="string" Color="@(ShellState.MaintenanceState.Enabled ? Color.Warning : Color.Success)" Variant="Variant.Outlined" Size="Size.Small">
+                    @(ShellState.MaintenanceState.Enabled ? "Maintenance On" : "Maintenance Off")
+                </MudChip>
+            </div>
+        </div>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (ShellState.MaintenanceState.Enabled)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.MaintenanceState.Message
+        </MudAlert>
+    }
+
+    @if (_profile is not null && !_profile.NotificationVerificationReady)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Verification delivery is currently blocked. @_profile.NotificationBlockingReason
+        </MudAlert>
+    }
+
+    @if (_notificationReadiness is not null)
+    {
+        <MudPaper Elevation="0" Class="pa-4">
+            <h2 style="margin-top:0;">Notification Readiness</h2>
+            <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                Email and password verification depend on platform notification readiness. This is visible here, but governed on the SysAdmin side.
+            </p>
+            <div style="display:grid;gap:0.75rem;">
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <MudChip T="string" Color="@(_notificationReadiness.ConfigPresent ? Color.Info : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                        @(_notificationReadiness.ConfigPresent ? "Config Present" : "Config Missing")
+                    </MudChip>
+                    <MudChip T="string" Color="@(_notificationReadiness.IsVerificationDeliveryReady ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                        @(_notificationReadiness.IsVerificationDeliveryReady ? "Delivery Ready" : "Delivery Blocked")
+                    </MudChip>
+                    <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">
+                        Test: @_notificationReadiness.TestStatus
+                    </MudChip>
+                    <MudChip T="string" Color="@(_notificationReadiness.VerificationReady ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                        @(_notificationReadiness.VerificationReady ? "Verification Ready" : "Verification Not Ready")
+                    </MudChip>
+                </div>
+                @if (_notificationReadiness.LastTestedAtUtc.HasValue)
+                {
+                    <div>
+                        <div style="font-size:0.8rem;color:var(--mud-palette-text-secondary);">Last tested</div>
+                        <strong>@_notificationReadiness.LastTestedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</strong>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_notificationReadiness.BlockingReason))
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        @_notificationReadiness.BlockingReason
+                    </MudAlert>
+                }
+                @if (!string.IsNullOrWhiteSpace(_notificationReadiness.ConfigurationError))
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                        Provider configuration issue: @_notificationReadiness.ConfigurationError
+                    </MudAlert>
+                }
+            </div>
+        </MudPaper>
+    }
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Current Account</h2>
+                @if (_profile is null)
+                {
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <div style="display:grid;gap:0.75rem;">
+                        <div>
+                            <div style="font-size:0.8rem;color:var(--mud-palette-text-secondary);">Username</div>
+                            <strong>@_profile.Username</strong>
+                        </div>
+                        <div>
+                            <div style="font-size:0.8rem;color:var(--mud-palette-text-secondary);">Email</div>
+                            <strong>@_profile.Email</strong>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                            <MudChip T="string" Color="@(_profile.IsEmailVerified ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                                @(_profile.IsEmailVerified ? "Email Verified" : "Email Unverified")
+                            </MudChip>
+                            <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                                Status: @_profile.Status
+                            </MudChip>
+                        </div>
+                        @if (_profile.HasPendingEmailChange)
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                                Pending email change: @_profile.PendingEmailChangeMaskedDestination
+                                until @_profile.PendingEmailChangeExpiresAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            </MudAlert>
+                        }
+                        @if (_profile.HasPendingPasswordChange)
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                                Pending password change verification:
+                                @_profile.PendingPasswordChangeMaskedDestination
+                                until @_profile.PendingPasswordChangeExpiresAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            </MudAlert>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Display Name</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    Display name updates apply immediately to your platform account summary and future shell context hydration.
+                </p>
+                <MudTextField T="string"
+                              Label="Display Name"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_displayName"
+                              ValueChanged="@(value => _displayName = value ?? string.Empty)"
+                              Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled)" />
+                <div style="margin-top:0.75rem;">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled)"
+                               OnClick="SaveDisplayNameAsync">
+                        Save Display Name
+                    </MudButton>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Email Change</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    Requesting a new code replaces any prior pending email-change verification.
+                </p>
+                <MudTextField T="string"
+                              Label="New Email"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_newEmail"
+                              ValueChanged="@(value => _newEmail = value ?? string.Empty)"
+                              Disabled="@RequestActionsDisabled" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Secondary"
+                           Disabled="@RequestActionsDisabled"
+                           OnClick="RequestEmailChangeAsync">
+                    Send Email Change Code
+                </MudButton>
+                <MudDivider Class="my-4" />
+                <MudTextField T="string"
+                              Label="Email Change Code"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_emailChangeCode"
+                              ValueChanged="@(value => _emailChangeCode = value ?? string.Empty)"
+                              Disabled="@ConfirmActionsDisabled" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           Disabled="@ConfirmActionsDisabled"
+                           OnClick="ConfirmEmailChangeAsync">
+                    Confirm Email Change
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Password Change</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    Password updates are staged as hashed pending changes until you confirm the verification code.
+                </p>
+                <MudTextField T="string"
+                              Label="New Password"
+                              InputType="InputType.Password"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_newPassword"
+                              ValueChanged="@(value => _newPassword = value ?? string.Empty)"
+                              Disabled="@RequestActionsDisabled" />
+                <MudTextField T="string"
+                              Label="Confirm New Password"
+                              InputType="InputType.Password"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_confirmPassword"
+                              ValueChanged="@(value => _confirmPassword = value ?? string.Empty)"
+                              Disabled="@RequestActionsDisabled" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Warning"
+                           Disabled="@RequestActionsDisabled"
+                           OnClick="RequestPasswordChangeAsync">
+                    Send Password Change Code
+                </MudButton>
+                <MudDivider Class="my-4" />
+                <MudTextField T="string"
+                              Label="Password Change Code"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_passwordChangeCode"
+                              ValueChanged="@(value => _passwordChangeCode = value ?? string.Empty)"
+                              Disabled="@ConfirmActionsDisabled" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           Disabled="@ConfirmActionsDisabled"
+                           OnClick="ConfirmPasswordChangeAsync">
+                    Confirm Password Change
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</div>
+
+@code {
+    private PlatformAccountProfileSummary? _profile;
+    private NotificationReadinessSummary? _notificationReadiness;
+    private string _displayName = string.Empty;
+    private string _newEmail = string.Empty;
+    private string _emailChangeCode = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private string _passwordChangeCode = string.Empty;
+    private string? _errorText;
+    private bool _isBusy;
+
+    private bool RequestActionsDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null ||
+        !_profile.NotificationVerificationReady;
+
+    private bool ConfirmActionsDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _errorText = null;
+        await RefreshShellStateAsync();
+        var (profile, error) = await ProfileClient.GetAsync(CancellationToken.None);
+        var (notificationReadiness, notificationError) = await ProfileClient.GetNotificationReadinessAsync(CancellationToken.None);
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            if (await HandleAuthenticationErrorAsync(error))
+            {
+                return;
+            }
+
+            _errorText = error;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(notificationError))
+        {
+            if (await HandleAuthenticationErrorAsync(notificationError))
+            {
+                return;
+            }
+
+            _errorText = notificationError;
+        }
+
+        _profile = profile;
+        _notificationReadiness = notificationReadiness;
+        if (_profile is not null)
+        {
+            _displayName = _profile.DisplayName;
+        }
+    }
+
+    private async Task SaveDisplayNameAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var (profile, error) = await ProfileClient.SaveDisplayNameAsync(_displayName, CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    if (await HandleAuthenticationErrorAsync(error))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(error);
+                }
+
+                _profile = profile;
+                await RefreshShellStateAsync();
+                Snackbar.Add("Display name saved.", Severity.Success);
+            });
+    }
+
+    private async Task RequestEmailChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var (result, error) = await ProfileClient.RequestEmailChangeAsync(_newEmail, CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    if (await HandleAuthenticationErrorAsync(error))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(error);
+                }
+
+                if (result is null)
+                {
+                    throw new InvalidOperationException("Platform account was not found.");
+                }
+
+                _profile = result.Profile;
+                _newEmail = string.Empty;
+                Snackbar.Add(
+                    $"Email change code sent to {result.MaskedDestination}. Expires {result.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
+                    Severity.Success);
+            });
+    }
+
+    private async Task ConfirmEmailChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var (result, error) = await ProfileClient.ConfirmEmailChangeAsync(_emailChangeCode, CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    if (await HandleAuthenticationErrorAsync(error))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(error);
+                }
+
+                if (result is null)
+                {
+                    throw new InvalidOperationException("Platform account was not found.");
+                }
+
+                _profile = result.Profile;
+                _emailChangeCode = string.Empty;
+                await RefreshShellStateAsync();
+                Snackbar.Add("Email change confirmed.", Severity.Success);
+            });
+    }
+
+    private async Task RequestPasswordChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                if (!string.Equals(_newPassword, _confirmPassword, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("New password and confirmation must match.");
+                }
+
+                var (result, error) = await ProfileClient.RequestPasswordChangeAsync(_newPassword, CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    if (await HandleAuthenticationErrorAsync(error))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(error);
+                }
+
+                if (result is null)
+                {
+                    throw new InvalidOperationException("Platform account was not found.");
+                }
+
+                _profile = result.Profile;
+                _newPassword = string.Empty;
+                _confirmPassword = string.Empty;
+                Snackbar.Add(
+                    $"Password change code sent to {result.MaskedDestination}. Expires {result.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
+                    Severity.Success);
+            });
+    }
+
+    private async Task ConfirmPasswordChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var (result, error) = await ProfileClient.ConfirmPasswordChangeAsync(_passwordChangeCode, CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    if (await HandleAuthenticationErrorAsync(error))
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException(error);
+                }
+
+                if (result is null)
+                {
+                    throw new InvalidOperationException("Platform account was not found.");
+                }
+
+                _profile = result.Profile;
+                _passwordChangeCode = string.Empty;
+                await RefreshShellStateAsync();
+                Snackbar.Add("Password change confirmed.", Severity.Success);
+            });
+    }
+
+    private async Task RunBusyAsync(Func<Task> action)
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        _isBusy = true;
+        _errorText = null;
+
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task<bool> HandleAuthenticationErrorAsync(string error)
+    {
+        if (!string.Equals(error, Web.Shell.Services.PlatformProfileClient.AuthenticationRequiredError, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+        ShellState.ClearAuthenticatedSession();
+        Snackbar.Add("Your business session has expired. Please sign in again.", Severity.Warning);
+        NavigationManager.NavigateTo("login", replace: true);
+        return true;
+    }
+
+    private async Task RefreshShellStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+    }
+}

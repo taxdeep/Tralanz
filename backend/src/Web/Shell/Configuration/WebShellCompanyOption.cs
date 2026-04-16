@@ -11,4 +11,8 @@ public sealed class WebShellCompanyOption
     public string BaseCurrencyCode { get; set; } = string.Empty;
 
     public bool MultiCurrencyEnabled { get; set; }
+
+    public string Status { get; set; } = "active";
+
+    public bool IsReadOnly { get; set; }
 }

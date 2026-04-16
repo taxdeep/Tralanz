@@ -45,6 +45,13 @@
                 </MudAlert>
             }
 
+            @if (WritesBlocked)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                    @ShellSession.WriteBlockMessage
+                </MudAlert>
+            }
+
             <div class="je-review-summary-grid">
                 <div class="je-review-card">
                     <div class="je-review-card__label">Journal</div>
@@ -236,13 +243,13 @@
                         <div class="je-review-links">
                             <MudButton Variant="Variant.Outlined"
                                        Color="Color.Warning"
-                                       Disabled="@(!_review.CanVoid || _isApplyingLifecycle)"
+                                       Disabled="@(!_review.CanVoid || _isApplyingLifecycle || WritesBlocked)"
                                        OnClick="HandleVoidAsync">
                                 Void
                             </MudButton>
                             <MudButton Variant="Variant.Outlined"
                                        Color="Color.Error"
-                                       Disabled="@(!_review.CanReverse || _isApplyingLifecycle)"
+                                       Disabled="@(!_review.CanReverse || _isApplyingLifecycle || WritesBlocked)"
                                        OnClick="HandleReverseAsync">
                                 Reverse
                             </MudButton>
@@ -374,7 +381,7 @@
             </div>
 
             <div class="je-review-action-bar">
-                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="HandleBackToEditor">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="HandleBackToEditor" Disabled="WritesBlocked">
                     New journal entry
                 </MudButton>
             </div>
@@ -392,6 +399,7 @@
     private bool _isLoading;
     private bool _isApplyingLifecycle;
     private string? _errorText;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
 
     protected override Task OnParametersSetAsync() => LoadReviewAsync();
 
@@ -404,6 +412,7 @@
 
         try
         {
+            await ShellSession.RefreshAsync(CancellationToken.None);
             _review = await JournalEntryReviewStore.GetAsync(ShellSession.ActiveCompanyId, JournalEntryId, CancellationToken.None);
 
             if (_review is null)
@@ -428,7 +437,7 @@
 
     private async Task HandleVoidAsync()
     {
-        if (_review is null)
+        if (_review is null || TryBlockWrites())
         {
             return;
         }
@@ -438,7 +447,7 @@
 
     private async Task HandleReverseAsync()
     {
-        if (_review is null)
+        if (_review is null || TryBlockWrites())
         {
             return;
         }
@@ -472,7 +481,24 @@
 
     private void HandleBackToEditor()
     {
+        if (WritesBlocked)
+        {
+            Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
+            return;
+        }
+
         Navigation.NavigateTo("/gl/journal-entry/editor");
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
+        return true;
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");

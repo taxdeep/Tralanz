@@ -23,18 +23,97 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Identity and security core
+-- Platform account, CompanyAccess, and SysAdmin core
 -- ---------------------------------------------------------------------------
 
+-- Physical table name remains `users` in this draft to avoid touching every
+-- actor-reference FK in the baseline. Semantically, this is Platform
+-- Identity / Account storage, not a Business App Users module.
 CREATE TABLE users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text NOT NULL UNIQUE,
   username text UNIQUE,
+  display_name text,
   password_hash text NOT NULL,
-  is_active boolean NOT NULL DEFAULT true,
+  status text NOT NULL DEFAULT 'active',
+  email_verified_at timestamptz,
+  locked_until timestamptz,
+  security_stamp text NOT NULL DEFAULT gen_random_uuid()::text,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT users_status_chk CHECK (status IN ('active', 'disabled', 'locked', 'pending_verification'))
+);
+
+CREATE TABLE account_verification_codes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose text NOT NULL,
+  destination text,
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT account_verification_codes_purpose_chk CHECK (purpose IN ('email_verification', 'email_change', 'password_change', 'password_reset')),
+  CONSTRAINT account_verification_codes_failed_attempts_chk CHECK (failed_attempts >= 0)
+);
+
+-- SysAdmin is an independent PlatformOps identity realm. SysAdmin accounts are
+-- not company members and must never become business posting actors.
+CREATE TABLE sysadmin_accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text NOT NULL UNIQUE,
+  display_name text NOT NULL DEFAULT '',
+  password_hash text NOT NULL,
+  status text NOT NULL DEFAULT 'active',
+  last_login_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT sysadmin_accounts_status_chk CHECK (status IN ('active', 'disabled', 'locked'))
+);
+
+CREATE TABLE sysadmin_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sysadmin_account_id uuid NOT NULL REFERENCES sysadmin_accounts(id) ON DELETE CASCADE,
+  session_token_hash text NOT NULL UNIQUE,
+  expires_at timestamptz NOT NULL,
+  last_seen_at timestamptz NOT NULL DEFAULT NOW(),
+  revoked_at timestamptz,
+  remote_ip text,
+  user_agent text,
+  created_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_notification_dispatches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_type text NOT NULL,
+  destination text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  provider_key text,
+  attempt_count integer NOT NULL DEFAULT 0,
+  sent_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE platform_runtime_state (
+  state_key text PRIMARY KEY,
+  json jsonb NOT NULL,
+  updated_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO platform_runtime_state (state_key, json)
+VALUES ('maintenance', '{"enabled": false, "message": "Maintenance mode is off.", "scheduledUntilUtc": null}'::jsonb)
+ON CONFLICT (state_key) DO NOTHING;
+
+INSERT INTO platform_runtime_state (state_key, json)
+VALUES ('notification_readiness', '{"configPresent": false, "testStatus": "untested", "lastTestedAtUtc": null, "verificationReady": false}'::jsonb)
+ON CONFLICT (state_key) DO NOTHING;
 
 CREATE TABLE companies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,11 +134,13 @@ CREATE TABLE company_memberships (
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role text NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
-  permissions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_memberships_role_chk CHECK (role IN ('owner', 'user')),
-  CONSTRAINT company_memberships_unique_member UNIQUE (company_id, user_id)
+  CONSTRAINT company_memberships_permissions_array_chk CHECK (jsonb_typeof(permissions) = 'array'),
+  CONSTRAINT company_memberships_unique_member UNIQUE (company_id, user_id),
+  CONSTRAINT company_memberships_session_context_unique UNIQUE (id, company_id, user_id)
 );
 
 CREATE TABLE business_sessions (
@@ -67,8 +148,20 @@ CREATE TABLE business_sessions (
   token_hash text NOT NULL UNIQUE,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   active_company_id uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+  membership_id uuid NOT NULL REFERENCES company_memberships(id) ON DELETE CASCADE,
+  role text NOT NULL,
+  permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  company_status text NOT NULL,
+  permission_version text,
   expires_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT NOW()
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT business_sessions_role_chk CHECK (role IN ('owner', 'user')),
+  CONSTRAINT business_sessions_permissions_array_chk CHECK (jsonb_typeof(permissions) = 'array'),
+  CONSTRAINT business_sessions_company_status_chk CHECK (company_status IN ('active', 'inactive', 'suspended', 'archived')),
+  CONSTRAINT business_sessions_membership_context_fk
+    FOREIGN KEY (membership_id, active_company_id, user_id)
+    REFERENCES company_memberships(id, company_id, user_id)
+    ON DELETE CASCADE
 );
 
 CREATE TABLE platform_modules (
@@ -1213,8 +1306,28 @@ CREATE TABLE audit_logs (
 -- Indexes
 -- ---------------------------------------------------------------------------
 
+CREATE INDEX idx_users_status_email
+  ON users (status, email);
+
+CREATE INDEX idx_account_verification_codes_active
+  ON account_verification_codes (user_id, purpose, expires_at DESC)
+  WHERE consumed_at IS NULL;
+
+CREATE INDEX idx_sysadmin_accounts_status_email
+  ON sysadmin_accounts (status, email);
+
+CREATE INDEX idx_sysadmin_sessions_active
+  ON sysadmin_sessions (sysadmin_account_id, expires_at DESC)
+  WHERE revoked_at IS NULL;
+
+CREATE INDEX idx_platform_notification_dispatches_status
+  ON platform_notification_dispatches (status, created_at DESC);
+
 CREATE INDEX idx_company_memberships_company_active
   ON company_memberships (company_id, is_active);
+
+CREATE INDEX idx_business_sessions_user_company_expiry
+  ON business_sessions (user_id, active_company_id, expires_at DESC);
 
 CREATE INDEX idx_company_currencies_company_enabled
   ON company_currencies (company_id, is_enabled);
@@ -1332,12 +1445,30 @@ CREATE UNIQUE INDEX uq_company_book_governance_signals_company_book_identity
 CREATE INDEX idx_audit_logs_company_entity_created
   ON audit_logs (company_id, entity_type, entity_id, created_at DESC);
 
+CREATE INDEX idx_audit_logs_action_created_at
+  ON audit_logs (action, created_at DESC);
+
 -- ---------------------------------------------------------------------------
 -- updated_at triggers
 -- ---------------------------------------------------------------------------
 
 CREATE TRIGGER trg_users_set_updated_at
 BEFORE UPDATE ON users
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_sysadmin_accounts_set_updated_at
+BEFORE UPDATE ON sysadmin_accounts
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_platform_runtime_state_set_updated_at
+BEFORE UPDATE ON platform_runtime_state
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_platform_notification_dispatches_set_updated_at
+BEFORE UPDATE ON platform_notification_dispatches
 FOR EACH ROW
 EXECUTE FUNCTION citus_set_updated_at();
 

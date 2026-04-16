@@ -1,7 +1,9 @@
 @page "/gl/journal-entry/source/{DocumentId:guid}"
 @using Microsoft.AspNetCore.Components.Web
+@using Modules.CompanyAccess.SessionContext
 @using Modules.GL.JournalEntry
 @using MudBlazor
+@inject ICompanyAccessShellSession ShellSession
 @inject IManualJournalSourceReviewStore ManualJournalSourceReviewStore
 @inject NavigationManager Navigation
 
@@ -31,6 +33,13 @@
                     <MudChip T="string" Variant="Variant.Text" Color="@GetStatusColor(_review.Status)">@_review.Status</MudChip>
                 </div>
             </div>
+
+            @if (WritesBlocked)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                    @ShellSession.WriteBlockMessage
+                </MudAlert>
+            }
 
             <div class="mjs-review-summary-grid">
                 <div class="mjs-review-card">
@@ -186,7 +195,7 @@
                                 </MudButton>
                             }
 
-                            <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="HandleBackToEditor">
+                            <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="HandleBackToEditor" Disabled="WritesBlocked">
                                 New journal entry
                             </MudButton>
                         </div>
@@ -199,14 +208,13 @@
 
 @code
 {
-    private static readonly Guid DemoCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-
     [Parameter]
     public Guid DocumentId { get; set; }
 
     private ManualJournalSourceReview? _review;
     private bool _isLoading;
     private string? _errorText;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -216,7 +224,8 @@
 
         try
         {
-            _review = await ManualJournalSourceReviewStore.GetAsync(DemoCompanyId, DocumentId, CancellationToken.None);
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            _review = await ManualJournalSourceReviewStore.GetAsync(ShellSession.ActiveCompanyId, DocumentId, CancellationToken.None);
 
             if (_review is null)
             {
@@ -235,6 +244,11 @@
 
     private void HandleBackToEditor()
     {
+        if (WritesBlocked)
+        {
+            return;
+        }
+
         Navigation.NavigateTo("/gl/journal-entry/editor");
     }
 

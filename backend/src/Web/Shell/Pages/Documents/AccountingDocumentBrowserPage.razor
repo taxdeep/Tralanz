@@ -1,0 +1,322 @@
+@page "/documents/source-browser"
+@using Web.Shell.Services
+@using Web.Business.AR.SettlementLookup
+@using Web.Business.AP.SettlementLookup
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellAccountingDocumentBrowserClient BrowserClient
+@inject IArSettlementLookupService ArLookupService
+@inject IApSettlementLookupService ApLookupService
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.ArrowBack">
+            Back to shell
+        </MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Source document browser</MudChip>
+    </div>
+
+    <h1 style="margin:0 0 0.75rem 0;">AR/AP Source Documents</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
+        This browser gives `Invoice`, `Bill`, `Credit Note`, and `Vendor Credit` a formal company-scoped read surface. It stays read-only and drills into the existing backend-owned document detail page.
+    </p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:0.75rem;align-items:end;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Source Type" Variant="Variant.Outlined" @bind-Value="_selectedSourceType">
+            @foreach (var option in _sourceTypeOptions)
+            {
+                <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Label="Counterparty Role" Variant="Variant.Outlined" Value="_selectedCounterpartyRole" ValueChanged="OnCounterpartyRoleChangedAsync">
+            @foreach (var option in _counterpartyRoleOptions)
+            {
+                <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Label="Counterparty" Variant="Variant.Outlined" @bind-Value="_selectedCounterpartyIdText" Disabled="_counterpartyOptions.Count == 0">
+            @foreach (var option in _counterpartyOptions)
+            {
+                <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+            Refresh
+        </MudButton>
+    </div>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Active Company</MudText>
+            <MudText Typo="Typo.h6">@ShellState.ActiveCompany.CompanyCode</MudText>
+            <MudText Typo="Typo.body2">@ShellState.ActiveCompany.CompanyName</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Filter</MudText>
+            <MudText Typo="Typo.h6">@CurrentFilterLabel</MudText>
+            <MudText Typo="Typo.body2">@($"{_items.Count} document(s)")</MudText>
+        </MudPaper>
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="0">
+        <MudText Typo="Typo.h6" Class="mb-3">Documents</MudText>
+        @if (_items.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                No source documents matched the current company context and filter.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_items" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Type</MudTh>
+                    <MudTh>Display</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Date</MudTh>
+                    <MudTh>Counterparty</MudTh>
+                    <MudTh>Total</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.SourceTypeLabel</MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.DisplayNumber</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@context.EntityNumber</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>@context.Status</MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.DocumentDate.ToString("yyyy-MM-dd")</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@($"Due {context.DueDate?.ToString("yyyy-MM-dd") ?? "n/a"}")</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@($"{context.CounterpartyLabel}: {context.CounterpartyDisplayName ?? "Unavailable"}")</MudText>
+                            @if (context.CounterpartyId.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.CounterpartyId.Value.ToString("D")</MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.TotalAmount.ToString("N2")</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.TransactionCurrencyCode} | base {context.BaseCurrencyCode}")</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/documents/{context.SourceType}/{context.Id:D}")">
+                                Open Detail
+                            </MudButton>
+                            @if (TryBuildDraftEditorHref(context.SourceType, context.Status, context.Id, out var editHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Success" Href="@editHref" Disabled="WritesBlocked">
+                                    Edit Draft
+                                </MudButton>
+                            }
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</div>
+
+@code
+{
+    private readonly IReadOnlyList<SourceTypeOption> _sourceTypeOptions =
+    [
+        new(string.Empty, "All Source Documents"),
+        new("invoice", "Invoices"),
+        new("credit_note", "Credit Notes"),
+        new("bill", "Bills"),
+        new("vendor_credit", "Vendor Credits")
+    ];
+
+    private readonly IReadOnlyList<SourceTypeOption> _counterpartyRoleOptions =
+    [
+        new(string.Empty, "All Counterparties"),
+        new("customer", "Customers"),
+        new("vendor", "Vendors")
+    ];
+
+    private bool _isLoading;
+    private string? _errorText;
+    private string _selectedSourceType = string.Empty;
+    private string _selectedCounterpartyRole = string.Empty;
+    private string _selectedCounterpartyIdText = string.Empty;
+    private IReadOnlyList<ShellAccountingSourceDocumentBrowserItem> _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+    private IReadOnlyList<SourceTypeOption> _counterpartyOptions = Array.Empty<SourceTypeOption>();
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private string CurrentFilterLabel =>
+        BuildFilterLabel();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await LoadCounterpartyOptionsAsync())
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+
+        if (!await EnsureWriteGateStateAsync())
+        {
+            _isLoading = false;
+            return;
+        }
+
+        var result = await BrowserClient.GetDocumentsAsync(
+            ShellState.ActiveCompany.Id,
+            string.IsNullOrWhiteSpace(_selectedSourceType) ? null : _selectedSourceType,
+            string.IsNullOrWhiteSpace(_selectedCounterpartyRole) ? null : _selectedCounterpartyRole,
+            TryGetSelectedCounterpartyId(out var counterpartyId) ? counterpartyId : null,
+            100);
+
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+            _isLoading = false;
+            return;
+        }
+
+        _items = result.Value ?? Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            _errorText = result.ErrorMessage;
+        }
+
+        if (_items.Count == 0)
+        {
+            _errorText = string.IsNullOrWhiteSpace(_errorText) ? null : _errorText;
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task OnCounterpartyRoleChangedAsync(string value)
+    {
+        _selectedCounterpartyRole = value;
+        _selectedCounterpartyIdText = string.Empty;
+        await LoadCounterpartyOptionsAsync();
+    }
+
+    private async Task<bool> LoadCounterpartyOptionsAsync()
+    {
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return false;
+        }
+
+        if (_selectedCounterpartyRole == "customer")
+        {
+            var customers = await ArLookupService.ListCustomersAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            _counterpartyOptions = customers
+                .Select(item => new SourceTypeOption(item.Id.ToString("D"), item.DisplayLabel))
+                .ToArray();
+            return true;
+        }
+
+        if (_selectedCounterpartyRole == "vendor")
+        {
+            var vendors = await ApLookupService.ListVendorsAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            _counterpartyOptions = vendors
+                .Select(item => new SourceTypeOption(item.Id.ToString("D"), item.DisplayLabel))
+                .ToArray();
+            return true;
+        }
+
+        _counterpartyOptions = Array.Empty<SourceTypeOption>();
+        return true;
+    }
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _errorText = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private bool TryGetSelectedCounterpartyId(out Guid counterpartyId)
+    {
+        return Guid.TryParse(_selectedCounterpartyIdText, out counterpartyId);
+    }
+
+    private string BuildFilterLabel()
+    {
+        var sourceLabel = _sourceTypeOptions.FirstOrDefault(option => option.Value == _selectedSourceType)?.Label
+            ?? "All Source Documents";
+        var roleLabel = _counterpartyRoleOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyRole)?.Label
+            ?? "All Counterparties";
+        var counterpartyLabel = _counterpartyOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyIdText)?.Label;
+
+        return string.IsNullOrWhiteSpace(counterpartyLabel)
+            ? $"{sourceLabel} | {roleLabel}"
+            : $"{sourceLabel} | {roleLabel}: {counterpartyLabel}";
+    }
+
+    private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        href = sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => $"/documents/invoice/draft-editor?draftId={documentId:D}",
+            "credit_note" => $"/documents/credit-note/draft-editor?draftId={documentId:D}",
+            "bill" => $"/documents/bill/draft-editor?draftId={documentId:D}",
+            "vendor_credit" => $"/documents/vendor-credit/draft-editor?draftId={documentId:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private sealed record SourceTypeOption(string Value, string Label);
+}

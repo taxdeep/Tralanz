@@ -1,0 +1,502 @@
+@page "/documents/invoice/draft-editor"
+@using Modules.CompanyAccess.SessionContext
+@using Modules.GL.JournalEntry
+@using Web.Business.AR.SettlementLookup
+@using Web.Shell.Services
+@inject Web.Shell.State.WebShellState ShellState
+@inject ICompanyAccessShellSession ShellSession
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject IArSettlementLookupService Customers
+@inject IJournalEntryAccountCatalog Accounts
+@inject ShellTaxCodeLookupService TaxCodes
+@inject ShellSourceDocumentDraftClient Drafts
+@inject ISnackbar Snackbar
+
+<PageTitle>Invoice Draft</PageTitle>
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Href="/documents/source-browser">Back</MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Success">Invoice draft</MudChip>
+    </div>
+    <h1 style="margin:0 0 .75rem 0;">Invoice Draft Editor</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:56rem;">
+        Save or reopen a governed invoice draft in the active company context, then post it into the existing document-detail and journal-review flow.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_error</MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">@ShellState.WriteBlockMessage</MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Customer" Variant="Variant.Outlined" @bind-Value="_customerIdText">
+            @foreach (var customer in _customerOptions)
+            {
+                <MudSelectItem T="string" Value="@customer.Id.ToString("D")">@customer.DisplayLabel</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="Invoice Date" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" />
+        <MudDatePicker Label="Due Date" Variant="Variant.Outlined" Date="@_dueDatePicker" DateChanged="OnDueDateChanged" />
+        <MudTextField T="string" Label="Tx Currency" Variant="Variant.Outlined" Value="_txCurrency" ValueChanged="OnCurrencyChanged" Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+        <MudTextField T="string" Label="Base Currency" Variant="Variant.Outlined" Value="_baseCurrency" Disabled="true" />
+        <MudNumericField T="decimal?" Label="FX Rate" Variant="Variant.Outlined" @bind-Value="_fxRate" Disabled="@IsIdentityFx" />
+        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" />
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
+            <MudText Typo="Typo.h6">Lines</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@WritesBlocked" OnClick="AddLine">Add line</MudButton>
+        </div>
+        <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>#</MudTh><MudTh>Revenue</MudTh><MudTh>Description</MudTh><MudTh>Qty</MudTh><MudTh>Unit</MudTh><MudTh>Tax Code</MudTh><MudTh>Tax</MudTh><MudTh>Total</MudTh><MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.LineNumber</MudTd>
+                <MudTd>
+                    <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.AccountIdText">
+                        @foreach (var account in _revenueAccounts)
+                        {
+                            <MudSelectItem T="string" Value="@account.AccountId.ToString("D")">@account.DisplayText</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.Description" /></MudTd>
+                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Immediate="true" @bind-Value="context.Quantity" /></MudTd>
+                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Immediate="true" @bind-Value="context.UnitPrice" /></MudTd>
+                <MudTd>
+                    <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.TaxCodeIdText">
+                        <MudSelectItem T="string" Value="@string.Empty">No tax</MudSelectItem>
+                        @foreach (var taxCode in _taxCodes)
+                        {
+                            <MudSelectItem T="string" Value="@taxCode.Id.ToString("D")">@taxCode.DisplayLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0m" Immediate="true" @bind-Value="context.TaxAmount" /></MudTd>
+                <MudTd>@context.TotalAmount.ToString("N2")</MudTd>
+                <MudTd>
+                    <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Disabled="@WritesBlocked" OnClick="@(() => ApplyRate(context))">Rate</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Disabled="@(_lines.Count == 1 || WritesBlocked)" OnClick="@(() => RemoveLine(context))">X</MudButton>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Subtotal</MudText><MudText Typo="Typo.h6">@Subtotal.ToString("N2")</MudText></MudPaper>
+        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Tax</MudText><MudText Typo="Typo.h6">@TaxTotal.ToString("N2")</MudText></MudPaper>
+        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Total</MudText><MudText Typo="Typo.h6">@GrandTotal.ToString("N2")</MudText></MudPaper>
+    </div>
+
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_saving || _posting || IsPosted || WritesBlocked)" OnClick="SaveAsync">Save Draft</MudButton>
+        @if (_saved is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/invoice/{_saved.DocumentId:D}")">Open Detail</MudButton>
+            @if (!IsPosted)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Info" Disabled="@(_posting || _saving || WritesBlocked)" OnClick="PostAsync">Post Draft</MudButton>
+            }
+        }
+    </div>
+
+    @if (_saved is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-top:1rem;">
+            <MudText Typo="Typo.h6">Saved Draft</MudText>
+            <MudText Typo="Typo.body2">Document Id: @_saved.DocumentId</MudText>
+            <MudText Typo="Typo.body2">Display Number: @_saved.DisplayNumber</MudText>
+            <MudText Typo="Typo.body2">Entity Number: @_saved.EntityNumber</MudText>
+            <MudText Typo="Typo.body2">Status: @_saved.Status</MudText>
+        </MudPaper>
+    }
+
+    @if (_postedResult is not null && _saved is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-top:1rem;">
+            <MudText Typo="Typo.h6">Posted Review Continuity</MudText>
+            <MudText Typo="Typo.body2">Journal Entry: @_postedResult.JournalEntryDisplayNumber</MudText>
+            <MudText Typo="Typo.body2">Posted At: @_postedResult.PostedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+            <MudText Typo="Typo.body2">Status: @_postedResult.Status</MudText>
+            @if (_postedResult.Warnings.Count > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-top:1rem;">
+                    @string.Join(" | ", _postedResult.Warnings)
+                </MudAlert>
+            }
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/invoice/{_saved.DocumentId:D}")">Open Posted Document</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">Open Journal Entry Review</MudButton>
+            </div>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "draftId")]
+    public Guid? DraftId { get; set; }
+
+    private readonly List<SalesLine> _lines = [SalesLine.Blank(1)];
+    private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _customerOptions = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
+    private IReadOnlyList<JournalEntryAccountOption> _revenueAccounts = Array.Empty<JournalEntryAccountOption>();
+    private IReadOnlyList<ShellTaxCodeLookupOption> _taxCodes = Array.Empty<ShellTaxCodeLookupOption>();
+    private Guid? _documentId;
+    private ShellSourceDocumentDraftSaveResult? _saved;
+    private string? _customerIdText;
+    private string _txCurrency = string.Empty;
+    private string _baseCurrency = string.Empty;
+    private Guid? _fxSnapshotId;
+    private decimal? _fxRate;
+    private string? _memo;
+    private string? _error;
+    private bool _saving;
+    private bool _posting;
+    private ShellSourceDocumentPostResult? _postedResult;
+    private DateOnly _documentDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _dueDate = DateOnly.FromDateTime(DateTime.Today.AddDays(30));
+    private DateTime? _documentDatePicker = DateTime.Today;
+    private DateTime? _dueDatePicker = DateTime.Today.AddDays(30);
+    private Guid? _loadedDraftId;
+
+    private decimal Subtotal => _lines.Sum(static x => x.LineAmount);
+    private decimal TaxTotal => _lines.Sum(static x => x.TaxAmount);
+    private decimal GrandTotal => Subtotal + TaxTotal;
+    private bool IsIdentityFx => string.Equals(_txCurrency, _baseCurrency, StringComparison.OrdinalIgnoreCase);
+    private bool IsPosted => string.Equals(_saved?.Status, "posted", StringComparison.OrdinalIgnoreCase);
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await EnsureLookupLoadedAsync())
+        {
+            return;
+        }
+
+        if (DraftId.HasValue && DraftId != _loadedDraftId)
+        {
+            await LoadDraftAsync(DraftId.Value);
+        }
+    }
+
+    private void AddLine()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _lines.Add(SalesLine.Blank(_lines.Count + 1));
+    }
+
+    private void RemoveLine(SalesLine line)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _lines.Remove(line);
+        for (var i = 0; i < _lines.Count; i++) _lines[i].LineNumber = i + 1;
+    }
+
+    private void ApplyRate(SalesLine line)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        var taxCode = _taxCodes.FirstOrDefault(x => x.Id.ToString("D") == line.TaxCodeIdText);
+        if (taxCode is null) return;
+        line.TaxAmount = Math.Round(line.LineAmount * taxCode.RatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _error = null;
+        if (!Guid.TryParse(_customerIdText, out var customerId)) { _error = "Customer must be selected."; return; }
+        if (!TryBuildLines(out var lines)) return;
+
+        try
+        {
+            _saving = true;
+            var saveResult = await Drafts.SaveInvoiceDraftAsync(_documentId, new ShellSalesSourceDocumentDraftSaveRequest
+            {
+                CompanyId = ShellSession.ActiveCompanyId,
+                UserId = ShellSession.CurrentUserId,
+                CustomerId = customerId,
+                DocumentDate = _documentDate,
+                DueDate = _dueDate,
+                TransactionCurrencyCode = _txCurrency.Trim().ToUpperInvariant(),
+                BaseCurrencyCode = _baseCurrency,
+                FxSnapshotId = _fxSnapshotId,
+                FxRate = IsIdentityFx ? null : _fxRate,
+                FxEffectiveDate = IsIdentityFx ? null : _documentDate,
+                FxSource = IsIdentityFx ? null : "shell_manual",
+                Memo = _memo,
+                Lines = lines
+            }, CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(saveResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (saveResult.Value is null)
+            {
+                _error = saveResult.ErrorMessage ?? "Unable to save the invoice draft.";
+                return;
+            }
+
+            _saved = saveResult.Value;
+            _documentId = _saved.DocumentId;
+            _postedResult = null;
+            Snackbar.Add($"Invoice draft {_saved.DisplayNumber} saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task PostAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _error = null;
+        if (!_documentId.HasValue)
+        {
+            _error = "Save the draft before posting.";
+            return;
+        }
+
+        try
+        {
+            _posting = true;
+            var postResult = await Drafts.PostInvoiceAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _documentId.Value,
+                _fxSnapshotId,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(postResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (postResult.Value is null)
+            {
+                _error = postResult.ErrorMessage ?? "Unable to post the invoice draft.";
+                return;
+            }
+
+            _postedResult = postResult.Value;
+            if (_saved is not null)
+            {
+                _saved = _saved with { Status = _postedResult.Status };
+            }
+
+            Snackbar.Add($"Invoice posted to journal entry {_postedResult.JournalEntryDisplayNumber}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _posting = false;
+        }
+    }
+
+    private bool TryBuildLines(out IReadOnlyList<ShellSalesSourceDocumentDraftLineSaveRequest> lines)
+    {
+        var built = new List<ShellSalesSourceDocumentDraftLineSaveRequest>();
+        foreach (var line in _lines)
+        {
+            if (!Guid.TryParse(line.AccountIdText, out var accountId)) { _error = $"Revenue account missing on line {line.LineNumber}."; lines = []; return false; }
+            if (string.IsNullOrWhiteSpace(line.Description)) { _error = $"Description missing on line {line.LineNumber}."; lines = []; return false; }
+            if (line.Quantity <= 0m || line.UnitPrice <= 0m) { _error = $"Quantity and unit price must be positive on line {line.LineNumber}."; lines = []; return false; }
+            if (line.TaxAmount > 0m && !Guid.TryParse(line.TaxCodeIdText, out _)) { _error = $"Tax code missing on line {line.LineNumber}."; lines = []; return false; }
+            built.Add(new ShellSalesSourceDocumentDraftLineSaveRequest
+            {
+                LineNumber = line.LineNumber,
+                RevenueAccountId = accountId,
+                Description = line.Description.Trim(),
+                Quantity = line.Quantity,
+                UnitPrice = line.UnitPrice,
+                TaxCodeId = Guid.TryParse(line.TaxCodeIdText, out var taxCodeId) ? taxCodeId : null,
+                TaxAmount = line.TaxAmount
+            });
+        }
+
+        if (built.Count == 0) { _error = "At least one line is required."; lines = []; return false; }
+        if (!IsIdentityFx && (!_fxRate.HasValue || _fxRate <= 0m)) { _error = "Foreign-currency drafts require a positive FX rate."; lines = []; return false; }
+        lines = built;
+        return true;
+    }
+
+    private void OnDocumentDateChanged(DateTime? value)
+    {
+        _documentDatePicker = value;
+        _documentDate = DateOnly.FromDateTime(value ?? DateTime.Today);
+    }
+
+    private void OnDueDateChanged(DateTime? value)
+    {
+        _dueDatePicker = value;
+        _dueDate = DateOnly.FromDateTime(value ?? DateTime.Today);
+    }
+
+    private void OnCurrencyChanged(string? value)
+    {
+        _txCurrency = string.IsNullOrWhiteSpace(value) ? _baseCurrency : value.Trim().ToUpperInvariant();
+        if (IsIdentityFx)
+        {
+            _fxRate = null;
+            _fxSnapshotId = null;
+        }
+    }
+
+    private async Task<bool> EnsureLookupLoadedAsync()
+    {
+        if (_customerOptions.Count > 0 && _revenueAccounts.Count > 0 && _taxCodes.Count > 0)
+        {
+            return true;
+        }
+
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return false;
+        }
+
+        _baseCurrency = ShellState.ActiveCompany.BaseCurrencyCode;
+        _txCurrency = _baseCurrency;
+        _customerOptions = await Customers.ListCustomersAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
+        _revenueAccounts = (await Accounts.ListManualPostingAccountsAsync(ShellSession.ActiveCompanyId, CancellationToken.None))
+            .Where(static x => x.TypeLabel.Contains("Revenue", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        _taxCodes = await TaxCodes.ListSalesTaxCodesAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
+        if (_customerOptions.Count == 1 && string.IsNullOrWhiteSpace(_customerIdText))
+        {
+            _customerIdText = _customerOptions[0].Id.ToString("D");
+        }
+
+        return true;
+    }
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _error = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        return true;
+    }
+
+    private async Task LoadDraftAsync(Guid documentId)
+    {
+        var draftResult = await Drafts.GetInvoiceDraftAsync(ShellSession.ActiveCompanyId, documentId, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(draftResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var draft = draftResult.Value;
+        if (draft is null)
+        {
+            _error = draftResult.IsNotFound
+                ? "The invoice draft could not be found in the active company context."
+                : draftResult.ErrorMessage ?? "Unable to load the invoice draft.";
+            return;
+        }
+
+        _documentId = draft.Id;
+        _loadedDraftId = draft.Id;
+        _saved = new ShellSourceDocumentDraftSaveResult
+        {
+            DocumentId = draft.Id,
+            EntityNumber = draft.EntityNumber,
+            DisplayNumber = draft.DisplayNumber,
+            Status = draft.Status
+        };
+        _customerIdText = draft.CustomerId.ToString("D");
+        _documentDate = draft.DocumentDate;
+        _dueDate = draft.DueDate;
+        _documentDatePicker = draft.DocumentDate.ToDateTime(TimeOnly.MinValue);
+        _dueDatePicker = draft.DueDate.ToDateTime(TimeOnly.MinValue);
+        _txCurrency = draft.TransactionCurrencyCode;
+        _baseCurrency = draft.BaseCurrencyCode;
+        _fxSnapshotId = draft.FxSnapshotId;
+        _fxRate = draft.FxRate;
+        _memo = draft.Memo;
+        _postedResult = null;
+        _lines.Clear();
+        _lines.AddRange(draft.Lines.Select(static line => new SalesLine
+        {
+            LineNumber = line.LineNumber,
+            AccountIdText = line.RevenueAccountId.ToString("D"),
+            Description = line.Description,
+            Quantity = line.Quantity,
+            UnitPrice = line.UnitPrice,
+            TaxCodeIdText = line.TaxCodeId?.ToString("D") ?? string.Empty,
+            TaxAmount = line.TaxAmount
+        }));
+        if (_lines.Count == 0)
+        {
+            _lines.Add(SalesLine.Blank(1));
+        }
+    }
+
+    private sealed class SalesLine
+    {
+        public int LineNumber { get; set; }
+        public string AccountIdText { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Quantity { get; set; } = 1m;
+        public decimal UnitPrice { get; set; } = 1m;
+        public string TaxCodeIdText { get; set; } = string.Empty;
+        public decimal TaxAmount { get; set; }
+        public decimal LineAmount => Quantity * UnitPrice;
+        public decimal TotalAmount => LineAmount + TaxAmount;
+        public static SalesLine Blank(int lineNumber) => new() { LineNumber = lineNumber };
+    }
+}

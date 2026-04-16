@@ -1,34 +1,51 @@
 @inject NavigationManager NavigationManager
 @inject AppShellState ShellState
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject SysAdminAuthenticationClient SysAdminAuthenticationClient
 @inject SysAdminControlClient SysAdminControlClient
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-    <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">
-        @PrimaryRole
-    </MudChip>
+@if (ShellState.IsAuthenticated)
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+        <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">
+            @PrimaryRole
+        </MudChip>
 
-    <MudStack Spacing="0">
-        <MudText Typo="Typo.caption" Class="text-secondary">Operator</MudText>
-        <MudText Typo="Typo.body2">@ShellState.Operator.DisplayName</MudText>
-    </MudStack>
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.caption" Class="text-secondary">Operator</MudText>
+            <MudText Typo="Typo.body2">@ShellState.Operator.DisplayName</MudText>
+        </MudStack>
 
-    <MudStack Spacing="0" Style="min-width: 240px;">
-        <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
-        <MudSelect T="Guid"
-                   Dense="true"
-                   Disabled="@IsCompanySwitcherDisabled"
-                   Value="@SelectedCompanyId"
-                   ValueChanged="OnCompanyChangedAsync">
-            @foreach (var company in ShellState.AvailableCompanies)
-            {
-                <MudSelectItem T="Guid" Value="@company.Id">
-                    @company.CompanyName (@company.CompanyCode)
-                </MudSelectItem>
-            }
-        </MudSelect>
+        <MudStack Spacing="0" Style="min-width: 240px;">
+            <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
+            <MudSelect T="Guid"
+                       Dense="true"
+                       Disabled="@IsCompanySwitcherDisabled"
+                       Value="@SelectedCompanyId"
+                       ValueChanged="OnCompanyChangedAsync">
+                @foreach (var company in ShellState.AvailableCompanies)
+                {
+                    <MudSelectItem T="Guid" Value="@company.Id">
+                        @company.CompanyName (@company.CompanyCode)
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
+
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Inherit"
+                   OnClick="NavigateToSecurity">
+            Security
+        </MudButton>
+
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Inherit"
+                   OnClick="SignOutAsync">
+            Log out
+        </MudButton>
     </MudStack>
-</MudStack>
+}
 
 @code
 {
@@ -37,6 +54,8 @@
     private Guid SelectedCompanyId => ShellState.ActiveCompany.CompanyId ?? Guid.Empty;
 
     private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count == 0;
+
+    private void NavigateToSecurity() => NavigationManager.NavigateTo("security");
 
     private async Task OnCompanyChangedAsync(Guid companyId)
     {
@@ -56,5 +75,14 @@
         ShellState.ApplyControlContext(context);
         Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
         NavigationManager.NavigateTo("overview");
+    }
+
+    private async Task SignOutAsync()
+    {
+        await SysAdminAuthenticationClient.SignOutAsync(ShellState.SessionToken);
+        await JS.InvokeVoidAsync("citusSysAdminAuth.clearSessionToken");
+        ShellState.ClearAuthenticatedSession();
+        Snackbar.Add("SysAdmin session ended.", Severity.Success);
+        NavigationManager.NavigateTo("login", forceLoad: true);
     }
 }

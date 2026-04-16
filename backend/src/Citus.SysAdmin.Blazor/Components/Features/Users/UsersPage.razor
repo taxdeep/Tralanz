@@ -1,5 +1,7 @@
 @page "/users"
 
+@inject AppShellState ShellState
+@inject ISnackbar Snackbar
 @inject SysAdminControlClient SysAdminControlClient
 
 <PageTitle>Users | Citus SysAdmin</PageTitle>
@@ -21,19 +23,28 @@
 }
 else
 {
+    @if (_notificationReadiness is not null && !_notificationReadiness.IsVerificationDeliveryReady)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            Password reset is currently blocked because notification readiness is not verified.
+            Open Maintenance and Notification Readiness to confirm config, test status, and verification readiness.
+        </MudAlert>
+    }
+
     <MudPaper Class="pa-4">
         <MudTable Items="_users" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
             <HeaderContent>
                 <MudTh>User</MudTh>
                 <MudTh>Status</MudTh>
                 <MudTh>System Role</MudTh>
-                <MudTh>Roles</MudTh>
+                <MudTh>Platform Roles</MudTh>
                 <MudTh>Companies</MudTh>
+                <MudTh>Governance</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="User">
                     <MudText Typo="Typo.body1">@context.DisplayName</MudText>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Username · @context.Email</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Username | @context.Email</MudText>
                 </MudTd>
                 <MudTd DataLabel="Status">
                     <MudChip T="string"
@@ -49,10 +60,164 @@ else
                         @(context.IsSysAdmin ? "SysAdmin" : "Business")
                     </MudChip>
                 </MudTd>
-                <MudTd DataLabel="Roles">@string.Join(", ", context.Roles)</MudTd>
-                <MudTd DataLabel="Companies">@string.Join(", ", context.CompanyCodes)</MudTd>
+                <MudTd DataLabel="Platform Roles">
+                    @if (context.Roles.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="text-secondary">None</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@string.Join(", ", context.Roles)</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Companies">
+                    @if (context.CompanyCodes.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="text-secondary">No company memberships</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@string.Join(", ", context.CompanyCodes)</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Governance">
+                    <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                        @if (context.IsSysAdmin)
+                        {
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Protected</MudChip>
+                        }
+                        else
+                        {
+                            @if (context.IsActive)
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@IsAccountUpdating(context.Id)"
+                                           OnClick="@(() => SetAccountStatusAsync(context, "inactive"))">
+                                    Disable
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           Disabled="@IsAccountUpdating(context.Id)"
+                                           OnClick="@(() => SetAccountStatusAsync(context, "active"))">
+                                    Activate
+                                </MudButton>
+                            }
+
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       Disabled="@IsAccountUpdating(context.Id)"
+                                       OnClick="@(() => RequestPasswordResetAsync(context))">
+                                Password reset
+                            </MudButton>
+                        }
+                    </MudStack>
+                </MudTd>
             </RowTemplate>
         </MudTable>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mt-6">
+        <MudStack Spacing="1" Class="mb-4">
+            <MudText Typo="Typo.h6">Current Company Memberships</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                CompanyAccess governance for the current active company context.
+            </MudText>
+        </MudStack>
+
+        @if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                Switch to a business company from the Companies page to manage owner and user memberships.
+            </MudAlert>
+        }
+        else if (_memberships.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No active company memberships were returned for @ShellState.ActiveCompany.CompanyName.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_memberships" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Member</MudTh>
+                    <MudTh>Role</MudTh>
+                    <MudTh>Permissions</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Updated</MudTh>
+                    <MudTh>Governance</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Member">
+                        <MudText Typo="Typo.body1">@context.DisplayName</MudText>
+                        <MudText Typo="Typo.caption" Class="text-secondary">@context.Username | @context.Email</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Role">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@(string.Equals(context.Role, "owner", StringComparison.OrdinalIgnoreCase) ? Color.Warning : Color.Default)">
+                            @context.Role
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Permissions">
+                        @if (context.PermissionTokens.Count == 0)
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">Inherited owner scope or no custom grants</MudText>
+                        }
+                        else
+                        {
+                            <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                                @foreach (var permission in context.PermissionTokens)
+                                {
+                                    <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@permission</MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@(context.IsActive ? Color.Success : Color.Default)">
+                            @(context.IsActive ? "Active" : "Inactive")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Updated">
+                        <MudText Typo="Typo.body2">@context.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Governance">
+                        <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                            @if (string.Equals(context.Role, "owner", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@IsMembershipUpdating(context.MembershipId)"
+                                           OnClick="@(() => ChangeMembershipRoleAsync(context, "user"))">
+                                    Set user
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           Disabled="@IsMembershipUpdating(context.MembershipId)"
+                                           OnClick="@(() => ChangeMembershipRoleAsync(context, "owner"))">
+                                    Promote owner
+                                </MudButton>
+                            }
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
     </MudPaper>
 }
 
@@ -62,15 +227,141 @@ else
     {
         Eyebrow = "Operations",
         Title = "Users",
-        Subtitle = "Managed principals and company memberships visible to SysAdmin."
+        Subtitle = "Platform accounts plus current-company membership governance for SysAdmin."
     };
 
     private bool _isLoading = true;
     private IReadOnlyList<ManagedUserSummary> _users = Array.Empty<ManagedUserSummary>();
+    private IReadOnlyList<ManagedCompanyMembershipSummary> _memberships = Array.Empty<ManagedCompanyMembershipSummary>();
+    private NotificationReadinessSummary? _notificationReadiness;
+    private readonly HashSet<Guid> _accountUpdates = [];
+    private readonly HashSet<Guid> _membershipUpdates = [];
 
     protected override async Task OnInitializedAsync()
     {
-        _users = await SysAdminControlClient.ListUsersAsync();
-        _isLoading = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        try
+        {
+            _users = await SysAdminControlClient.ListUsersAsync();
+            _notificationReadiness = await SysAdminControlClient.GetNotificationReadinessAsync();
+            await LoadMembershipsAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadMembershipsAsync()
+    {
+        if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
+        {
+            _memberships = Array.Empty<ManagedCompanyMembershipSummary>();
+            return;
+        }
+
+        _memberships = await SysAdminControlClient.ListCompanyMembershipsAsync(ShellState.ActiveCompany.CompanyId.Value);
+    }
+
+    private bool IsAccountUpdating(Guid accountId) => _accountUpdates.Contains(accountId);
+
+    private bool IsMembershipUpdating(Guid membershipId) => _membershipUpdates.Contains(membershipId);
+
+    private async Task SetAccountStatusAsync(ManagedUserSummary user, string status)
+    {
+        if (user.IsSysAdmin)
+        {
+            Snackbar.Add("SysAdmin accounts are protected from business-side lifecycle changes.", Severity.Info);
+            return;
+        }
+
+        _accountUpdates.Add(user.Id);
+        var reason = $"SysAdmin set platform account {user.Username} from {(user.IsActive ? "active" : "inactive")} to {status}.";
+
+        try
+        {
+            var updated = await SysAdminControlClient.SetAccountStatusAsync(user.Id, status, null, reason);
+            if (!updated)
+            {
+                Snackbar.Add($"Unable to set {user.Username} to {status}.", Severity.Warning);
+                return;
+            }
+
+            _users = await SysAdminControlClient.ListUsersAsync();
+            Snackbar.Add($"{user.Username} is now {status}.", Severity.Success);
+        }
+        finally
+        {
+            _accountUpdates.Remove(user.Id);
+        }
+    }
+
+    private async Task RequestPasswordResetAsync(ManagedUserSummary user)
+    {
+        if (user.IsSysAdmin)
+        {
+            Snackbar.Add("SysAdmin accounts use the platform operator flow and are not reset from this surface.", Severity.Info);
+            return;
+        }
+
+        _accountUpdates.Add(user.Id);
+        var reason = $"SysAdmin requested password reset delivery for {user.Username}.";
+
+        try
+        {
+            var requested = await SysAdminControlClient.RequestPasswordResetAsync(user.Id, reason);
+            if (!requested.Succeeded)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(requested.Message)
+                        ? $"Unable to queue password reset for {user.Username}."
+                        : requested.Message,
+                    Severity.Warning);
+                return;
+            }
+
+            _notificationReadiness = await SysAdminControlClient.GetNotificationReadinessAsync();
+            Snackbar.Add($"Password reset request recorded for {user.Username}.", Severity.Success);
+        }
+        finally
+        {
+            _accountUpdates.Remove(user.Id);
+        }
+    }
+
+    private async Task ChangeMembershipRoleAsync(ManagedCompanyMembershipSummary membership, string role)
+    {
+        if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
+        {
+            Snackbar.Add("Select a business company before changing membership roles.", Severity.Info);
+            return;
+        }
+
+        _membershipUpdates.Add(membership.MembershipId);
+        var companyId = ShellState.ActiveCompany.CompanyId.Value;
+        var reason = $"SysAdmin changed {membership.Username} role from {membership.Role} to {role} in {ShellState.ActiveCompany.CompanyCode}.";
+
+        try
+        {
+            var changed = await SysAdminControlClient.ChangeMembershipRoleAsync(companyId, membership.MembershipId, role, reason);
+            if (!changed)
+            {
+                Snackbar.Add($"Unable to change membership role for {membership.Username}.", Severity.Warning);
+                return;
+            }
+
+            await LoadMembershipsAsync();
+            Snackbar.Add($"{membership.Username} role updated to {role}.", Severity.Success);
+        }
+        finally
+        {
+            _membershipUpdates.Remove(membership.MembershipId);
+        }
     }
 }

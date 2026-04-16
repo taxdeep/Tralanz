@@ -1,6 +1,8 @@
 @page "/documents/{SourceType}/{DocumentId:guid}"
 @using Web.Shell.Services
 @inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellAccountingDocumentReviewClient ReviewClient
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
@@ -28,8 +30,74 @@
         </MudAlert>
     }
 
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
     @if (_document is not null)
     {
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            @if (_document.CanEditDraft && TryBuildDraftEditorHref(_document.SourceType, _document.Status, _document.Id, out var draftEditorHref))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@draftEditorHref" Disabled="WritesBlocked">
+                    Edit Draft
+                </MudButton>
+            }
+            @if (_document.JournalEntryId.HasValue)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_document.JournalEntryId.Value:D}")">
+                    Open Journal Entry Review
+                </MudButton>
+            }
+            @if (_latestReverseRequest is null && CanRequestReverse(_document))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="RequestReverseAsync" Disabled="@(_isReverseCommandRunning || WritesBlocked)">
+                    Request Reverse
+                </MudButton>
+            }
+            @if (CanSubmitReverseRequest(_latestReverseRequest))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="SubmitReverseRequestAsync" Disabled="@(_isReverseCommandRunning || WritesBlocked)">
+                    Submit Reverse Request
+                </MudButton>
+            }
+            @if (CanExecuteReverseRequest(_latestReverseRequest))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="ExecuteReverseRequestAsync" Disabled="@(_isReverseCommandRunning || WritesBlocked)">
+                    Execute Governed Reverse
+                </MudButton>
+            }
+        </div>
+
+        @if (_isReverseCommandRunning)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Warning" Style="margin-bottom:1rem;" />
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_reverseCommandMessage))
+        {
+            <MudAlert Severity="_reverseCommandSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                @_reverseCommandMessage
+            </MudAlert>
+        }
+
+        @if (TryBuildJournalEntryLifecycleNotice(_document, out var lifecycleNotice))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                @lifecycleNotice
+            </MudAlert>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_document.LifecycleReason))
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                @_document.LifecycleReason
+            </MudAlert>
+        }
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
             <MudPaper Class="pa-4" Elevation="0">
                 <MudText Typo="Typo.caption">Document</MudText>
@@ -62,6 +130,231 @@
                 </RowTemplate>
             </MudTable>
         </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6" Class="mb-3">Lifecycle Preview</MudText>
+            <MudTable Items="_document.LifecycleActions" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Action</MudTh>
+                    <MudTh>Availability</MudTh>
+                    <MudTh>Reason</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.ActionLabel</MudTd>
+                    <MudTd>@FormatAvailabilityMode(context.AvailabilityMode, context.IsAvailable)</MudTd>
+                    <MudTd>@context.Reason</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+
+        @if (_latestReverseRequest is not null)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Latest Reverse Request</MudText>
+                <MudTable Items="BuildReverseRequestRows(_latestReverseRequest)" Dense="true">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-top:1rem;">
+                    @BuildReverseRequestNotice(_latestReverseRequest)
+                </MudAlert>
+            </MudPaper>
+        }
+
+        @if (_reverseApplyReadiness is not null || _reverseExecutionPlan is not null)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Reverse Execution Readiness</MudText>
+                @if (_reverseApplyReadiness is not null)
+                {
+                    <MudAlert Severity="@(_reverseApplyReadiness.GovernanceReady ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                        @_reverseApplyReadiness.Reason
+                    </MudAlert>
+                    <MudTable Items="BuildReverseReadinessRows(_reverseApplyReadiness)" Dense="true" Style="margin-bottom:1rem;">
+                        <RowTemplate>
+                            <MudTd DataLabel="Field">@context.Label</MudTd>
+                            <MudTd DataLabel="Value">@context.Value</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+
+                @if (_reverseExecutionPlan is not null)
+                {
+                    <MudAlert Severity="@(_reverseExecutionPlan.CanExecute ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                        @_reverseExecutionPlan.Reason
+                    </MudAlert>
+                    <MudTable Items="_reverseExecutionPlan.Steps" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh>#</MudTh>
+                            <MudTh>Step</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Backend Reason</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.StepNumber</MudTd>
+                            <MudTd>@context.StepLabel</MudTd>
+                            <MudTd>@FormatPlanStepStatus(context.StepStatus)</MudTd>
+                            <MudTd>@context.Reason</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        }
+
+        @if (ShouldShowSubledgerGateSummary(_document, _latestReverseRequest))
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Subledger Gate</MudText>
+                <MudAlert Severity="@GetSubledgerGateSummarySeverity()" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @BuildSubledgerGateSummary()
+                </MudAlert>
+                @if (CanExecuteOriginalReverseAfterSubledgerGate())
+                {
+                    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="ExecuteReverseRequestAsync" Disabled="@(_isReverseCommandRunning || WritesBlocked)">
+                            Execute Original Governed Reverse
+                        </MudButton>
+                        <MudText Typo="Typo.caption">
+                            This still calls the backend governed execution endpoint; the shell is only surfacing the next legal action.
+                        </MudText>
+                    </div>
+                }
+            </MudPaper>
+        }
+
+        @if (_subledgerReverseBlockers.Count > 0)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Subledger Reverse Blockers</MudText>
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    Backend authority found AR/AP settlement application trail for this source document. Reverse execution must be handled through the governed subledger unapply path before the source document can be reversed.
+                </MudAlert>
+                <MudTable Items="_subledgerReverseBlockers" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Blocking Application</MudTh>
+                        <MudTh>Blocked Open Item</MudTh>
+                        <MudTh>Applied Tx</MudTh>
+                        <MudTh>Applied Base</MudTh>
+                        <MudTh>Applied At</MudTh>
+                        <MudTh>Unapply Request</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                @if (TryBuildDocumentHref(context.SettlementSourceType, context.SettlementSourceId, out var blockerSourceHref))
+                                {
+                                    <MudLink Href="@blockerSourceHref">@DisplayDocumentLink(context.SettlementSourceDisplayNumber, context.SettlementSourceType)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@DisplayDocumentLink(context.SettlementSourceDisplayNumber, context.SettlementSourceType)</MudText>
+                                }
+                                <MudText Typo="Typo.caption">@FormatApplicationType(context.ApplicationType) | @FormatDate(context.SettlementSourceDocumentDate)</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                @if (TryBuildDocumentHref(context.TargetSourceType, context.TargetSourceId, out var blockerTargetHref))
+                                {
+                                    <MudLink Href="@blockerTargetHref">@DisplayDocumentLink(context.TargetSourceDisplayNumber, context.TargetSourceType)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@DisplayDocumentLink(context.TargetSourceDisplayNumber, context.TargetSourceType)</MudText>
+                                }
+                                @if (TryBuildOpenItemHref(context.TargetOpenItemType, context.TargetOpenItemId, out var blockerOpenItemHref))
+                                {
+                                    <MudLink Href="@blockerOpenItemHref" Typo="Typo.caption">@DisplayOpenItem(context.TargetOpenItemId)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption">@DisplayOpenItem(context.TargetOpenItemId)</MudText>
+                                }
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>@FormatAmount(context.AppliedAmountTx)</MudTd>
+                        <MudTd>@FormatAmount(context.AppliedAmountBase)</MudTd>
+                        <MudTd>@context.AppliedAt.ToString("yyyy-MM-dd HH:mm:ss zzz")</MudTd>
+                        <MudTd>
+                            <MudStack Spacing="1">
+                                <MudText Typo="Typo.body2">@FormatReverseRequestStatus(context.ReverseRequestStatus)</MudText>
+                                <MudText Typo="Typo.caption">@FormatReverseExecutionStatus(context.ReverseExecutionStatus)</MudText>
+                                @if (context.ReverseRequestedAt is not null)
+                                {
+                                    <MudText Typo="Typo.caption">Requested @context.ReverseRequestedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")</MudText>
+                                }
+                                @if (TryGetBlockerReverseDetail(context, out var blockerReverseDetail))
+                                {
+                                    <MudDivider Class="my-1" />
+                                    <MudText Typo="Typo.caption">@BuildBlockerReadinessSummary(blockerReverseDetail)</MudText>
+                                    <MudText Typo="Typo.caption">@BuildBlockerPlanSummary(blockerReverseDetail)</MudText>
+                                }
+                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" Disabled="@(_isReverseCommandRunning || WritesBlocked || !CanRequestBlockerUnapply(context))" OnClick="@(() => RequestBlockerUnapplyAsync(context))">
+                                    Request Governed Unapply
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" Disabled="@(_isReverseCommandRunning || WritesBlocked || !CanSubmitBlockerUnapply(context))" OnClick="@(() => SubmitBlockerUnapplyAsync(context))">
+                                    Submit Governed Unapply
+                                </MudButton>
+                                <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" Disabled="@(_isReverseCommandRunning || WritesBlocked || !CanExecuteBlockerUnapply(context))" OnClick="@(() => ExecuteBlockerUnapplyAsync(context))">
+                                    Request Governed Execution
+                                </MudButton>
+                                @if (TryBuildDocumentHref(context.SettlementSourceType, context.SettlementSourceId, out var blockerActionHref))
+                                {
+                                    <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@blockerActionHref">
+                                        Open Source
+                                    </MudButton>
+                                }
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
+
+        @if (_settlementApplicationReversals.Count > 0)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Settlement Application Reversals</MudText>
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    These rows are sourced from the governed reversal audit trail after operational settlement applications were unapplied.
+                </MudAlert>
+                <MudTable Items="_settlementApplicationReversals" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Application</MudTh>
+                        <MudTh>Target Open Item</MudTh>
+                        <MudTh>Applied Tx</MudTh>
+                        <MudTh>Applied Base</MudTh>
+                        <MudTh>Reversed At</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2">@FormatApplicationType(context.ApplicationType)</MudText>
+                                <MudText Typo="Typo.caption">Request @context.RequestId.ToString("D")</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>
+                            <MudStack Spacing="0">
+                                @if (TryBuildOpenItemHref(context.TargetOpenItemType, context.TargetOpenItemId, out var reversalOpenItemHref))
+                                {
+                                    <MudLink Href="@reversalOpenItemHref">@DisplayOpenItem(context.TargetOpenItemId)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@DisplayOpenItem(context.TargetOpenItemId)</MudText>
+                                }
+                                <MudText Typo="Typo.caption">@FormatOpenItemType(context.TargetOpenItemType)</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>@FormatAmount(context.AppliedAmountTx)</MudTd>
+                        <MudTd>@FormatAmount(context.AppliedAmountBase)</MudTd>
+                        <MudTd>@context.ReversedAt.ToString("yyyy-MM-dd HH:mm:ss zzz")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
 
         <MudPaper Class="pa-4" Elevation="0">
             <MudText Typo="Typo.h6" Class="mb-3">Lines</MudText>
@@ -164,28 +457,354 @@
     public Guid DocumentId { get; set; }
 
     private bool _isLoading;
+    private bool _isReverseCommandRunning;
     private string? _errorText;
+    private string? _reverseCommandMessage;
+    private Severity _reverseCommandSeverity = Severity.Info;
     private ShellAccountingDocumentReviewSummary? _document;
+    private ShellAccountingDocumentReverseRequestSummary? _latestReverseRequest;
+    private ShellAccountingDocumentReverseApplyReadinessSummary? _reverseApplyReadiness;
+    private ShellAccountingDocumentReverseExecutionPlanSummary? _reverseExecutionPlan;
+    private IReadOnlyList<ShellSubledgerReverseBlockerSummary> _subledgerReverseBlockers = Array.Empty<ShellSubledgerReverseBlockerSummary>();
+    private IReadOnlyDictionary<Guid, BlockerReverseDetail> _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
+    private IReadOnlyList<ShellSettlementApplicationReversalSummary> _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
 
-    protected override async Task OnParametersSetAsync()
+    protected override async Task OnParametersSetAsync() => await LoadDocumentStateAsync(clearReverseCommandMessage: true);
+
+    private async Task LoadDocumentStateAsync(bool clearReverseCommandMessage)
     {
         _isLoading = true;
         _errorText = null;
+        if (clearReverseCommandMessage)
+        {
+            _reverseCommandMessage = null;
+            _reverseCommandSeverity = Severity.Info;
+        }
+
         _document = null;
+        _latestReverseRequest = null;
+        _reverseApplyReadiness = null;
+        _reverseExecutionPlan = null;
+        _subledgerReverseBlockers = Array.Empty<ShellSubledgerReverseBlockerSummary>();
+        _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
+        _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
         _factRows = Array.Empty<FactRow>();
 
-        var document = await ReviewClient.GetDocumentAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
+        if (!await EnsureWriteGateStateAsync())
+        {
+            _isLoading = false;
+            return;
+        }
+
+        var documentResult = await ReviewClient.GetDocumentAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(documentResult, CancellationToken.None))
+        {
+            _isLoading = false;
+            return;
+        }
+
+        var document = documentResult.Value;
         if (document is null)
         {
-            _errorText = $"The {GetSourceLabel(SourceType).ToLowerInvariant()} could not be found in company {ShellState.ActiveCompany.CompanyCode}.";
+            _errorText = documentResult.IsNotFound
+                ? $"The {GetSourceLabel(SourceType).ToLowerInvariant()} could not be found in company {ShellState.ActiveCompany.CompanyCode}."
+                : documentResult.ErrorMessage ?? $"Unable to load the {GetSourceLabel(SourceType).ToLowerInvariant()} detail.";
             _isLoading = false;
             return;
         }
 
         _document = document;
         _factRows = BuildFactRows(document);
+        var reverseRequestResult = await ReviewClient.GetLatestReverseRequestAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(reverseRequestResult, CancellationToken.None))
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _latestReverseRequest = reverseRequestResult.Value;
+        if (_latestReverseRequest is null)
+        {
+            CapturePageError(reverseRequestResult.ErrorMessage);
+        }
+
+        if (_latestReverseRequest is not null)
+        {
+            var asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            var readinessResult = await ReviewClient.GetReverseRequestApplyReadinessAsync(
+                ShellState.ActiveCompany.Id,
+                SourceType,
+                DocumentId,
+                _latestReverseRequest.RequestId,
+                asOfDate);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(readinessResult, CancellationToken.None))
+            {
+                _isLoading = false;
+                return;
+            }
+
+            _reverseApplyReadiness = readinessResult.Value;
+            if (_reverseApplyReadiness is null)
+            {
+                CapturePageError(readinessResult.ErrorMessage);
+            }
+
+            var executionPlanResult = await ReviewClient.GetReverseRequestExecutionPlanAsync(
+                ShellState.ActiveCompany.Id,
+                SourceType,
+                DocumentId,
+                _latestReverseRequest.RequestId,
+                asOfDate);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(executionPlanResult, CancellationToken.None))
+            {
+                _isLoading = false;
+                return;
+            }
+
+            _reverseExecutionPlan = executionPlanResult.Value;
+            if (_reverseExecutionPlan is null)
+            {
+                CapturePageError(executionPlanResult.ErrorMessage);
+            }
+        }
+
+        var blockersResult = await ReviewClient.ListSubledgerReverseBlockersAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(blockersResult, CancellationToken.None))
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _subledgerReverseBlockers = blockersResult.Value ?? Array.Empty<ShellSubledgerReverseBlockerSummary>();
+        CapturePageError(blockersResult.ErrorMessage);
+        var blockerReverseDetails = await LoadBlockerReverseDetailsAsync(_subledgerReverseBlockers);
+        if (blockerReverseDetails is null)
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _blockerReverseDetails = blockerReverseDetails;
+
+        var reversalsResult = await ReviewClient.ListSettlementApplicationReversalsAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(reversalsResult, CancellationToken.None))
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _settlementApplicationReversals = reversalsResult.Value ?? Array.Empty<ShellSettlementApplicationReversalSummary>();
+        CapturePageError(reversalsResult.ErrorMessage);
         _isLoading = false;
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, BlockerReverseDetail>?> LoadBlockerReverseDetailsAsync(
+        IReadOnlyList<ShellSubledgerReverseBlockerSummary> blockers)
+    {
+        var details = new Dictionary<Guid, BlockerReverseDetail>();
+        var asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        foreach (var blocker in blockers)
+        {
+            if (blocker.ReverseRequestId is null)
+            {
+                continue;
+            }
+
+            var readinessResult = await ReviewClient.GetReverseRequestApplyReadinessAsync(
+                ShellState.ActiveCompany.Id,
+                blocker.SettlementSourceType,
+                blocker.SettlementSourceId,
+                blocker.ReverseRequestId.Value,
+                asOfDate);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(readinessResult, CancellationToken.None))
+            {
+                return null;
+            }
+
+            var planResult = await ReviewClient.GetReverseRequestExecutionPlanAsync(
+                ShellState.ActiveCompany.Id,
+                blocker.SettlementSourceType,
+                blocker.SettlementSourceId,
+                blocker.ReverseRequestId.Value,
+                asOfDate);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(planResult, CancellationToken.None))
+            {
+                return null;
+            }
+
+            details[blocker.SettlementApplicationId] = new BlockerReverseDetail(
+                blocker.SettlementApplicationId,
+                readinessResult.Value,
+                planResult.Value);
+
+            CapturePageError(readinessResult.ErrorMessage);
+            CapturePageError(planResult.ErrorMessage);
+        }
+
+        return details;
+    }
+
+    private async Task RequestReverseAsync()
+    {
+        if (_document is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunReverseCommandAsync(
+            () => ReviewClient.RequestReverseAsync(ShellState.ActiveCompany.Id, _document.SourceType, _document.Id),
+            "Reverse request recorded.");
+    }
+
+    private async Task SubmitReverseRequestAsync()
+    {
+        if (_document is null || _latestReverseRequest is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunReverseCommandAsync(
+            () => ReviewClient.SubmitReverseRequestAsync(ShellState.ActiveCompany.Id, _document.SourceType, _document.Id, _latestReverseRequest.RequestId),
+            "Reverse request submitted.");
+    }
+
+    private async Task ExecuteReverseRequestAsync()
+    {
+        if (_document is null || _latestReverseRequest is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        var asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        await RunReverseCommandAsync(
+            () => ReviewClient.ExecuteReverseRequestAsync(ShellState.ActiveCompany.Id, _document.SourceType, _document.Id, _latestReverseRequest.RequestId, asOfDate),
+            "Governed reverse execution requested.");
+    }
+
+    private async Task RequestBlockerUnapplyAsync(ShellSubledgerReverseBlockerSummary blocker)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunReverseCommandAsync(
+            () => ReviewClient.RequestReverseAsync(ShellState.ActiveCompany.Id, blocker.SettlementSourceType, blocker.SettlementSourceId),
+            $"Governed unapply reverse request recorded for {DisplayDocumentLink(blocker.SettlementSourceDisplayNumber, blocker.SettlementSourceType)}.");
+    }
+
+    private async Task SubmitBlockerUnapplyAsync(ShellSubledgerReverseBlockerSummary blocker)
+    {
+        if (blocker.ReverseRequestId is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunReverseCommandAsync(
+            () => ReviewClient.SubmitReverseRequestAsync(
+                ShellState.ActiveCompany.Id,
+                blocker.SettlementSourceType,
+                blocker.SettlementSourceId,
+                blocker.ReverseRequestId.Value),
+            $"Governed unapply reverse request submitted for {DisplayDocumentLink(blocker.SettlementSourceDisplayNumber, blocker.SettlementSourceType)}.");
+    }
+
+    private async Task ExecuteBlockerUnapplyAsync(ShellSubledgerReverseBlockerSummary blocker)
+    {
+        if (blocker.ReverseRequestId is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        var asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        await RunReverseCommandAsync(
+            () => ReviewClient.ExecuteReverseRequestAsync(
+                ShellState.ActiveCompany.Id,
+                blocker.SettlementSourceType,
+                blocker.SettlementSourceId,
+                blocker.ReverseRequestId.Value,
+                asOfDate),
+            $"Governed unapply execution requested for {DisplayDocumentLink(blocker.SettlementSourceDisplayNumber, blocker.SettlementSourceType)}.");
+    }
+
+    private async Task RunReverseCommandAsync(
+        Func<Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseCommandResultSummary>>> command,
+        string fallbackSuccessMessage)
+    {
+        _isReverseCommandRunning = true;
+        _reverseCommandMessage = null;
+        _reverseCommandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await command();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _reverseCommandSeverity = Severity.Warning;
+                _reverseCommandMessage = result.ErrorMessage ?? "The reverse command did not return a response. Check API availability and business-session headers.";
+            }
+            else
+            {
+                _reverseCommandSeverity = IsReverseCommandSuccess(result.Value) ? Severity.Success : Severity.Warning;
+                _reverseCommandMessage = BuildReverseCommandMessage(result.Value, fallbackSuccessMessage);
+            }
+
+            await LoadDocumentStateAsync(clearReverseCommandMessage: false);
+        }
+        catch (Exception ex)
+        {
+            _reverseCommandSeverity = Severity.Error;
+            _reverseCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReverseCommandRunning = false;
+        }
+    }
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _errorText = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private void CapturePageError(string? message)
+    {
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _errorText ??= message;
+        }
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _reverseCommandSeverity = Severity.Warning;
+        _reverseCommandMessage = ShellState.WriteBlockMessage;
+        return true;
     }
 
     private static string GetSourceLabel(string? sourceType) =>
@@ -199,6 +818,14 @@
             "credit_application" => "Credit Application",
             "pay_bill" => "Pay Bill",
             "vendor_credit_application" => "Vendor Credit Application",
+            "invoice_reversal" => "Invoice Reversal",
+            "credit_note_reversal" => "Credit Note Reversal",
+            "bill_reversal" => "Bill Reversal",
+            "vendor_credit_reversal" => "Vendor Credit Reversal",
+            "receive_payment_reversal" => "Receive Payment Reversal",
+            "credit_application_reversal" => "Credit Application Reversal",
+            "pay_bill_reversal" => "Pay Bill Reversal",
+            "vendor_credit_application_reversal" => "Vendor Credit Application Reversal",
             _ => "Document"
         };
 
@@ -208,12 +835,115 @@
     private static bool IsApplicationDocument(ShellAccountingDocumentReviewSummary? document) =>
         document?.SourceType is "credit_application" or "vendor_credit_application";
 
+    private static bool CanRequestReverse(ShellAccountingDocumentReviewSummary? document)
+    {
+        var action = FindLifecycleAction(document, "reverse_document");
+        return action is not null &&
+               (action.IsAvailable ||
+                string.Equals(action.AvailabilityMode, "not_implemented", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool CanSubmitReverseRequest(ShellAccountingDocumentReverseRequestSummary? request) =>
+        string.Equals(request?.RequestStatus, "draft", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CanExecuteReverseRequest(ShellAccountingDocumentReverseRequestSummary? request) =>
+        request is not null &&
+        string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(request.ExecutionStatus, "not_requested", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CanRequestBlockerUnapply(ShellSubledgerReverseBlockerSummary blocker) =>
+        blocker.ReverseRequestStatus is "" or "not_requested" or "cancelled";
+
+    private static bool CanSubmitBlockerUnapply(ShellSubledgerReverseBlockerSummary blocker) =>
+        blocker.ReverseRequestId is not null &&
+        string.Equals(blocker.ReverseRequestStatus, "draft", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CanExecuteBlockerUnapply(ShellSubledgerReverseBlockerSummary blocker) =>
+        blocker.ReverseRequestId is not null &&
+        string.Equals(blocker.ReverseRequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(blocker.ReverseExecutionStatus, "not_requested", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ShouldShowSubledgerGateSummary(
+        ShellAccountingDocumentReviewSummary? document,
+        ShellAccountingDocumentReverseRequestSummary? request) =>
+        document?.SourceType is "invoice" or "credit_note" or "bill" or "vendor_credit" &&
+        request is not null &&
+        !string.Equals(request.ExecutionStatus, "journal_entry_reversed", StringComparison.OrdinalIgnoreCase);
+
+    private Severity GetSubledgerGateSummarySeverity()
+    {
+        if (_subledgerReverseBlockers.Count > 0)
+        {
+            return Severity.Warning;
+        }
+
+        return CanExecuteReverseRequest(_latestReverseRequest) ? Severity.Success : Severity.Info;
+    }
+
+    private bool CanExecuteOriginalReverseAfterSubledgerGate() =>
+        _subledgerReverseBlockers.Count == 0 && CanExecuteReverseRequest(_latestReverseRequest);
+
+    private string BuildSubledgerGateSummary()
+    {
+        if (_subledgerReverseBlockers.Count == 0)
+        {
+            return CanExecuteReverseRequest(_latestReverseRequest)
+                ? "Subledger gate is clear: backend returned no active AR/AP settlement-application blockers. The original source document can now proceed through governed reverse execution from this page."
+                : "Subledger gate is clear: backend returned no active AR/AP settlement-application blockers. The original reverse request still must satisfy its request/execution state gates.";
+        }
+
+        var requestedCount = _subledgerReverseBlockers.Count(blocker => !string.Equals(blocker.ReverseRequestStatus, "not_requested", StringComparison.OrdinalIgnoreCase));
+        var submittedCount = _subledgerReverseBlockers.Count(blocker => string.Equals(blocker.ReverseRequestStatus, "submitted", StringComparison.OrdinalIgnoreCase));
+        var executionRequestedCount = _subledgerReverseBlockers.Count(blocker => string.Equals(blocker.ReverseExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase));
+        var completedCount = _subledgerReverseBlockers.Count(blocker => string.Equals(blocker.ReverseExecutionStatus, "journal_entry_reversed", StringComparison.OrdinalIgnoreCase));
+
+        return $"Subledger gate still has {_subledgerReverseBlockers.Count} active blocker(s): {requestedCount} requested, {submittedCount} submitted, {executionRequestedCount} execution requested, {completedCount} completed. Clear these blockers before retrying original source reverse execution.";
+    }
+
+    private bool TryGetBlockerReverseDetail(
+        ShellSubledgerReverseBlockerSummary blocker,
+        out BlockerReverseDetail detail) =>
+        _blockerReverseDetails.TryGetValue(blocker.SettlementApplicationId, out detail!);
+
+    private static ShellAccountingDocumentLifecycleActionSummary? FindLifecycleAction(
+        ShellAccountingDocumentReviewSummary? document,
+        string actionCode) =>
+        document?.LifecycleActions.FirstOrDefault(
+            action => string.Equals(action.ActionCode, actionCode, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsReverseCommandSuccess(ShellAccountingDocumentReverseCommandResultSummary result) =>
+        result.OutcomeCode is
+            "request_recorded" or
+            "submitted" or
+            "execution_request_recorded" or
+            "journal_entry_reversed" or
+            "execution_already_completed" or
+            "accepted";
+
+    private static string BuildReverseCommandMessage(
+        ShellAccountingDocumentReverseCommandResultSummary result,
+        string fallbackSuccessMessage)
+    {
+        if (!string.IsNullOrWhiteSpace(result.Message))
+        {
+            return result.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.OutcomeCode))
+        {
+            return $"{fallbackSuccessMessage} Outcome: {result.OutcomeCode}.";
+        }
+
+        return fallbackSuccessMessage;
+    }
+
     private static IReadOnlyList<FactRow> BuildFactRows(ShellAccountingDocumentReviewSummary document)
     {
         var rows = new List<FactRow>
         {
             new("Entity Number", document.EntityNumber),
             new("Status", document.Status),
+            new("Lifecycle Mode", FormatLifecycleMode(document.LifecycleMode)),
             new("Document Date", document.DocumentDate.ToString("yyyy-MM-dd")),
             new("Due Date", document.DueDate?.ToString("yyyy-MM-dd") ?? "No due date"),
             new("Transaction Currency", document.TransactionCurrencyCode),
@@ -231,13 +961,241 @@
             rows.Add(new(document.ControlAccountLabel, document.ControlAccountId.Value.ToString("D")));
         }
 
+        if (document.JournalEntryId is not null)
+        {
+            rows.Add(new(
+                "Journal Entry",
+                string.IsNullOrWhiteSpace(document.JournalEntryDisplayNumber)
+                    ? document.JournalEntryId.Value.ToString("D")
+                    : $"{document.JournalEntryDisplayNumber} | {document.JournalEntryId.Value:D}"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(document.JournalEntryStatus))
+        {
+            rows.Add(new("Journal Entry Status", document.JournalEntryStatus!));
+        }
+
+        if (document.JournalEntryPostedAt is not null)
+        {
+            rows.Add(new("Journal Entry Posted At", document.JournalEntryPostedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+        }
+
+        if (document.JournalEntryVoidedAt is not null)
+        {
+            rows.Add(new("Journal Entry Voided At", document.JournalEntryVoidedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+        }
+
+        if (document.JournalEntryReversedAt is not null)
+        {
+            rows.Add(new("Journal Entry Reversed At", document.JournalEntryReversedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+        }
+
         return rows;
+    }
+
+    private static IReadOnlyList<FactRow> BuildReverseRequestRows(ShellAccountingDocumentReverseRequestSummary request)
+    {
+        var rows = new List<FactRow>
+        {
+            new("Request Id", request.RequestId.ToString("D")),
+            new("Request Status", string.IsNullOrWhiteSpace(request.RequestStatus) ? "Unknown" : request.RequestStatus),
+            new("Execution Status", string.IsNullOrWhiteSpace(request.ExecutionStatus) ? "Unknown" : request.ExecutionStatus),
+            new("Requested At", request.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss zzz")),
+            new("Action", request.ActionLabel),
+            new("Availability", FormatAvailabilityMode(request.AvailabilityMode, request.IsAvailable)),
+            new("Reason", request.Reason),
+            new("Requested By", FormatActor(request.RequestedByActorType, request.RequestedByActorId))
+        };
+
+        if (request.SubmittedAt is not null)
+        {
+            rows.Add(new("Submitted At", request.SubmittedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Submitted By", FormatActor(request.SubmittedByActorType, request.SubmittedByActorId)));
+        }
+
+        if (request.CancelledAt is not null)
+        {
+            rows.Add(new("Cancelled At", request.CancelledAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Cancelled By", FormatActor(request.CancelledByActorType, request.CancelledByActorId)));
+        }
+
+        if (request.ExecutionRequestedAt is not null)
+        {
+            rows.Add(new("Execution Requested At", request.ExecutionRequestedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Execution Requested By", FormatActor(request.ExecutionRequestedByActorType, request.ExecutionRequestedByActorId)));
+        }
+
+        if (request.ExecutionCompletedAt is not null)
+        {
+            rows.Add(new("Execution Completed At", request.ExecutionCompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Execution Completed By", FormatActor(request.ExecutionCompletedByActorType, request.ExecutionCompletedByActorId)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.CompensationJournalEntryDisplayNumber) || request.CompensationJournalEntryId is not null)
+        {
+            rows.Add(new(
+                "Compensation Journal Entry",
+                string.IsNullOrWhiteSpace(request.CompensationJournalEntryDisplayNumber)
+                    ? request.CompensationJournalEntryId?.ToString("D") ?? "Unavailable"
+                    : $"{request.CompensationJournalEntryDisplayNumber} | {request.CompensationJournalEntryId:D}"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.CompensationSourceType))
+        {
+            rows.Add(new("Compensation Source Type", GetSourceLabel(request.CompensationSourceType)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.JournalEntryDisplayNumber) || request.JournalEntryId is not null)
+        {
+            rows.Add(new(
+                "Linked Journal Entry",
+                string.IsNullOrWhiteSpace(request.JournalEntryDisplayNumber)
+                    ? request.JournalEntryId?.ToString("D") ?? "Unavailable"
+                    : $"{request.JournalEntryDisplayNumber} | {request.JournalEntryId:D}"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.JournalEntryStatus))
+        {
+            rows.Add(new("Linked Journal Entry Status", request.JournalEntryStatus!));
+        }
+
+        return rows;
+    }
+
+    private static IReadOnlyList<FactRow> BuildReverseReadinessRows(ShellAccountingDocumentReverseApplyReadinessSummary readiness) =>
+    [
+        new("As Of Date", readiness.AsOfDate.ToString("yyyy-MM-dd")),
+        new("Governance Ready", readiness.GovernanceReady ? "Yes" : "No"),
+        new("Apply Ready", readiness.ApplyReady ? "Yes" : "No"),
+        new("Execution Mode", FormatExecutionMode(readiness.ExecutionMode)),
+        new("Availability", FormatAvailabilityMode(readiness.AvailabilityMode, readiness.IsAvailable)),
+        new("Request Status", string.IsNullOrWhiteSpace(readiness.RequestStatus) ? "Unknown" : readiness.RequestStatus)
+    ];
+
+    private static string BuildReverseRequestNotice(ShellAccountingDocumentReverseRequestSummary request) =>
+        string.Equals(request.ExecutionStatus, "journal_entry_reversed", StringComparison.OrdinalIgnoreCase)
+            ? "This governed reverse request has completed linked JE reversal and any supported AR/AP settlement application unapply trail is listed below."
+            : "This reverse request is a governed request record. Historical accounting truth changes only after governed execution completes.";
+
+    private static string BuildBlockerReadinessSummary(BlockerReverseDetail detail)
+    {
+        if (detail.Readiness is null)
+        {
+            return "Readiness: unavailable";
+        }
+
+        return detail.Readiness.GovernanceReady && detail.Readiness.ApplyReady
+            ? $"Readiness: ready | {FormatExecutionMode(detail.Readiness.ExecutionMode)}"
+            : $"Readiness: blocked | {detail.Readiness.Reason}";
+    }
+
+    private static string BuildBlockerPlanSummary(BlockerReverseDetail detail)
+    {
+        if (detail.Plan is null)
+        {
+            return "Plan: unavailable";
+        }
+
+        var readyCount = detail.Plan.Steps.Count(step => string.Equals(step.StepStatus, "ready", StringComparison.OrdinalIgnoreCase));
+        var blockedCount = detail.Plan.Steps.Count(step => string.Equals(step.StepStatus, "blocked", StringComparison.OrdinalIgnoreCase));
+        return $"Plan: {FormatPlanStepStatus(detail.Plan.OverallStatus)} | {readyCount}/{detail.Plan.Steps.Count} ready | {blockedCount} blocked | {detail.Plan.Reason}";
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
 
+    private static string FormatDate(DateOnly? date) =>
+        date.HasValue ? date.Value.ToString("yyyy-MM-dd") : "Date unavailable";
+
+    private static string FormatLifecycleMode(string lifecycleMode) =>
+        lifecycleMode switch
+        {
+            "draft_editable" => "Draft Editable",
+            "posted_locked" => "Posted Locked",
+            "historical_linked_je_voided" => "Historical JE Voided",
+            "historical_linked_je_reversed" => "Historical JE Reversed",
+            "historical_locked" => "Historical Locked",
+            _ => string.IsNullOrWhiteSpace(lifecycleMode) ? "Unknown" : lifecycleMode
+        };
+
+    private static string FormatExecutionMode(string executionMode) =>
+        executionMode switch
+        {
+            "request_recording_only" => "Request Recording Only",
+            "governed_execution_skeleton" => "Governed Execution Skeleton",
+            "governed_execution_completed" => "Governed Execution Completed",
+            "governed_execution_orchestration_plan" => "Governed Execution Plan",
+            _ => string.IsNullOrWhiteSpace(executionMode) ? "Unknown" : executionMode
+        };
+
+    private static string FormatPlanStepStatus(string stepStatus) =>
+        stepStatus switch
+        {
+            "ready" => "Ready",
+            "blocked" => "Blocked",
+            "planned" => "Planned",
+            _ => string.IsNullOrWhiteSpace(stepStatus) ? "Unknown" : stepStatus
+        };
+
+    private static string FormatReverseRequestStatus(string? requestStatus) =>
+        requestStatus?.Trim().ToLowerInvariant() switch
+        {
+            "not_requested" => "Request: not requested",
+            "draft" => "Request: draft",
+            "submitted" => "Request: submitted",
+            "cancelled" => "Request: cancelled",
+            _ => string.IsNullOrWhiteSpace(requestStatus) ? "Request: unknown" : $"Request: {requestStatus}"
+        };
+
+    private static string FormatReverseExecutionStatus(string? executionStatus) =>
+        executionStatus?.Trim().ToLowerInvariant() switch
+        {
+            "not_requested" => "Execution: not requested",
+            "execution_requested" => "Execution: requested",
+            "journal_entry_reversed" => "Execution: JE reversed",
+            _ => string.IsNullOrWhiteSpace(executionStatus) ? "Execution: unknown" : $"Execution: {executionStatus}"
+        };
+
+    private static string FormatAvailabilityMode(string availabilityMode, bool isAvailable) =>
+        availabilityMode switch
+        {
+            "available_now" => "Available Now",
+            "blocked_by_status" => "Blocked By Status",
+            "blocked_by_linked_je_lifecycle" => "Blocked By Linked JE Lifecycle",
+            "not_implemented" => "Not Implemented Yet",
+            "blocked" => isAvailable ? "Available" : "Blocked",
+            _ => isAvailable ? "Available" : availabilityMode
+        };
+
+    private static string FormatActor(string? actorType, Guid? actorId)
+    {
+        if (actorId is null)
+        {
+            return string.IsNullOrWhiteSpace(actorType) ? "Unknown" : actorType;
+        }
+
+        return $"{actorType} | {actorId.Value:D}";
+    }
+
     private static string DisplayOpenItem(Guid? openItemId) =>
         openItemId.HasValue ? $"Open item {openItemId.Value:D}" : "Open item unavailable";
+
+    private static string FormatApplicationType(string? applicationType) =>
+        applicationType?.Trim().ToLowerInvariant() switch
+        {
+            "receive_payment_application" => "Receive Payment Application",
+            "credit_application" => "Credit Application",
+            "pay_bill_application" => "Pay Bill Application",
+            "vendor_credit_application" => "Vendor Credit Application",
+            _ => string.IsNullOrWhiteSpace(applicationType) ? "Application" : applicationType
+        };
+
+    private static string FormatOpenItemType(string? openItemType) =>
+        openItemType?.Trim().ToLowerInvariant() switch
+        {
+            "ar_open_item" => "AR Open Item",
+            "ap_open_item" => "AP Open Item",
+            _ => string.IsNullOrWhiteSpace(openItemType) ? "Open Item" : openItemType
+        };
 
     private static string DisplayDocumentLink(string? displayNumber, string? sourceType)
     {
@@ -281,6 +1239,8 @@
         {
             "invoice" or "credit_note" or "receive_payment" or "credit_application" => "ar",
             "bill" or "vendor_credit" or "pay_bill" or "vendor_credit_application" => "ap",
+            "ar_open_item" => "ar",
+            "ap_open_item" => "ap",
             _ => null
         };
 
@@ -293,5 +1253,58 @@
         return true;
     }
 
+    private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        href = sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => $"/documents/invoice/draft-editor?draftId={documentId:D}",
+            "credit_note" => $"/documents/credit-note/draft-editor?draftId={documentId:D}",
+            "bill" => $"/documents/bill/draft-editor?draftId={documentId:D}",
+            "vendor_credit" => $"/documents/vendor-credit/draft-editor?draftId={documentId:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static bool TryBuildJournalEntryLifecycleNotice(
+        ShellAccountingDocumentReviewSummary document,
+        out string notice)
+    {
+        notice = string.Empty;
+
+        if (document.JournalEntryId is null || string.IsNullOrWhiteSpace(document.JournalEntryStatus))
+        {
+            return false;
+        }
+
+        if (string.Equals(document.JournalEntryStatus, "voided", StringComparison.OrdinalIgnoreCase))
+        {
+            notice =
+                $"The linked journal entry {document.JournalEntryDisplayNumber ?? document.JournalEntryId.Value.ToString("D")} has been voided. Review the accounting timeline before treating this source document as an active posted result.";
+            return true;
+        }
+
+        if (string.Equals(document.JournalEntryStatus, "reversed", StringComparison.OrdinalIgnoreCase))
+        {
+            notice =
+                $"The linked journal entry {document.JournalEntryDisplayNumber ?? document.JournalEntryId.Value.ToString("D")} has been reversed. This source document detail remains historical, but the accounting effect has changed.";
+            return true;
+        }
+
+        return false;
+    }
+
     private sealed record class FactRow(string Label, string Value);
+
+    private sealed record class BlockerReverseDetail(
+        Guid SettlementApplicationId,
+        ShellAccountingDocumentReverseApplyReadinessSummary? Readiness,
+        ShellAccountingDocumentReverseExecutionPlanSummary? Plan);
 }

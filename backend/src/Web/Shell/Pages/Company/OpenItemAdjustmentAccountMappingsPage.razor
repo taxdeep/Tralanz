@@ -1,0 +1,910 @@
+@page "/company/open-item-adjustment-account-mappings"
+@using Modules.Company.MultiBook
+@using Modules.GL.JournalEntry
+@using SharedKernel.Company
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellOpenItemAdjustmentAccountMappingClient MappingClient
+@inject ICompanyBookPolicyWorkflow BookWorkflow
+@inject IJournalEntryAccountCatalog AccountCatalog
+@inject ISnackbar Snackbar
+
+<PageTitle>Adjustment Account Mappings</PageTitle>
+
+<div class="adjustment-mapping-page">
+    <section class="adjustment-mapping-page__hero">
+        <div>
+            <p class="adjustment-mapping-page__eyebrow">Company Settings</p>
+            <h1>Open-Item Adjustment Account Mappings</h1>
+            <p class="adjustment-mapping-page__lede">
+                Govern which offset accounts can be used when AR/AP write-off or small-balance requests are executed.
+                The UI manages policy only; posting still runs through the backend adjustment request and Posting Engine flow.
+            </p>
+            <div class="adjustment-mapping-page__context">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </div>
+        </div>
+    </section>
+
+    <MudPaper Class="adjustment-mapping-page__controls" Elevation="0">
+        <MudSelect T="Guid"
+                   Label="Active Company"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Value="@ShellState.ActiveCompany.Id"
+                   ValueChanged="OnActiveCompanyChangedAsync">
+            @foreach (var company in ShellState.AvailableCompanies)
+            {
+                <MudSelectItem T="Guid" Value="@company.Id">
+                    @company.CompanyName (@company.CompanyCode)
+                </MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField T="string"
+                      Label="Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      Placeholder="Book, account, code, AR/AP"
+                      @bind-Value="_mappingSearchText" />
+
+        <MudSelect T="string"
+                   Label="Open Item Filter"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   @bind-Value="_filterOpenItemType">
+            <MudSelectItem T="string" Value="@AllFilter">All</MudSelectItem>
+            <MudSelectItem T="string" Value="@ArOpenItemType">AR Open Item</MudSelectItem>
+            <MudSelectItem T="string" Value="@ApOpenItemType">AP Open Item</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect T="string"
+                   Label="Adjustment Filter"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   @bind-Value="_filterAdjustmentType">
+            <MudSelectItem T="string" Value="@AllFilter">All</MudSelectItem>
+            <MudSelectItem T="string" Value="@WriteOffAdjustmentType">Write Off</MudSelectItem>
+            <MudSelectItem T="string" Value="@SmallBalanceAdjustmentType">Small Balance</MudSelectItem>
+        </MudSelect>
+
+        <MudSwitch T="bool"
+                   Color="Color.Info"
+                   Label="Include inactive"
+                   @bind-Value="_includeInactive" />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="_isBusy"
+                   OnClick="LoadAsync">
+            Load Mappings
+        </MudButton>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_pageError))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true">
+            @_pageError
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    <section class="adjustment-mapping-page__summary" aria-label="Adjustment mapping policy summary">
+        <MudPaper Class="adjustment-mapping-policy-card" Elevation="0">
+            <span>Active governed mappings</span>
+            <strong>@ActiveMappingCount</strong>
+            <small>@PolicyCoverageLabel</small>
+        </MudPaper>
+        <MudPaper Class="adjustment-mapping-policy-card" Elevation="0">
+            <span>Company default scope</span>
+            <strong>@CompanyDefaultMappingCount</strong>
+            <small>Used when no book-specific mapping overrides it.</small>
+        </MudPaper>
+        <MudPaper Class="adjustment-mapping-policy-card" Elevation="0">
+            <span>Book-specific scope</span>
+            <strong>@BookSpecificMappingCount</strong>
+            <small>Applies to matching accounting book execution.</small>
+        </MudPaper>
+        <MudPaper Class="adjustment-mapping-policy-card" Elevation="0">
+            <span>Inactive history</span>
+            <strong>@InactiveMappingCount</strong>
+            <small>Retained for auditability; never rewrites posted adjustments.</small>
+        </MudPaper>
+    </section>
+
+    <MudPaper Class="adjustment-mapping-coverage" Elevation="0">
+        <div class="adjustment-mapping-coverage__header">
+            <div>
+                <p class="adjustment-mapping-page__eyebrow">Policy Coverage</p>
+                <h2>Primary Book Execution Comparison</h2>
+            </div>
+            <div class="adjustment-mapping-coverage__chips">
+                <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">
+                    Primary execution scope
+                </MudChip>
+                <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">
+                    Non-primary = governance visibility
+                </MudChip>
+            </div>
+        </div>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Current AR/AP open-item adjustment execution reads company-default and Primary Book mappings.
+            Non-primary book mappings are shown for governance comparison, but they do not become execution truth until book-specific execution is introduced.
+        </MudAlert>
+
+        <div class="adjustment-mapping-coverage__grid">
+            @foreach (var row in PolicyCoverageRows)
+            {
+                <div class="adjustment-mapping-coverage__row @(row.IsExecutionRelevant ? "adjustment-mapping-coverage__row--execution" : "adjustment-mapping-coverage__row--governance")">
+                    <div class="adjustment-mapping-coverage__scope">
+                        <strong>@row.ScopeLabel</strong>
+                        <small>@row.ScopeDetail</small>
+                        <div class="adjustment-mapping-coverage__scope-chips">
+                            @if (row.IsPrimaryBook)
+                            {
+                                <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">Primary</MudChip>
+                            }
+                            @if (!row.IsExecutionRelevant)
+                            {
+                                <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">Governance Only</MudChip>
+                            }
+                        </div>
+                    </div>
+
+                    @foreach (var cell in row.Cells)
+                    {
+                        <button type="button"
+                                class="@GetCoverageCellClass(cell)"
+                                disabled="@(cell.EditorMapping is null)"
+                                @onclick="() => LoadCoverageCellIntoEditor(cell)">
+                            <span>@cell.Label</span>
+                            <strong>@cell.StatusLabel</strong>
+                            <small>@cell.Detail</small>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </MudPaper>
+
+    <div class="adjustment-mapping-page__layout">
+        <MudPaper Class="adjustment-mapping-editor" Elevation="0">
+            <div class="adjustment-mapping-editor__header">
+                <div>
+                    <p class="adjustment-mapping-page__eyebrow">Policy Editor</p>
+                    <h2>Activate Mapping</h2>
+                </div>
+                <MudChip T="string" Color="Color.Warning" Variant="Variant.Outlined" Size="Size.Small">
+                    Owner / Book Governance
+                </MudChip>
+            </div>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                Saving replaces the active mapping for the same company, optional book, open-item type, and adjustment type.
+                It does not rewrite any existing posted adjustment history.
+            </MudAlert>
+
+            <div class="adjustment-mapping-form">
+                <MudSelect T="string"
+                           Label="Policy Scope"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Disabled="@(_isBusy || WritesBlocked)"
+                           @bind-Value="_selectedBookToken">
+                    <MudSelectItem T="string" Value="@CompanyDefaultBookToken">Company default / primary-book fallback</MudSelectItem>
+                    @foreach (var book in _books)
+                    {
+                        <MudSelectItem T="string" Value="@book.BookId.ToString("D")">
+                            @book.BookCode - @book.BookName (@book.AccountingStandard)
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="string"
+                           Label="Open Item Type"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Disabled="@(_isBusy || WritesBlocked)"
+                           @bind-Value="_selectedOpenItemType">
+                    <MudSelectItem T="string" Value="@ArOpenItemType">AR Open Item</MudSelectItem>
+                    <MudSelectItem T="string" Value="@ApOpenItemType">AP Open Item</MudSelectItem>
+                </MudSelect>
+
+                <MudSelect T="string"
+                           Label="Adjustment Type"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Disabled="@(_isBusy || WritesBlocked)"
+                           @bind-Value="_selectedAdjustmentType">
+                    <MudSelectItem T="string" Value="@WriteOffAdjustmentType">Write Off</MudSelectItem>
+                    <MudSelectItem T="string" Value="@SmallBalanceAdjustmentType">Small Balance</MudSelectItem>
+                </MudSelect>
+
+                <MudTextField T="string"
+                              Label="Search Offset Accounts"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isBusy || WritesBlocked)"
+                              Immediate="true"
+                              Placeholder="Code, name, root type, currency"
+                              @bind-Value="_accountSearchText" />
+
+                <MudSelect T="Guid"
+                           Label="Adjustment Offset Account"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Disabled="@(_isBusy || WritesBlocked)"
+                           Value="@_selectedAdjustmentAccountId"
+                           ValueChanged="value => _selectedAdjustmentAccountId = value">
+                    @foreach (var account in FilteredAdjustmentAccounts)
+                    {
+                        <MudSelectItem T="Guid" Value="@account.AccountId">
+                            @account.Code @account.Name (@ToTitle(account.RootType))
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                <div class="adjustment-mapping-form__preview">
+                    <span>Policy preview</span>
+                    <strong>@SelectedPolicyPreviewTitle</strong>
+                    <small>@SelectedPolicyPreviewDetail</small>
+                </div>
+
+                <div class="adjustment-mapping-form__actions">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isBusy || WritesBlocked || _selectedAdjustmentAccountId == Guid.Empty)"
+                               OnClick="SaveMappingAsync">
+                        Save Active Mapping
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Default"
+                               Disabled="@(_isBusy || WritesBlocked)"
+                               OnClick="ResetEditor">
+                        Reset
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+
+        <MudPaper Class="adjustment-mapping-table-card" Elevation="0">
+            <div class="adjustment-mapping-table-card__header">
+                <div>
+                    <p class="adjustment-mapping-page__eyebrow">Backend Truth</p>
+                    <h2>Current Mappings</h2>
+                </div>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @FilteredMappingCount of @_mappings.Count mapping(s)
+                </MudChip>
+            </div>
+
+            @if (_isBusy && _mappings.Count == 0)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+            }
+            else if (_mappings.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                    No mappings found for this company/filter. Execution will keep using the structural account guard until a mapping is activated.
+                </MudAlert>
+            }
+            else if (FilteredMappingCount == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    Mappings are loaded, but none match the current search text. Clear the search to review backend policy truth.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="FilteredMappings" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Scope</MudTh>
+                        <MudTh>Open Item</MudTh>
+                        <MudTh>Adjustment</MudTh>
+                        <MudTh>Offset Account</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Updated</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Scope">@context.ScopeLabel</MudTd>
+                        <MudTd DataLabel="Open Item">@context.OpenItemLabel</MudTd>
+                        <MudTd DataLabel="Adjustment">@context.AdjustmentLabel</MudTd>
+                        <MudTd DataLabel="Offset Account">
+                            <strong>@context.AdjustmentAccountCode</strong>
+                            <span class="adjustment-mapping-table-card__subtext">@context.AdjustmentAccountName</span>
+                        </MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string"
+                                     Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                     Variant="@(context.IsActive ? Variant.Filled : Variant.Outlined)"
+                                     Size="Size.Small">
+                                @(context.IsActive ? "Active" : "Inactive")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Updated">@context.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudTd>
+                        <MudTd>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       Disabled="@(_isBusy || WritesBlocked)"
+                                       OnClick="() => EditMapping(context)">
+                                Edit
+                            </MudButton>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Warning"
+                                       Size="Size.Small"
+                                       Disabled="@(_isBusy || WritesBlocked || !context.IsActive)"
+                                       OnClick="() => DeactivateMappingAsync(context)">
+                                Deactivate
+                            </MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </div>
+</div>
+
+@code {
+    private const string AllFilter = "all";
+    private const string CompanyDefaultBookToken = "company-default";
+    private const string ArOpenItemType = "ar_open_item";
+    private const string ApOpenItemType = "ap_open_item";
+    private const string WriteOffAdjustmentType = "write_off";
+    private const string SmallBalanceAdjustmentType = "small_balance_adjustment";
+
+    private readonly List<ShellOpenItemAdjustmentAccountMappingRecord> _mappings = [];
+    private readonly List<ShellOpenItemAdjustmentAccountMappingRecord> _policyMappings = [];
+    private readonly List<CompanyBookRecord> _books = [];
+    private readonly List<JournalEntryAccountOption> _allowedAdjustmentAccounts = [];
+
+    private string _mappingSearchText = string.Empty;
+    private string _accountSearchText = string.Empty;
+    private string _filterOpenItemType = AllFilter;
+    private string _filterAdjustmentType = AllFilter;
+    private bool _includeInactive;
+    private bool _isBusy;
+    private string? _pageError;
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private string _selectedBookToken = CompanyDefaultBookToken;
+    private string _selectedOpenItemType = ApOpenItemType;
+    private string _selectedAdjustmentType = SmallBalanceAdjustmentType;
+    private Guid _selectedAdjustmentAccountId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return;
+        }
+
+        _pageError = null;
+        _isBusy = true;
+        try
+        {
+            var companyId = ShellState.ActiveCompany.Id;
+            var bookResults = await BookWorkflow.ListBookGovernanceAsync(
+                companyId,
+                DateOnly.FromDateTime(DateTime.Today),
+                CancellationToken.None);
+            _books.Clear();
+            _books.AddRange(bookResults.Select(static item => item.Book).Where(static book => book.IsActive));
+
+            var accounts = await AccountCatalog.ListManualPostingAccountsAsync(companyId, CancellationToken.None);
+            _allowedAdjustmentAccounts.Clear();
+            _allowedAdjustmentAccounts.AddRange(
+                accounts
+                    .Where(static account => IsAllowedAdjustmentRoot(account.RootType))
+                    .OrderBy(static account => account.Code, StringComparer.Ordinal));
+            if (_selectedAdjustmentAccountId == Guid.Empty && _allowedAdjustmentAccounts.Count > 0)
+            {
+                _selectedAdjustmentAccountId = _allowedAdjustmentAccounts[0].AccountId;
+            }
+
+            var policyResult = await MappingClient.ListAsync(
+                companyId,
+                null,
+                null,
+                true,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(policyResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(policyResult.ErrorMessage))
+            {
+                _pageError = policyResult.ErrorMessage;
+                _policyMappings.Clear();
+                _mappings.Clear();
+                return;
+            }
+
+            _policyMappings.Clear();
+            _policyMappings.AddRange(policyResult.Value?.Mappings ?? Array.Empty<ShellOpenItemAdjustmentAccountMappingRecord>());
+
+            var result = await MappingClient.ListAsync(
+                companyId,
+                NormalizeFilter(_filterOpenItemType),
+                NormalizeFilter(_filterAdjustmentType),
+                _includeInactive,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _pageError = result.ErrorMessage;
+                _mappings.Clear();
+                return;
+            }
+
+            _mappings.Clear();
+            _mappings.AddRange(result.Value?.Mappings ?? Array.Empty<ShellOpenItemAdjustmentAccountMappingRecord>());
+        }
+        catch (Exception ex)
+        {
+            _pageError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SaveMappingAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        if (_selectedAdjustmentAccountId == Guid.Empty)
+        {
+            Snackbar.Add("Select an adjustment offset account first.", Severity.Warning);
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var result = await MappingClient.SaveAsync(
+                new ShellOpenItemAdjustmentAccountMappingSaveRequest
+                {
+                    CompanyId = ShellState.ActiveCompany.Id,
+                    UserId = ShellState.CurrentUserId,
+                    BookId = SelectedBookId,
+                    OpenItemType = _selectedOpenItemType,
+                    AdjustmentType = _selectedAdjustmentType,
+                    AdjustmentAccountId = _selectedAdjustmentAccountId
+                },
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                Snackbar.Add(result.ErrorMessage, Severity.Error);
+                return;
+            }
+
+            Snackbar.Add(result.Value?.Message ?? "Mapping saved.", Severity.Success);
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeactivateMappingAsync(ShellOpenItemAdjustmentAccountMappingRecord mapping)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var result = await MappingClient.DeactivateAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                mapping.MappingId,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                Snackbar.Add(result.ErrorMessage, Severity.Error);
+                return;
+            }
+
+            Snackbar.Add(result.Value?.Message ?? "Mapping deactivated.", Severity.Success);
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnActiveCompanyChangedAsync(Guid companyId)
+    {
+        if (!ShellState.TrySetActiveCompany(companyId))
+        {
+            Snackbar.Add("The selected company is not available in this shell context.", Severity.Warning);
+            return;
+        }
+
+        ResetEditor();
+        Snackbar.Add($"Mapping context switched to {ShellState.ActiveCompany.CompanyName}.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private void EditMapping(ShellOpenItemAdjustmentAccountMappingRecord mapping)
+    {
+        _selectedBookToken = mapping.BookId?.ToString("D") ?? CompanyDefaultBookToken;
+        _selectedOpenItemType = mapping.OpenItemType;
+        _selectedAdjustmentType = mapping.AdjustmentType;
+        _selectedAdjustmentAccountId = mapping.AdjustmentAccountId;
+        Snackbar.Add("Mapping loaded into the editor. Save to replace the active policy scope.", Severity.Info);
+    }
+
+    private void LoadCoverageCellIntoEditor(AdjustmentPolicyCoverageCell cell)
+    {
+        if (cell.EditorMapping is null)
+        {
+            Snackbar.Add("No active mapping exists for this policy cell yet.", Severity.Info);
+            return;
+        }
+
+        EditMapping(cell.EditorMapping);
+    }
+
+    private void ResetEditor()
+    {
+        _selectedBookToken = CompanyDefaultBookToken;
+        _selectedOpenItemType = ApOpenItemType;
+        _selectedAdjustmentType = SmallBalanceAdjustmentType;
+        _selectedAdjustmentAccountId = _allowedAdjustmentAccounts.FirstOrDefault()?.AccountId ?? Guid.Empty;
+    }
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync(CancellationToken.None);
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _pageError = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _pageError = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private Guid? SelectedBookId =>
+        Guid.TryParse(_selectedBookToken, out var bookId) ? bookId : null;
+
+    private IEnumerable<ShellOpenItemAdjustmentAccountMappingRecord> FilteredMappings =>
+        _mappings.Where(MatchesMappingSearch);
+
+    private int FilteredMappingCount =>
+        _mappings.Count(MatchesMappingSearch);
+
+    private int ActiveMappingCount =>
+        _policyMappings.Count(static mapping => mapping.IsActive);
+
+    private int CompanyDefaultMappingCount =>
+        _policyMappings.Count(static mapping => mapping.IsActive && mapping.BookId is null);
+
+    private int BookSpecificMappingCount =>
+        _policyMappings.Count(static mapping => mapping.IsActive && mapping.BookId is not null);
+
+    private int InactiveMappingCount =>
+        _policyMappings.Count(static mapping => !mapping.IsActive);
+
+    private string PolicyCoverageLabel =>
+        ActiveMappingCount == 0
+            ? "Fallback structural guard only until a mapping is activated."
+            : "Mapped scopes must use governed offset accounts during execution.";
+
+    private IEnumerable<JournalEntryAccountOption> FilteredAdjustmentAccounts
+    {
+        get
+        {
+            var filtered = _allowedAdjustmentAccounts
+                .Where(MatchesAccountSearch)
+                .ToList();
+
+            if (_selectedAdjustmentAccountId != Guid.Empty &&
+                filtered.All(account => account.AccountId != _selectedAdjustmentAccountId))
+            {
+                var selected = _allowedAdjustmentAccounts
+                    .FirstOrDefault(account => account.AccountId == _selectedAdjustmentAccountId);
+                if (selected is not null)
+                {
+                    filtered.Insert(0, selected);
+                }
+            }
+
+            return filtered;
+        }
+    }
+
+    private string SelectedPolicyPreviewTitle =>
+        $"{ToTitle(_selectedOpenItemType)} / {ToTitle(_selectedAdjustmentType)}";
+
+    private string SelectedPolicyPreviewDetail
+    {
+        get
+        {
+            var scope = SelectedBookId.HasValue
+                ? "Book-specific mapping"
+                : "Company default mapping";
+            var account = _allowedAdjustmentAccounts
+                .FirstOrDefault(item => item.AccountId == _selectedAdjustmentAccountId);
+            var accountLabel = account is null
+                ? "no offset account selected"
+                : $"{account.Code} {account.Name} ({ToTitle(account.RootType)})";
+
+            return $"{scope}; execution will use {accountLabel} for this governed policy scope once saved.";
+        }
+    }
+
+    private IReadOnlyList<AdjustmentPolicyCoverageRow> PolicyCoverageRows
+    {
+        get
+        {
+            var rows = new List<AdjustmentPolicyCoverageRow>
+            {
+                BuildCoverageRow(
+                    null,
+                    "Company default",
+                    "Fallback policy scope used by current primary execution when no primary-book override exists.",
+                    isPrimaryBook: false,
+                    isExecutionRelevant: true)
+            };
+
+            rows.AddRange(
+                _books
+                    .OrderByDescending(static book => book.IsPrimary)
+                    .ThenBy(static book => book.BookCode, StringComparer.OrdinalIgnoreCase)
+                    .Select(book => BuildCoverageRow(
+                        book.BookId,
+                        $"{book.BookCode} - {book.BookName}",
+                        $"{book.AccountingStandard} / {book.BookBaseCurrencyCode} / {ToTitle(book.BookRole)}",
+                        book.IsPrimary,
+                        book.IsPrimary)));
+
+            return rows;
+        }
+    }
+
+    private static string? NormalizeFilter(string value) =>
+        string.Equals(value, AllFilter, StringComparison.Ordinal) ? null : value;
+
+    private static bool IsAllowedAdjustmentRoot(string rootType) =>
+        rootType is "revenue" or "cost_of_sales" or "expense";
+
+    private AdjustmentPolicyCoverageRow BuildCoverageRow(
+        Guid? bookId,
+        string scopeLabel,
+        string scopeDetail,
+        bool isPrimaryBook,
+        bool isExecutionRelevant)
+    {
+        var cells = PolicyCoverageTargets
+            .Select(target => BuildCoverageCell(bookId, isPrimaryBook, isExecutionRelevant, target))
+            .ToArray();
+
+        return new AdjustmentPolicyCoverageRow(
+            scopeLabel,
+            scopeDetail,
+            isPrimaryBook,
+            isExecutionRelevant,
+            cells);
+    }
+
+    private AdjustmentPolicyCoverageCell BuildCoverageCell(
+        Guid? bookId,
+        bool isPrimaryBook,
+        bool isExecutionRelevant,
+        AdjustmentPolicyCoverageTarget target)
+    {
+        var directMapping = FindActiveMapping(bookId, target.OpenItemType, target.AdjustmentType);
+        var companyDefaultMapping = bookId.HasValue
+            ? FindActiveMapping(null, target.OpenItemType, target.AdjustmentType)
+            : null;
+
+        if (directMapping is not null)
+        {
+            var status = bookId.HasValue && !isExecutionRelevant ? "Configured" : "Mapped";
+            var state = bookId.HasValue && !isExecutionRelevant ? "governance" : "mapped";
+            var suffix = bookId.HasValue && !isExecutionRelevant
+                ? " Governance-visible only for now."
+                : string.Empty;
+
+            return new AdjustmentPolicyCoverageCell(
+                target.Label,
+                status,
+                $"{directMapping.AdjustmentAccountCode} {directMapping.AdjustmentAccountName}.{suffix}",
+                state,
+                directMapping);
+        }
+
+        if (isPrimaryBook && companyDefaultMapping is not null)
+        {
+            return new AdjustmentPolicyCoverageCell(
+                target.Label,
+                "Uses default",
+                $"{companyDefaultMapping.AdjustmentAccountCode} {companyDefaultMapping.AdjustmentAccountName}.",
+                "inherited",
+                companyDefaultMapping);
+        }
+
+        if (bookId.HasValue && !isPrimaryBook && companyDefaultMapping is not null)
+        {
+            return new AdjustmentPolicyCoverageCell(
+                target.Label,
+                "No book mapping",
+                "Company default exists, but current execution only evaluates primary scope.",
+                "governance",
+                null);
+        }
+
+        return new AdjustmentPolicyCoverageCell(
+            target.Label,
+            isExecutionRelevant ? "Fallback" : "Unmapped",
+            isExecutionRelevant
+                ? "Structural account guard remains the safe compatibility fallback."
+                : "No active direct mapping for this book policy scope.",
+            isExecutionRelevant ? "fallback" : "governance",
+            null);
+    }
+
+    private ShellOpenItemAdjustmentAccountMappingRecord? FindActiveMapping(
+        Guid? bookId,
+        string openItemType,
+        string adjustmentType) =>
+        _policyMappings.FirstOrDefault(mapping =>
+            mapping.IsActive &&
+            mapping.BookId == bookId &&
+            string.Equals(mapping.OpenItemType, openItemType, StringComparison.Ordinal) &&
+            string.Equals(mapping.AdjustmentType, adjustmentType, StringComparison.Ordinal));
+
+    private static string GetCoverageCellClass(AdjustmentPolicyCoverageCell cell) =>
+        $"adjustment-mapping-coverage__cell adjustment-mapping-coverage__cell--{cell.State}";
+
+    private bool MatchesMappingSearch(ShellOpenItemAdjustmentAccountMappingRecord mapping)
+    {
+        if (string.IsNullOrWhiteSpace(_mappingSearchText))
+        {
+            return true;
+        }
+
+        var terms = _mappingSearchText.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return terms.All(term =>
+            ContainsInvariant(mapping.ScopeLabel, term) ||
+            ContainsInvariant(mapping.BookCode, term) ||
+            ContainsInvariant(mapping.AccountingStandard, term) ||
+            ContainsInvariant(mapping.OpenItemLabel, term) ||
+            ContainsInvariant(mapping.AdjustmentLabel, term) ||
+            ContainsInvariant(mapping.AdjustmentAccountCode, term) ||
+            ContainsInvariant(mapping.AdjustmentAccountName, term) ||
+            ContainsInvariant(mapping.AdjustmentAccountRootType, term) ||
+            ContainsInvariant(mapping.IsActive ? "active" : "inactive", term));
+    }
+
+    private bool MatchesAccountSearch(JournalEntryAccountOption account)
+    {
+        if (string.IsNullOrWhiteSpace(_accountSearchText))
+        {
+            return true;
+        }
+
+        var terms = _accountSearchText.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return terms.All(term =>
+            ContainsInvariant(account.Code, term) ||
+            ContainsInvariant(account.Name, term) ||
+            ContainsInvariant(account.RootType, term) ||
+            ContainsInvariant(account.TypeLabel, term) ||
+            ContainsInvariant(account.CurrencyCode, term));
+    }
+
+    private static bool ContainsInvariant(string? value, string term) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(term, StringComparison.OrdinalIgnoreCase);
+
+    private static string ToTitle(string value) =>
+        string.Join(
+            ' ',
+            value.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(static word => char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant()));
+
+    private static readonly AdjustmentPolicyCoverageTarget[] PolicyCoverageTargets =
+    [
+        new(ArOpenItemType, WriteOffAdjustmentType, "AR Write Off"),
+        new(ArOpenItemType, SmallBalanceAdjustmentType, "AR Small Balance"),
+        new(ApOpenItemType, WriteOffAdjustmentType, "AP Write Off"),
+        new(ApOpenItemType, SmallBalanceAdjustmentType, "AP Small Balance")
+    ];
+
+    private sealed record AdjustmentPolicyCoverageTarget(
+        string OpenItemType,
+        string AdjustmentType,
+        string Label);
+
+    private sealed record AdjustmentPolicyCoverageRow(
+        string ScopeLabel,
+        string ScopeDetail,
+        bool IsPrimaryBook,
+        bool IsExecutionRelevant,
+        IReadOnlyList<AdjustmentPolicyCoverageCell> Cells);
+
+    private sealed record AdjustmentPolicyCoverageCell(
+        string Label,
+        string StatusLabel,
+        string Detail,
+        string State,
+        ShellOpenItemAdjustmentAccountMappingRecord? EditorMapping);
+}

@@ -42,7 +42,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             journalEntryId,
             userId,
             "reversed",
-            "manual_journal_reversal",
+            null,
             "Reversal",
             cancellationToken);
 
@@ -51,7 +51,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         Guid journalEntryId,
         Guid userId,
         string originalStatus,
-        string compensationSourceType,
+        string? compensationSourceType,
         string actionLabel,
         CancellationToken cancellationToken)
     {
@@ -61,10 +61,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         var original = await LoadOriginalAsync(connection, transaction, companyId, journalEntryId, cancellationToken)
             ?? throw new InvalidOperationException("The journal entry could not be found in the active company context.");
 
-        if (!string.Equals(original.SourceType, "manual_journal", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Void and reversal are currently supported only for manual-journal sourced entries.");
-        }
+        var lifecycleBehavior = ResolveLifecycleBehavior(original.SourceType, originalStatus, compensationSourceType);
 
         if (!string.Equals(original.Status, "posted", StringComparison.OrdinalIgnoreCase))
         {
@@ -76,7 +73,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             transaction,
             companyId,
             original.SourceId,
-            compensationSourceType,
+            lifecycleBehavior.CompensationSourceType,
             cancellationToken);
 
         if (existingCompensation is not null)
@@ -89,7 +86,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 existingCompensation.PostedAt ?? DateTimeOffset.UtcNow,
                 existingCompensation.Id,
                 existingCompensation.DisplayNumber,
-                compensationSourceType);
+                lifecycleBehavior.CompensationSourceType);
         }
 
         var originalLines = await LoadOriginalLinesAsync(connection, transaction, companyId, journalEntryId, cancellationToken);
@@ -174,7 +171,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             command.Parameters.AddWithValue("company_id", companyId);
             command.Parameters.AddWithValue("entity_number", compensationEntityNumber);
             command.Parameters.AddWithValue("display_number", compensationDisplayNumber);
-            command.Parameters.AddWithValue("source_type", compensationSourceType);
+            command.Parameters.AddWithValue("source_type", lifecycleBehavior.CompensationSourceType);
             command.Parameters.AddWithValue("source_id", original.SourceId);
             command.Parameters.AddWithValue("transaction_currency_code", original.TransactionCurrencyCode);
             command.Parameters.AddWithValue("base_currency_code", original.BaseCurrencyCode);
@@ -190,7 +187,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             command.Parameters.AddWithValue("total_debit", totalDebit);
             command.Parameters.AddWithValue("total_credit", totalCredit);
             command.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
-            command.Parameters.AddWithValue("idempotency_key", $"manual_journal:{original.SourceId:D}:{compensationSourceType}");
+            command.Parameters.AddWithValue("idempotency_key", $"{original.SourceType}:{original.SourceId:D}:{lifecycleBehavior.CompensationSourceType}");
             command.Parameters.AddWithValue("posted_at", lifecycleAt);
             command.Parameters.AddWithValue("created_by_user_id", userId);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -336,8 +333,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             }
         }
 
-        await using (var updateSourceCommand = connection.CreateCommand())
+        if (lifecycleBehavior.UpdateSourceDocumentStatus)
         {
+            await using var updateSourceCommand = connection.CreateCommand();
             updateSourceCommand.Transaction = transaction;
             updateSourceCommand.CommandText =
                 """
@@ -367,7 +365,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             lifecycleAt,
             compensationJournalEntryId,
             compensationDisplayNumber,
-            compensationSourceType);
+            lifecycleBehavior.CompensationSourceType);
     }
 
     private async Task<string> ReserveJournalDisplayNumberAsync(
@@ -417,6 +415,10 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
               union all
               select entity_number from pay_bills
               union all
+              select entity_number from credit_applications
+              union all
+              select entity_number from vendor_credit_applications
+              union all
               select entity_number from fx_revaluation_batches
             )
             select coalesce(
@@ -451,7 +453,17 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
               je.status,
               je.source_type,
               je.source_id,
-              mj.entry_date,
+              coalesce(
+                mj.entry_date,
+                i.invoice_date,
+                cn.credit_note_date,
+                b.bill_date,
+                vc.vendor_credit_date,
+                rp.payment_date,
+                ca.application_date,
+                pb.payment_date,
+                vca.application_date
+              ) as entry_date,
               je.transaction_currency_code,
               je.base_currency_code,
               je.exchange_rate,
@@ -459,9 +471,42 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
               je.exchange_rate_source,
               je.fx_rate_snapshot_id
             from journal_entries je
-            inner join manual_journal_documents mj
+            left join manual_journal_documents mj
               on mj.company_id = je.company_id
              and mj.id = je.source_id
+             and je.source_type = 'manual_journal'
+            left join invoices i
+              on i.company_id = je.company_id
+             and i.id = je.source_id
+             and je.source_type = 'invoice'
+            left join credit_notes cn
+              on cn.company_id = je.company_id
+             and cn.id = je.source_id
+             and je.source_type = 'credit_note'
+            left join bills b
+              on b.company_id = je.company_id
+             and b.id = je.source_id
+             and je.source_type = 'bill'
+            left join vendor_credits vc
+              on vc.company_id = je.company_id
+             and vc.id = je.source_id
+             and je.source_type = 'vendor_credit'
+            left join receive_payments rp
+              on rp.company_id = je.company_id
+             and rp.id = je.source_id
+             and je.source_type = 'receive_payment'
+            left join credit_applications ca
+              on ca.company_id = je.company_id
+             and ca.id = je.source_id
+             and je.source_type = 'credit_application'
+            left join pay_bills pb
+              on pb.company_id = je.company_id
+             and pb.id = je.source_id
+             and je.source_type = 'pay_bill'
+            left join vendor_credit_applications vca
+              on vca.company_id = je.company_id
+             and vca.id = je.source_id
+             and je.source_type = 'vendor_credit_application'
             where je.company_id = @company_id
               and je.id = @journal_entry_id
             limit 1;
@@ -595,6 +640,45 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     private static decimal Round2(decimal value) =>
         Math.Round(value, 2, MidpointRounding.ToEven);
 
+    private static LifecycleBehavior ResolveLifecycleBehavior(
+        string sourceType,
+        string originalStatus,
+        string? requestedCompensationSourceType)
+    {
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedOriginalStatus = originalStatus.Trim().ToLowerInvariant();
+
+        if (normalizedOriginalStatus == "voided")
+        {
+            if (!string.Equals(normalizedSourceType, "manual_journal", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Void is currently supported only for manual-journal sourced entries.");
+            }
+
+            return new LifecycleBehavior(requestedCompensationSourceType ?? "manual_journal_void", true);
+        }
+
+        if (normalizedOriginalStatus != "reversed")
+        {
+            throw new InvalidOperationException($"Unsupported journal-entry lifecycle state '{originalStatus}'.");
+        }
+
+        return normalizedSourceType switch
+        {
+            "manual_journal" => new LifecycleBehavior(requestedCompensationSourceType ?? "manual_journal_reversal", true),
+            "invoice" => new LifecycleBehavior("invoice_reversal", false),
+            "credit_note" => new LifecycleBehavior("credit_note_reversal", false),
+            "bill" => new LifecycleBehavior("bill_reversal", false),
+            "vendor_credit" => new LifecycleBehavior("vendor_credit_reversal", false),
+            "receive_payment" => new LifecycleBehavior("receive_payment_reversal", false),
+            "credit_application" => new LifecycleBehavior("credit_application_reversal", false),
+            "pay_bill" => new LifecycleBehavior("pay_bill_reversal", false),
+            "vendor_credit_application" => new LifecycleBehavior("vendor_credit_application_reversal", false),
+            _ => throw new InvalidOperationException(
+                $"Reversal is not supported for journal entries sourced from '{sourceType}'.")
+        };
+    }
+
     private sealed record class LifecycleHeader(
         Guid Id,
         string DisplayNumber,
@@ -625,4 +709,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         Guid Id,
         string DisplayNumber,
         DateTimeOffset? PostedAt);
+
+    private sealed record class LifecycleBehavior(
+        string CompensationSourceType,
+        bool UpdateSourceDocumentStatus);
 }

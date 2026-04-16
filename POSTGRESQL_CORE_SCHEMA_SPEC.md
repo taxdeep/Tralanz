@@ -60,17 +60,170 @@ Examples:
 
 ## 4. Company And Security Core
 
-### 4.1 `users`
+Boundary rule:
+
+- platform account storage is identity infrastructure, not a Business App root module
+- company access truth belongs to `company_memberships`
+- columns named `user_id` or `created_by_user_id` in older drafts should be understood as platform account actor references
+- future migrations may rename these to `account_id` / `created_by_account_id` when migration risk is acceptable
+
+### 4.1 Platform account storage (`users` draft table)
+
+Meaning:
+
+- stores platform account identity for login and actor references
+- does not own company membership truth
+- does not own company-scoped permission truth
+- must not become a Business App `Users` / `UserManagement` root module
+
+Physical table name in the current SQL draft:
+
+- `users`
+
+Preferred semantic name in application design:
+
+- `platform_accounts`
 
 Core columns:
 
 - `id uuid pk`
 - `email text unique not null`
 - `username text unique null`
+- `display_name text null`
 - `password_hash text not null`
-- `is_active boolean not null default true`
+- `status text not null`
+- `email_verified_at timestamptz null`
+- `locked_until timestamptz null`
+- `security_stamp text not null`
 - `created_at timestamptz not null`
 - `updated_at timestamptz not null`
+
+Recommended `status` values:
+
+- `active`
+- `disabled`
+- `locked`
+- `pending_verification`
+
+Rules:
+
+- account status gates login
+- platform account status does not grant company access by itself
+- an account may have zero, one, or many company memberships
+- deleting accounts with business history should be avoided; disable/lock is preferred
+- Platform Identity may later be backed by ABP Identity / Account, but CompanyAccess remains Citus-owned
+
+### 4.1.1 `account_verification_codes`
+
+Meaning:
+
+- secure verification workflow for email change, password change, reset password, and email verification
+- verification is account infrastructure, not CompanyAccess truth
+
+Core columns:
+
+- `id uuid pk`
+- `account_id uuid not null`
+- `purpose text not null`
+- `destination text null`
+- `code_hash text not null`
+- `expires_at timestamptz not null`
+- `consumed_at timestamptz null`
+- `failed_attempts integer not null default 0`
+- `created_at timestamptz not null`
+
+Recommended `purpose` values:
+
+- `email_verification`
+- `email_change`
+- `password_change`
+- `password_reset`
+
+Rules:
+
+- generated code is 6 characters
+- validation is case-insensitive
+- store hash only, never plaintext code
+- code is single-use
+- code is time-limited
+- verification issuance requires notification readiness where the flow depends on email delivery
+
+### 4.1.2 SysAdmin account storage
+
+Meaning:
+
+- independent PlatformOps / SysAdmin identity realm
+- not a company member
+- not valid as a business posting actor
+
+Recommended physical direction if Citus owns SysAdmin credentials directly:
+
+- `sysadmin_accounts`
+
+Core columns:
+
+- `id uuid pk`
+- `email text unique not null`
+- `password_hash text not null`
+- `status text not null`
+- `last_login_at timestamptz null`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+Rules:
+
+- SysAdmin auth must not reuse Business App membership
+- SysAdmin sessions must not carry `active_company_id` for business operations
+- SysAdmin governance commands route to the boundary that owns the truth
+
+### 4.1.3 Platform runtime state
+
+Meaning:
+
+- system-level runtime controls such as maintenance mode
+- available to SysAdmin
+- enforced by Business App backend guards
+
+Recommended table:
+
+- `platform_runtime_state`
+
+Core columns:
+
+- `state_key text pk`
+- `json jsonb not null`
+- `updated_by_sysadmin_account_id uuid null`
+- `updated_at timestamptz not null`
+
+Required state keys:
+
+- `maintenance`
+
+Rules:
+
+- maintenance mode blocks normal Business App login and writes
+- SysAdmin remains available during maintenance
+- state changes must be audited
+
+### 4.1.4 Platform billing / subscription storage
+
+Meaning:
+
+- commercial entitlement truth
+- controls plan, trial, subscription, seats, features, and usage limits
+- does not own company membership or business legality
+
+Recommended later tables:
+
+- `platform_billing_accounts`
+- `platform_subscriptions`
+- `platform_entitlements`
+
+Rules:
+
+- entitlements may enable or disable capabilities
+- entitlements must not rewrite posted accounting truth
+- entitlements must not replace CompanyAccess membership or domain legality
 
 ### 4.2 `companies`
 
@@ -87,32 +240,63 @@ Core columns:
 
 ### 4.3 `company_memberships`
 
+Meaning:
+
+- authoritative CompanyAccess relationship between a platform account and a company
+- owns owner/user role and company-scoped permission tokens
+- not a credential table
+
 Core columns:
 
 - `id uuid pk`
 - `company_id uuid not null`
-- `user_id uuid not null`
+- `account_id uuid not null`
 - `role text not null`
 - `is_active boolean not null default true`
-- `permissions jsonb not null default '{}'::jsonb`
+- `permissions jsonb not null default '[]'::jsonb`
 - `created_at timestamptz not null`
 - `updated_at timestamptz not null`
 
 Constraints:
 
-- unique `(company_id, user_id)`
+- unique `(company_id, account_id)`
 - at least one active owner per company enforced in application/service layer plus DB-safe guard flow
 
+Rules:
+
+- `role` values are `owner` and `user`
+- `permissions` is a JSON array of company-scoped permission tokens
+- owner assignment and permission changes are CompanyAccess operations
+- SysAdmin may trigger membership actions, but CompanyAccess remains authoritative
+- active-company selection must be validated against active membership and company status
+
 ### 4.4 `business_sessions`
+
+Meaning:
+
+- resolved Business App session context
+- ties authenticated account to active company and membership-derived permissions
 
 Core columns:
 
 - `id uuid pk`
 - `token_hash text unique not null`
-- `user_id uuid not null`
+- `account_id uuid not null`
 - `active_company_id uuid not null`
+- `membership_id uuid not null`
+- `role text not null`
+- `permissions jsonb not null`
+- `company_status text not null`
+- `permission_version text null`
 - `expires_at timestamptz not null`
 - `created_at timestamptz not null`
+
+Rules:
+
+- no Business App read/write may execute without active company context
+- session data is a resolved context, not the source of membership truth
+- backend APIs must reject stale or invalidated membership/company state
+- inactive company allows read-only behavior only
 
 ### 4.5 `platform_modules`
 

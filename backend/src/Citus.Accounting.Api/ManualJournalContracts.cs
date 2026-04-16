@@ -116,11 +116,68 @@ public sealed record ManualJournalLookupQuery(Guid CompanyId);
 
 public sealed record DocumentReviewLookupQuery(Guid CompanyId);
 
+public sealed record DocumentLifecycleRequestReadinessQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate);
+
 public sealed record OpenItemDrillDownLookupQuery(Guid CompanyId);
+
+public sealed record OpenItemAdjustmentPreviewLookupQuery(
+    Guid CompanyId,
+    string? AdjustmentType,
+    DateOnly? AdjustmentDate,
+    decimal? AdjustmentAmountTx);
+
+public sealed record RequestOpenItemAdjustmentHttpRequest(
+    Guid CompanyId,
+    Guid? UserId,
+    string AdjustmentType,
+    DateOnly? AdjustmentDate,
+    decimal? AdjustmentAmountTx,
+    string? Reason);
+
+public sealed record TransitionOpenItemAdjustmentRequestHttpRequest(
+    Guid CompanyId,
+    Guid? UserId);
+
+public sealed record GovernOpenItemAdjustmentApprovalHttpRequest(
+    Guid CompanyId,
+    Guid? UserId);
+
+public sealed record OpenItemAdjustmentRequestReadinessQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate);
+
+public sealed record ExecuteOpenItemAdjustmentRequestHttpRequest(
+    Guid CompanyId,
+    Guid? UserId,
+    Guid AdjustmentAccountId,
+    DateOnly? AsOfDate,
+    string? IdempotencyKey);
+
+public sealed record OpenItemAdjustmentAccountMappingLookupQuery(
+    Guid CompanyId,
+    string? OpenItemType,
+    string? AdjustmentType,
+    bool? IncludeInactive);
+
+public sealed record SaveOpenItemAdjustmentAccountMappingHttpRequest(
+    Guid CompanyId,
+    Guid? UserId,
+    Guid? BookId,
+    string OpenItemType,
+    string AdjustmentType,
+    Guid AdjustmentAccountId);
+
+public sealed record DeactivateOpenItemAdjustmentAccountMappingHttpRequest(
+    Guid CompanyId,
+    Guid? UserId);
 
 public sealed record SourceDocumentBrowserLookupQuery(
     Guid CompanyId,
     string? SourceType,
+    string? CounterpartyRole,
+    Guid? CounterpartyId,
     int? Limit);
 
 public sealed record PostInvoiceHttpRequest(
@@ -128,6 +185,30 @@ public sealed record PostInvoiceHttpRequest(
     Guid UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
+
+public sealed record SaveInvoiceDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid CustomerId,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<SaveInvoiceDraftLineHttpRequest> Lines);
+
+public sealed record SaveInvoiceDraftLineHttpRequest(
+    int LineNumber,
+    Guid RevenueAccountId,
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    Guid? TaxCodeId,
+    decimal TaxAmount);
 
 public sealed record InvoiceLookupQuery(Guid CompanyId);
 
@@ -137,6 +218,30 @@ public sealed record PostCreditNoteHttpRequest(
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
+public sealed record SaveCreditNoteDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid CustomerId,
+    DateOnly CreditNoteDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<SaveCreditNoteDraftLineHttpRequest> Lines);
+
+public sealed record SaveCreditNoteDraftLineHttpRequest(
+    int LineNumber,
+    Guid RevenueAccountId,
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    Guid? TaxCodeId,
+    decimal TaxAmount);
+
 public sealed record CreditNoteLookupQuery(Guid CompanyId);
 
 public sealed record PostBillHttpRequest(
@@ -145,6 +250,30 @@ public sealed record PostBillHttpRequest(
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
+public sealed record SaveBillDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid VendorId,
+    DateOnly BillDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<SaveBillDraftLineHttpRequest> Lines);
+
+public sealed record SaveBillDraftLineHttpRequest(
+    int LineNumber,
+    Guid ExpenseAccountId,
+    string Description,
+    decimal LineAmount,
+    Guid? TaxCodeId,
+    decimal TaxAmount,
+    bool IsTaxRecoverable);
+
 public sealed record BillLookupQuery(Guid CompanyId);
 
 public sealed record PostVendorCreditHttpRequest(
@@ -152,6 +281,30 @@ public sealed record PostVendorCreditHttpRequest(
     Guid UserId,
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
+
+public sealed record SaveVendorCreditDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid VendorId,
+    DateOnly VendorCreditDate,
+    DateOnly DueDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<SaveVendorCreditDraftLineHttpRequest> Lines);
+
+public sealed record SaveVendorCreditDraftLineHttpRequest(
+    int LineNumber,
+    Guid ExpenseAccountId,
+    string Description,
+    decimal LineAmount,
+    Guid? TaxCodeId,
+    decimal TaxAmount,
+    bool IsTaxRecoverable);
 
 public sealed record VendorCreditLookupQuery(Guid CompanyId);
 

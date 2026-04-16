@@ -9,9 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="MudBlazor" Version="9.3.0" />
+    <PackageReference Include="Volo.Abp.LeptonXLiteTheme.SourceCode" Version="5.1.1" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Citus.Platform.Core\Citus.Platform.Core.csproj" />
+    <ProjectReference Include="..\..\Citus.Platform.Infrastructure\Citus.Platform.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
     <ProjectReference Include="..\..\Connectors\FX\Connectors.FX.csproj" />
     <ProjectReference Include="..\..\Engines\FX\Engines.FX.csproj" />

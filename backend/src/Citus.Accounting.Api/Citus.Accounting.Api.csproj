@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Citus.Accounting.Infrastructure\Citus.Accounting.Infrastructure.csproj" />
     <ProjectReference Include="..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
     <ProjectReference Include="..\Modules\Company\Modules.Company.csproj" />
+    <ProjectReference Include="..\Modules\CompanyAccess\Modules.CompanyAccess.csproj" />
     <ProjectReference Include="..\Citus.Platform.Core\Citus.Platform.Core.csproj" />
     <ProjectReference Include="..\Citus.Platform.Infrastructure\Citus.Platform.Infrastructure.csproj" />
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />

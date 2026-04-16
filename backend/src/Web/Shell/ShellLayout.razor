@@ -1,16 +1,102 @@
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject WebShellState ShellState
+
 @inherits LayoutComponentBase
 
-<MudLayout>
-    <MudDrawer Open="true" Elevation="1" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md" Class="ws-drawer">
-        <div class="ws-brand">
-            <div class="ws-brand__eyebrow">Citus</div>
-            <div class="ws-brand__title">Web Shell</div>
-            <div class="ws-brand__subtitle">Dark accounting workspace host</div>
-        </div>
-        <NavMenu />
-    </MudDrawer>
-
-    <MudMainContent Class="ws-main">
-        @Body
+@if (!_isShellReady)
+{
+    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+    </MudContainer>
+}
+else if (!ShellState.IsAuthenticated)
+{
+    <MudMainContent Class="ws-main ws-main--login">
+        <MudContainer MaxWidth="MaxWidth.Small" Class="pa-6">
+            @if (IsLoginRoute)
+            {
+                @Body
+            }
+            else
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+            }
+        </MudContainer>
     </MudMainContent>
-</MudLayout>
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="1" Class="ws-appbar">
+            <MudText Typo="Typo.h6">Citus Web Shell</MudText>
+            <MudSpacer />
+            <WebShellTopBar />
+        </MudAppBar>
+
+        <MudDrawer Open="true" Elevation="1" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md" Class="ws-drawer">
+            <div class="ws-brand">
+                <div class="ws-brand__eyebrow">Citus</div>
+                <div class="ws-brand__title">Web Shell</div>
+                <div class="ws-brand__subtitle">CompanyAccess-backed business workspace</div>
+            </div>
+            <NavMenu />
+        </MudDrawer>
+
+        <MudMainContent Class="ws-main">
+            @Body
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code
+{
+    private bool _isShellReady;
+
+    private bool IsLoginRoute =>
+        NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
+            .StartsWith("login", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
+            if (!string.IsNullOrWhiteSpace(storedToken))
+            {
+                var session = await SessionClient.ResumeSessionAsync(storedToken);
+                if (session is not null)
+                {
+                    ShellState.ApplyAuthenticatedSession(storedToken, session.Context, session.ExpiresAtUtc);
+                }
+                else
+                {
+                    await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+                    ShellState.ClearAuthenticatedSession();
+                }
+            }
+            else
+            {
+                ShellState.ClearAuthenticatedSession();
+            }
+
+            _isShellReady = true;
+            StateHasChanged();
+        }
+
+        if (!_isShellReady)
+        {
+            return;
+        }
+
+        if (!ShellState.IsAuthenticated && !IsLoginRoute)
+        {
+            NavigationManager.NavigateTo("login", replace: true);
+        }
+        else if (ShellState.IsAuthenticated && IsLoginRoute)
+        {
+            NavigationManager.NavigateTo("/", replace: true);
+        }
+    }
+}

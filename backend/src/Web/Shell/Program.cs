@@ -1,3 +1,9 @@
+using Citus.Platform.Core.Abstractions;
+using Citus.Platform.Core.Accounts;
+using Citus.Platform.Core.Runtime;
+using Citus.Platform.Core.Services;
+using Citus.Platform.Infrastructure.Notifications;
+using Citus.Platform.Infrastructure.Persistence;
 using Connectors.FX.Frankfurter;
 using Engines.FX.FxRateLookup;
 using Engines.Numbering.JournalEntry;
@@ -15,11 +21,13 @@ using Modules.AP.VendorCurrency;
 using Modules.AR.CreditApplication;
 using Modules.AR.CustomerCurrency;
 using Modules.AR.ReceivePayment;
+using Modules.CompanyAccess.Memberships;
 using Modules.CompanyAccess.SessionContext;
 using Modules.CompanyAccess.SystemSetup;
 using Modules.Company.MultiBook;
 using Modules.Company.MultiCurrency;
 using Modules.GL.JournalEntry;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 using Web.Shell.Adapters;
@@ -34,6 +42,7 @@ using Web.Business.AR.CreditApplication;
 using Web.Business.AR.SettlementLookup;
 using Web.Business.AR.SettlementPosting;
 using Web.Business.AR.ReceivePayment;
+using Web.Business.CompanyAccess.Memberships;
 using Web.Business.GL.JournalEntry;
 using Web.Business.Reports.ReportType;
 using Web.Shell;
@@ -46,16 +55,24 @@ builder.Services
 
 builder.Services.AddMudServices();
 builder.Services.Configure<WebShellAppHostOptions>(builder.Configuration.GetSection(WebShellAppHostOptions.SectionName));
+builder.Services.Configure<PlatformEmailDeliveryOptions>(builder.Configuration.GetSection(PlatformEmailDeliveryOptions.SectionName));
 builder.Services.AddScoped<WebShellState>();
+builder.Services.AddScoped<WebShellSessionExpirationCoordinator>();
 builder.Services.AddScoped<ICompanyAccessShellSession, WebShellCompanyAccessShellSession>();
 builder.Services.AddTransient<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<PlatformProfileClient>(
+    (serviceProvider, client) =>
+    {
+        var navigationManager = serviceProvider.GetRequiredService<NavigationManager>();
+        client.BaseAddress = new Uri(navigationManager.BaseUri);
+    });
 builder.Services.AddHttpClient<WebShellBusinessSessionClient>(
         (serviceProvider, client) =>
         {
-            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
-            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+            var navigationManager = serviceProvider.GetRequiredService<NavigationManager>();
+            client.BaseAddress = new Uri(navigationManager.BaseUri);
         })
-    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+    ;
 builder.Services.AddHttpClient(
         "AccountingApi",
         (serviceProvider, client) =>
@@ -71,7 +88,28 @@ builder.Services.AddHttpClient<ShellAccountingDocumentReviewClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
         })
     .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<ShellAccountingDocumentBrowserClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<ShellOpenItemDrillDownClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<ShellOpenItemAdjustmentAccountMappingClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<ShellSourceDocumentDraftClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
@@ -107,6 +145,14 @@ var connectionString =
         "A PostgreSQL connection string is required. Configure ConnectionStrings:AccountingCore or CITUS_ACCOUNTING_DB.");
 
 builder.Services.AddSingleton(new PostgreSqlConnectionFactory(connectionString));
+builder.Services.AddSingleton(new PlatformPostgresConnectionFactory(connectionString));
+builder.Services.AddSingleton<SysAdminPasswordHasher>();
+builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
+builder.Services.AddSingleton<IPlatformBusinessSessionRepository, PostgresPlatformBusinessSessionRepository>();
+builder.Services.AddSingleton<IPlatformVerificationNotificationSender, SmtpPlatformVerificationNotificationSender>();
+builder.Services.AddSingleton<IPlatformAccountProfileRepository, PostgresPlatformAccountProfileRepository>();
+builder.Services.AddSingleton<IPlatformAccountProfileWorkflow, PlatformAccountProfileWorkflow>();
+builder.Services.AddSingleton<IPlatformNotificationReadinessWorkflow, PlatformNotificationReadinessWorkflow>();
 builder.Services.AddSingleton<IFxRateStore, PostgreSqlFxRateStore>();
 builder.Services.AddSingleton<IFxRateResolver, FxRateResolver>();
 builder.Services.AddSingleton<IFxRateSelectionService, FxRateSelectionService>();
@@ -118,6 +164,9 @@ builder.Services.AddSingleton<ICompanyBookPolicyStore, PostgreSqlCompanyBookPoli
 builder.Services.AddSingleton<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
 builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySessionContextStore>();
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
+builder.Services.AddSingleton<ICompanyMembershipPermissionStore, PostgreSqlCompanyMembershipPermissionStore>();
+builder.Services.AddSingleton<ICompanyMembershipPermissionWorkflow, CompanyMembershipPermissionWorkflow>();
+builder.Services.AddSingleton<ShellTaxCodeLookupService>();
 builder.Services.AddSingleton<ICustomerCurrencyStore, PostgreSqlCustomerCurrencyStore>();
 builder.Services.AddSingleton<ICustomerCurrencyWorkflow, CustomerCurrencyWorkflow>();
 builder.Services.AddSingleton<IReceivePaymentDraftPreparationStore, PostgreSqlReceivePaymentDraftPreparationStore>();
@@ -149,6 +198,7 @@ builder.Services.AddHttpClient<IFxProviderClient, FrankfurterRatesClient>(client
 });
 
 var app = builder.Build();
+var appHostOptions = app.Services.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
 
 app.UseStaticFiles();
 app.UseAntiforgery();
@@ -160,14 +210,22 @@ app.MapGet("/health", () => Results.Ok(new
     utc = DateTimeOffset.UtcNow
 }));
 
-app.MapRazorComponents<App>()
-    .AddAdditionalAssemblies(
-        typeof(ReceivePaymentPage).Assembly,
-        typeof(CreditApplicationPage).Assembly,
-        typeof(PayBillPage).Assembly,
-        typeof(VendorCreditApplicationPage).Assembly,
-        typeof(JournalEntryEditorPage).Assembly,
-        typeof(ReportTypeSelectorState).Assembly)
-    .AddInteractiveServerRenderMode();
+app.MapBusinessSessionApi();
+app.MapPlatformProfileApi();
+app.MapPlatformNotificationApi();
+
+if (!appHostOptions.DisableRazorComponents)
+{
+    app.MapRazorComponents<App>()
+        .AddAdditionalAssemblies(
+            typeof(ReceivePaymentPage).Assembly,
+            typeof(CreditApplicationPage).Assembly,
+            typeof(PayBillPage).Assembly,
+            typeof(VendorCreditApplicationPage).Assembly,
+            typeof(JournalEntryEditorPage).Assembly,
+            typeof(CompanyMembershipPermissionsPage).Assembly,
+            typeof(ReportTypeSelectorState).Assembly)
+        .AddInteractiveServerRenderMode();
+}
 
 app.Run();

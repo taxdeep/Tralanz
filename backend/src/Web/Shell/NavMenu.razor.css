@@ -24,3 +24,10 @@
     background: linear-gradient(180deg, rgba(122, 182, 217, 0.18), rgba(111, 207, 151, 0.12));
     color: #f4f8fb;
 }
+
+.ws-nav__link--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.03);
+    color: #94a8b8;
+}

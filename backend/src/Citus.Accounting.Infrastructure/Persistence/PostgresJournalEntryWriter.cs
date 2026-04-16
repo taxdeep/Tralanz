@@ -478,6 +478,54 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                   and id = @source_id
                                   and status = 'draft';
                                 """,
+            "ar_open_item_adjustment" or "ap_open_item_adjustment" => """
+                                                                      insert into audit_logs (
+                                                                        id,
+                                                                        company_id,
+                                                                        actor_type,
+                                                                        actor_id,
+                                                                        entity_type,
+                                                                        entity_id,
+                                                                        action,
+                                                                        payload
+                                                                      )
+                                                                      select
+                                                                        @claim_id,
+                                                                        @company_id,
+                                                                        'system',
+                                                                        null,
+                                                                        'open_item_adjustment_request',
+                                                                        @source_id,
+                                                                        'open_item_adjustment_execution_requested',
+                                                                        jsonb_build_object(
+                                                                          'RequestId', @source_id::text,
+                                                                          'OpenItemId', requested.payload ->> 'OpenItemId',
+                                                                          'OpenItemType', requested.payload ->> 'OpenItemType',
+                                                                          'SourceType', @source_type,
+                                                                          'PostedAt', @posted_at
+                                                                        )
+                                                                      from audit_logs requested
+                                                                      where requested.company_id = @company_id
+                                                                        and requested.entity_type = 'open_item_adjustment_request'
+                                                                        and requested.entity_id = @source_id
+                                                                        and requested.action = 'open_item_adjustment_requested'
+                                                                      and exists (
+                                                                        select 1
+                                                                        from audit_logs submitted
+                                                                        where submitted.company_id = @company_id
+                                                                          and submitted.entity_type = 'open_item_adjustment_request'
+                                                                          and submitted.entity_id = @source_id
+                                                                          and submitted.action = 'open_item_adjustment_request_submitted'
+                                                                      )
+                                                                      and not exists (
+                                                                        select 1
+                                                                        from audit_logs completed
+                                                                        where completed.company_id = @company_id
+                                                                          and completed.entity_type = 'open_item_adjustment_request'
+                                                                          and completed.entity_id = @source_id
+                                                                          and completed.action = 'open_item_adjustment_execution_completed'
+                                                                      );
+                                                                      """,
             _ => throw new NotSupportedException(
                 $"Source type '{sourceType}' is not supported for source status updates.")
         };
@@ -487,6 +535,8 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         command.Parameters.AddWithValue("posted_at", postedAt);
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("source_id", sourceId);
+        command.Parameters.AddWithValue("source_type", sourceType);
+        command.Parameters.AddWithValue("claim_id", Guid.NewGuid());
 
         var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken);
         return affectedRows == 1;

@@ -1,0 +1,99 @@
+@page "/login"
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject WebShellState ShellState
+
+<PageTitle>Login | Citus Web Shell</PageTitle>
+
+<MudPaper Class="pa-6 mt-10 ws-login">
+    <MudStack Spacing="2">
+        <MudText Typo="Typo.overline" Class="text-secondary">Business App</MudText>
+        <MudText Typo="Typo.h4">Sign In</MudText>
+        <MudText Typo="Typo.body2" Class="text-secondary">
+            Platform account login followed by CompanyAccess-resolved active company context.
+        </MudText>
+    </MudStack>
+
+    <MudForm Class="mt-6" @ref="_form">
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_login"
+                          Label="Email or username"
+                          Variant="Variant.Outlined"
+                          Required="true"
+                          Immediate="true" />
+            <MudTextField @bind-Value="_password"
+                          Label="Password"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          Required="true" />
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="_isSubmitting"
+                       OnClick="SignInAsync">
+                @(_isSubmitting ? "Signing in..." : "Sign in")
+            </MudButton>
+        </MudStack>
+    </MudForm>
+</MudPaper>
+
+@code
+{
+    private MudForm? _form;
+    private string _login = string.Empty;
+    private string _password = string.Empty;
+    private bool _isSubmitting;
+
+    private async Task SignInAsync()
+    {
+        if (_form is not null)
+        {
+            await _form.ValidateAsync();
+            if (!_form.IsValid)
+            {
+                return;
+            }
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var (result, error) = await SessionClient.SignInAsync(_login, _password);
+            if (result?.RequiresSecondFactor == true)
+            {
+                var availableFactors = result.AvailableSecondFactors.Count == 0
+                    ? "configured second factor"
+                    : string.Join(", ", result.AvailableSecondFactors);
+                Snackbar.Add(
+                    $"Primary authentication succeeded. MFA challenge is required before session issuance. Available factor(s): {availableFactors}.",
+                    Severity.Info);
+                return;
+            }
+
+            if (result is null || string.IsNullOrWhiteSpace(result.SessionToken) || result.Context is null)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(error)
+                        ? "Unable to sign in. Check account status, credentials, and company membership."
+                        : error,
+                    Severity.Warning);
+                return;
+            }
+
+            ShellState.ApplyAuthenticatedSession(result.SessionToken, result.Context, result.ExpiresAtUtc);
+            await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", result.SessionToken);
+
+            Snackbar.Add(
+                $"Signed in as {result.Context.User.DisplayName} in {result.Context.ActiveCompany.CompanyName}.",
+                Severity.Success);
+            NavigationManager.NavigateTo("/");
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

@@ -161,7 +161,8 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         decimal unitPrice,
         decimal lineAmount,
         decimal taxAmount,
-        Guid? payableTaxAccountId)
+        Guid? payableTaxAccountId,
+        Guid? taxCodeId = null)
     {
         if (lineNumber <= 0)
         {
@@ -201,6 +202,7 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         LineAmount = lineAmount;
         TaxAmount = taxAmount;
         PayableTaxAccountId = payableTaxAccountId;
+        TaxCodeId = taxCodeId;
     }
 
     public int LineNumber { get; }
@@ -218,6 +220,8 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
     public decimal TaxAmount { get; }
 
     public Guid? PayableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
 }
 
 public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
@@ -327,7 +331,8 @@ public sealed record CreditNoteDocumentLine : IPostingDocumentLine
         decimal unitPrice,
         decimal lineAmount,
         decimal taxAmount,
-        Guid? payableTaxAccountId)
+        Guid? payableTaxAccountId,
+        Guid? taxCodeId = null)
     {
         if (lineNumber <= 0)
         {
@@ -367,6 +372,7 @@ public sealed record CreditNoteDocumentLine : IPostingDocumentLine
         LineAmount = lineAmount;
         TaxAmount = taxAmount;
         PayableTaxAccountId = payableTaxAccountId;
+        TaxCodeId = taxCodeId;
     }
 
     public int LineNumber { get; }
@@ -384,6 +390,8 @@ public sealed record CreditNoteDocumentLine : IPostingDocumentLine
     public decimal TaxAmount { get; }
 
     public Guid? PayableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
 }
 
 public sealed class CreditNoteDocument : IPostingDocument, IOpenItemDocument
@@ -492,7 +500,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         decimal lineAmount,
         decimal taxAmount,
         bool isTaxRecoverable,
-        Guid? recoverableTaxAccountId)
+        Guid? recoverableTaxAccountId,
+        Guid? taxCodeId = null)
     {
         if (lineNumber <= 0)
         {
@@ -526,6 +535,7 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         TaxAmount = taxAmount;
         IsTaxRecoverable = isTaxRecoverable;
         RecoverableTaxAccountId = recoverableTaxAccountId;
+        TaxCodeId = taxCodeId;
     }
 
     public int LineNumber { get; }
@@ -541,6 +551,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
     public bool IsTaxRecoverable { get; }
 
     public Guid? RecoverableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
 }
 
 public sealed class BillDocument : IPostingDocument, IOpenItemDocument
@@ -649,7 +661,8 @@ public sealed record VendorCreditDocumentLine : IPostingDocumentLine
         decimal lineAmount,
         decimal taxAmount,
         bool isTaxRecoverable,
-        Guid? recoverableTaxAccountId)
+        Guid? recoverableTaxAccountId,
+        Guid? taxCodeId = null)
     {
         if (lineNumber <= 0)
         {
@@ -683,6 +696,7 @@ public sealed record VendorCreditDocumentLine : IPostingDocumentLine
         TaxAmount = taxAmount;
         IsTaxRecoverable = isTaxRecoverable;
         RecoverableTaxAccountId = recoverableTaxAccountId;
+        TaxCodeId = taxCodeId;
     }
 
     public int LineNumber { get; }
@@ -698,6 +712,8 @@ public sealed record VendorCreditDocumentLine : IPostingDocumentLine
     public bool IsTaxRecoverable { get; }
 
     public Guid? RecoverableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
 }
 
 public sealed class VendorCreditDocument : IPostingDocument, IOpenItemDocument
@@ -1512,6 +1528,200 @@ public sealed class PayBillDocument : IPostingDocument, ISettlementDocument
         }
 
         return accountId.Value;
+    }
+}
+
+public sealed record OpenItemAdjustmentDocumentLine : IPostingDocumentLine
+{
+    public OpenItemAdjustmentDocumentLine(
+        int lineNumber,
+        Guid targetOpenItemId,
+        string targetOpenItemType,
+        string targetBalanceSide,
+        Guid controlAccountId,
+        Guid offsetAccountId,
+        Guid partyId,
+        string description,
+        decimal adjustmentAmountTx,
+        decimal adjustmentAmountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (targetOpenItemId == Guid.Empty)
+        {
+            throw new ArgumentException("Target open item id is required.", nameof(targetOpenItemId));
+        }
+
+        var normalizedOpenItemType = string.IsNullOrWhiteSpace(targetOpenItemType)
+            ? throw new ArgumentException("Target open item type is required.", nameof(targetOpenItemType))
+            : targetOpenItemType.Trim().ToLowerInvariant();
+        if (normalizedOpenItemType is not ("ar_open_item" or "ap_open_item"))
+        {
+            throw new InvalidOperationException("Open item adjustment target type is not supported.");
+        }
+
+        var normalizedBalanceSide = string.IsNullOrWhiteSpace(targetBalanceSide)
+            ? throw new ArgumentException("Target balance side is required.", nameof(targetBalanceSide))
+            : targetBalanceSide.Trim().ToLowerInvariant();
+        if (normalizedBalanceSide is not ("debit" or "credit"))
+        {
+            throw new InvalidOperationException("Open item adjustment balance side is not supported.");
+        }
+
+        if (controlAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Control account id is required.", nameof(controlAccountId));
+        }
+
+        if (offsetAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Offset account id is required.", nameof(offsetAccountId));
+        }
+
+        if (partyId == Guid.Empty)
+        {
+            throw new ArgumentException("Party id is required.", nameof(partyId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (adjustmentAmountTx <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(adjustmentAmountTx), "Adjustment transaction amount must be greater than zero.");
+        }
+
+        if (adjustmentAmountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(adjustmentAmountBase), "Adjustment base amount must be greater than zero.");
+        }
+
+        LineNumber = lineNumber;
+        TargetOpenItemId = targetOpenItemId;
+        TargetOpenItemType = normalizedOpenItemType;
+        TargetBalanceSide = normalizedBalanceSide;
+        ControlAccountId = controlAccountId;
+        OffsetAccountId = offsetAccountId;
+        PartyId = partyId;
+        Description = description.Trim();
+        AdjustmentAmountTx = adjustmentAmountTx;
+        AdjustmentAmountBase = adjustmentAmountBase;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid TargetOpenItemId { get; }
+
+    public string TargetOpenItemType { get; }
+
+    public string TargetBalanceSide { get; }
+
+    public Guid ControlAccountId { get; }
+
+    public Guid OffsetAccountId { get; }
+
+    public Guid PartyId { get; }
+
+    public string Description { get; }
+
+    public decimal AdjustmentAmountTx { get; }
+
+    public decimal AdjustmentAmountBase { get; }
+
+    public string ControlRole => TargetOpenItemType == "ar_open_item" ? "accounts_receivable" : "accounts_payable";
+
+    public bool ReducesDebitBalance => TargetBalanceSide == "debit";
+}
+
+public sealed class OpenItemAdjustmentDocument : IPostingDocument
+{
+    public OpenItemAdjustmentDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string sourceType,
+        string status,
+        DateOnly documentDate,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        string adjustmentType,
+        IEnumerable<OpenItemAdjustmentDocumentLine> lines,
+        string? memo = null)
+    {
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        SourceType = NormalizeSourceType(sourceType);
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        AdjustmentType = NormalizeAdjustmentType(adjustmentType);
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Open item adjustment document must contain at least one line.");
+        }
+
+        AdjustmentLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType { get; }
+
+    public string Status { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public string AdjustmentType { get; }
+
+    public string? Memo { get; }
+
+    public IReadOnlyList<OpenItemAdjustmentDocumentLine> AdjustmentLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    private static string NormalizeSourceType(string sourceType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(sourceType)
+            ? throw new ArgumentException("Source type is required.", nameof(sourceType))
+            : sourceType.Trim().ToLowerInvariant();
+
+        return normalized is "ar_open_item_adjustment" or "ap_open_item_adjustment"
+            ? normalized
+            : throw new InvalidOperationException("Open item adjustment source type is not supported.");
+    }
+
+    private static string NormalizeAdjustmentType(string adjustmentType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(adjustmentType)
+            ? throw new ArgumentException("Adjustment type is required.", nameof(adjustmentType))
+            : adjustmentType.Trim().ToLowerInvariant();
+
+        return normalized is "write_off" or "small_balance_adjustment"
+            ? normalized
+            : throw new InvalidOperationException("Open item adjustment type is not supported.");
     }
 }
 

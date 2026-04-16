@@ -1,0 +1,83 @@
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject WebShellState ShellState
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined">
+        @PrimaryRole
+    </MudChip>
+
+    @if (ShellState.IsCompanyReadOnly)
+    {
+        <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled">
+            Read-only company
+        </MudChip>
+    }
+
+    <MudStack Spacing="0">
+        <MudText Typo="Typo.caption" Class="text-secondary">User</MudText>
+        <MudText Typo="Typo.body2">@ShellState.User.DisplayName</MudText>
+    </MudStack>
+
+    <MudStack Spacing="0" Style="min-width: 260px;">
+        <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
+        <MudSelect T="Guid"
+                   Dense="true"
+                   Disabled="@IsCompanySwitcherDisabled"
+                   Value="@SelectedCompanyId"
+                   ValueChanged="OnCompanyChangedAsync">
+            @foreach (var company in ShellState.AvailableCompanies)
+            {
+                <MudSelectItem T="Guid" Value="@company.Id">
+                    @company.CompanyName (@company.CompanyCode)@(company.IsReadOnly ? " | read-only" : string.Empty)
+                </MudSelectItem>
+            }
+        </MudSelect>
+    </MudStack>
+
+    <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="SignOutAsync">
+        Sign out
+    </MudButton>
+</MudStack>
+
+@code
+{
+    private string PrimaryRole => ShellState.User.Roles.FirstOrDefault() ?? "user";
+
+    private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
+
+    private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
+
+    private async Task OnCompanyChangedAsync(Guid companyId)
+    {
+        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.Id)
+        {
+            return;
+        }
+
+        var (result, error) = await SessionClient.SwitchActiveCompanyAsync(ShellState.SessionToken, companyId);
+        if (result is null)
+        {
+            Snackbar.Add(
+                string.IsNullOrWhiteSpace(error)
+                    ? "Unable to switch the active company."
+                    : error,
+                Severity.Warning);
+            return;
+        }
+
+        ShellState.ApplyAuthenticatedSession(ShellState.SessionToken, result.Context, result.ExpiresAtUtc);
+        Snackbar.Add($"Active company switched to {result.Context.ActiveCompany.CompanyName}.", Severity.Success);
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task SignOutAsync()
+    {
+        await SessionClient.SignOutAsync(ShellState.SessionToken);
+        await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+        ShellState.ClearAuthenticatedSession();
+        NavigationManager.NavigateTo("login", forceLoad: true);
+    }
+}

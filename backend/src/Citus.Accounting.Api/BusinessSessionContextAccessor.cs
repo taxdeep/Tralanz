@@ -4,8 +4,11 @@ public sealed class BusinessSessionContextAccessor
 {
     public BusinessSessionContext? Current { get; private set; }
 
-    public void Set(BusinessSessionContext context)
+    public BusinessSessionResolution? CurrentResolution { get; private set; }
+
+    public void Set(BusinessSessionContext context, BusinessSessionResolution? resolution)
     {
         Current = context;
+        CurrentResolution = resolution;
     }
 }
