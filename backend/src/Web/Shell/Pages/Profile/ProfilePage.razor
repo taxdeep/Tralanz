@@ -289,31 +289,31 @@
     {
         _errorText = null;
         await RefreshShellStateAsync();
-        var (profile, error) = await ProfileClient.GetAsync(CancellationToken.None);
-        var (notificationReadiness, notificationError) = await ProfileClient.GetNotificationReadinessAsync(CancellationToken.None);
-        if (!string.IsNullOrWhiteSpace(error))
+        var profileResult = await ProfileClient.GetAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(profileResult, CancellationToken.None))
         {
-            if (await HandleAuthenticationErrorAsync(error))
-            {
-                return;
-            }
-
-            _errorText = error;
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(notificationError))
+        var notificationResult = await ProfileClient.GetNotificationReadinessAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(notificationResult, CancellationToken.None))
         {
-            if (await HandleAuthenticationErrorAsync(notificationError))
-            {
-                return;
-            }
-
-            _errorText = notificationError;
+            return;
         }
 
-        _profile = profile;
-        _notificationReadiness = notificationReadiness;
+        if (!string.IsNullOrWhiteSpace(profileResult.ErrorMessage))
+        {
+            _errorText = profileResult.ErrorMessage;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(notificationResult.ErrorMessage))
+        {
+            _errorText = notificationResult.ErrorMessage;
+        }
+
+        _profile = profileResult.Value;
+        _notificationReadiness = notificationResult.Value;
         if (_profile is not null)
         {
             _displayName = _profile.DisplayName;
@@ -325,18 +325,18 @@
         await RunBusyAsync(
             async () =>
             {
-                var (profile, error) = await ProfileClient.SaveDisplayNameAsync(_displayName, CancellationToken.None);
-                if (!string.IsNullOrWhiteSpace(error))
+                var result = await ProfileClient.SaveDisplayNameAsync(_displayName, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
                 {
-                    if (await HandleAuthenticationErrorAsync(error))
-                    {
-                        return;
-                    }
-
-                    throw new InvalidOperationException(error);
+                    return;
                 }
 
-                _profile = profile;
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
                 await RefreshShellStateAsync();
                 Snackbar.Add("Display name saved.", Severity.Success);
             });
@@ -347,26 +347,22 @@
         await RunBusyAsync(
             async () =>
             {
-                var (result, error) = await ProfileClient.RequestEmailChangeAsync(_newEmail, CancellationToken.None);
-                if (!string.IsNullOrWhiteSpace(error))
+                var result = await ProfileClient.RequestEmailChangeAsync(_newEmail, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
                 {
-                    if (await HandleAuthenticationErrorAsync(error))
-                    {
-                        return;
-                    }
-
-                    throw new InvalidOperationException(error);
+                    return;
                 }
 
-                if (result is null)
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
                 {
-                    throw new InvalidOperationException("Platform account was not found.");
+                    throw new InvalidOperationException(result.ErrorMessage);
                 }
 
-                _profile = result.Profile;
+                var value = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _profile = value.Profile;
                 _newEmail = string.Empty;
                 Snackbar.Add(
-                    $"Email change code sent to {result.MaskedDestination}. Expires {result.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
+                    $"Email change code sent to {value.MaskedDestination}. Expires {value.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
                     Severity.Success);
             });
     }
@@ -376,23 +372,18 @@
         await RunBusyAsync(
             async () =>
             {
-                var (result, error) = await ProfileClient.ConfirmEmailChangeAsync(_emailChangeCode, CancellationToken.None);
-                if (!string.IsNullOrWhiteSpace(error))
+                var result = await ProfileClient.ConfirmEmailChangeAsync(_emailChangeCode, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
                 {
-                    if (await HandleAuthenticationErrorAsync(error))
-                    {
-                        return;
-                    }
-
-                    throw new InvalidOperationException(error);
+                    return;
                 }
 
-                if (result is null)
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
                 {
-                    throw new InvalidOperationException("Platform account was not found.");
+                    throw new InvalidOperationException(result.ErrorMessage);
                 }
 
-                _profile = result.Profile;
+                _profile = result.Value?.Profile ?? throw new InvalidOperationException("Platform account was not found.");
                 _emailChangeCode = string.Empty;
                 await RefreshShellStateAsync();
                 Snackbar.Add("Email change confirmed.", Severity.Success);
@@ -409,27 +400,23 @@
                     throw new InvalidOperationException("New password and confirmation must match.");
                 }
 
-                var (result, error) = await ProfileClient.RequestPasswordChangeAsync(_newPassword, CancellationToken.None);
-                if (!string.IsNullOrWhiteSpace(error))
+                var result = await ProfileClient.RequestPasswordChangeAsync(_newPassword, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
                 {
-                    if (await HandleAuthenticationErrorAsync(error))
-                    {
-                        return;
-                    }
-
-                    throw new InvalidOperationException(error);
+                    return;
                 }
 
-                if (result is null)
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
                 {
-                    throw new InvalidOperationException("Platform account was not found.");
+                    throw new InvalidOperationException(result.ErrorMessage);
                 }
 
-                _profile = result.Profile;
+                var value = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _profile = value.Profile;
                 _newPassword = string.Empty;
                 _confirmPassword = string.Empty;
                 Snackbar.Add(
-                    $"Password change code sent to {result.MaskedDestination}. Expires {result.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
+                    $"Password change code sent to {value.MaskedDestination}. Expires {value.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
                     Severity.Success);
             });
     }
@@ -439,23 +426,18 @@
         await RunBusyAsync(
             async () =>
             {
-                var (result, error) = await ProfileClient.ConfirmPasswordChangeAsync(_passwordChangeCode, CancellationToken.None);
-                if (!string.IsNullOrWhiteSpace(error))
+                var result = await ProfileClient.ConfirmPasswordChangeAsync(_passwordChangeCode, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
                 {
-                    if (await HandleAuthenticationErrorAsync(error))
-                    {
-                        return;
-                    }
-
-                    throw new InvalidOperationException(error);
+                    return;
                 }
 
-                if (result is null)
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
                 {
-                    throw new InvalidOperationException("Platform account was not found.");
+                    throw new InvalidOperationException(result.ErrorMessage);
                 }
 
-                _profile = result.Profile;
+                _profile = result.Value?.Profile ?? throw new InvalidOperationException("Platform account was not found.");
                 _passwordChangeCode = string.Empty;
                 await RefreshShellStateAsync();
                 Snackbar.Add("Password change confirmed.", Severity.Success);
@@ -485,20 +467,6 @@
         {
             _isBusy = false;
         }
-    }
-
-    private async Task<bool> HandleAuthenticationErrorAsync(string error)
-    {
-        if (!string.Equals(error, Web.Shell.Services.PlatformProfileClient.AuthenticationRequiredError, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
-        ShellState.ClearAuthenticatedSession();
-        Snackbar.Add("Your business session has expired. Please sign in again.", Severity.Warning);
-        NavigationManager.NavigateTo("login", replace: true);
-        return true;
     }
 
     private async Task RefreshShellStateAsync()

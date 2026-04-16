@@ -12,42 +12,21 @@ public sealed class PlatformProfileClient(
     WebShellState shellState,
     ILogger<PlatformProfileClient> logger)
 {
-    public const string AuthenticationRequiredError = "Business sign-in is required.";
-
-    public Task<(PlatformAccountProfileSummary? Result, string? Error)> GetAsync(
+    public Task<WebShellAuthenticatedApiResult<PlatformAccountProfileSummary>> GetAsync(
         CancellationToken cancellationToken = default) =>
         SendAsync<PlatformAccountProfileSummary>(
             static request => request.Method = HttpMethod.Get,
             "/api/platform/profile",
             cancellationToken);
 
-    public async Task<(NotificationReadinessSummary? Result, string? Error)> GetNotificationReadinessAsync(
+    public Task<WebShellAuthenticatedApiResult<NotificationReadinessSummary>> GetNotificationReadinessAsync(
         CancellationToken cancellationToken = default)
-    {
-        if (!shellState.IsAuthenticated || string.IsNullOrWhiteSpace(shellState.SessionToken))
-        {
-            return (null, AuthenticationRequiredError);
-        }
+        => SendAsync<NotificationReadinessSummary>(
+            static request => request.Method = HttpMethod.Get,
+            "/api/platform/notification-readiness",
+            cancellationToken);
 
-        try
-        {
-            using var request = CreateRequest(HttpMethod.Get, "/api/platform/notification-readiness");
-            using var response = await httpClient.SendAsync(request, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                return (await response.Content.ReadFromJsonAsync<NotificationReadinessSummary>(cancellationToken), null);
-            }
-
-            return (null, await ReadErrorAsync(response, cancellationToken));
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Unable to load platform notification readiness.");
-            return (null, "Unable to reach the platform notification readiness API.");
-        }
-    }
-
-    public Task<(PlatformAccountProfileSummary? Result, string? Error)> SaveDisplayNameAsync(
+    public Task<WebShellAuthenticatedApiResult<PlatformAccountProfileSummary>> SaveDisplayNameAsync(
         string displayName,
         CancellationToken cancellationToken = default) =>
         SendAsync<PlatformAccountProfileSummary>(
@@ -56,7 +35,7 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new SaveDisplayNameRequest(displayName));
 
-    public Task<(PlatformProfileChangeRequestResult? Result, string? Error)> RequestEmailChangeAsync(
+    public Task<WebShellAuthenticatedApiResult<PlatformProfileChangeRequestResult>> RequestEmailChangeAsync(
         string newEmail,
         CancellationToken cancellationToken = default) =>
         SendAsync<PlatformProfileChangeRequestResult>(
@@ -65,7 +44,7 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new RequestEmailChangeRequest(newEmail));
 
-    public Task<(PlatformProfileChangeConfirmationResult? Result, string? Error)> ConfirmEmailChangeAsync(
+    public Task<WebShellAuthenticatedApiResult<PlatformProfileChangeConfirmationResult>> ConfirmEmailChangeAsync(
         string verificationCode,
         CancellationToken cancellationToken = default) =>
         SendAsync<PlatformProfileChangeConfirmationResult>(
@@ -74,7 +53,7 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new ConfirmVerificationRequest(verificationCode));
 
-    public Task<(PlatformProfileChangeRequestResult? Result, string? Error)> RequestPasswordChangeAsync(
+    public Task<WebShellAuthenticatedApiResult<PlatformProfileChangeRequestResult>> RequestPasswordChangeAsync(
         string newPassword,
         CancellationToken cancellationToken = default) =>
         SendAsync<PlatformProfileChangeRequestResult>(
@@ -83,7 +62,7 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new RequestPasswordChangeRequest(newPassword));
 
-    public Task<(PlatformProfileChangeConfirmationResult? Result, string? Error)> ConfirmPasswordChangeAsync(
+    public Task<WebShellAuthenticatedApiResult<PlatformProfileChangeConfirmationResult>> ConfirmPasswordChangeAsync(
         string verificationCode,
         CancellationToken cancellationToken = default) =>
         SendAsync<PlatformProfileChangeConfirmationResult>(
@@ -92,7 +71,7 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new ConfirmVerificationRequest(verificationCode));
 
-    private async Task<(TResult? Result, string? Error)> SendAsync<TResult>(
+    private async Task<WebShellAuthenticatedApiResult<TResult>> SendAsync<TResult>(
         Action<HttpRequestMessage> configureRequest,
         string requestUri,
         CancellationToken cancellationToken,
@@ -101,7 +80,7 @@ public sealed class PlatformProfileClient(
     {
         if (!shellState.IsAuthenticated || string.IsNullOrWhiteSpace(shellState.SessionToken))
         {
-            return (null, AuthenticationRequiredError);
+            return WebShellAuthenticatedApiResult<TResult>.RequiresAuthentication();
         }
 
         try
@@ -116,15 +95,16 @@ public sealed class PlatformProfileClient(
             using var response = await httpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                return (await response.Content.ReadFromJsonAsync<TResult>(cancellationToken), null);
+                return WebShellAuthenticatedApiResult<TResult>.Success(
+                    await response.Content.ReadFromJsonAsync<TResult>(cancellationToken));
             }
 
-            return (null, await ReadErrorAsync(response, cancellationToken));
+            return await ReadErrorAsync<TResult>(response, cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Unable to complete platform profile request against {RequestUri}.", requestUri);
-            return (null, "Unable to reach the platform profile API.");
+            return WebShellAuthenticatedApiResult<TResult>.Failure("Unable to reach the platform profile API.");
         }
     }
 
@@ -139,27 +119,29 @@ public sealed class PlatformProfileClient(
         return request;
     }
 
-    private static async Task<string> ReadErrorAsync(
+    private static async Task<WebShellAuthenticatedApiResult<TResult>> ReadErrorAsync<TResult>(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
+        where TResult : class
     {
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            return AuthenticationRequiredError;
+            return WebShellAuthenticatedApiResult<TResult>.RequiresAuthentication();
         }
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return "Platform account was not found.";
+            return WebShellAuthenticatedApiResult<TResult>.NotFound("Platform account was not found.");
         }
 
         var error = await response.Content.ReadFromJsonAsync<PlatformProfileApiError>(cancellationToken);
         if (!string.IsNullOrWhiteSpace(error?.Error))
         {
-            return error.Error;
+            return WebShellAuthenticatedApiResult<TResult>.Failure(error.Error);
         }
 
-        return $"Platform profile request returned HTTP {(int)response.StatusCode}.";
+        return WebShellAuthenticatedApiResult<TResult>.Failure(
+            $"Platform profile request returned HTTP {(int)response.StatusCode}.");
     }
 
     private sealed record SaveDisplayNameRequest(string DisplayName);
