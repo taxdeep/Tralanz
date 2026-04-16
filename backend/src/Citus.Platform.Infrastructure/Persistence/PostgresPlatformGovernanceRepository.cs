@@ -19,6 +19,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     [
         "company_status_changed",
         "account_status_changed",
+        "account_mfa_reset",
         "profile_display_name_saved",
         "email_change_requested",
         "email_change_dispatched",
@@ -56,6 +57,30 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             alter table users
               add column if not exists security_stamp text not null default gen_random_uuid()::text;
+
+            alter table users
+              add column if not exists mfa_mode text not null default 'none';
+
+            create table if not exists business_session_mfa_challenges (
+              id uuid primary key default gen_random_uuid(),
+              user_id uuid not null references users(id) on delete cascade,
+              active_company_id uuid not null,
+              membership_id uuid not null,
+              role text not null,
+              permissions jsonb not null default '[]'::jsonb,
+              company_status text not null,
+              factor text not null,
+              destination text not null,
+              code_hash text not null,
+              expires_at timestamptz not null,
+              consumed_at timestamptz,
+              failed_attempts integer not null default 0,
+              created_at timestamptz not null default now(),
+              constraint business_session_mfa_challenges_role_chk check (role in ('owner', 'user')),
+              constraint business_session_mfa_challenges_permissions_array_chk check (jsonb_typeof(permissions) = 'array'),
+              constraint business_session_mfa_challenges_company_status_chk check (company_status in ('active', 'inactive', 'suspended', 'archived')),
+              constraint business_session_mfa_challenges_factor_chk check (factor in ('email_code'))
+            );
 
             create table if not exists account_verification_codes (
               id uuid primary key default gen_random_uuid(),
@@ -131,6 +156,10 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create index if not exists idx_account_verification_codes_active
               on account_verification_codes (user_id, purpose, expires_at desc)
+              where consumed_at is null;
+
+            create index if not exists idx_business_session_mfa_challenges_active
+              on business_session_mfa_challenges (user_id, factor, expires_at desc)
               where consumed_at is null;
 
             create index if not exists idx_platform_notification_dispatches_status
@@ -574,6 +603,90 @@ public sealed class PostgresPlatformGovernanceRepository(
             $"Password reset delivery failed. {sendResult.FailureMessage}");
     }
 
+    public async Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
+        Guid accountId,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReason = NormalizeReason(reason, "MFA reset by SysAdmin.");
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadAccountAsync(connection, transaction, accountId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var revokedChallengeCount = await RevokeActiveMfaChallengesAsync(
+            connection,
+            transaction,
+            accountId,
+            cancellationToken);
+
+        var previousMfaMode = NormalizeMfaMode(current.MfaMode);
+        if (!string.Equals(previousMfaMode, "none", StringComparison.Ordinal) || revokedChallengeCount > 0)
+        {
+            await using (var update = connection.CreateCommand())
+            {
+                update.Transaction = transaction;
+                update.CommandText =
+                    """
+                    update users
+                    set mfa_mode = 'none',
+                        security_stamp = gen_random_uuid()::text,
+                        updated_at = now()
+                    where id = @account_id;
+                    """;
+                update.Parameters.AddWithValue("account_id", accountId);
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await InsertAuditAsync(
+                connection,
+                transaction,
+                companyId: null,
+                sysAdminAccountId,
+                "platform_account",
+                accountId,
+                "account_mfa_reset",
+                """
+                jsonb_build_object(
+                  'previous_mfa_mode', @previous_mfa_mode,
+                  'mfa_mode', 'none',
+                  'revoked_challenge_count', @revoked_challenge_count,
+                  'reason', @reason
+                )
+                """,
+                command =>
+                {
+                    command.Parameters.AddWithValue("previous_mfa_mode", previousMfaMode);
+                    command.Parameters.AddWithValue("revoked_challenge_count", revokedChallengeCount);
+                    command.Parameters.AddWithValue("reason", normalizedReason);
+                },
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AccountMfaResetGovernanceResult
+        {
+            AccountId = accountId,
+            Email = current.Email,
+            Username = current.Username,
+            PreviousMfaMode = previousMfaMode,
+            MfaMode = "none",
+            RevokedChallengeCount = revokedChallengeCount,
+            Reason = normalizedReason,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
+    }
+
     private static async Task<CompanyRecord?> ReadCompanyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -614,7 +727,7 @@ public sealed class PostgresPlatformGovernanceRepository(
         command.Transaction = transaction;
         command.CommandText =
             """
-            select id, email, coalesce(username, '') as username, status
+            select id, email, coalesce(username, '') as username, status, mfa_mode
             from users
             where id = @account_id
             limit 1;
@@ -631,7 +744,37 @@ public sealed class PostgresPlatformGovernanceRepository(
             reader.GetGuid(reader.GetOrdinal("id")),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("username")).Trim(),
-            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant());
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+            NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))));
+    }
+
+    private static async Task<int> RevokeActiveMfaChallengesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            with deleted as (
+              delete from business_session_mfa_challenges
+              where user_id = @account_id
+                and consumed_at is null
+              returning 1
+            )
+            select count(*)
+            from deleted;
+            """;
+        command.Parameters.AddWithValue("account_id", accountId);
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        return scalar switch
+        {
+            int count => count,
+            long longCount => (int)longCount,
+            _ => 0
+        };
     }
 
     private static async Task<Guid> InsertAuditAsync(
@@ -805,6 +948,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                 ReadString(payload, "previous_status"),
                 ReadString(payload, "status")),
             "account_status_changed" => BuildAccountStatusDetail(payload),
+            "account_mfa_reset" => BuildAccountMfaResetDetail(payload),
             "email_change_requested" => BuildPasswordResetDetail(payload),
             "email_change_dispatched" => BuildPasswordResetDeliveryOutcomeDetail(payload),
             "email_change_dispatch_failed" => BuildPasswordResetDeliveryOutcomeDetail(payload),
@@ -862,6 +1006,23 @@ public sealed class PostgresPlatformGovernanceRepository(
             : $"{detail} | locked until {lockedUntil}";
     }
 
+    private static string BuildAccountMfaResetDetail(JsonElement payload)
+    {
+        var detail = BuildTransitionDetail(
+            ReadString(payload, "previous_mfa_mode"),
+            ReadString(payload, "mfa_mode"));
+        var revokedChallengeCount = ReadString(payload, "revoked_challenge_count");
+
+        if (string.IsNullOrWhiteSpace(revokedChallengeCount))
+        {
+            return detail;
+        }
+
+        return string.IsNullOrWhiteSpace(detail)
+            ? $"revoked challenges: {revokedChallengeCount}"
+            : $"{detail} | revoked challenges: {revokedChallengeCount}";
+    }
+
     private static string BuildPasswordResetDetail(JsonElement payload)
     {
         var deliveryStatus = ReadString(payload, "delivery_status");
@@ -911,6 +1072,12 @@ public sealed class PostgresPlatformGovernanceRepository(
                 AddIfPresent(highlights, ReadString(payload, "previous_status"));
                 AddIfPresent(highlights, ReadString(payload, "status"));
                 AddIfPresent(highlights, ReadString(payload, "locked_until_utc"));
+                break;
+
+            case "account_mfa_reset":
+                AddIfPresent(highlights, ReadString(payload, "previous_mfa_mode"));
+                AddIfPresent(highlights, ReadString(payload, "mfa_mode"));
+                AddIfPresent(highlights, ReadString(payload, "revoked_challenge_count"));
                 break;
 
             case "password_reset_requested":
@@ -1174,6 +1341,11 @@ public sealed class PostgresPlatformGovernanceRepository(
         return value.Trim().ToLowerInvariant();
     }
 
+    private static string NormalizeMfaMode(string? mfaMode) =>
+        string.IsNullOrWhiteSpace(mfaMode)
+            ? "none"
+            : mfaMode.Trim().ToLowerInvariant();
+
     private static string NormalizeReason(string reason, string fallback) =>
         string.IsNullOrWhiteSpace(reason) ? fallback : reason.Trim();
 
@@ -1247,5 +1419,6 @@ public sealed class PostgresPlatformGovernanceRepository(
         Guid Id,
         string Email,
         string Username,
-        string Status);
+        string Status,
+        string MfaMode);
 }

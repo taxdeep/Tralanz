@@ -55,6 +55,7 @@ public sealed record class PlatformAuditEvent
             "password_reset_requested" => "Password Reset Requested",
             "password_reset_dispatched" => "Password Reset Delivered",
             "password_reset_dispatch_failed" => "Password Reset Delivery Failed",
+            "account_mfa_reset" => "Account MFA Reset",
             "membership_role_changed" => "Membership Role Changed",
             "membership_permissions_saved" => "Membership Permissions Saved",
             "sysadmin_first_account_created" => "First SysAdmin Created",

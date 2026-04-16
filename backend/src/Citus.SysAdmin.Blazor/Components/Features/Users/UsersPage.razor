@@ -116,6 +116,14 @@ else
                                        OnClick="@(() => RequestPasswordResetAsync(context))">
                                 Password reset
                             </MudButton>
+
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       Disabled="@IsAccountUpdating(context.Id)"
+                                       OnClick="@(() => ResetMfaAsync(context))">
+                                Reset MFA
+                            </MudButton>
                         }
                     </MudStack>
                 </MudTd>
@@ -328,6 +336,38 @@ else
 
             _notificationReadiness = await SysAdminControlClient.GetNotificationReadinessAsync();
             Snackbar.Add($"Password reset request recorded for {user.Username}.", Severity.Success);
+        }
+        finally
+        {
+            _accountUpdates.Remove(user.Id);
+        }
+    }
+
+    private async Task ResetMfaAsync(ManagedUserSummary user)
+    {
+        if (user.IsSysAdmin)
+        {
+            Snackbar.Add("SysAdmin accounts do not use the business-platform MFA reset flow.", Severity.Info);
+            return;
+        }
+
+        _accountUpdates.Add(user.Id);
+        var reason = $"SysAdmin reset business MFA for {user.Username}.";
+
+        try
+        {
+            var outcome = await SysAdminControlClient.ResetMfaAsync(user.Id, reason);
+            if (!outcome.Succeeded)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to reset MFA for {user.Username}."
+                        : outcome.Message,
+                    Severity.Warning);
+                return;
+            }
+
+            Snackbar.Add($"MFA reset applied for {user.Username}.", Severity.Success);
         }
         finally
         {

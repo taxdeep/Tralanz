@@ -254,6 +254,18 @@ public sealed class SysAdminControlClient(
             "Password reset request",
             cancellationToken);
 
+    public Task<CommandOutcome> ResetMfaAsync(
+        Guid accountId,
+        string reason,
+        CancellationToken cancellationToken = default) =>
+        SendGovernanceCommandWithOutcomeAsync(
+            static (client, request, token) => client.PostAsJsonAsync(request.Path, request.Payload, token),
+            new GovernanceCommandRequest(
+                $"control/accounts/{accountId}/mfa-reset",
+                new AccountMfaResetPayload(reason)),
+            "MFA reset",
+            cancellationToken);
+
     public async Task<bool> ChangeMembershipRoleAsync(
         Guid companyId,
         Guid membershipId,
@@ -354,6 +366,8 @@ public sealed class SysAdminControlClient(
     private sealed record AccountStatusUpdatePayload(string Status, DateTimeOffset? LockedUntilUtc, string Reason);
 
     private sealed record PasswordResetRequestPayload(string Reason);
+
+    private sealed record AccountMfaResetPayload(string Reason);
 
     private sealed record CompanyMembershipRoleUpdatePayload(string Role, string Reason);
 

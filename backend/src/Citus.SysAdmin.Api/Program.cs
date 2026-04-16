@@ -615,6 +615,39 @@ control.MapPost(
         }
     });
 
+control.MapPost(
+    "/accounts/{accountId:guid}/mfa-reset",
+    async (
+        Guid accountId,
+        HttpContext httpContext,
+        AccountMfaResetRequest request,
+        IPlatformGovernanceRepository governanceRepository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await governanceRepository.ResetAccountMfaAsync(
+                accountId,
+                request.Reason,
+                GetAuthenticatedSession(httpContext).SysAdminAccountId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new
+                {
+                    message = $"Account '{accountId}' was not found."
+                })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
 control.MapPut(
     "/companies/{companyId:guid}/memberships/{membershipId:guid}/role",
     async (

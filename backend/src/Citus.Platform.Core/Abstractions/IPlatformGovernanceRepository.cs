@@ -30,4 +30,10 @@ public interface IPlatformGovernanceRepository
         string reason,
         Guid? sysAdminAccountId,
         CancellationToken cancellationToken);
+
+    Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
+        Guid accountId,
+        string reason,
+        Guid? sysAdminAccountId,
+        CancellationToken cancellationToken);
 }

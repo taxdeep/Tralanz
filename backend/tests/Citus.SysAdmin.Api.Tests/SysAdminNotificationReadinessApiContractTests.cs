@@ -672,6 +672,120 @@ public sealed class SysAdminNotificationReadinessApiContractTests
     }
 
     [Fact]
+    public async Task ResetAccountMfa_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        var response = await client.PostAsJsonAsync(
+            $"/control/accounts/{accountId}/mfa-reset",
+            new AccountMfaResetRequest
+            {
+                Reason = "Operator MFA reset"
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(factory.GovernanceRepository.LastMfaResetAccountId);
+    }
+
+    [Fact]
+    public async Task ResetAccountMfa_ReturnsOkPayload_WhenGovernanceSucceeds()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnResetAccountMfa = static (requestedAccountId, reason, sysAdminAccountId, _) =>
+            Task.FromResult<AccountMfaResetGovernanceResult?>(
+                new AccountMfaResetGovernanceResult
+                {
+                    AccountId = requestedAccountId,
+                    Email = "user@example.com",
+                    Username = "user.one",
+                    PreviousMfaMode = "email_code",
+                    MfaMode = "none",
+                    RevokedChallengeCount = 2,
+                    Reason = reason,
+                    UpdatedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 15, 0, TimeSpan.Zero)
+                });
+
+        var response = await client.PostAsJsonAsync(
+            $"/control/accounts/{accountId}/mfa-reset",
+            new AccountMfaResetRequest
+            {
+                Reason = "Operator MFA reset",
+                SysAdminAccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<AccountMfaResetGovernanceResult>();
+
+        Assert.NotNull(payload);
+        Assert.Equal(accountId, factory.GovernanceRepository.LastMfaResetAccountId);
+        Assert.Equal("Operator MFA reset", factory.GovernanceRepository.LastMfaResetReason);
+        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.GovernanceRepository.LastMfaResetSysAdminAccountId);
+        Assert.Equal("user@example.com", payload!.Email);
+        Assert.Equal("email_code", payload.PreviousMfaMode);
+        Assert.Equal("none", payload.MfaMode);
+        Assert.Equal(2, payload.RevokedChallengeCount);
+    }
+
+    [Fact]
+    public async Task ResetAccountMfa_ReturnsNotFound_WhenGovernanceReturnsNull()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnResetAccountMfa = static (_, _, _, _) =>
+            Task.FromResult<AccountMfaResetGovernanceResult?>(null);
+
+        var response = await client.PostAsJsonAsync(
+            $"/control/accounts/{accountId}/mfa-reset",
+            new AccountMfaResetRequest
+            {
+                Reason = "Missing account"
+            });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            $"Account '{accountId}' was not found.",
+            document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task ResetAccountMfa_ReturnsBadRequest_WhenGovernanceRejectsRequest()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        var accountId = Guid.Parse("4243b9b8-a439-4f07-a292-eb0cdb790aa0");
+        factory.GovernanceRepository.OnResetAccountMfa = static (_, _, _, _) =>
+            throw new InvalidOperationException("MFA reset is blocked because the account has a pending recovery review.");
+
+        var response = await client.PostAsJsonAsync(
+            $"/control/accounts/{accountId}/mfa-reset",
+            new AccountMfaResetRequest
+            {
+                Reason = "Blocked MFA reset"
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "MFA reset is blocked because the account has a pending recovery review.",
+            document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task SendNotificationTest_ReturnsUnauthorized_WhenSessionHeaderMissing()
     {
         using var factory = new SysAdminNotificationApiApplicationFactory();
@@ -942,6 +1056,9 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Func<Guid, string, Guid?, CancellationToken, Task<PasswordResetGovernanceResult?>> OnRequestPasswordReset { get; set; } =
             static (_, _, _, _) => Task.FromResult<PasswordResetGovernanceResult?>(null);
 
+        public Func<Guid, string, Guid?, CancellationToken, Task<AccountMfaResetGovernanceResult?>> OnResetAccountMfa { get; set; } =
+            static (_, _, _, _) => Task.FromResult<AccountMfaResetGovernanceResult?>(null);
+
         public int? LastAuditLimit { get; private set; }
 
         public Guid? LastCompanyStatusCompanyId { get; private set; }
@@ -967,6 +1084,12 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public string LastPasswordResetReason { get; private set; } = string.Empty;
 
         public Guid? LastPasswordResetSysAdminAccountId { get; private set; }
+
+        public Guid? LastMfaResetAccountId { get; private set; }
+
+        public string LastMfaResetReason { get; private set; } = string.Empty;
+
+        public Guid? LastMfaResetSysAdminAccountId { get; private set; }
 
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -1018,6 +1141,18 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             LastPasswordResetReason = reason;
             LastPasswordResetSysAdminAccountId = sysAdminAccountId;
             return OnRequestPasswordReset(accountId, reason, sysAdminAccountId, cancellationToken);
+        }
+
+        public Task<AccountMfaResetGovernanceResult?> ResetAccountMfaAsync(
+            Guid accountId,
+            string reason,
+            Guid? sysAdminAccountId,
+            CancellationToken cancellationToken)
+        {
+            LastMfaResetAccountId = accountId;
+            LastMfaResetReason = reason;
+            LastMfaResetSysAdminAccountId = sysAdminAccountId;
+            return OnResetAccountMfa(accountId, reason, sysAdminAccountId, cancellationToken);
         }
     }
 
