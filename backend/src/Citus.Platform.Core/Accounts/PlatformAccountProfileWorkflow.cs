@@ -26,6 +26,18 @@ public sealed class PlatformAccountProfileWorkflow(
             cancellationToken);
     }
 
+    public Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
+        Guid userId,
+        string mfaMode,
+        CancellationToken cancellationToken)
+    {
+        EnsureUserId(userId);
+        return repository.SaveMfaModeAsync(
+            userId,
+            NormalizeMfaMode(mfaMode),
+            cancellationToken);
+    }
+
     public Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
         Guid userId,
         string newEmail,
@@ -160,5 +172,21 @@ public sealed class PlatformAccountProfileWorkflow(
         }
 
         return normalized;
+    }
+
+    private static string NormalizeMfaMode(string mfaMode)
+    {
+        if (string.IsNullOrWhiteSpace(mfaMode))
+        {
+            throw new InvalidOperationException("MFA mode is required.");
+        }
+
+        var normalized = mfaMode.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "none" => normalized,
+            "email_code" => normalized,
+            _ => throw new InvalidOperationException("Unsupported MFA mode.")
+        };
     }
 }

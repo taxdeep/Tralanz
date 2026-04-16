@@ -15,6 +15,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
 {
     private const string EmailChangePurpose = "email_change";
     private const string PasswordChangePurpose = "password_change";
+    private const string NoMfaMode = "none";
+    private const string EmailCodeMfaMode = "email_code";
 
     public async Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -72,6 +74,71 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             {
                 command.Parameters.AddWithValue("previous_display_name", current.DisplayName);
                 command.Parameters.AddWithValue("display_name", displayName);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetAsync(userId, cancellationToken);
+    }
+
+    public async Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
+        Guid userId,
+        string mfaMode,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+        await EnsureInteractiveWritesAllowedAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadAccountAsync(connection, transaction, userId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        if (string.Equals(mfaMode, EmailCodeMfaMode, StringComparison.Ordinal))
+        {
+            if (!current.EmailVerifiedAtUtc.HasValue)
+            {
+                throw new InvalidOperationException("Email verification is required before enabling email-code MFA.");
+            }
+
+            await EnsureVerificationDeliveryReadyAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                update users
+                set mfa_mode = @mfa_mode,
+                    updated_at = now()
+                where id = @user_id;
+                """;
+            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("mfa_mode", mfaMode);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            userId,
+            "profile_mfa_mode_saved",
+            """
+            jsonb_build_object(
+              'previous_mfa_mode', @previous_mfa_mode,
+              'mfa_mode', @mfa_mode
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("previous_mfa_mode", current.MfaMode);
+                command.Parameters.AddWithValue("mfa_mode", mfaMode);
             },
             cancellationToken);
 
@@ -467,6 +534,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             alter table users
               add column if not exists security_stamp text not null default gen_random_uuid()::text;
 
+            alter table users
+              add column if not exists mfa_mode text not null default 'none';
+
             create table if not exists account_verification_codes (
               id uuid primary key default gen_random_uuid(),
               user_id uuid not null references users(id) on delete cascade,
@@ -583,6 +653,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             Email = record.Email,
             Status = record.Status,
             EmailVerifiedAtUtc = record.EmailVerifiedAtUtc,
+            MfaMode = NormalizeMfaMode(record.MfaMode),
             NotificationVerificationReady = notificationReady,
             NotificationBlockingReason = blockingReason,
             PendingEmailChangeMaskedDestination = string.IsNullOrWhiteSpace(record.PendingEmailChangeDestination)
@@ -922,7 +993,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               coalesce(nullif(username, ''), email) as username,
               coalesce(nullif(display_name, ''), nullif(username, ''), email) as display_name,
               status,
-              email_verified_at
+              email_verified_at,
+              mfa_mode
             from users
             where id = @user_id;
             """;
@@ -942,7 +1014,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             reader.GetString(reader.GetOrdinal("status")).Trim(),
             reader.IsDBNull(reader.GetOrdinal("email_verified_at"))
                 ? null
-                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("email_verified_at"))));
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("email_verified_at"))),
+            NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))));
     }
 
     private static async Task<ProfileRecord?> ReadProfileRecordAsync(
@@ -962,6 +1035,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               coalesce(nullif(u.display_name, ''), nullif(u.username, ''), u.email) as display_name,
               u.status,
               u.email_verified_at,
+              u.mfa_mode,
               email_change.destination as pending_email_change_destination,
               email_change.expires_at as pending_email_change_expires_at,
               password_change.destination as pending_password_change_destination,
@@ -1006,6 +1080,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             reader.IsDBNull(reader.GetOrdinal("email_verified_at"))
                 ? null
                 : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("email_verified_at"))),
+            NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))),
             reader.IsDBNull(reader.GetOrdinal("pending_email_change_destination"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("pending_email_change_destination")).Trim(),
@@ -1125,6 +1200,16 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         return $"{normalized[..1]}***{normalized[(atIndex - 1)..]}";
     }
 
+    private static string NormalizeMfaMode(string mfaMode)
+    {
+        var normalized = mfaMode.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            EmailCodeMfaMode => normalized,
+            _ => NoMfaMode
+        };
+    }
+
     private static DateTimeOffset CoerceTimestamp(object? value)
     {
         if (value is DateTimeOffset offset)
@@ -1149,7 +1234,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string Username,
         string DisplayName,
         string Status,
-        DateTimeOffset? EmailVerifiedAtUtc);
+        DateTimeOffset? EmailVerifiedAtUtc,
+        string MfaMode);
 
     private sealed record ProfileRecord(
         Guid Id,
@@ -1158,6 +1244,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         string DisplayName,
         string Status,
         DateTimeOffset? EmailVerifiedAtUtc,
+        string MfaMode,
         string PendingEmailChangeDestination,
         DateTimeOffset? PendingEmailChangeExpiresAtUtc,
         string PendingPasswordChangeDestination,

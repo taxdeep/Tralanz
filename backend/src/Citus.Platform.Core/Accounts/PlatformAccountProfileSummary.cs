@@ -14,6 +14,8 @@ public sealed record class PlatformAccountProfileSummary
 
     public DateTimeOffset? EmailVerifiedAtUtc { get; init; }
 
+    public string MfaMode { get; init; } = "none";
+
     public bool NotificationVerificationReady { get; init; }
 
     public string NotificationBlockingReason { get; init; } = string.Empty;
@@ -27,6 +29,16 @@ public sealed record class PlatformAccountProfileSummary
     public DateTimeOffset? PendingPasswordChangeExpiresAtUtc { get; init; }
 
     public bool IsEmailVerified => EmailVerifiedAtUtc.HasValue;
+
+    public bool IsMfaEnabled =>
+        !string.Equals(MfaMode, "none", StringComparison.OrdinalIgnoreCase);
+
+    public string MfaModeLabel =>
+        MfaMode.Trim().ToLowerInvariant() switch
+        {
+            "email_code" => "Email verification code",
+            _ => "Disabled"
+        };
 
     public bool HasPendingEmailChange =>
         !string.IsNullOrWhiteSpace(PendingEmailChangeMaskedDestination) &&

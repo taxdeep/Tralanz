@@ -12,6 +12,7 @@ public static class PlatformProfileApi
 
         profile.MapGet(string.Empty, GetAsync);
         profile.MapPut("/display-name", SaveDisplayNameAsync);
+        profile.MapPut("/mfa-mode", SaveMfaModeAsync);
         profile.MapPost("/email-change/request", RequestEmailChangeAsync);
         profile.MapPost("/email-change/confirm", ConfirmEmailChangeAsync);
         profile.MapPost("/password-change/request", RequestPasswordChangeAsync);
@@ -41,6 +42,18 @@ public static class PlatformProfileApi
             httpContext,
             businessSessions,
             (userId, token) => workflow.SaveDisplayNameAsync(userId, request.DisplayName, token),
+            cancellationToken);
+
+    private static Task<IResult> SaveMfaModeAsync(
+        SaveMfaModeRequest request,
+        HttpContext httpContext,
+        IPlatformBusinessSessionRepository businessSessions,
+        IPlatformAccountProfileWorkflow workflow,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            httpContext,
+            businessSessions,
+            (userId, token) => workflow.SaveMfaModeAsync(userId, request.MfaMode, token),
             cancellationToken);
 
     private static Task<IResult> RequestEmailChangeAsync(
@@ -126,6 +139,8 @@ public static class PlatformProfileApi
     }
 
     private sealed record SaveDisplayNameRequest(string DisplayName);
+
+    private sealed record SaveMfaModeRequest(string MfaMode);
 
     private sealed record RequestEmailChangeRequest(string NewEmail);
 

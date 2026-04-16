@@ -35,6 +35,15 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new SaveDisplayNameRequest(displayName));
 
+    public Task<WebShellAuthenticatedApiResult<PlatformAccountProfileSummary>> SaveMfaModeAsync(
+        string mfaMode,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PlatformAccountProfileSummary>(
+            request => request.Method = HttpMethod.Put,
+            "/api/platform/profile/mfa-mode",
+            cancellationToken,
+            new SaveMfaModeRequest(mfaMode));
+
     public Task<WebShellAuthenticatedApiResult<PlatformProfileChangeRequestResult>> RequestEmailChangeAsync(
         string newEmail,
         CancellationToken cancellationToken = default) =>
@@ -145,6 +154,8 @@ public sealed class PlatformProfileClient(
     }
 
     private sealed record SaveDisplayNameRequest(string DisplayName);
+
+    private sealed record SaveMfaModeRequest(string MfaMode);
 
     private sealed record RequestEmailChangeRequest(string NewEmail);
 

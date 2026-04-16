@@ -176,6 +176,54 @@
 
         <MudItem xs="12" md="6">
             <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Multi-Factor Authentication</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    MFA belongs to the platform identity layer. For now, this profile supports `none` and `email_code`.
+                    Enabling `email_code` requires a verified email address and verified notification readiness.
+                </p>
+                @if (_profile is not null)
+                {
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+                        <MudChip T="string" Color="@(_profile.IsMfaEnabled ? Color.Success : Color.Default)" Variant="Variant.Outlined" Size="Size.Small">
+                            Current: @_profile.MfaModeLabel
+                        </MudChip>
+                        <MudChip T="string" Color="@(_profile.IsEmailVerified ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                            @(_profile.IsEmailVerified ? "Email Verified" : "Email Verification Required")
+                        </MudChip>
+                        <MudChip T="string" Color="@(_profile.NotificationVerificationReady ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                            @(_profile.NotificationVerificationReady ? "Verification Delivery Ready" : "Verification Delivery Blocked")
+                        </MudChip>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(MfaBlockingReason))
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        @MfaBlockingReason
+                    </MudAlert>
+                }
+                <MudSelect T="string"
+                           Label="MFA Mode"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Value="@_selectedMfaMode"
+                           ValueChanged="OnMfaModeChanged"
+                           Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled || _profile is null)">
+                    <MudSelectItem T="string" Value="@("none")">Disabled</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("email_code")">Email verification code</MudSelectItem>
+                </MudSelect>
+                <div style="margin-top:0.75rem;">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@MfaSaveDisabled"
+                               OnClick="SaveMfaModeAsync">
+                        Save MFA Mode
+                    </MudButton>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
                 <h2 style="margin-top:0;">Email Change</h2>
                 <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
                     Requesting a new code replaces any prior pending email-change verification.
@@ -261,6 +309,7 @@
     private PlatformAccountProfileSummary? _profile;
     private NotificationReadinessSummary? _notificationReadiness;
     private string _displayName = string.Empty;
+    private string _selectedMfaMode = "none";
     private string _newEmail = string.Empty;
     private string _emailChangeCode = string.Empty;
     private string _newPassword = string.Empty;
@@ -279,6 +328,25 @@
         _isBusy ||
         ShellState.MaintenanceState.Enabled ||
         _profile is null;
+
+    private bool MfaSaveDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null ||
+        string.Equals(_selectedMfaMode, _profile.MfaMode, StringComparison.OrdinalIgnoreCase) ||
+        (!string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase) &&
+         !string.IsNullOrWhiteSpace(MfaBlockingReason));
+
+    private string? MfaBlockingReason =>
+        _profile is null
+            ? null
+            : string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : !_profile.IsEmailVerified
+                    ? "Verify your platform email before enabling email-code MFA."
+                    : !_profile.NotificationVerificationReady
+                        ? $"Verification delivery is blocked. {_profile.NotificationBlockingReason}".Trim()
+                        : null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -317,6 +385,7 @@
         if (_profile is not null)
         {
             _displayName = _profile.DisplayName;
+            _selectedMfaMode = _profile.MfaMode;
         }
     }
 
@@ -340,6 +409,37 @@
                 await RefreshShellStateAsync();
                 Snackbar.Add("Display name saved.", Severity.Success);
             });
+    }
+
+    private async Task SaveMfaModeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.SaveMfaModeAsync(_selectedMfaMode, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _selectedMfaMode = _profile.MfaMode;
+                Snackbar.Add(
+                    string.Equals(_profile.MfaMode, "none", StringComparison.OrdinalIgnoreCase)
+                        ? "MFA disabled for future business sign-ins."
+                        : $"MFA mode saved: {_profile.MfaModeLabel}. Future business sign-ins will require a second factor.",
+                    Severity.Success);
+            });
+    }
+
+    private void OnMfaModeChanged(string? value)
+    {
+        _selectedMfaMode = value ?? "none";
     }
 
     private async Task RequestEmailChangeAsync()

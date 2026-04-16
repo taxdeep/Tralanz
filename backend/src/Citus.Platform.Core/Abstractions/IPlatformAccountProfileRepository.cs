@@ -11,6 +11,11 @@ public interface IPlatformAccountProfileRepository
         string displayName,
         CancellationToken cancellationToken);
 
+    Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
+        Guid userId,
+        string mfaMode,
+        CancellationToken cancellationToken);
+
     Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
         Guid userId,
         string newEmail,

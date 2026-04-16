@@ -818,3 +818,6 @@ Checkpoint summary (2026-04-16):
 - Business session truth now sits on the intended boundary: Platform Identity proves the actor, `business_sessions` restore shell state, and `CompanyAccess` still resolves active company, write gates, and company-scoped authorization after sign-in.
 - The remaining shell-client polish work is now mostly about consistency: any remaining shell HTTP clients should converge on the same authenticated-result model so `401` produces one governed session-expiry path instead of mixed null/error behaviors.
 - MFA is now a recorded product requirement in the authority document: challenge-first, session-second, platform-owned, auditable, and always subordinate to CompanyAccess truth plus maintenance/company-state gates.
+
+- Platform-owned profile now surfaces and governs `mfa_mode` for the current account through the same authenticated business-session contract as other profile actions. The first supported modes are `none` and `email_code`.
+- MFA enablement is now constrained at the platform profile boundary as well as the sign-in boundary: enabling email_code requires a verified email address plus verified notification readiness, and the interactive Profile page now makes those prerequisites visible before the user saves the mode.

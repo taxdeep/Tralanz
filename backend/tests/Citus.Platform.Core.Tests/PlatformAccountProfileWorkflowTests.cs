@@ -46,6 +46,17 @@ public sealed class PlatformAccountProfileWorkflowTests
     }
 
     [Fact]
+    public async Task SaveMfaModeNormalizesBeforePersisting()
+    {
+        var repository = new InMemoryPlatformAccountProfileRepository();
+        var workflow = new PlatformAccountProfileWorkflow(repository, new SysAdminPasswordHasher());
+
+        await workflow.SaveMfaModeAsync(UserId, " Email_Code ", CancellationToken.None);
+
+        Assert.Equal("email_code", repository.SavedMfaMode);
+    }
+
+    [Fact]
     public async Task ConfirmEmailChangeNormalizesVerificationCode()
     {
         var repository = new InMemoryPlatformAccountProfileRepository();
@@ -64,6 +75,8 @@ public sealed class PlatformAccountProfileWorkflowTests
 
         public string? RequestedPasswordHash { get; private set; }
 
+        public string? SavedMfaMode { get; private set; }
+
         public string? ConfirmedEmailChangeCode { get; private set; }
 
         public Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken) =>
@@ -76,6 +89,15 @@ public sealed class PlatformAccountProfileWorkflowTests
         {
             SavedDisplayName = displayName;
             return Task.FromResult<PlatformAccountProfileSummary?>(new PlatformAccountProfileSummary { UserId = userId, DisplayName = displayName });
+        }
+
+        public Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
+            Guid userId,
+            string mfaMode,
+            CancellationToken cancellationToken)
+        {
+            SavedMfaMode = mfaMode;
+            return Task.FromResult<PlatformAccountProfileSummary?>(new PlatformAccountProfileSummary { UserId = userId, MfaMode = mfaMode });
         }
 
         public Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(

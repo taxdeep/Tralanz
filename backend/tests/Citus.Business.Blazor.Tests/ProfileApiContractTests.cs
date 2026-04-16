@@ -83,6 +83,35 @@ public sealed class ProfileApiContractTests
     }
 
     [Fact]
+    public async Task SaveMfaMode_ReturnsUpdatedSummary_ForAuthenticatedBusinessSession()
+    {
+        using var factory = new ProfileApiApplicationFactory();
+        var userId = Guid.Parse("6ac137e3-1230-417f-b2d3-57f9d8c0409b");
+        factory.BusinessSessions.ValidateResult = CreateSession(userId);
+        factory.Workflow.OnSaveMfaMode = static (actorUserId, mfaMode, _) =>
+            Task.FromResult<PlatformAccountProfileSummary?>(CreateProfile(actorUserId, mfaMode: mfaMode));
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-22A");
+
+        var response = await client.PutAsJsonAsync(
+            "/api/platform/profile/mfa-mode",
+            new
+            {
+                mfaMode = "email_code"
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var profile = await response.Content.ReadFromJsonAsync<PlatformAccountProfileSummary>();
+
+        Assert.NotNull(profile);
+        Assert.Equal(userId, factory.Workflow.LastUserId);
+        Assert.Equal("email_code", factory.Workflow.LastMfaMode);
+        Assert.Equal("email_code", profile!.MfaMode);
+    }
+
+    [Fact]
     public async Task RequestEmailChange_ReturnsRequestPayload_WhenAuthenticated()
     {
         using var factory = new ProfileApiApplicationFactory();
@@ -282,7 +311,8 @@ public sealed class ProfileApiContractTests
     private static PlatformAccountProfileSummary CreateProfile(
         Guid userId,
         string displayName = "Taylor Rowan",
-        string email = "taylor.rowan@example.com") =>
+        string email = "taylor.rowan@example.com",
+        string mfaMode = "none") =>
         new()
         {
             UserId = userId,
@@ -291,6 +321,7 @@ public sealed class ProfileApiContractTests
             Email = email,
             Status = "active",
             EmailVerifiedAtUtc = new DateTimeOffset(2026, 4, 10, 8, 0, 0, TimeSpan.Zero),
+            MfaMode = mfaMode,
             NotificationVerificationReady = true,
             NotificationBlockingReason = string.Empty
         };
@@ -336,6 +367,9 @@ public sealed class ProfileApiContractTests
         public Func<Guid, string, CancellationToken, Task<PlatformAccountProfileSummary?>> OnSaveDisplayName { get; set; } =
             static (_, _, _) => Task.FromResult<PlatformAccountProfileSummary?>(null);
 
+        public Func<Guid, string, CancellationToken, Task<PlatformAccountProfileSummary?>> OnSaveMfaMode { get; set; } =
+            static (_, _, _) => Task.FromResult<PlatformAccountProfileSummary?>(null);
+
         public Func<Guid, string, CancellationToken, Task<PlatformProfileChangeRequestResult?>> OnRequestEmailChange { get; set; } =
             static (_, _, _) => Task.FromResult<PlatformProfileChangeRequestResult?>(null);
 
@@ -351,6 +385,8 @@ public sealed class ProfileApiContractTests
         public Guid? LastUserId { get; private set; }
 
         public string? LastDisplayName { get; private set; }
+
+        public string? LastMfaMode { get; private set; }
 
         public string? LastEmail { get; private set; }
 
@@ -372,6 +408,16 @@ public sealed class ProfileApiContractTests
             LastUserId = userId;
             LastDisplayName = displayName;
             return await OnSaveDisplayName(userId, displayName, cancellationToken);
+        }
+
+        public async Task<PlatformAccountProfileSummary?> SaveMfaModeAsync(
+            Guid userId,
+            string mfaMode,
+            CancellationToken cancellationToken)
+        {
+            LastUserId = userId;
+            LastMfaMode = mfaMode;
+            return await OnSaveMfaMode(userId, mfaMode, cancellationToken);
         }
 
         public async Task<PlatformProfileChangeRequestResult?> RequestEmailChangeAsync(
