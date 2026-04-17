@@ -11,10 +11,14 @@ public sealed class ShellOpenItemAdjustmentAccountMappingClient(
         string? openItemType,
         string? adjustmentType,
         bool includeInactive,
+        Guid? bookId,
+        string? policyScope,
+        string? searchText,
+        int limit = 200,
         CancellationToken cancellationToken = default)
     {
         var requestUri =
-            $"accounting/open-item-adjustment-account-mappings?companyId={companyId:D}&includeInactive={includeInactive.ToString().ToLowerInvariant()}";
+            $"accounting/open-item-adjustment-account-mappings?companyId={companyId:D}&includeInactive={includeInactive.ToString().ToLowerInvariant()}&limit={Math.Clamp(limit, 1, 500)}";
 
         if (!string.IsNullOrWhiteSpace(openItemType))
         {
@@ -24,6 +28,21 @@ public sealed class ShellOpenItemAdjustmentAccountMappingClient(
         if (!string.IsNullOrWhiteSpace(adjustmentType))
         {
             requestUri += $"&adjustmentType={Uri.EscapeDataString(adjustmentType)}";
+        }
+
+        if (bookId.HasValue)
+        {
+            requestUri += $"&bookId={bookId.Value:D}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(policyScope))
+        {
+            requestUri += $"&policyScope={Uri.EscapeDataString(policyScope)}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            requestUri += $"&searchText={Uri.EscapeDataString(searchText)}";
         }
 
         try

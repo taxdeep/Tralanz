@@ -52,6 +52,24 @@
                     Open Journal Entry Review
                 </MudButton>
             }
+            @if (TryBuildAdjustmentPolicyHref(_document.SourceType, out var adjustmentPolicyHref))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@adjustmentPolicyHref">
+                    Review Adjustment Policy
+                </MudButton>
+            }
+            @if (TryBuildSourceBrowserHref(_document.SourceType, _document.CounterpartyLabel, _document.CounterpartyId, out var relatedDocumentsHref))
+            {
+                <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildBrowserNavigationHref(relatedDocumentsHref, "Current source detail", "Back to source detail")">
+                    Browse Related Documents
+                </MudButton>
+            }
+            else if (TryBuildSourceTypeBrowserHref(_document.SourceType, out var sourceTypeBrowserHref))
+            {
+                <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildBrowserNavigationHref(sourceTypeBrowserHref, "Current source detail", "Back to source detail")">
+                    Browse Same Type
+                </MudButton>
+            }
             @if (_latestReverseRequest is null && CanRequestReverse(_document))
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="RequestReverseAsync" Disabled="@(_isReverseCommandRunning || WritesBlocked)">
@@ -161,6 +179,33 @@
                     @BuildReverseRequestNotice(_latestReverseRequest)
                 </MudAlert>
             </MudPaper>
+        }
+
+        @if (HasReverseControlSummary())
+        {
+            var nextLegalAction = GetNextLegalActionSummary();
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Operator Next Step</MudText>
+                    <MudText Typo="Typo.h6">@nextLegalAction.Title</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@nextLegalAction.Detail</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Reverse Workflow</MudText>
+                    <MudText Typo="Typo.h6">@GetReverseRequestSummaryTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetReverseRequestSummaryDetail()</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Settlement Gate</MudText>
+                    <MudText Typo="Typo.h6">@GetSubledgerGateSummaryTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetSubledgerGateSummaryDetail()</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Governed Unapply Trail</MudText>
+                    <MudText Typo="Typo.h6">@GetReversalHistorySummaryTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetReversalHistorySummaryDetail()</MudText>
+                </MudPaper>
+            </div>
         }
 
         @if (_reverseApplyReadiness is not null || _reverseExecutionPlan is not null)
@@ -306,6 +351,12 @@
                                         Open Source
                                     </MudButton>
                                 }
+                                @if (TryBuildSourceTypeBrowserHref(context.TargetSourceType, out var blockerTargetBrowserHref))
+                                {
+                                    <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildBrowserNavigationHref(blockerTargetBrowserHref, "Reverse blocker: blocked source type", "Back to source detail")">
+                                        Browse Blocked Type
+                                    </MudButton>
+                                }
                             </MudStack>
                         </MudTd>
                     </RowTemplate>
@@ -323,6 +374,7 @@
                 <MudTable Items="_settlementApplicationReversals" Dense="true" Hover="true" Bordered="true">
                     <HeaderContent>
                         <MudTh>Application</MudTh>
+                        <MudTh>Source</MudTh>
                         <MudTh>Target Open Item</MudTh>
                         <MudTh>Applied Tx</MudTh>
                         <MudTh>Applied Base</MudTh>
@@ -333,6 +385,33 @@
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.body2">@FormatApplicationType(context.ApplicationType)</MudText>
                                 <MudText Typo="Typo.caption">Request @context.RequestId.ToString("D")</MudText>
+                            </MudStack>
+                        </MudTd>
+                        <MudTd>
+                            <MudStack Spacing="1">
+                                @if (TryBuildDocumentHref(context.SourceType, context.SourceId, out var reversalSourceHref))
+                                {
+                                    <MudLink Href="@reversalSourceHref">@DisplayDocumentLink(null, context.SourceType)</MudLink>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">@DisplayDocumentLink(null, context.SourceType)</MudText>
+                                }
+                                <MudText Typo="Typo.caption">@context.SourceTypeLabel</MudText>
+                                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                    @if (TryBuildDocumentHref(context.SourceType, context.SourceId, out var reversalSourceActionHref))
+                                    {
+                                        <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@reversalSourceActionHref">
+                                            Open Source
+                                        </MudButton>
+                                    }
+                                    @if (TryBuildSourceTypeBrowserHref(context.SourceType, out var reversalSourceBrowserHref))
+                                    {
+                                        <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildBrowserNavigationHref(reversalSourceBrowserHref, "Settlement application reversal history", "Back to source detail")">
+                                            Browse Source Type
+                                        </MudButton>
+                                    }
+                                </div>
                             </MudStack>
                         </MudTd>
                         <MudTd>
@@ -398,6 +477,14 @@
                                     {
                                         <MudText Typo="Typo.caption" Class="text-secondary">@DisplayOpenItem(context.SourceOpenItemId)</MudText>
                                     }
+                                    @if (TryBuildSourceTypeBrowserHref(context.SourceDocumentType, out var sourceTypeBrowserHref))
+                                    {
+                                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                            <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildBrowserNavigationHref(sourceTypeBrowserHref, "Settlement application line source", "Back to source detail")">
+                                                Browse Source Type
+                                            </MudButton>
+                                        </div>
+                                    }
                                 </MudStack>
                             </MudTd>
                         }
@@ -418,6 +505,14 @@
                                 else
                                 {
                                     <MudText Typo="Typo.caption" Class="text-secondary">@DisplayOpenItem(context.TargetOpenItemId)</MudText>
+                                }
+                                @if (TryBuildSourceTypeBrowserHref(context.TargetDocumentType, out var targetTypeBrowserHref))
+                                {
+                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                        <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildBrowserNavigationHref(targetTypeBrowserHref, "Settlement application line target", "Back to source detail")">
+                                            Browse Target Type
+                                        </MudButton>
+                                    </div>
                                 }
                             </MudStack>
                         </MudTd>
@@ -1072,6 +1167,172 @@
         new("Request Status", string.IsNullOrWhiteSpace(readiness.RequestStatus) ? "Unknown" : readiness.RequestStatus)
     ];
 
+    private bool HasReverseControlSummary() =>
+        CanRequestReverse(_document) ||
+        _latestReverseRequest is not null ||
+        _reverseApplyReadiness is not null ||
+        _reverseExecutionPlan is not null ||
+        _subledgerReverseBlockers.Count > 0 ||
+        _settlementApplicationReversals.Count > 0;
+
+    private ReverseNextLegalActionSummary GetNextLegalActionSummary()
+    {
+        if (_latestReverseRequest is null && CanRequestReverse(_document))
+        {
+            return _subledgerReverseBlockers.Count == 0
+                ? new ReverseNextLegalActionSummary(
+                    "Request governed reverse",
+                    "No governed reverse request has been recorded yet. The next legal step is to record one from this source detail before execution orchestration can continue.")
+                : new ReverseNextLegalActionSummary(
+                    "Request governed reverse",
+                    $"No governed reverse request has been recorded yet. You can record one now, but {_subledgerReverseBlockers.Count} active subledger blocker(s) still must clear before original reverse execution becomes legal.");
+        }
+
+        if (CanSubmitReverseRequest(_latestReverseRequest))
+        {
+            return new ReverseNextLegalActionSummary(
+                "Submit original reverse request",
+                "The source reverse request is still draft. Submit it first so backend governance can treat it as the active original reverse record.");
+        }
+
+        var requestableBlockers = _subledgerReverseBlockers.Count(CanRequestBlockerUnapply);
+        if (requestableBlockers > 0)
+        {
+            return new ReverseNextLegalActionSummary(
+                "Request governed unapply",
+                $"{requestableBlockers} blocker(s) still need an initial governed unapply request. Start with the blocker panel before retrying the original reverse path.");
+        }
+
+        var submittableBlockers = _subledgerReverseBlockers.Count(CanSubmitBlockerUnapply);
+        if (submittableBlockers > 0)
+        {
+            return new ReverseNextLegalActionSummary(
+                "Submit governed unapply",
+                $"{submittableBlockers} blocker request(s) are still draft. Submit them so the backend can advance the blocker-clearing path.");
+        }
+
+        var executableBlockers = _subledgerReverseBlockers.Count(CanExecuteBlockerUnapply);
+        if (executableBlockers > 0)
+        {
+            return new ReverseNextLegalActionSummary(
+                "Request governed blocker execution",
+                $"{executableBlockers} blocker request(s) are submitted and legally ready for governed execution. Request execution from the blocker panel before returning to the original source reverse.");
+        }
+
+        var pendingBlockerExecutions = _subledgerReverseBlockers.Count(
+            blocker => string.Equals(blocker.ReverseExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase));
+        if (pendingBlockerExecutions > 0)
+        {
+            return new ReverseNextLegalActionSummary(
+                "Await blocker execution",
+                $"{pendingBlockerExecutions} blocker execution request(s) are already in flight. Wait for backend completion so the subledger gate can reopen for the original reverse.");
+        }
+
+        if (CanExecuteOriginalReverseAfterSubledgerGate())
+        {
+            return new ReverseNextLegalActionSummary(
+                "Execute original governed reverse",
+                _reverseExecutionPlan?.Reason ??
+                _reverseApplyReadiness?.Reason ??
+                "The original reverse request is submitted and the subledger gate is clear. The next legal step is governed execution from this source detail.");
+        }
+
+        if (_latestReverseRequest is not null &&
+            string.Equals(_latestReverseRequest.ExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ReverseNextLegalActionSummary(
+                "Await original reverse execution",
+                "The original reverse already has an execution request on file. Wait for backend completion rather than resubmitting from the shell.");
+        }
+
+        if (_latestReverseRequest is not null &&
+            string.Equals(_latestReverseRequest.ExecutionStatus, "journal_entry_reversed", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ReverseNextLegalActionSummary(
+                "Reverse already completed",
+                "Governed reverse execution has already completed. Use reversal history and source/open-item drill-down for audit follow-up instead of issuing a new command.");
+        }
+
+        if (_latestReverseRequest is not null &&
+            string.Equals(_latestReverseRequest.RequestStatus, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ReverseNextLegalActionSummary(
+                "Record a fresh reverse request",
+                "The latest reverse request was cancelled. If reversal is still needed, start again with a new governed reverse request.");
+        }
+
+        return new ReverseNextLegalActionSummary(
+            "No further legal reverse action",
+            _reverseExecutionPlan?.Reason ??
+            _reverseApplyReadiness?.Reason ??
+            "This source detail does not currently expose another backend-supported reverse action from the shell.");
+    }
+
+    private string GetReverseRequestSummaryTitle()
+    {
+        if (_latestReverseRequest is null)
+        {
+            return "No active workflow";
+        }
+
+        return $"{FormatReverseRequestStatus(_latestReverseRequest.RequestStatus)} | {FormatReverseExecutionStatus(_latestReverseRequest.ExecutionStatus)}";
+    }
+
+    private string GetReverseRequestSummaryDetail()
+    {
+        if (_latestReverseRequest is null)
+        {
+            return "No governed reverse request has been recorded for this source document yet.";
+        }
+
+        if (_reverseExecutionPlan is not null)
+        {
+            return _reverseExecutionPlan.Reason;
+        }
+
+        return _latestReverseRequest.Reason;
+    }
+
+    private string GetSubledgerGateSummaryTitle()
+    {
+        if (_subledgerReverseBlockers.Count == 0)
+        {
+            return "Settlement clear";
+        }
+
+        return $"{_subledgerReverseBlockers.Count} blocker(s)";
+    }
+
+    private string GetSubledgerGateSummaryDetail()
+    {
+        if (_subledgerReverseBlockers.Count == 0)
+        {
+            return "No active AR/AP settlement-application blockers are stopping governed reverse execution.";
+        }
+
+        var submittedCount = _subledgerReverseBlockers.Count(blocker => string.Equals(blocker.ReverseRequestStatus, "submitted", StringComparison.OrdinalIgnoreCase));
+        var executionRequestedCount = _subledgerReverseBlockers.Count(blocker => string.Equals(blocker.ReverseExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase));
+        return $"{submittedCount} blocker request(s) submitted and {executionRequestedCount} blocker execution(s) already requested. Clear these before retrying the original reverse.";
+    }
+
+    private string GetReversalHistorySummaryTitle() =>
+        _settlementApplicationReversals.Count == 0
+            ? "No governed unapply history"
+            : $"{_settlementApplicationReversals.Count} governed row(s)";
+
+    private string GetReversalHistorySummaryDetail()
+    {
+        if (_settlementApplicationReversals.Count == 0)
+        {
+            return "No governed settlement-application reversal rows have been recorded for this source document yet.";
+        }
+
+        var latest = _settlementApplicationReversals
+            .OrderByDescending(item => item.ReversedAt)
+            .First();
+        return $"Latest governed unapply row was recorded at {latest.ReversedAt:yyyy-MM-dd HH:mm:ss zzz} for {FormatApplicationType(latest.ApplicationType)}.";
+    }
+
     private static string BuildReverseRequestNotice(ShellAccountingDocumentReverseRequestSummary request) =>
         string.Equals(request.ExecutionStatus, "journal_entry_reversed", StringComparison.OrdinalIgnoreCase)
             ? "This governed reverse request has completed linked JE reversal and any supported AR/AP settlement application unapply trail is listed below."
@@ -1253,6 +1514,70 @@
         return true;
     }
 
+    private static bool TryBuildAdjustmentPolicyHref(string? sourceType, out string href)
+    {
+        href = sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" or "credit_note" =>
+                "/company/open-item-adjustment-account-mappings?openItemType=ar_open_item&policyScope=primary_execution",
+            "bill" or "vendor_credit" =>
+                "/company/open-item-adjustment-account-mappings?openItemType=ap_open_item&policyScope=primary_execution",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static bool TryBuildSourceBrowserHref(string? sourceType, string? counterpartyLabel, Guid? counterpartyId, out string href)
+    {
+        href = string.Empty;
+        if (!counterpartyId.HasValue)
+        {
+            return false;
+        }
+
+        var normalizedSourceType = sourceType?.Trim().ToLowerInvariant();
+        var counterpartyRole = counterpartyLabel?.Trim().ToLowerInvariant() switch
+        {
+            "customer" => "customer",
+            "vendor" => "vendor",
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(normalizedSourceType) || string.IsNullOrWhiteSpace(counterpartyRole))
+        {
+            return false;
+        }
+
+        href =
+            $"/documents/source-browser?sourceType={Uri.EscapeDataString(normalizedSourceType)}" +
+            $"&counterpartyRole={Uri.EscapeDataString(counterpartyRole)}" +
+            $"&counterpartyId={counterpartyId.Value:D}";
+        return true;
+    }
+
+    private static bool TryBuildSourceTypeBrowserHref(string? sourceType, out string href)
+    {
+        href = string.Empty;
+        var normalizedSourceType = sourceType?.Trim().ToLowerInvariant();
+        if (normalizedSourceType is not ("invoice" or "credit_note" or "bill" or "vendor_credit"))
+        {
+            return false;
+        }
+
+        href = $"/documents/source-browser?sourceType={Uri.EscapeDataString(normalizedSourceType)}";
+        return true;
+    }
+
+    private string BuildBrowserNavigationHref(string href, string origin, string returnLabel)
+    {
+        var requestDetailHref = $"/documents/{SourceType}/{DocumentId:D}";
+        return
+            $"{href}&origin={Uri.EscapeDataString(origin)}" +
+            $"&returnHref={Uri.EscapeDataString(requestDetailHref)}" +
+            $"&returnLabel={Uri.EscapeDataString(returnLabel)}";
+    }
+
     private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
     {
         href = string.Empty;
@@ -1307,4 +1632,6 @@
         Guid SettlementApplicationId,
         ShellAccountingDocumentReverseApplyReadinessSummary? Readiness,
         ShellAccountingDocumentReverseExecutionPlanSummary? Plan);
+
+    private sealed record class ReverseNextLegalActionSummary(string Title, string Detail);
 }

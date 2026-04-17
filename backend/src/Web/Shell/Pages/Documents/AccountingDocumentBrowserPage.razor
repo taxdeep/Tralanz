@@ -11,7 +11,13 @@
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
     <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
-        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.ArrowBack">
+        @if (HasReturnLink)
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="@ResolvedReturnHref" StartIcon="@Icons.Material.Filled.ArrowBack">
+                @ResolvedReturnLabel
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.Home">
             Back to shell
         </MudButton>
         <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Source document browser</MudChip>
@@ -21,6 +27,13 @@
     <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
         This browser gives `Invoice`, `Bill`, `Credit Note`, and `Vendor Credit` a formal company-scoped read surface. It stays read-only and drills into the existing backend-owned document detail page.
     </p>
+
+    @if (!string.IsNullOrWhiteSpace(QueryOrigin))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @($"Navigation context: {QueryOrigin}")
+        </MudAlert>
+    }
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:0.75rem;align-items:end;margin-bottom:1rem;">
         <MudSelect T="string" Label="Source Type" Variant="Variant.Outlined" @bind-Value="_selectedSourceType">
@@ -72,7 +85,12 @@
             <MudText Typo="Typo.body2">@ShellState.ActiveCompany.CompanyName</MudText>
         </MudPaper>
         <MudPaper Class="pa-4" Elevation="0">
-            <MudText Typo="Typo.caption">Filter</MudText>
+            <MudText Typo="Typo.caption">Business Focus</MudText>
+            <MudText Typo="Typo.h6">@CurrentFocusLabel</MudText>
+            <MudText Typo="Typo.body2">@CurrentFocusDescription</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Applied Filter</MudText>
             <MudText Typo="Typo.h6">@CurrentFilterLabel</MudText>
             <MudText Typo="Typo.body2">@($"{_items.Count} document(s)")</MudText>
         </MudPaper>
@@ -149,6 +167,24 @@
 
 @code
 {
+    [SupplyParameterFromQuery(Name = "sourceType")]
+    public string? QuerySourceType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "counterpartyRole")]
+    public string? QueryCounterpartyRole { get; set; }
+
+    [SupplyParameterFromQuery(Name = "counterpartyId")]
+    public Guid? QueryCounterpartyId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? QueryOrigin { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnHref")]
+    public string? QueryReturnHref { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnLabel")]
+    public string? QueryReturnLabel { get; set; }
+
     private readonly IReadOnlyList<SourceTypeOption> _sourceTypeOptions =
     [
         new(string.Empty, "All Source Documents"),
@@ -173,12 +209,20 @@
     private IReadOnlyList<ShellAccountingSourceDocumentBrowserItem> _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
     private IReadOnlyList<SourceTypeOption> _counterpartyOptions = Array.Empty<SourceTypeOption>();
     private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool _queryFiltersApplied;
+    private bool HasReturnLink => !string.IsNullOrWhiteSpace(ResolvedReturnHref);
+    private string? ResolvedReturnHref => TryNormalizeReturnHref(QueryReturnHref, out var href) ? href : null;
+    private string ResolvedReturnLabel => string.IsNullOrWhiteSpace(QueryReturnLabel) ? "Back to previous drill-down" : QueryReturnLabel.Trim();
 
     private string CurrentFilterLabel =>
         BuildFilterLabel();
+    private string CurrentFocusLabel => BuildFocusLabel();
+    private string CurrentFocusDescription => BuildFocusDescription();
 
     protected override async Task OnInitializedAsync()
     {
+        ApplyQueryFiltersOnce();
+
         if (!await LoadCounterpartyOptionsAsync())
         {
             return;
@@ -263,6 +307,31 @@
         return true;
     }
 
+    private void ApplyQueryFiltersOnce()
+    {
+        if (_queryFiltersApplied)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(QuerySourceType))
+        {
+            _selectedSourceType = QuerySourceType.Trim().ToLowerInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(QueryCounterpartyRole))
+        {
+            _selectedCounterpartyRole = QueryCounterpartyRole.Trim().ToLowerInvariant();
+        }
+
+        if (QueryCounterpartyId.HasValue)
+        {
+            _selectedCounterpartyIdText = QueryCounterpartyId.Value.ToString("D");
+        }
+
+        _queryFiltersApplied = true;
+    }
+
     private async Task<bool> EnsureWriteGateStateAsync()
     {
         await ShellState.EnsureHydratedAsync();
@@ -298,6 +367,48 @@
             : $"{sourceLabel} | {roleLabel}: {counterpartyLabel}";
     }
 
+    private string BuildFocusLabel() =>
+        QueryOrigin?.Trim() switch
+        {
+            "Open item detail" => "Open-item related source history",
+            "Current source detail" => "Adjacent source-document slice",
+            "Reverse blocker: blocked source type" => "Reverse-blocker follow-up",
+            "Settlement application reversal history" => "Governed unapply history slice",
+            "Settlement application line source" => "Settlement line source follow-up",
+            "Settlement application line target" => "Settlement line target follow-up",
+            _ => "General source browser"
+        };
+
+    private string BuildFocusDescription()
+    {
+        var sourceLabel = _sourceTypeOptions.FirstOrDefault(option => option.Value == _selectedSourceType)?.Label
+            ?? "all source documents";
+        var roleLabel = _counterpartyRoleOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyRole)?.Label
+            ?? "all counterparties";
+        var counterpartyLabel = _counterpartyOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyIdText)?.Label;
+        var counterpartyScope = string.IsNullOrWhiteSpace(counterpartyLabel)
+            ? $"{roleLabel.ToLowerInvariant()}"
+            : $"{roleLabel.TrimEnd('s')}: {counterpartyLabel}";
+
+        return QueryOrigin?.Trim() switch
+        {
+            "Open item detail" =>
+                $"Browsing {sourceLabel.ToLowerInvariant()} for {counterpartyScope} linked to the current open-item drill-down.",
+            "Current source detail" =>
+                $"Browsing the {sourceLabel.ToLowerInvariant()} slice nearest the current source-document review context.",
+            "Reverse blocker: blocked source type" =>
+                $"Browsing the blocked {sourceLabel.ToLowerInvariant()} subset while resolving AR/AP reverse blockers.",
+            "Settlement application reversal history" =>
+                $"Browsing source documents referenced by governed settlement-application reversal history for {counterpartyScope}.",
+            "Settlement application line source" =>
+                $"Browsing source-side {sourceLabel.ToLowerInvariant()} reached from a settlement application line.",
+            "Settlement application line target" =>
+                $"Browsing target-side {sourceLabel.ToLowerInvariant()} reached from a settlement application line.",
+            _ =>
+                $"Browsing {sourceLabel.ToLowerInvariant()} under the current company scope for {counterpartyScope}."
+        };
+    }
+
     private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
     {
         href = string.Empty;
@@ -316,6 +427,24 @@
         };
 
         return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static bool TryNormalizeReturnHref(string? href, out string normalizedHref)
+    {
+        normalizedHref = string.Empty;
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return false;
+        }
+
+        var trimmed = href.Trim();
+        if (!trimmed.StartsWith('/', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        normalizedHref = trimmed;
+        return true;
     }
 
     private sealed record SourceTypeOption(string Value, string Label);

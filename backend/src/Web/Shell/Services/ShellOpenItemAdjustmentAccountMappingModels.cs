@@ -10,8 +10,35 @@ public sealed record class ShellOpenItemAdjustmentAccountMappingListResponse
 
     public bool IncludeInactive { get; init; }
 
+    public Guid? BookId { get; init; }
+
+    public string? PolicyScope { get; init; }
+
+    public string? SearchText { get; init; }
+
+    public int Limit { get; init; }
+
+    public ShellOpenItemAdjustmentAccountMappingLookupSummary Summary { get; init; } = new();
+
     public IReadOnlyList<ShellOpenItemAdjustmentAccountMappingRecord> Mappings { get; init; } =
         Array.Empty<ShellOpenItemAdjustmentAccountMappingRecord>();
+}
+
+public sealed record class ShellOpenItemAdjustmentAccountMappingLookupSummary
+{
+    public int TotalMappings { get; init; }
+
+    public int VisibleMappings { get; init; }
+
+    public int ReturnedMappings { get; init; }
+
+    public int ActiveMappings { get; init; }
+
+    public int CompanyDefaultMappings { get; init; }
+
+    public int BookSpecificMappings { get; init; }
+
+    public int InactiveMappings { get; init; }
 }
 
 public sealed record class ShellOpenItemAdjustmentAccountMappingRecord

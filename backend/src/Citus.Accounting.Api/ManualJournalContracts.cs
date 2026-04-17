@@ -159,7 +159,11 @@ public sealed record OpenItemAdjustmentAccountMappingLookupQuery(
     Guid CompanyId,
     string? OpenItemType,
     string? AdjustmentType,
-    bool? IncludeInactive);
+    bool? IncludeInactive,
+    Guid? BookId,
+    string? PolicyScope,
+    string? SearchText,
+    int? Limit);
 
 public sealed record SaveOpenItemAdjustmentAccountMappingHttpRequest(
     Guid CompanyId,

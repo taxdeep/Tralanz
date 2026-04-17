@@ -23,6 +23,14 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         "small_balance_adjustment"
     };
 
+    private static readonly HashSet<string> AllowedPolicyScopes = new(StringComparer.Ordinal)
+    {
+        "company_default",
+        "book_specific",
+        "primary_execution",
+        "governance_only"
+    };
+
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
         const string sql = """
@@ -97,7 +105,53 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<OpenItemAdjustmentAccountMappingRecord>> ListAsync(
+    public async Task<OpenItemAdjustmentAccountMappingLookupResult> LookupAsync(
+        OpenItemAdjustmentAccountMappingLookupRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            connections,
+            executionContextAccessor,
+            cancellationToken);
+        var primaryBookId = await TryGetPrimaryBookIdAsync(scope, request.CompanyId, cancellationToken);
+        var allMappings = await ListCoreAsync(
+            scope,
+            request.CompanyId,
+            request.OpenItemType,
+            request.AdjustmentType,
+            request.IncludeInactive,
+            cancellationToken);
+
+        var summary = new OpenItemAdjustmentAccountMappingLookupSummary(
+            allMappings.Count,
+            0,
+            0,
+            allMappings.Count(static mapping => mapping.IsActive),
+            allMappings.Count(static mapping => mapping.IsActive && mapping.BookId is null),
+            allMappings.Count(static mapping => mapping.IsActive && mapping.BookId is not null),
+            allMappings.Count(static mapping => !mapping.IsActive));
+
+        var filtered = allMappings
+            .Where(mapping => MatchesBookFilter(mapping, request.BookId))
+            .Where(mapping => MatchesPolicyScope(mapping, request.PolicyScope, primaryBookId))
+            .Where(mapping => MatchesSearch(mapping, request.SearchText))
+            .ToArray();
+
+        var limited = filtered
+            .Take(Math.Clamp(request.Limit <= 0 ? 200 : request.Limit, 1, 500))
+            .ToArray();
+
+        return new OpenItemAdjustmentAccountMappingLookupResult(
+            summary with
+            {
+                VisibleMappings = filtered.Length,
+                ReturnedMappings = limited.Length
+            },
+            limited);
+    }
+
+    private async Task<IReadOnlyList<OpenItemAdjustmentAccountMappingRecord>> ListCoreAsync(
+        PostgresCommandScope scope,
         CompanyId companyId,
         string? openItemType,
         string? adjustmentType,
@@ -112,11 +166,6 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         var normalizedAdjustmentType = string.IsNullOrWhiteSpace(adjustmentType)
             ? null
             : NormalizeAdjustmentType(adjustmentType);
-
-        await using var scope = await PostgresCommandScope.CreateAsync(
-            connections,
-            executionContextAccessor,
-            cancellationToken);
         var companyBooksTableExists = await CompanyBooksTableExistsAsync(scope, cancellationToken);
 
         await using var command = scope.CreateCommand(
@@ -566,6 +615,84 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
+    private static async Task<Guid?> TryGetPrimaryBookIdAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        CancellationToken cancellationToken)
+    {
+        if (!await CompanyBooksTableExistsAsync(scope, cancellationToken))
+        {
+            return null;
+        }
+
+        await using var command = scope.CreateCommand(
+            """
+            select id
+            from company_books
+            where company_id = @company_id
+              and is_active = true
+              and is_primary = true
+            order by effective_from desc, id asc
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        return await command.ExecuteScalarAsync(cancellationToken) is Guid bookId
+            ? bookId
+            : null;
+    }
+
+    private static bool MatchesBookFilter(OpenItemAdjustmentAccountMappingRecord mapping, Guid? bookId) =>
+        !bookId.HasValue || mapping.BookId == bookId.Value;
+
+    private static bool MatchesPolicyScope(
+        OpenItemAdjustmentAccountMappingRecord mapping,
+        string? policyScope,
+        Guid? primaryBookId)
+    {
+        if (string.IsNullOrWhiteSpace(policyScope))
+        {
+            return true;
+        }
+
+        var normalizedScope = NormalizePolicyScope(policyScope);
+        return normalizedScope switch
+        {
+            "company_default" => mapping.BookId is null,
+            "book_specific" => mapping.BookId is not null,
+            "primary_execution" => mapping.BookId is null || (primaryBookId.HasValue && mapping.BookId == primaryBookId.Value),
+            "governance_only" => mapping.BookId is not null && (!primaryBookId.HasValue || mapping.BookId != primaryBookId.Value),
+            _ => true
+        };
+    }
+
+    private static bool MatchesSearch(OpenItemAdjustmentAccountMappingRecord mapping, string? searchText)
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        var terms = searchText.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return terms.All(term =>
+            ContainsInvariant(mapping.BookCode, term) ||
+            ContainsInvariant(mapping.AccountingStandard, term) ||
+            ContainsInvariant(mapping.OpenItemType, term) ||
+            ContainsInvariant(mapping.AdjustmentType, term) ||
+            ContainsInvariant(mapping.AdjustmentAccountCode, term) ||
+            ContainsInvariant(mapping.AdjustmentAccountName, term) ||
+            ContainsInvariant(mapping.AdjustmentAccountRootType, term) ||
+            ContainsInvariant(mapping.IsActive ? "active" : "inactive", term) ||
+            ContainsInvariant(mapping.BookId is null ? "company default" : "book specific", term));
+    }
+
+    private static bool ContainsInvariant(string? value, string term) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(term, StringComparison.OrdinalIgnoreCase);
+
     private static async Task InsertAuditLogIfAvailableAsync(
         PostgresCommandScope scope,
         CompanyId companyId,
@@ -656,6 +783,18 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         {
             throw new InvalidOperationException(
                 "Adjustment type must be either write_off or small_balance_adjustment for adjustment account mapping.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizePolicyScope(string value)
+    {
+        var normalized = NormalizeToken(value, nameof(value));
+        if (!AllowedPolicyScopes.Contains(normalized))
+        {
+            throw new InvalidOperationException(
+                "Policy scope must be one of company_default, book_specific, primary_execution, or governance_only for adjustment account mapping lookup.");
         }
 
         return normalized;

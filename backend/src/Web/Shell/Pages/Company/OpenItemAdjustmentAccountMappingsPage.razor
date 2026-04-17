@@ -77,6 +77,32 @@
             <MudSelectItem T="string" Value="@SmallBalanceAdjustmentType">Small Balance</MudSelectItem>
         </MudSelect>
 
+        <MudSelect T="string"
+                   Label="Policy Scope"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   @bind-Value="_filterPolicyScope">
+            <MudSelectItem T="string" Value="@AllFilter">All</MudSelectItem>
+            <MudSelectItem T="string" Value="@CompanyDefaultScope">Company default</MudSelectItem>
+            <MudSelectItem T="string" Value="@BookSpecificScope">Book specific</MudSelectItem>
+            <MudSelectItem T="string" Value="@PrimaryExecutionScope">Primary execution</MudSelectItem>
+            <MudSelectItem T="string" Value="@GovernanceOnlyScope">Governance only</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect T="string"
+                   Label="Book Filter"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   @bind-Value="_filterBookToken">
+            <MudSelectItem T="string" Value="@AllFilter">All books</MudSelectItem>
+            @foreach (var book in _books)
+            {
+                <MudSelectItem T="string" Value="@book.BookId.ToString("D")">
+                    @book.BookCode - @book.BookName
+                </MudSelectItem>
+            }
+        </MudSelect>
+
         <MudSwitch T="bool"
                    Color="Color.Info"
                    Label="Include inactive"
@@ -290,7 +316,7 @@
                     <h2>Current Mappings</h2>
                 </div>
                 <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
-                    @FilteredMappingCount of @_mappings.Count mapping(s)
+                    @ReturnedMappingCount of @VisibleMappingCount matching backend mapping(s)
                 </MudChip>
             </div>
 
@@ -304,15 +330,22 @@
                     No mappings found for this company/filter. Execution will keep using the structural account guard until a mapping is activated.
                 </MudAlert>
             }
-            else if (FilteredMappingCount == 0)
+            else if (VisibleMappingCount == 0)
             {
                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-                    Mappings are loaded, but none match the current search text. Clear the search to review backend policy truth.
+                    No backend mapping rows match the current search / scope filters. Clear the filters to review full company policy truth.
                 </MudAlert>
             }
             else
             {
-                <MudTable Items="FilteredMappings" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                @if (ReturnedMappingCount < VisibleMappingCount)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        Showing the first @ReturnedMappingCount backend mapping row(s). Narrow the search or book/scope filters to inspect the full matching set of @VisibleMappingCount rows.
+                    </MudAlert>
+                }
+
+                <MudTable Items="_mappings" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
                     <HeaderContent>
                         <MudTh>Scope</MudTh>
                         <MudTh>Open Item</MudTh>
@@ -369,16 +402,39 @@
     private const string ApOpenItemType = "ap_open_item";
     private const string WriteOffAdjustmentType = "write_off";
     private const string SmallBalanceAdjustmentType = "small_balance_adjustment";
+    private const string CompanyDefaultScope = "company_default";
+    private const string BookSpecificScope = "book_specific";
+    private const string PrimaryExecutionScope = "primary_execution";
+    private const string GovernanceOnlyScope = "governance_only";
 
     private readonly List<ShellOpenItemAdjustmentAccountMappingRecord> _mappings = [];
     private readonly List<ShellOpenItemAdjustmentAccountMappingRecord> _policyMappings = [];
     private readonly List<CompanyBookRecord> _books = [];
     private readonly List<JournalEntryAccountOption> _allowedAdjustmentAccounts = [];
+    private ShellOpenItemAdjustmentAccountMappingLookupSummary _mappingSummary = new();
+    private bool _queryFiltersApplied;
+
+    [SupplyParameterFromQuery(Name = "openItemType")]
+    public string? QueryOpenItemType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "adjustmentType")]
+    public string? QueryAdjustmentType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "policyScope")]
+    public string? QueryPolicyScope { get; set; }
+
+    [SupplyParameterFromQuery(Name = "bookId")]
+    public Guid? QueryBookId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "searchText")]
+    public string? QuerySearchText { get; set; }
 
     private string _mappingSearchText = string.Empty;
     private string _accountSearchText = string.Empty;
     private string _filterOpenItemType = AllFilter;
     private string _filterAdjustmentType = AllFilter;
+    private string _filterPolicyScope = AllFilter;
+    private string _filterBookToken = AllFilter;
     private bool _includeInactive;
     private bool _isBusy;
     private string? _pageError;
@@ -396,7 +452,43 @@
             return;
         }
 
+        ApplyQueryFiltersOnce();
         await LoadAsync();
+    }
+
+    private void ApplyQueryFiltersOnce()
+    {
+        if (_queryFiltersApplied)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(QueryOpenItemType))
+        {
+            _filterOpenItemType = QueryOpenItemType.Trim().ToLowerInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(QueryAdjustmentType))
+        {
+            _filterAdjustmentType = QueryAdjustmentType.Trim().ToLowerInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(QueryPolicyScope))
+        {
+            _filterPolicyScope = QueryPolicyScope.Trim().ToLowerInvariant();
+        }
+
+        if (QueryBookId.HasValue)
+        {
+            _filterBookToken = QueryBookId.Value.ToString("D");
+        }
+
+        if (!string.IsNullOrWhiteSpace(QuerySearchText))
+        {
+            _mappingSearchText = QuerySearchText.Trim();
+        }
+
+        _queryFiltersApplied = true;
     }
 
     private async Task LoadAsync()
@@ -434,6 +526,10 @@
                 null,
                 null,
                 true,
+                null,
+                null,
+                null,
+                500,
                 CancellationToken.None);
             if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(policyResult, CancellationToken.None))
             {
@@ -445,6 +541,7 @@
                 _pageError = policyResult.ErrorMessage;
                 _policyMappings.Clear();
                 _mappings.Clear();
+                _mappingSummary = new ShellOpenItemAdjustmentAccountMappingLookupSummary();
                 return;
             }
 
@@ -456,6 +553,10 @@
                 NormalizeFilter(_filterOpenItemType),
                 NormalizeFilter(_filterAdjustmentType),
                 _includeInactive,
+                SelectedFilterBookId,
+                NormalizeFilter(_filterPolicyScope),
+                NormalizeSearch(_mappingSearchText),
+                250,
                 CancellationToken.None);
             if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
             {
@@ -466,15 +567,18 @@
             {
                 _pageError = result.ErrorMessage;
                 _mappings.Clear();
+                _mappingSummary = new ShellOpenItemAdjustmentAccountMappingLookupSummary();
                 return;
             }
 
             _mappings.Clear();
             _mappings.AddRange(result.Value?.Mappings ?? Array.Empty<ShellOpenItemAdjustmentAccountMappingRecord>());
+            _mappingSummary = result.Value?.Summary ?? new ShellOpenItemAdjustmentAccountMappingLookupSummary();
         }
         catch (Exception ex)
         {
             _pageError = ex.Message;
+            _mappingSummary = new ShellOpenItemAdjustmentAccountMappingLookupSummary();
         }
         finally
         {
@@ -639,23 +743,26 @@
     private Guid? SelectedBookId =>
         Guid.TryParse(_selectedBookToken, out var bookId) ? bookId : null;
 
-    private IEnumerable<ShellOpenItemAdjustmentAccountMappingRecord> FilteredMappings =>
-        _mappings.Where(MatchesMappingSearch);
+    private Guid? SelectedFilterBookId =>
+        Guid.TryParse(_filterBookToken, out var bookId) ? bookId : null;
 
-    private int FilteredMappingCount =>
-        _mappings.Count(MatchesMappingSearch);
+    private int VisibleMappingCount =>
+        _mappingSummary.VisibleMappings;
+
+    private int ReturnedMappingCount =>
+        _mappingSummary.ReturnedMappings;
 
     private int ActiveMappingCount =>
-        _policyMappings.Count(static mapping => mapping.IsActive);
+        _mappingSummary.ActiveMappings;
 
     private int CompanyDefaultMappingCount =>
-        _policyMappings.Count(static mapping => mapping.IsActive && mapping.BookId is null);
+        _mappingSummary.CompanyDefaultMappings;
 
     private int BookSpecificMappingCount =>
-        _policyMappings.Count(static mapping => mapping.IsActive && mapping.BookId is not null);
+        _mappingSummary.BookSpecificMappings;
 
     private int InactiveMappingCount =>
-        _policyMappings.Count(static mapping => !mapping.IsActive);
+        _mappingSummary.InactiveMappings;
 
     private string PolicyCoverageLabel =>
         ActiveMappingCount == 0
@@ -736,6 +843,9 @@
 
     private static string? NormalizeFilter(string value) =>
         string.Equals(value, AllFilter, StringComparison.Ordinal) ? null : value;
+
+    private static string? NormalizeSearch(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static bool IsAllowedAdjustmentRoot(string rootType) =>
         rootType is "revenue" or "cost_of_sales" or "expense";
@@ -828,29 +938,6 @@
 
     private static string GetCoverageCellClass(AdjustmentPolicyCoverageCell cell) =>
         $"adjustment-mapping-coverage__cell adjustment-mapping-coverage__cell--{cell.State}";
-
-    private bool MatchesMappingSearch(ShellOpenItemAdjustmentAccountMappingRecord mapping)
-    {
-        if (string.IsNullOrWhiteSpace(_mappingSearchText))
-        {
-            return true;
-        }
-
-        var terms = _mappingSearchText.Split(
-            ' ',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return terms.All(term =>
-            ContainsInvariant(mapping.ScopeLabel, term) ||
-            ContainsInvariant(mapping.BookCode, term) ||
-            ContainsInvariant(mapping.AccountingStandard, term) ||
-            ContainsInvariant(mapping.OpenItemLabel, term) ||
-            ContainsInvariant(mapping.AdjustmentLabel, term) ||
-            ContainsInvariant(mapping.AdjustmentAccountCode, term) ||
-            ContainsInvariant(mapping.AdjustmentAccountName, term) ||
-            ContainsInvariant(mapping.AdjustmentAccountRootType, term) ||
-            ContainsInvariant(mapping.IsActive ? "active" : "inactive", term));
-    }
 
     private bool MatchesAccountSearch(JournalEntryAccountOption account)
     {

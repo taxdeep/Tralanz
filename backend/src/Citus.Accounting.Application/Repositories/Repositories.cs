@@ -888,11 +888,8 @@ public interface IOpenItemAdjustmentAccountMappingRepository
 {
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<OpenItemAdjustmentAccountMappingRecord>> ListAsync(
-        CompanyId companyId,
-        string? openItemType,
-        string? adjustmentType,
-        bool includeInactive,
+    Task<OpenItemAdjustmentAccountMappingLookupResult> LookupAsync(
+        OpenItemAdjustmentAccountMappingLookupRequest request,
         CancellationToken cancellationToken);
 
     Task<OpenItemAdjustmentAccountMappingSaveResult> SaveAsync(
@@ -924,6 +921,29 @@ public sealed record OpenItemAdjustmentAccountMappingRecord(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? DeactivatedAt);
+
+public sealed record OpenItemAdjustmentAccountMappingLookupRequest(
+    CompanyId CompanyId,
+    string? OpenItemType,
+    string? AdjustmentType,
+    bool IncludeInactive,
+    Guid? BookId,
+    string? PolicyScope,
+    string? SearchText,
+    int Limit);
+
+public sealed record OpenItemAdjustmentAccountMappingLookupSummary(
+    int TotalMappings,
+    int VisibleMappings,
+    int ReturnedMappings,
+    int ActiveMappings,
+    int CompanyDefaultMappings,
+    int BookSpecificMappings,
+    int InactiveMappings);
+
+public sealed record OpenItemAdjustmentAccountMappingLookupResult(
+    OpenItemAdjustmentAccountMappingLookupSummary Summary,
+    IReadOnlyList<OpenItemAdjustmentAccountMappingRecord> Mappings);
 
 public sealed record OpenItemAdjustmentAccountMappingSaveRequest(
     CompanyId CompanyId,

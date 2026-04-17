@@ -1319,11 +1319,16 @@ accounting.MapGet(
     {
         try
         {
-            var mappings = await repository.ListAsync(
-                new(query.CompanyId),
-                query.OpenItemType,
-                query.AdjustmentType,
-                query.IncludeInactive == true,
+            var result = await repository.LookupAsync(
+                new OpenItemAdjustmentAccountMappingLookupRequest(
+                    new(query.CompanyId),
+                    query.OpenItemType,
+                    query.AdjustmentType,
+                    query.IncludeInactive == true,
+                    query.BookId,
+                    query.PolicyScope,
+                    query.SearchText,
+                    query.Limit ?? 200),
                 cancellationToken);
 
             return Results.Ok(new
@@ -1332,7 +1337,12 @@ accounting.MapGet(
                 OpenItemType = query.OpenItemType,
                 AdjustmentType = query.AdjustmentType,
                 IncludeInactive = query.IncludeInactive == true,
-                Mappings = mappings
+                query.BookId,
+                query.PolicyScope,
+                query.SearchText,
+                Limit = Math.Clamp(query.Limit ?? 200, 1, 500),
+                Summary = result.Summary,
+                Mappings = result.Mappings
             });
         }
         catch (InvalidOperationException ex)
