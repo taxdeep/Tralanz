@@ -62,6 +62,37 @@ public sealed class ProfileApiContractTests
     }
 
     [Fact]
+    public async Task GetProfile_ExposesRecoveryPolicyState_WhenRecoveryIsOpen()
+    {
+        using var factory = new ProfileApiApplicationFactory();
+        var userId = Guid.Parse("4ca619ff-cdd0-4f69-a3d7-0113447c9299");
+        factory.BusinessSessions.ValidateResult = CreateSession(userId);
+        factory.Workflow.OnGet = static (actorUserId, _) =>
+            Task.FromResult<PlatformAccountProfileSummary?>(
+                CreateProfile(
+                    actorUserId,
+                    mfaMode: "totp_app",
+                    activeMfaRecoveryRequestId: Guid.Parse("ee924ff1-005f-4d1f-987c-a12996b0b85f"),
+                    activeMfaRecoveryStatus: "approved"));
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-21B");
+
+        var response = await client.GetAsync("/api/platform/profile");
+
+        response.EnsureSuccessStatusCode();
+
+        var profile = await response.Content.ReadFromJsonAsync<PlatformAccountProfileSummary>();
+
+        Assert.NotNull(profile);
+        Assert.True(profile!.HasActiveMfaRecoveryRequest);
+        Assert.False(profile.CanRequestMfaRecovery);
+        Assert.True(profile.IsSysAdminEmergencyMfaResetBlocked);
+        Assert.Contains("already open", profile.MfaRecoveryPolicyReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("blocked", profile.EmergencyMfaResetPolicyReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SaveDisplayName_ReturnsUpdatedSummary_ForAuthenticatedBusinessSession()
     {
         using var factory = new ProfileApiApplicationFactory();
@@ -117,6 +148,79 @@ public sealed class ProfileApiContractTests
         Assert.Equal(userId, factory.Workflow.LastUserId);
         Assert.Equal("email_code", factory.Workflow.LastMfaMode);
         Assert.Equal("email_code", profile!.MfaMode);
+    }
+
+    [Fact]
+    public async Task BeginTotpEnrollment_ReturnsBootstrapPayload_WhenAuthenticated()
+    {
+        using var factory = new ProfileApiApplicationFactory();
+        var userId = Guid.Parse("089ee8c1-a3ea-496d-bbc8-3f4ef2c60a52");
+        var enrollmentId = Guid.Parse("101d8b17-7521-468f-a40e-bb9792d5f4c5");
+        factory.BusinessSessions.ValidateResult = CreateSession(userId);
+        factory.Workflow.OnBeginTotpEnrollment = static (actorUserId, _) =>
+            Task.FromResult<PlatformTotpEnrollmentStartResult?>(
+                new()
+                {
+                    EnrollmentId = Guid.Parse("101d8b17-7521-468f-a40e-bb9792d5f4c5"),
+                    Issuer = "Citus",
+                    AccountLabel = "taylor.rowan@example.com",
+                    SecretBase32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+                    OtpAuthUri = "otpauth://totp/Citus:taylor.rowan@example.com",
+                    ExpiresAtUtc = new DateTimeOffset(2026, 4, 17, 1, 0, 0, TimeSpan.Zero),
+                    Profile = CreateProfile(actorUserId)
+                });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-22T");
+
+        var response = await client.PostAsync("/api/platform/profile/mfa/totp-enrollment/start", null);
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<PlatformTotpEnrollmentStartResult>();
+
+        Assert.NotNull(payload);
+        Assert.Equal(userId, factory.Workflow.LastUserId);
+        Assert.Equal(enrollmentId, payload!.EnrollmentId);
+        Assert.Equal("totp_app", payload.Factor);
+    }
+
+    [Fact]
+    public async Task ConfirmTotpEnrollment_ReturnsConfirmationPayload_WhenAuthenticated()
+    {
+        using var factory = new ProfileApiApplicationFactory();
+        var userId = Guid.Parse("0174cdb8-4057-412f-aa24-a57d72bfb5d6");
+        var enrollmentId = Guid.Parse("16fc4ac6-36ec-460d-ad92-d9b0e7fdc9fe");
+        factory.BusinessSessions.ValidateResult = CreateSession(userId);
+        factory.Workflow.OnConfirmTotpEnrollment = static (actorUserId, requestedEnrollmentId, verificationCode, _) =>
+            Task.FromResult<PlatformTotpEnrollmentConfirmationResult?>(
+                new()
+                {
+                    EnrollmentId = requestedEnrollmentId,
+                    ConfirmedAtUtc = new DateTimeOffset(2026, 4, 17, 1, 15, 0, TimeSpan.Zero),
+                    Profile = CreateProfile(actorUserId, mfaMode: "totp_app", previousMfaMode: "email_code")
+                });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(BusinessAuthHeaderNames.SessionToken, "BUSINESS-TOKEN-22U");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/platform/profile/mfa/totp-enrollment/confirm",
+            new
+            {
+                enrollmentId,
+                verificationCode = "123456"
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<PlatformTotpEnrollmentConfirmationResult>();
+
+        Assert.NotNull(payload);
+        Assert.Equal(userId, factory.Workflow.LastUserId);
+        Assert.Equal(enrollmentId, factory.Workflow.LastTotpEnrollmentId);
+        Assert.Equal("123456", factory.Workflow.LastTotpVerificationCode);
+        Assert.Equal("totp_app", payload!.Profile.MfaMode);
     }
 
     [Fact]
@@ -401,7 +505,9 @@ public sealed class ProfileApiContractTests
         string previousMfaMode = "",
         DateTimeOffset? lastMfaResetAtUtc = null,
         string lastMfaResetReason = "",
-        string lastMfaResetByDisplayName = "") =>
+        string lastMfaResetByDisplayName = "",
+        Guid? activeMfaRecoveryRequestId = null,
+        string activeMfaRecoveryStatus = "") =>
         new()
         {
             UserId = userId,
@@ -416,6 +522,8 @@ public sealed class ProfileApiContractTests
             LastMfaResetAtUtc = lastMfaResetAtUtc,
             LastMfaResetReason = lastMfaResetReason,
             LastMfaResetByDisplayName = lastMfaResetByDisplayName,
+            ActiveMfaRecoveryRequestId = activeMfaRecoveryRequestId,
+            ActiveMfaRecoveryStatus = activeMfaRecoveryStatus,
             NotificationVerificationReady = true,
             NotificationBlockingReason = string.Empty
         };
@@ -461,6 +569,12 @@ public sealed class ProfileApiContractTests
         public Func<Guid, CancellationToken, Task<IReadOnlyList<PlatformMfaTimelineEntry>>> OnGetMfaTimeline { get; set; } =
             static (_, _) => Task.FromResult<IReadOnlyList<PlatformMfaTimelineEntry>>(Array.Empty<PlatformMfaTimelineEntry>());
 
+        public Func<Guid, CancellationToken, Task<PlatformTotpEnrollmentStartResult?>> OnBeginTotpEnrollment { get; set; } =
+            static (_, _) => Task.FromResult<PlatformTotpEnrollmentStartResult?>(null);
+
+        public Func<Guid, Guid, string, CancellationToken, Task<PlatformTotpEnrollmentConfirmationResult?>> OnConfirmTotpEnrollment { get; set; } =
+            static (_, _, _, _) => Task.FromResult<PlatformTotpEnrollmentConfirmationResult?>(null);
+
         public Func<Guid, string, CancellationToken, Task<PlatformAccountProfileSummary?>> OnSaveDisplayName { get; set; } =
             static (_, _, _) => Task.FromResult<PlatformAccountProfileSummary?>(null);
 
@@ -496,6 +610,10 @@ public sealed class ProfileApiContractTests
 
         public string? LastVerificationCode { get; private set; }
 
+        public Guid? LastTotpEnrollmentId { get; private set; }
+
+        public string? LastTotpVerificationCode { get; private set; }
+
         public async Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken)
         {
             LastUserId = userId;
@@ -506,6 +624,24 @@ public sealed class ProfileApiContractTests
         {
             LastUserId = userId;
             return await OnGetMfaTimeline(userId, cancellationToken);
+        }
+
+        public async Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            LastUserId = userId;
+            return await OnBeginTotpEnrollment(userId, cancellationToken);
+        }
+
+        public async Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
+            Guid userId,
+            Guid enrollmentId,
+            string verificationCode,
+            CancellationToken cancellationToken)
+        {
+            LastUserId = userId;
+            LastTotpEnrollmentId = enrollmentId;
+            LastTotpVerificationCode = verificationCode;
+            return await OnConfirmTotpEnrollment(userId, enrollmentId, verificationCode, cancellationToken);
         }
 
         public async Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(

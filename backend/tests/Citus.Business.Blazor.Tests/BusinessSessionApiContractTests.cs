@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Core.Accounts;
 using Citus.Platform.Core.Runtime;
@@ -101,6 +102,40 @@ public sealed class BusinessSessionApiContractTests
     }
 
     [Fact]
+    public async Task SignIn_ReturnsTotpChallenge_WhenAuthenticatorAppFactorIsRequired()
+    {
+        using var factory = new BusinessSessionApiApplicationFactory();
+        factory.BusinessSessions.AuthenticateResult = new PlatformBusinessSessionResult
+        {
+            Succeeded = true,
+            UserId = Guid.Parse("5f4b9777-7eb5-47bd-b76f-85f42ef6ddb2"),
+            ActiveCompanyId = Guid.Parse("58c8c5d1-6b8f-4fe8-b9c9-8f9f0f7616af"),
+            AuthenticationStage = "challenge_required",
+            RequiresSecondFactor = true,
+            MfaChallengeId = Guid.Parse("ea50d854-22c1-48cf-a1d0-e44c816ec447"),
+            MfaChallengeExpiresAtUtc = new DateTimeOffset(2026, 4, 17, 5, 20, 0, TimeSpan.Zero),
+            AvailableSecondFactors = ["totp_app"]
+        };
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/business/session/sign-in",
+            new
+            {
+                login = "morgan@example.com",
+                password = "Sup3rSecret!"
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<Web.Shell.Services.WebShellBusinessSignInResponse>();
+
+        Assert.NotNull(payload);
+        Assert.True(payload!.RequiresSecondFactor);
+        Assert.Contains("totp_app", payload.AvailableSecondFactors);
+    }
+
+    [Fact]
     public async Task SignIn_ReturnsLocked_WhenMaintenanceIsEnabled()
     {
         using var factory = new BusinessSessionApiApplicationFactory();
@@ -121,6 +156,34 @@ public sealed class BusinessSessionApiContractTests
 
         Assert.Equal(HttpStatusCode.Locked, response.StatusCode);
         Assert.Null(factory.BusinessSessions.LastLogin);
+    }
+
+    [Fact]
+    public async Task SignIn_ReturnsUnauthorizedErrorBody_WhenAccountIsLocked()
+    {
+        using var factory = new BusinessSessionApiApplicationFactory();
+        factory.BusinessSessions.AuthenticateResult = new PlatformBusinessSessionResult
+        {
+            Succeeded = false,
+            FailureCode = "account_locked",
+            FailureMessage = "Too many invalid MFA attempts. Platform account is temporarily locked until 2026-04-17 08:15:00 UTC."
+        };
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/business/session/sign-in",
+            new
+            {
+                login = "morgan@example.com",
+                password = "Sup3rSecret!"
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "Too many invalid MFA attempts. Platform account is temporarily locked until 2026-04-17 08:15:00 UTC.",
+            document.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]
@@ -249,6 +312,35 @@ public sealed class BusinessSessionApiContractTests
         Assert.NotNull(payload.Context);
         Assert.Equal(challengeId, factory.BusinessSessions.LastCompletedChallengeId);
         Assert.Equal("AB12CD", factory.BusinessSessions.LastCompletedVerificationCode);
+    }
+
+    [Fact]
+    public async Task CompleteSecondFactor_ReturnsUnauthorizedErrorBody_WhenAccountGetsLocked()
+    {
+        using var factory = new BusinessSessionApiApplicationFactory();
+        var challengeId = Guid.Parse("1cd4297d-e549-47a5-9961-60f4b8d0b6aa");
+        factory.BusinessSessions.CompleteSecondFactorResult = new PlatformBusinessSessionResult
+        {
+            Succeeded = false,
+            FailureCode = "account_locked",
+            FailureMessage = "Too many invalid MFA attempts. Platform account is temporarily locked until 2026-04-17 08:15:00 UTC."
+        };
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/business/session/mfa/complete",
+            new
+            {
+                challengeId,
+                verificationCode = "BAD000"
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "Too many invalid MFA attempts. Platform account is temporarily locked until 2026-04-17 08:15:00 UTC.",
+            document.RootElement.GetProperty("error").GetString());
     }
 
     private static CompanyAccessSessionContext CreateContext(Guid userId, Guid activeCompanyId)

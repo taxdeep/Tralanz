@@ -36,6 +36,7 @@ public sealed record class MfaRecoveryRequestSummary
         CurrentMfaMode.Trim().ToLowerInvariant() switch
         {
             "email_code" => "Email code",
+            "totp_app" => "Authenticator app (TOTP)",
             _ => "Disabled"
         };
 }

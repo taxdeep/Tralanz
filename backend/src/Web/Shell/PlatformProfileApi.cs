@@ -14,6 +14,8 @@ public static class PlatformProfileApi
         profile.MapGet("/mfa-timeline", GetMfaTimelineAsync);
         profile.MapPut("/display-name", SaveDisplayNameAsync);
         profile.MapPut("/mfa-mode", SaveMfaModeAsync);
+        profile.MapPost("/mfa/totp-enrollment/start", BeginTotpEnrollmentAsync);
+        profile.MapPost("/mfa/totp-enrollment/confirm", ConfirmTotpEnrollmentAsync);
         profile.MapPost("/mfa-recovery/request", RequestMfaRecoveryAsync);
         profile.MapPost("/email-change/request", RequestEmailChangeAsync);
         profile.MapPost("/email-change/confirm", ConfirmEmailChangeAsync);
@@ -67,6 +69,29 @@ public static class PlatformProfileApi
             httpContext,
             businessSessions,
             (userId, token) => workflow.SaveMfaModeAsync(userId, request.MfaMode, token),
+            cancellationToken);
+
+    private static Task<IResult> BeginTotpEnrollmentAsync(
+        HttpContext httpContext,
+        IPlatformBusinessSessionRepository businessSessions,
+        IPlatformAccountProfileWorkflow workflow,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            httpContext,
+            businessSessions,
+            (userId, token) => workflow.BeginTotpEnrollmentAsync(userId, token),
+            cancellationToken);
+
+    private static Task<IResult> ConfirmTotpEnrollmentAsync(
+        ConfirmTotpEnrollmentRequest request,
+        HttpContext httpContext,
+        IPlatformBusinessSessionRepository businessSessions,
+        IPlatformAccountProfileWorkflow workflow,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            httpContext,
+            businessSessions,
+            (userId, token) => workflow.ConfirmTotpEnrollmentAsync(userId, request.EnrollmentId, request.VerificationCode, token),
             cancellationToken);
 
     private static Task<IResult> RequestEmailChangeAsync(
@@ -166,6 +191,8 @@ public static class PlatformProfileApi
     private sealed record SaveDisplayNameRequest(string DisplayName);
 
     private sealed record SaveMfaModeRequest(string MfaMode);
+
+    private sealed record ConfirmTotpEnrollmentRequest(Guid EnrollmentId, string VerificationCode);
 
     private sealed record RequestEmailChangeRequest(string NewEmail);
 

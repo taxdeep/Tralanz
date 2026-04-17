@@ -43,6 +43,8 @@ public sealed record class PlatformAuditEvent
         {
             "company_status_changed" => "Company Status Changed",
             "account_status_changed" => "Account Status Changed",
+            "account_totp_enrollment_started" => "Account TOTP Enrollment Started",
+            "account_totp_enrollment_confirmed" => "Account TOTP Enrollment Confirmed",
             "account_mfa_recovery_requested" => "Account MFA Recovery Requested",
             "account_mfa_recovery_approved" => "Account MFA Recovery Approved",
             "account_mfa_recovery_rejected" => "Account MFA Recovery Rejected",

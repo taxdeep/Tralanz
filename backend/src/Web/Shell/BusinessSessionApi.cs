@@ -263,7 +263,9 @@ public static class BusinessSessionApi
         result.FailureCode switch
         {
             "invalid_credentials" or "missing_session" or "invalid_session" or "expired_session" or "account_not_active" or "account_locked"
-                => Results.Unauthorized(),
+                => Results.Json(
+                    new ErrorResponse(result.FailureMessage),
+                    statusCode: StatusCodes.Status401Unauthorized),
             "no_company_access" => Results.Json(
                 new ErrorResponse(result.FailureMessage),
                 statusCode: StatusCodes.Status403Forbidden),

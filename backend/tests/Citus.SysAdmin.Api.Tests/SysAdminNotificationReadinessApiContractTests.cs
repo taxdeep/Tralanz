@@ -401,6 +401,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                     Username = "user.one",
                     Status = "active",
                     MfaMode = "email_code",
+                    ActiveMfaRecoveryStatus = "approved",
                     LastMfaResetAtUtc = new DateTimeOffset(2026, 4, 16, 23, 30, 0, TimeSpan.Zero),
                     LastMfaResetReason = "Operator recovery reset",
                     CompanyCodes = ["EN202600000123"]
@@ -418,6 +419,10 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.Equal(1, factory.GovernanceRepository.ListManagedUsersCallCount);
         Assert.Equal("Morgan Hale", payload[0].DisplayName);
         Assert.Equal("email_code", payload[0].MfaMode);
+        Assert.Equal("approved", payload[0].ActiveMfaRecoveryStatus);
+        Assert.True(payload[0].HasActiveMfaRecoveryRequest);
+        Assert.False(payload[0].CanEmergencyMfaReset);
+        Assert.Contains("blocked", payload[0].EmergencyMfaResetPolicyReason, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Operator recovery reset", payload[0].LastMfaResetReason);
     }
 

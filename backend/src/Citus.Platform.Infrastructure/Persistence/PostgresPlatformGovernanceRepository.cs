@@ -20,6 +20,8 @@ public sealed class PostgresPlatformGovernanceRepository(
     [
         "company_status_changed",
         "account_status_changed",
+        "account_totp_enrollment_started",
+        "account_totp_enrollment_confirmed",
         "account_mfa_recovery_requested",
         "account_mfa_recovery_approved",
         "account_mfa_recovery_rejected",
@@ -91,9 +93,15 @@ public sealed class PostgresPlatformGovernanceRepository(
               execution_reason text,
               executed_at timestamptz,
               executed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
-              constraint account_mfa_recovery_requests_current_mode_chk check (current_mfa_mode in ('none', 'email_code')),
               constraint account_mfa_recovery_requests_status_chk check (status in ('requested', 'approved', 'rejected', 'executed'))
             );
+
+            alter table account_mfa_recovery_requests
+              drop constraint if exists account_mfa_recovery_requests_current_mode_chk;
+
+            alter table account_mfa_recovery_requests
+              add constraint account_mfa_recovery_requests_current_mode_chk
+              check (current_mfa_mode in ('none', 'email_code', 'totp_app'));
 
             create table if not exists business_session_mfa_challenges (
               id uuid primary key default gen_random_uuid(),
@@ -106,14 +114,44 @@ public sealed class PostgresPlatformGovernanceRepository(
               factor text not null,
               destination text not null,
               code_hash text not null,
+              security_stamp_snapshot text not null default '',
               expires_at timestamptz not null,
               consumed_at timestamptz,
               failed_attempts integer not null default 0,
               created_at timestamptz not null default now(),
               constraint business_session_mfa_challenges_role_chk check (role in ('owner', 'user')),
               constraint business_session_mfa_challenges_permissions_array_chk check (jsonb_typeof(permissions) = 'array'),
-              constraint business_session_mfa_challenges_company_status_chk check (company_status in ('active', 'inactive', 'suspended', 'archived')),
-              constraint business_session_mfa_challenges_factor_chk check (factor in ('email_code'))
+              constraint business_session_mfa_challenges_company_status_chk check (company_status in ('active', 'inactive', 'suspended', 'archived'))
+            );
+
+            alter table business_session_mfa_challenges
+              drop constraint if exists business_session_mfa_challenges_factor_chk;
+
+            alter table business_session_mfa_challenges
+              add constraint business_session_mfa_challenges_factor_chk
+              check (factor in ('email_code', 'totp_app'));
+
+            alter table business_session_mfa_challenges
+              add column if not exists security_stamp_snapshot text not null default '';
+
+            update business_session_mfa_challenges c
+            set security_stamp_snapshot = u.security_stamp
+            from users u
+            where c.user_id = u.id
+              and coalesce(c.security_stamp_snapshot, '') = '';
+
+            create table if not exists account_mfa_totp_enrollments (
+              id uuid primary key default gen_random_uuid(),
+              user_id uuid not null references users(id) on delete cascade,
+              status text not null,
+              secret_base32 text not null,
+              created_at timestamptz not null default now(),
+              expires_at timestamptz,
+              confirmed_at timestamptz,
+              revoked_at timestamptz,
+              last_used_at timestamptz,
+              constraint account_mfa_totp_enrollments_status_chk
+                check (status in ('pending', 'active', 'revoked'))
             );
 
             create table if not exists account_verification_codes (
@@ -369,6 +407,7 @@ public sealed class PostgresPlatformGovernanceRepository(
               coalesce(nullif(u.username, ''), u.email) as username,
               u.status,
               u.mfa_mode,
+              coalesce(mfa_recovery.status, '') as active_mfa_recovery_status,
               coalesce(memberships.company_codes, '') as company_codes,
               mfa_reset.created_at as last_mfa_reset_at_utc,
               coalesce(mfa_reset.reason, '') as last_mfa_reset_reason
@@ -380,6 +419,14 @@ public sealed class PostgresPlatformGovernanceRepository(
               where m.user_id = u.id
                 and m.is_active = true
             ) memberships on true
+            left join lateral (
+              select status
+              from account_mfa_recovery_requests
+              where user_id = u.id
+                and status in ('requested', 'approved')
+              order by requested_at desc
+              limit 1
+            ) mfa_recovery on true
             left join lateral (
               select
                 created_at,
@@ -1287,6 +1334,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
             Status = status,
             MfaMode = NormalizeMfaMode(reader.GetString(reader.GetOrdinal("mfa_mode"))),
+            ActiveMfaRecoveryStatus = reader.GetString(reader.GetOrdinal("active_mfa_recovery_status")).Trim(),
             LastMfaResetAtUtc = reader.IsDBNull(reader.GetOrdinal("last_mfa_reset_at_utc"))
                 ? null
                 : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("last_mfa_reset_at_utc"))),
@@ -1308,9 +1356,16 @@ public sealed class PostgresPlatformGovernanceRepository(
             transaction,
             current.Id,
             cancellationToken);
+        var revokedTotpEnrollmentCount = await RevokeActiveTotpEnrollmentsAsync(
+            connection,
+            transaction,
+            current.Id,
+            cancellationToken);
 
         var previousMfaMode = NormalizeMfaMode(current.MfaMode);
-        if (!string.Equals(previousMfaMode, "none", StringComparison.Ordinal) || revokedChallengeCount > 0)
+        if (!string.Equals(previousMfaMode, "none", StringComparison.Ordinal) ||
+            revokedChallengeCount > 0 ||
+            revokedTotpEnrollmentCount > 0)
         {
             await using (var update = connection.CreateCommand())
             {
@@ -1340,6 +1395,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                   'previous_mfa_mode', @previous_mfa_mode,
                   'mfa_mode', 'none',
                   'revoked_challenge_count', @revoked_challenge_count,
+                  'revoked_totp_enrollment_count', @revoked_totp_enrollment_count,
                   'reason', @reason
                 )
                 """,
@@ -1347,6 +1403,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                 {
                     command.Parameters.AddWithValue("previous_mfa_mode", previousMfaMode);
                     command.Parameters.AddWithValue("revoked_challenge_count", revokedChallengeCount);
+                    command.Parameters.AddWithValue("revoked_totp_enrollment_count", revokedTotpEnrollmentCount);
                     command.Parameters.AddWithValue("reason", normalizedReason);
                 },
                 cancellationToken);
@@ -1383,6 +1440,37 @@ public sealed class PostgresPlatformGovernanceRepository(
             )
             select count(*)
             from deleted;
+            """;
+        command.Parameters.AddWithValue("account_id", accountId);
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        return scalar switch
+        {
+            int count => count,
+            long longCount => (int)longCount,
+            _ => 0
+        };
+    }
+
+    private static async Task<int> RevokeActiveTotpEnrollmentsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            with updated as (
+              update account_mfa_totp_enrollments
+              set status = 'revoked',
+                  revoked_at = now()
+              where user_id = @account_id
+                and status in ('pending', 'active')
+              returning 1
+            )
+            select count(*)
+            from updated;
             """;
         command.Parameters.AddWithValue("account_id", accountId);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -1565,6 +1653,8 @@ public sealed class PostgresPlatformGovernanceRepository(
                 ReadString(payload, "previous_status"),
                 ReadString(payload, "status")),
             "account_status_changed" => BuildAccountStatusDetail(payload),
+            "account_totp_enrollment_started" => BuildTotpEnrollmentDetail(payload),
+            "account_totp_enrollment_confirmed" => BuildTotpEnrollmentDetail(payload),
             "account_mfa_recovery_requested" => BuildMfaRecoveryDetail(payload),
             "account_mfa_recovery_approved" => BuildMfaRecoveryDetail(payload),
             "account_mfa_recovery_rejected" => BuildMfaRecoveryDetail(payload),
@@ -1633,15 +1723,27 @@ public sealed class PostgresPlatformGovernanceRepository(
             ReadString(payload, "previous_mfa_mode"),
             ReadString(payload, "mfa_mode"));
         var revokedChallengeCount = ReadString(payload, "revoked_challenge_count");
+        var revokedTotpEnrollmentCount = ReadString(payload, "revoked_totp_enrollment_count");
 
-        if (string.IsNullOrWhiteSpace(revokedChallengeCount))
+        if (string.IsNullOrWhiteSpace(revokedChallengeCount) &&
+            string.IsNullOrWhiteSpace(revokedTotpEnrollmentCount))
         {
             return detail;
         }
 
-        return string.IsNullOrWhiteSpace(detail)
-            ? $"revoked challenges: {revokedChallengeCount}"
-            : $"{detail} | revoked challenges: {revokedChallengeCount}";
+        var segments = new List<string>();
+        AddIfPresent(segments, detail);
+        if (!string.IsNullOrWhiteSpace(revokedChallengeCount))
+        {
+            segments.Add($"revoked challenges: {revokedChallengeCount}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(revokedTotpEnrollmentCount))
+        {
+            segments.Add($"revoked totp enrollments: {revokedTotpEnrollmentCount}");
+        }
+
+        return string.Join(" | ", segments);
     }
 
     private static string BuildMfaRecoveryDetail(JsonElement payload)
@@ -1652,6 +1754,15 @@ public sealed class PostgresPlatformGovernanceRepository(
         var segments = new List<string>();
         AddIfPresent(segments, currentMfaMode);
         AddIfPresent(segments, status);
+        return string.Join(" | ", segments);
+    }
+
+    private static string BuildTotpEnrollmentDetail(JsonElement payload)
+    {
+        var segments = new List<string>();
+        AddIfPresent(segments, ReadString(payload, "mfa_mode"));
+        AddIfPresent(segments, ReadString(payload, "status"));
+        AddIfPresent(segments, ReadString(payload, "expires_at_utc"));
         return string.Join(" | ", segments);
     }
 
@@ -1710,6 +1821,13 @@ public sealed class PostgresPlatformGovernanceRepository(
                 AddIfPresent(highlights, ReadString(payload, "previous_mfa_mode"));
                 AddIfPresent(highlights, ReadString(payload, "mfa_mode"));
                 AddIfPresent(highlights, ReadString(payload, "revoked_challenge_count"));
+                AddIfPresent(highlights, ReadString(payload, "revoked_totp_enrollment_count"));
+                break;
+
+            case "account_totp_enrollment_started":
+            case "account_totp_enrollment_confirmed":
+                AddIfPresent(highlights, ReadString(payload, "mfa_mode"));
+                AddIfPresent(highlights, ReadString(payload, "status"));
                 break;
 
             case "account_mfa_recovery_requested":
@@ -1723,6 +1841,7 @@ public sealed class PostgresPlatformGovernanceRepository(
                 AddIfPresent(highlights, ReadString(payload, "previous_mfa_mode"));
                 AddIfPresent(highlights, ReadString(payload, "mfa_mode"));
                 AddIfPresent(highlights, ReadString(payload, "revoked_challenge_count"));
+                AddIfPresent(highlights, ReadString(payload, "revoked_totp_enrollment_count"));
                 break;
 
             case "password_reset_requested":

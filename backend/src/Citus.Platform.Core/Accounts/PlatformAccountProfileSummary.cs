@@ -26,6 +26,12 @@ public sealed record class PlatformAccountProfileSummary
 
     public string LastMfaResetByDisplayName { get; init; } = string.Empty;
 
+    public Guid? ActiveTotpEnrollmentId { get; init; }
+
+    public DateTimeOffset? ActiveTotpEnrollmentStartedAtUtc { get; init; }
+
+    public DateTimeOffset? ActiveTotpEnrollmentExpiresAtUtc { get; init; }
+
     public Guid? ActiveMfaRecoveryRequestId { get; init; }
 
     public string ActiveMfaRecoveryStatus { get; init; } = string.Empty;
@@ -61,6 +67,7 @@ public sealed record class PlatformAccountProfileSummary
         MfaMode.Trim().ToLowerInvariant() switch
         {
             "email_code" => "Email verification code",
+            "totp_app" => "Authenticator app (TOTP)",
             _ => "Disabled"
         };
 
@@ -68,6 +75,7 @@ public sealed record class PlatformAccountProfileSummary
         PreviousMfaMode.Trim().ToLowerInvariant() switch
         {
             "email_code" => "Email verification code",
+            "totp_app" => "Authenticator app (TOTP)",
             "none" => "Disabled",
             _ => string.Empty
         };
@@ -85,4 +93,28 @@ public sealed record class PlatformAccountProfileSummary
     public bool HasActiveMfaRecoveryRequest =>
         ActiveMfaRecoveryRequestId.HasValue &&
         !string.IsNullOrWhiteSpace(ActiveMfaRecoveryStatus);
+
+    public bool HasActiveTotpEnrollment =>
+        ActiveTotpEnrollmentId.HasValue &&
+        ActiveTotpEnrollmentStartedAtUtc.HasValue &&
+        ActiveTotpEnrollmentExpiresAtUtc.HasValue;
+
+    public bool CanRequestMfaRecovery =>
+        IsMfaEnabled &&
+        !HasActiveMfaRecoveryRequest;
+
+    public bool IsSysAdminEmergencyMfaResetBlocked =>
+        HasActiveMfaRecoveryRequest;
+
+    public string MfaRecoveryPolicyReason =>
+        !IsMfaEnabled
+            ? "Recovery request is unavailable because MFA is already disabled for this platform account."
+            : HasActiveMfaRecoveryRequest
+                ? "A governed MFA recovery request is already open. Self-service re-request is paused until SysAdmin finishes review or execution."
+                : "You may submit a recovery request from this profile, but it only opens governance work. SysAdmin must still review and then execute the approved reset before MFA is actually cleared.";
+
+    public string EmergencyMfaResetPolicyReason =>
+        HasActiveMfaRecoveryRequest
+            ? "Emergency reset should stay blocked while an open governed recovery request exists for this account."
+            : "Emergency reset remains SysAdmin-only and is intended as an out-of-band fallback, not a self-service recovery path.";
 }

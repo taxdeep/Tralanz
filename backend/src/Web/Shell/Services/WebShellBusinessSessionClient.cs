@@ -232,15 +232,15 @@ public sealed class WebShellBusinessSessionClient(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
-        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-        {
-            return AuthenticationRequiredError;
-        }
-
         var error = await response.Content.ReadFromJsonAsync<ErrorResponse>(cancellationToken);
         if (!string.IsNullOrWhiteSpace(error?.Error))
         {
             return error.Error;
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            return AuthenticationRequiredError;
         }
 
         return $"Business session request returned HTTP {(int)response.StatusCode}.";

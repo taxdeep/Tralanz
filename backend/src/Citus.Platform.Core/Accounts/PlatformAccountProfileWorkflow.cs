@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Linq;
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Core.Runtime;
 
@@ -18,6 +19,33 @@ public sealed class PlatformAccountProfileWorkflow(
     {
         EnsureUserId(userId);
         return repository.GetMfaTimelineAsync(userId, cancellationToken);
+    }
+
+    public Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        EnsureUserId(userId);
+        return repository.BeginTotpEnrollmentAsync(userId, cancellationToken);
+    }
+
+    public Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
+        Guid userId,
+        Guid enrollmentId,
+        string verificationCode,
+        CancellationToken cancellationToken)
+    {
+        EnsureUserId(userId);
+        if (enrollmentId == Guid.Empty)
+        {
+            throw new InvalidOperationException("TOTP enrollment id is required.");
+        }
+
+        return repository.ConfirmTotpEnrollmentAsync(
+            userId,
+            enrollmentId,
+            NormalizeTotpVerificationCode(verificationCode),
+            cancellationToken);
     }
 
     public Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
@@ -220,7 +248,24 @@ public sealed class PlatformAccountProfileWorkflow(
         {
             "none" => normalized,
             "email_code" => normalized,
+            "totp_app" => throw new InvalidOperationException("Use the TOTP enrollment flow before enabling authenticator-app MFA."),
             _ => throw new InvalidOperationException("Unsupported MFA mode.")
         };
+    }
+
+    private static string NormalizeTotpVerificationCode(string verificationCode)
+    {
+        if (string.IsNullOrWhiteSpace(verificationCode))
+        {
+            throw new InvalidOperationException("Authenticator app code is required.");
+        }
+
+        var normalized = verificationCode.Trim();
+        if (normalized.Length != PlatformTotpAuthenticator.Digits || !normalized.All(char.IsDigit))
+        {
+            throw new InvalidOperationException($"Authenticator app code must be {PlatformTotpAuthenticator.Digits} digits.");
+        }
+
+        return normalized;
     }
 }

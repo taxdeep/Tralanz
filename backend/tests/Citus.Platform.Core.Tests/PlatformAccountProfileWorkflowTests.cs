@@ -57,6 +57,33 @@ public sealed class PlatformAccountProfileWorkflowTests
     }
 
     [Fact]
+    public async Task SaveMfaMode_ExplainsThatTotpEnrollmentIsNotAvailableYet()
+    {
+        var repository = new InMemoryPlatformAccountProfileRepository();
+        var workflow = new PlatformAccountProfileWorkflow(repository, new SysAdminPasswordHasher());
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            workflow.SaveMfaModeAsync(UserId, "totp_app", CancellationToken.None));
+
+        Assert.Equal(
+            "Use the TOTP enrollment flow before enabling authenticator-app MFA.",
+            error.Message);
+    }
+
+    [Fact]
+    public async Task ConfirmTotpEnrollment_NormalizesVerificationCode()
+    {
+        var repository = new InMemoryPlatformAccountProfileRepository();
+        var workflow = new PlatformAccountProfileWorkflow(repository, new SysAdminPasswordHasher());
+        var enrollmentId = Guid.Parse("88d3d934-db47-4ec5-9af2-37db3ad81a5c");
+
+        await workflow.ConfirmTotpEnrollmentAsync(UserId, enrollmentId, " 123456 ", CancellationToken.None);
+
+        Assert.Equal(enrollmentId, repository.ConfirmedTotpEnrollmentId);
+        Assert.Equal("123456", repository.ConfirmedTotpVerificationCode);
+    }
+
+    [Fact]
     public async Task RequestMfaRecoveryNormalizesReasonBeforePersisting()
     {
         var repository = new InMemoryPlatformAccountProfileRepository();
@@ -92,11 +119,45 @@ public sealed class PlatformAccountProfileWorkflowTests
 
         public string? ConfirmedEmailChangeCode { get; private set; }
 
+        public Guid? ConfirmedTotpEnrollmentId { get; private set; }
+
+        public string? ConfirmedTotpVerificationCode { get; private set; }
+
         public Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken) =>
             Task.FromResult<PlatformAccountProfileSummary?>(new PlatformAccountProfileSummary { UserId = userId });
 
         public Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PlatformMfaTimelineEntry>>(Array.Empty<PlatformMfaTimelineEntry>());
+
+        public Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
+            Guid userId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<PlatformTotpEnrollmentStartResult?>(new PlatformTotpEnrollmentStartResult
+            {
+                EnrollmentId = Guid.NewGuid(),
+                Issuer = "Citus",
+                AccountLabel = "alice@example.com",
+                SecretBase32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+                OtpAuthUri = "otpauth://totp/Citus:alice@example.com",
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(15),
+                Profile = new PlatformAccountProfileSummary { UserId = userId }
+            });
+
+        public Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
+            Guid userId,
+            Guid enrollmentId,
+            string verificationCode,
+            CancellationToken cancellationToken)
+        {
+            ConfirmedTotpEnrollmentId = enrollmentId;
+            ConfirmedTotpVerificationCode = verificationCode;
+            return Task.FromResult<PlatformTotpEnrollmentConfirmationResult?>(new PlatformTotpEnrollmentConfirmationResult
+            {
+                EnrollmentId = enrollmentId,
+                ConfirmedAtUtc = DateTimeOffset.UtcNow,
+                Profile = new PlatformAccountProfileSummary { UserId = userId, MfaMode = "totp_app" }
+            });
+        }
 
         public Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
             Guid userId,

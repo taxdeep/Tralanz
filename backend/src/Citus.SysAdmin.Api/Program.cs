@@ -379,6 +379,7 @@ control.MapGet(
                 IsActive = string.Equals(user.Status, "active", StringComparison.OrdinalIgnoreCase),
                 IsSysAdmin = false,
                 MfaMode = user.MfaMode,
+                ActiveMfaRecoveryStatus = user.ActiveMfaRecoveryStatus,
                 LastMfaResetAtUtc = user.LastMfaResetAtUtc,
                 LastMfaResetReason = user.LastMfaResetReason,
                 Roles = Array.Empty<string>(),

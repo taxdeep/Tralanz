@@ -8,6 +8,16 @@ public interface IPlatformAccountProfileRepository
 
     Task<IReadOnlyList<PlatformMfaTimelineEntry>> GetMfaTimelineAsync(Guid userId, CancellationToken cancellationToken);
 
+    Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
+        Guid userId,
+        Guid enrollmentId,
+        string verificationCode,
+        CancellationToken cancellationToken);
+
     Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
         Guid userId,
         string displayName,

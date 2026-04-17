@@ -38,10 +38,12 @@ CREATE TABLE users (
   status text NOT NULL DEFAULT 'active',
   email_verified_at timestamptz,
   locked_until timestamptz,
+  mfa_mode text NOT NULL DEFAULT 'none',
   security_stamp text NOT NULL DEFAULT gen_random_uuid()::text,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT users_status_chk CHECK (status IN ('active', 'disabled', 'locked', 'pending_verification'))
+  CONSTRAINT users_status_chk CHECK (status IN ('active', 'disabled', 'locked', 'pending_verification')),
+  CONSTRAINT users_mfa_mode_chk CHECK (mfa_mode IN ('none', 'email_code', 'totp_app'))
 );
 
 CREATE TABLE account_verification_codes (
@@ -153,6 +155,7 @@ CREATE TABLE business_sessions (
   permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
   company_status text NOT NULL,
   permission_version text,
+  security_stamp_snapshot text NOT NULL,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT business_sessions_role_chk CHECK (role IN ('owner', 'user')),
@@ -162,6 +165,59 @@ CREATE TABLE business_sessions (
     FOREIGN KEY (membership_id, active_company_id, user_id)
     REFERENCES company_memberships(id, company_id, user_id)
     ON DELETE CASCADE
+);
+
+CREATE TABLE business_session_mfa_challenges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  active_company_id uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+  membership_id uuid NOT NULL REFERENCES company_memberships(id) ON DELETE CASCADE,
+  role text NOT NULL,
+  permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  company_status text NOT NULL,
+  factor text NOT NULL,
+  destination text NOT NULL,
+  code_hash text NOT NULL,
+  security_stamp_snapshot text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT business_session_mfa_challenges_role_chk CHECK (role IN ('owner', 'user')),
+  CONSTRAINT business_session_mfa_challenges_permissions_array_chk CHECK (jsonb_typeof(permissions) = 'array'),
+  CONSTRAINT business_session_mfa_challenges_company_status_chk CHECK (company_status IN ('active', 'inactive', 'suspended', 'archived')),
+  CONSTRAINT business_session_mfa_challenges_factor_chk CHECK (factor IN ('email_code', 'totp_app'))
+);
+
+CREATE TABLE account_mfa_recovery_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  current_mfa_mode text NOT NULL,
+  status text NOT NULL DEFAULT 'requested',
+  request_reason text NOT NULL,
+  requested_at timestamptz NOT NULL DEFAULT NOW(),
+  review_reason text,
+  reviewed_at timestamptz,
+  reviewed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  execution_reason text,
+  executed_at timestamptz,
+  executed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  CONSTRAINT account_mfa_recovery_requests_current_mode_chk CHECK (current_mfa_mode IN ('none', 'email_code', 'totp_app')),
+  CONSTRAINT account_mfa_recovery_requests_status_chk CHECK (status IN ('requested', 'approved', 'rejected', 'executed'))
+);
+
+CREATE TABLE account_mfa_totp_enrollments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status text NOT NULL,
+  secret_base32 text NOT NULL, -- protected ciphertext for new rows; legacy plaintext tolerated during migration
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  expires_at timestamptz,
+  confirmed_at timestamptz,
+  revoked_at timestamptz,
+  last_used_at timestamptz,
+  CONSTRAINT account_mfa_totp_enrollments_status_chk CHECK (status IN ('pending', 'active', 'revoked'))
 );
 
 CREATE TABLE platform_modules (
@@ -1328,6 +1384,18 @@ CREATE INDEX idx_company_memberships_company_active
 
 CREATE INDEX idx_business_sessions_user_company_expiry
   ON business_sessions (user_id, active_company_id, expires_at DESC);
+
+CREATE INDEX idx_business_session_mfa_challenges_active
+  ON business_session_mfa_challenges (user_id, factor, expires_at DESC)
+  WHERE consumed_at IS NULL;
+
+CREATE INDEX idx_account_mfa_recovery_requests_open
+  ON account_mfa_recovery_requests (user_id, status, requested_at DESC)
+  WHERE status IN ('requested', 'approved');
+
+CREATE INDEX idx_account_mfa_totp_enrollments_active
+  ON account_mfa_totp_enrollments (user_id, status, created_at DESC)
+  WHERE status IN ('pending', 'active');
 
 CREATE INDEX idx_company_currencies_company_enabled
   ON company_currencies (company_id, is_enabled);

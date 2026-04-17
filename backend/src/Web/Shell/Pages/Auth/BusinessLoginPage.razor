@@ -40,14 +40,14 @@
             {
                 <MudDivider />
                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-                    Second factor is required before session issuance.
+                    @GetSecondFactorPrompt()
                     @if (_mfaChallengeExpiresAtUtc.HasValue)
                     {
                         <text> Challenge expires @_mfaChallengeExpiresAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").</text>
                     }
                 </MudAlert>
                 <MudTextField @bind-Value="_mfaVerificationCode"
-                              Label="Verification code"
+                              Label="@GetSecondFactorFieldLabel()"
                               Variant="Variant.Outlined"
                               Immediate="true" />
                 <MudButton Variant="Variant.Outlined"
@@ -69,6 +69,7 @@
     private Guid? _mfaChallengeId;
     private DateTimeOffset? _mfaChallengeExpiresAtUtc;
     private string _mfaVerificationCode = string.Empty;
+    private string _requiredSecondFactor = string.Empty;
     private bool _isSubmitting;
 
     private async Task SignInAsync()
@@ -92,9 +93,10 @@
                 _mfaChallengeId = Guid.TryParse(result.MfaChallengeId, out var challengeId) ? challengeId : null;
                 _mfaChallengeExpiresAtUtc = result.MfaChallengeExpiresAtUtc;
                 _mfaVerificationCode = string.Empty;
+                _requiredSecondFactor = result.AvailableSecondFactors.FirstOrDefault()?.Trim().ToLowerInvariant() ?? string.Empty;
                 var availableFactors = result.AvailableSecondFactors.Count == 0
                     ? "configured second factor"
-                    : string.Join(", ", result.AvailableSecondFactors);
+                    : string.Join(", ", result.AvailableSecondFactors.Select(FormatSecondFactor));
                 Snackbar.Add(
                     $"Primary authentication succeeded. MFA challenge is required before session issuance. Available factor(s): {availableFactors}.",
                     Severity.Info);
@@ -164,6 +166,7 @@
         _mfaChallengeId = null;
         _mfaChallengeExpiresAtUtc = null;
         _mfaVerificationCode = string.Empty;
+        _requiredSecondFactor = string.Empty;
 
         ShellState.ApplyAuthenticatedSession(result.SessionToken, result.Context!, result.ExpiresAtUtc);
         await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", result.SessionToken);
@@ -173,4 +176,22 @@
             Severity.Success);
         NavigationManager.NavigateTo("/");
     }
+
+    private static string FormatSecondFactor(string factor) =>
+        factor.Trim().ToLowerInvariant() switch
+        {
+            "email_code" => "Email verification code",
+            "totp_app" => "Authenticator app (TOTP)",
+            _ => factor
+        };
+
+    private string GetSecondFactorPrompt() =>
+        string.Equals(_requiredSecondFactor, "totp_app", StringComparison.OrdinalIgnoreCase)
+            ? "Authenticator app confirmation is required before session issuance."
+            : "Second factor is required before session issuance.";
+
+    private string GetSecondFactorFieldLabel() =>
+        string.Equals(_requiredSecondFactor, "totp_app", StringComparison.OrdinalIgnoreCase)
+            ? "Authenticator app code"
+            : "Verification code";
 }

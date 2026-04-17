@@ -76,6 +76,9 @@ else
                         {
                             <MudText Typo="Typo.caption" Class="text-warning">Recovery request open</MudText>
                         }
+                        <MudText Typo="Typo.caption" Class="text-secondary">
+                            @context.EmergencyMfaResetPolicyReason
+                        </MudText>
                     </MudStack>
                 </MudTd>
                 <MudTd DataLabel="System Role">
@@ -145,7 +148,7 @@ else
                             <MudButton Variant="Variant.Text"
                                        Color="Color.Secondary"
                                        Size="Size.Small"
-                                       Disabled="@(IsAccountUpdating(context.Id) || HasOpenMfaRecoveryRequest(context.Id))"
+                                       Disabled="@(IsAccountUpdating(context.Id) || !context.CanEmergencyMfaReset)"
                                        OnClick="@(() => ResetMfaAsync(context))">
                                 Reset MFA
                             </MudButton>
@@ -244,6 +247,9 @@ else
                 Recovery is a governed flow: business users request, SysAdmin reviews, then executes the approved reset.
             </MudText>
         </MudStack>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+            Policy: self-service can only request recovery. Review and execution remain SysAdmin-controlled, and direct emergency reset should stay out-of-band while an open recovery request already exists for the same account.
+        </MudAlert>
 
         @if (_mfaRecoveryRequests.Count == 0)
         {
@@ -733,6 +739,7 @@ else
     private bool IsMembershipUpdating(Guid membershipId) => _membershipUpdates.Contains(membershipId);
 
     private bool HasOpenMfaRecoveryRequest(Guid accountId) =>
+        _users.FirstOrDefault(user => user.Id == accountId)?.HasActiveMfaRecoveryRequest == true ||
         _mfaRecoveryRequests.Any(request => request.AccountId == accountId);
 
     private void OpenAuditForAccount(Guid accountId) =>
@@ -822,6 +829,12 @@ else
         if (user.IsSysAdmin)
         {
             Snackbar.Add("SysAdmin accounts do not use the business-platform MFA reset flow.", Severity.Info);
+            return;
+        }
+
+        if (!user.CanEmergencyMfaReset)
+        {
+            Snackbar.Add(user.EmergencyMfaResetPolicyReason, Severity.Info);
             return;
         }
 
@@ -1025,6 +1038,8 @@ else
     private static Color GetTimelineColor(string? action) =>
         action?.Trim().ToLowerInvariant() switch
         {
+            "account_totp_enrollment_started" => Color.Info,
+            "account_totp_enrollment_confirmed" => Color.Success,
             "profile_mfa_mode_saved" => Color.Primary,
             "account_mfa_recovery_requested" => Color.Warning,
             "account_mfa_recovery_approved" => Color.Success,

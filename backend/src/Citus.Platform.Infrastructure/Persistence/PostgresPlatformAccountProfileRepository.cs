@@ -4,6 +4,7 @@ using System.Text.Json;
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Core.Accounts;
 using Citus.Platform.Core.Runtime;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 
 namespace Citus.Platform.Infrastructure.Persistence;
@@ -11,14 +12,21 @@ namespace Citus.Platform.Infrastructure.Persistence;
 public sealed partial class PostgresPlatformAccountProfileRepository(
     PlatformPostgresConnectionFactory connectionFactory,
     IPlatformRuntimeStateRepository runtimeStateRepository,
-    IPlatformVerificationNotificationSender notificationSender) : IPlatformAccountProfileRepository
+    IPlatformVerificationNotificationSender notificationSender,
+    IConfiguration configuration) : IPlatformAccountProfileRepository
 {
     private const string EmailChangePurpose = "email_change";
     private const string PasswordChangePurpose = "password_change";
     private const string NoMfaMode = "none";
     private const string EmailCodeMfaMode = "email_code";
+    private const string TotpAppMfaMode = "totp_app";
+    private const string TotpPendingEnrollmentStatus = "pending";
+    private const string TotpActiveEnrollmentStatus = "active";
+    private const string TotpRevokedEnrollmentStatus = "revoked";
+    private const string TotpEnrollmentIssuer = "Citus";
     private const string MfaRecoveryRequestedStatus = "requested";
     private const string MfaRecoveryApprovedStatus = "approved";
+    private readonly PlatformTotpSecretProtector totpSecretProtector = new(configuration);
 
     public async Task<PlatformAccountProfileSummary?> GetAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -62,6 +70,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             new[]
             {
                 "profile_mfa_mode_saved",
+                "account_totp_enrollment_started",
+                "account_totp_enrollment_confirmed",
                 "account_mfa_recovery_requested",
                 "account_mfa_recovery_approved",
                 "account_mfa_recovery_rejected",
@@ -96,6 +106,242 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         }
 
         return timeline;
+    }
+
+    public async Task<PlatformTotpEnrollmentStartResult?> BeginTotpEnrollmentAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+        await EnsureInteractiveWritesAllowedAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadAccountAsync(connection, transaction, userId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        if (string.Equals(current.MfaMode, TotpAppMfaMode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Authenticator-app MFA is already enabled for this platform account.");
+        }
+
+        await RevokePendingTotpEnrollmentsAsync(connection, transaction, userId, cancellationToken);
+
+        var enrollmentId = Guid.NewGuid();
+        var secretBase32 = PlatformTotpAuthenticator.GenerateSecretBase32();
+        var protectedSecretBase32 = totpSecretProtector.Protect(secretBase32);
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var expiresAtUtc = startedAtUtc.AddMinutes(15);
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                insert into account_mfa_totp_enrollments (
+                  id,
+                  user_id,
+                  status,
+                  secret_base32,
+                  created_at,
+                  expires_at
+                )
+                values (
+                  @id,
+                  @user_id,
+                  @status,
+                  @secret_base32,
+                  @created_at,
+                  @expires_at
+                );
+                """;
+            command.Parameters.AddWithValue("id", enrollmentId);
+            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("status", TotpPendingEnrollmentStatus);
+            command.Parameters.AddWithValue("secret_base32", protectedSecretBase32);
+            command.Parameters.AddWithValue("created_at", startedAtUtc);
+            command.Parameters.AddWithValue("expires_at", expiresAtUtc);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            userId,
+            "account_totp_enrollment_started",
+            """
+            jsonb_build_object(
+              'enrollment_id', @enrollment_id,
+              'mfa_mode', @mfa_mode,
+              'status', @status,
+              'expires_at_utc', @expires_at_utc
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("enrollment_id", enrollmentId);
+                command.Parameters.AddWithValue("mfa_mode", TotpAppMfaMode);
+                command.Parameters.AddWithValue("status", TotpPendingEnrollmentStatus);
+                command.Parameters.AddWithValue("expires_at_utc", expiresAtUtc);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var profile = await GetAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("Platform account was not found after starting TOTP enrollment.");
+        var accountLabel = current.Email;
+
+        return new PlatformTotpEnrollmentStartResult
+        {
+            EnrollmentId = enrollmentId,
+            Issuer = TotpEnrollmentIssuer,
+            AccountLabel = accountLabel,
+            SecretBase32 = secretBase32,
+            OtpAuthUri = PlatformTotpAuthenticator.CreateOtpAuthUri(TotpEnrollmentIssuer, accountLabel, secretBase32),
+            ExpiresAtUtc = expiresAtUtc,
+            Profile = profile
+        };
+    }
+
+    public async Task<PlatformTotpEnrollmentConfirmationResult?> ConfirmTotpEnrollmentAsync(
+        Guid userId,
+        Guid enrollmentId,
+        string verificationCode,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+        await EnsureInteractiveWritesAllowedAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var current = await ReadAccountAsync(connection, transaction, userId, cancellationToken);
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var enrollment = await ReadTotpEnrollmentAsync(connection, transaction, userId, enrollmentId, cancellationToken);
+        if (enrollment is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("TOTP enrollment session was not found.");
+        }
+
+        if (!string.Equals(enrollment.Status, TotpPendingEnrollmentStatus, StringComparison.Ordinal))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("TOTP enrollment is no longer pending confirmation.");
+        }
+
+        if (!enrollment.ExpiresAtUtc.HasValue || enrollment.ExpiresAtUtc.Value <= DateTimeOffset.UtcNow)
+        {
+            await RevokeTotpEnrollmentAsync(connection, transaction, enrollmentId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            throw new InvalidOperationException("TOTP enrollment session has expired. Start a new enrollment.");
+        }
+
+        if (!PlatformTotpAuthenticator.VerifyCode(enrollment.SecretBase32, verificationCode, DateTimeOffset.UtcNow))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("Authenticator app code is invalid.");
+        }
+
+        var confirmedAtUtc = DateTimeOffset.UtcNow;
+        await RevokeActiveTotpEnrollmentsAsync(connection, transaction, userId, enrollmentId, cancellationToken);
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                update account_mfa_totp_enrollments
+                set status = @status,
+                    confirmed_at = @confirmed_at,
+                    expires_at = null,
+                    revoked_at = null
+                where id = @id;
+                """;
+            command.Parameters.AddWithValue("id", enrollmentId);
+            command.Parameters.AddWithValue("status", TotpActiveEnrollmentStatus);
+            command.Parameters.AddWithValue("confirmed_at", confirmedAtUtc);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                update users
+                set mfa_mode = @mfa_mode,
+                    security_stamp = gen_random_uuid()::text,
+                    updated_at = now()
+                where id = @user_id;
+                """;
+            command.Parameters.AddWithValue("user_id", userId);
+            command.Parameters.AddWithValue("mfa_mode", TotpAppMfaMode);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            userId,
+            "account_totp_enrollment_confirmed",
+            """
+            jsonb_build_object(
+              'enrollment_id', @enrollment_id,
+              'previous_mfa_mode', @previous_mfa_mode,
+              'mfa_mode', @mfa_mode,
+              'status', @status
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("enrollment_id", enrollmentId);
+                command.Parameters.AddWithValue("previous_mfa_mode", current.MfaMode);
+                command.Parameters.AddWithValue("mfa_mode", TotpAppMfaMode);
+                command.Parameters.AddWithValue("status", TotpActiveEnrollmentStatus);
+            },
+            cancellationToken);
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            userId,
+            "profile_mfa_mode_saved",
+            """
+            jsonb_build_object(
+              'previous_mfa_mode', @previous_mfa_mode,
+              'mfa_mode', @mfa_mode
+            )
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("previous_mfa_mode", current.MfaMode);
+                command.Parameters.AddWithValue("mfa_mode", TotpAppMfaMode);
+            },
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var profile = await GetAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("Platform account was not found after confirming TOTP enrollment.");
+
+        return new PlatformTotpEnrollmentConfirmationResult
+        {
+            EnrollmentId = enrollmentId,
+            ConfirmedAtUtc = confirmedAtUtc,
+            Profile = profile
+        };
     }
 
     public async Task<PlatformAccountProfileSummary?> SaveDisplayNameAsync(
@@ -181,6 +427,11 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             await EnsureVerificationDeliveryReadyAsync(cancellationToken);
         }
 
+        if (!string.Equals(mfaMode, TotpAppMfaMode, StringComparison.Ordinal))
+        {
+            await RevokeAllTotpEnrollmentsAsync(connection, transaction, userId, cancellationToken);
+        }
+
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -188,6 +439,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
                 """
                 update users
                 set mfa_mode = @mfa_mode,
+                    security_stamp = gen_random_uuid()::text,
                     updated_at = now()
                 where id = @user_id;
                 """;
@@ -737,8 +989,28 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               execution_reason text,
               executed_at timestamptz,
               executed_by_sysadmin_account_id uuid references sysadmin_accounts(id) on delete set null,
-              constraint account_mfa_recovery_requests_current_mode_chk check (current_mfa_mode in ('none', 'email_code')),
               constraint account_mfa_recovery_requests_status_chk check (status in ('requested', 'approved', 'rejected', 'executed'))
+            );
+
+            alter table account_mfa_recovery_requests
+              drop constraint if exists account_mfa_recovery_requests_current_mode_chk;
+
+            alter table account_mfa_recovery_requests
+              add constraint account_mfa_recovery_requests_current_mode_chk
+              check (current_mfa_mode in ('none', 'email_code', 'totp_app'));
+
+            create table if not exists account_mfa_totp_enrollments (
+              id uuid primary key default gen_random_uuid(),
+              user_id uuid not null references users(id) on delete cascade,
+              status text not null,
+              secret_base32 text not null,
+              created_at timestamptz not null default now(),
+              expires_at timestamptz,
+              confirmed_at timestamptz,
+              revoked_at timestamptz,
+              last_used_at timestamptz,
+              constraint account_mfa_totp_enrollments_status_chk
+                check (status in ('pending', 'active', 'revoked'))
             );
 
             create table if not exists account_verification_codes (
@@ -791,6 +1063,10 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             create index if not exists idx_account_mfa_recovery_requests_open
               on account_mfa_recovery_requests (user_id, status, requested_at desc)
               where status in ('requested', 'approved');
+
+            create index if not exists idx_account_mfa_totp_enrollments_active
+              on account_mfa_totp_enrollments (user_id, status, created_at desc)
+              where status in ('pending', 'active');
 
             create index if not exists idx_platform_notification_dispatches_status
               on platform_notification_dispatches (status, created_at desc);
@@ -867,6 +1143,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             LastMfaResetAtUtc = record.LastMfaResetAtUtc,
             LastMfaResetReason = record.LastMfaResetReason,
             LastMfaResetByDisplayName = record.LastMfaResetByDisplayName,
+            ActiveTotpEnrollmentId = record.ActiveTotpEnrollmentId,
+            ActiveTotpEnrollmentStartedAtUtc = record.ActiveTotpEnrollmentStartedAtUtc,
+            ActiveTotpEnrollmentExpiresAtUtc = record.ActiveTotpEnrollmentExpiresAtUtc,
             ActiveMfaRecoveryRequestId = record.ActiveMfaRecoveryRequestId,
             ActiveMfaRecoveryStatus = record.ActiveMfaRecoveryStatus,
             ActiveMfaRecoveryRequestedAtUtc = record.ActiveMfaRecoveryRequestedAtUtc,
@@ -1264,6 +1543,147 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         };
     }
 
+    private async Task<TotpEnrollmentRecord?> ReadTotpEnrollmentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid userId,
+        Guid enrollmentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              id,
+              status,
+              secret_base32,
+              created_at,
+              expires_at,
+              confirmed_at,
+              revoked_at
+            from account_mfa_totp_enrollments
+            where id = @id
+              and user_id = @user_id
+            limit 1
+            for update;
+            """;
+        command.Parameters.AddWithValue("id", enrollmentId);
+        command.Parameters.AddWithValue("user_id", userId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new TotpEnrollmentRecord(
+            reader.GetGuid(reader.GetOrdinal("id")),
+            reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
+            totpSecretProtector.Unprotect(reader.GetString(reader.GetOrdinal("secret_base32")).Trim()),
+            CoerceTimestamp(reader.GetValue(reader.GetOrdinal("created_at"))),
+            reader.IsDBNull(reader.GetOrdinal("expires_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("expires_at"))),
+            reader.IsDBNull(reader.GetOrdinal("confirmed_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("confirmed_at"))),
+            reader.IsDBNull(reader.GetOrdinal("revoked_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("revoked_at"))));
+    }
+
+    private static async Task RevokePendingTotpEnrollmentsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update account_mfa_totp_enrollments
+            set status = @revoked_status,
+                revoked_at = now()
+            where user_id = @user_id
+              and status = @pending_status;
+            """;
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("pending_status", TotpPendingEnrollmentStatus);
+        command.Parameters.AddWithValue("revoked_status", TotpRevokedEnrollmentStatus);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RevokeActiveTotpEnrollmentsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid userId,
+        Guid keepEnrollmentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update account_mfa_totp_enrollments
+            set status = @revoked_status,
+                revoked_at = now()
+            where user_id = @user_id
+              and id <> @keep_enrollment_id
+              and status in (@pending_status, @active_status);
+            """;
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("keep_enrollment_id", keepEnrollmentId);
+        command.Parameters.AddWithValue("pending_status", TotpPendingEnrollmentStatus);
+        command.Parameters.AddWithValue("active_status", TotpActiveEnrollmentStatus);
+        command.Parameters.AddWithValue("revoked_status", TotpRevokedEnrollmentStatus);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RevokeAllTotpEnrollmentsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update account_mfa_totp_enrollments
+            set status = @revoked_status,
+                revoked_at = now()
+            where user_id = @user_id
+              and status in (@pending_status, @active_status);
+            """;
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("pending_status", TotpPendingEnrollmentStatus);
+        command.Parameters.AddWithValue("active_status", TotpActiveEnrollmentStatus);
+        command.Parameters.AddWithValue("revoked_status", TotpRevokedEnrollmentStatus);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RevokeTotpEnrollmentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid enrollmentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            update account_mfa_totp_enrollments
+            set status = @revoked_status,
+                revoked_at = now()
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", enrollmentId);
+        command.Parameters.AddWithValue("revoked_status", TotpRevokedEnrollmentStatus);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<ProfileRecord?> ReadProfileRecordAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -1287,6 +1707,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               mfa_reset.created_at as last_mfa_reset_at,
               coalesce(mfa_reset.reason, '') as last_mfa_reset_reason,
               coalesce(mfa_reset.actor_display_name, '') as last_mfa_reset_by_display_name,
+              totp_enrollment.id as active_totp_enrollment_id,
+              totp_enrollment.created_at as active_totp_enrollment_started_at,
+              totp_enrollment.expires_at as active_totp_enrollment_expires_at,
               recovery_request.id as active_mfa_recovery_request_id,
               coalesce(recovery_request.status, '') as active_mfa_recovery_status,
               recovery_request.requested_at as active_mfa_recovery_requested_at,
@@ -1324,6 +1747,19 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
               order by al.created_at desc
               limit 1
             ) mfa_reset on true
+            left join lateral (
+              select
+                e.id,
+                e.created_at,
+                e.expires_at
+              from account_mfa_totp_enrollments e
+              where e.user_id = u.id
+                and e.status = 'pending'
+                and e.revoked_at is null
+                and e.expires_at > now()
+              order by e.created_at desc
+              limit 1
+            ) totp_enrollment on true
             left join lateral (
               select
                 r.id,
@@ -1395,6 +1831,15 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             reader.IsDBNull(reader.GetOrdinal("last_mfa_reset_by_display_name"))
                 ? string.Empty
                 : reader.GetString(reader.GetOrdinal("last_mfa_reset_by_display_name")).Trim(),
+            reader.IsDBNull(reader.GetOrdinal("active_totp_enrollment_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("active_totp_enrollment_id")),
+            reader.IsDBNull(reader.GetOrdinal("active_totp_enrollment_started_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("active_totp_enrollment_started_at"))),
+            reader.IsDBNull(reader.GetOrdinal("active_totp_enrollment_expires_at"))
+                ? null
+                : CoerceTimestamp(reader.GetValue(reader.GetOrdinal("active_totp_enrollment_expires_at"))),
             reader.IsDBNull(reader.GetOrdinal("active_mfa_recovery_request_id"))
                 ? null
                 : reader.GetGuid(reader.GetOrdinal("active_mfa_recovery_request_id")),
@@ -1541,6 +1986,7 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         return normalized switch
         {
             EmailCodeMfaMode => normalized,
+            TotpAppMfaMode => normalized,
             _ => NoMfaMode
         };
     }
@@ -1551,6 +1997,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             "profile_mfa_mode_saved" => BuildTransitionDetail(
                 ReadString(payload, "previous_mfa_mode"),
                 ReadString(payload, "mfa_mode")),
+            "account_totp_enrollment_started" => BuildTotpEnrollmentDetail(payload),
+            "account_totp_enrollment_confirmed" => BuildTotpEnrollmentDetail(payload),
             "account_mfa_recovery_requested" => BuildMfaRecoveryTimelineDetail(payload),
             "account_mfa_recovery_approved" => BuildMfaRecoveryTimelineDetail(payload),
             "account_mfa_recovery_rejected" => BuildMfaRecoveryTimelineDetail(payload),
@@ -1597,6 +2045,15 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         return string.Join(" | ", parts);
     }
 
+    private static string BuildTotpEnrollmentDetail(JsonElement payload)
+    {
+        var parts = new List<string>();
+        AddIfPresent(parts, ReadString(payload, "mfa_mode"));
+        AddIfPresent(parts, ReadString(payload, "status"));
+        AddIfPresent(parts, ReadString(payload, "expires_at_utc"));
+        return string.Join(" | ", parts);
+    }
+
     private static string BuildResetTimelineDetail(JsonElement payload)
     {
         var detail = BuildTransitionDetail(
@@ -1628,6 +2085,14 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             JsonValueKind.False => bool.FalseString.ToLowerInvariant(),
             _ => string.Empty
         };
+    }
+
+    private static void AddIfPresent(List<string> segments, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            segments.Add(value);
+        }
     }
 
     private static DateTimeOffset CoerceTimestamp(object? value)
@@ -1670,6 +2135,9 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         DateTimeOffset? LastMfaResetAtUtc,
         string LastMfaResetReason,
         string LastMfaResetByDisplayName,
+        Guid? ActiveTotpEnrollmentId,
+        DateTimeOffset? ActiveTotpEnrollmentStartedAtUtc,
+        DateTimeOffset? ActiveTotpEnrollmentExpiresAtUtc,
         Guid? ActiveMfaRecoveryRequestId,
         string ActiveMfaRecoveryStatus,
         DateTimeOffset? ActiveMfaRecoveryRequestedAtUtc,
@@ -1689,4 +2157,13 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
         DateTimeOffset ExpiresAtUtc,
         int FailedAttempts,
         string PayloadJson);
+
+    private sealed record TotpEnrollmentRecord(
+        Guid Id,
+        string Status,
+        string SecretBase32,
+        DateTimeOffset CreatedAtUtc,
+        DateTimeOffset? ExpiresAtUtc,
+        DateTimeOffset? ConfirmedAtUtc,
+        DateTimeOffset? RevokedAtUtc);
 }

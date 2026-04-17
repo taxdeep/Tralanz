@@ -2,6 +2,14 @@
 
 This file records the current working plan so the AR/AP stream can resume cleanly after interruptions.
 
+Current sequencing note:
+
+- Platform identity / MFA work is still active, but it is now treated as a bounded enabling track.
+- The intended trigger to return to AR/AP is: after the remaining Phase 6 slice in `CITUS_USER_PERMISSION_SYSTEM_PLAN.md` reaches minimal closure:
+  - `MFA recovery policy closure`
+- `TOTP enrollment + challenge skeleton` is now materially in place, so AR/AP is no longer waiting on second-factor protocol shape.
+- Once that remaining slice lands, AR/AP becomes the next primary stream again before opening a full `Inventory` implementation track.
+
 ## Current baseline
 
 - `.NET 11 + C# 15` is now the framework baseline.
@@ -194,6 +202,21 @@ Move from the now-closed AR/AP control-layer skeleton into product-grade adjustm
 - preserve audit trail rows and open-item restoration semantics already proven by settlement-document reversal tests
 - add formal management surfaces around company/book mapping and permission authority; allowed accounts, optional active mapping enforcement, threshold approval, approve/reject transitions, self-approval guard, session-role approval authority, persisted CompanyAccess permission tokens, owner-governed membership permission grants, and partial adjustment amounts now have first backend-owned skeletons
 - keep posting-engine execution and company-scoped audit trail as hard boundaries
+
+## Identity handoff note
+
+Before returning fully to the AR/AP stream, the last platform-identity hardening slice was closed to a practical stop point:
+
+- TOTP enrollment now protects new secrets at rest instead of storing fresh `secret_base32` values in plaintext
+- business sessions and MFA challenges now snapshot `security_stamp`, so password/MFA security changes revoke old authenticated state instead of leaving it silently reusable
+- MFA challenge completion now has a real retry ceiling plus temporary lockout, rather than infinite second-factor guessing
+- MFA recovery policy closure is now visible in both Business Profile and SysAdmin read surfaces
+
+Planned sequencing from here:
+
+1. resume `AR/AP mapping/search/policy polish`
+2. close remaining AR/AP surfaces that still feel demo-driven
+3. then open `Inventory` with multi-warehouse as a first-class assumption
 
 ## UI theme note
 

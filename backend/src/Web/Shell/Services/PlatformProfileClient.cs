@@ -51,6 +51,23 @@ public sealed class PlatformProfileClient(
             cancellationToken,
             new SaveMfaModeRequest(mfaMode));
 
+    public Task<WebShellAuthenticatedApiResult<PlatformTotpEnrollmentStartResult>> BeginTotpEnrollmentAsync(
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PlatformTotpEnrollmentStartResult>(
+            request => request.Method = HttpMethod.Post,
+            "/api/platform/profile/mfa/totp-enrollment/start",
+            cancellationToken);
+
+    public Task<WebShellAuthenticatedApiResult<PlatformTotpEnrollmentConfirmationResult>> ConfirmTotpEnrollmentAsync(
+        Guid enrollmentId,
+        string verificationCode,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PlatformTotpEnrollmentConfirmationResult>(
+            request => request.Method = HttpMethod.Post,
+            "/api/platform/profile/mfa/totp-enrollment/confirm",
+            cancellationToken,
+            new ConfirmTotpEnrollmentRequest(enrollmentId, verificationCode));
+
     public Task<WebShellAuthenticatedApiResult<PlatformMfaRecoveryRequestResult>> RequestMfaRecoveryAsync(
         string reason,
         CancellationToken cancellationToken = default) =>
@@ -172,6 +189,8 @@ public sealed class PlatformProfileClient(
     private sealed record SaveDisplayNameRequest(string DisplayName);
 
     private sealed record SaveMfaModeRequest(string MfaMode);
+
+    private sealed record ConfirmTotpEnrollmentRequest(Guid EnrollmentId, string VerificationCode);
 
     private sealed record RequestMfaRecoveryRequest(string Reason);
 

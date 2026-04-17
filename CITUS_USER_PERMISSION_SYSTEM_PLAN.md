@@ -835,3 +835,30 @@ Checkpoint summary (2026-04-16):
 - SysAdmin MFA governance surfaces now support account-scoped drill-through: `Users` and recovery-queue actions can jump directly into `Audit?accountId=...`, and the audit page keeps that selected account synchronized through the query string so the formal audit surface and the operational users surface no longer drift apart.
 - SysAdmin `Users` now treats MFA recovery as an explicit three-stage governed flow instead of only a flat queue row. Each request can open a recovery-flow panel that shows requested, review, and execute stages with current status, review metadata, execution readiness, and direct drill-through to the formal audit page.
 - SysAdmin `Users` now also reads formal account-scoped MFA recovery history from a dedicated control endpoint. The recovery-flow surface is no longer limited to open queue rows: rejected and executed requests now remain visible with request, review, and execution timestamps/reasons so operators can review past recovery outcomes, not only pending work.
+- TOTP enrollment plus business-sign-in challenge skeleton is now materially closed: platform profile can start and confirm governed `totp_app` enrollment, pending enrollment truth is stored separately from active MFA mode, business sign-in can require a `totp_app` second-factor challenge before session issuance, and SysAdmin/emergency MFA reset paths revoke active TOTP enrollment state together with other MFA challenge truth.
+- MFA recovery policy is now being made explicit across read surfaces instead of staying implicit in backend checks alone: Business Profile states that recovery is request-first and review-required, while SysAdmin `Users` projects whether an open governed recovery request is already blocking the emergency reset path for that account.
+- Recovery-policy reasoning is now part of the serialized summary truth itself, not only local page logic: `PlatformAccountProfileSummary` and managed-user read models now emit policy-facing reason text for self-service recovery and emergency-reset availability, so Business and SysAdmin surfaces consume the same bounded governance semantics.
+- The final identity hardening slice now also closes the three remaining security risks that were still blocking a confident return to business modules: new TOTP enrollment writes now protect `secret_base32` at rest, business sessions and MFA challenges now snapshot `users.security_stamp` and are rejected after password/MFA security changes, and MFA challenge completion now enforces a concrete failure threshold with temporary account lockout instead of infinite retry.
+- `Web.Shell` business-session auth failures now preserve backend error bodies on `401`, so hardening outcomes such as temporary MFA lockout are visible to the operator instead of collapsing into a generic sign-in-required message.
+
+### Phase 6 exit gate and next sequencing
+
+Phase 6 should not expand indefinitely. The identity/MFA slice is now materially closed for the current phase:
+
+1. `TOTP secret protection at rest`
+2. `security_stamp`-driven business session and MFA challenge invalidation
+3. MFA challenge retry threshold plus temporary lockout
+4. recovery policy closure across Business Profile and SysAdmin read surfaces
+
+After this minimal hardening closure, the next priority is to pivot back to business modules rather than continue broad identity expansion.
+
+Planned return-to-business sequence:
+
+1. resume `AR/AP` product hardening from `ARAP Project Plan.MD`
+2. close remaining AR/AP source/settlement/policy polish items that still feel demo-like
+3. only then open the first governed `Inventory` slice, with multi-warehouse assumptions from the start
+
+Working rule:
+
+- identity/MFA remains a platform-critical stream, but it should now be treated as a bounded enabling track
+- business-module momentum should resume immediately after the remaining Phase 6 slice above

@@ -339,6 +339,8 @@ else
     private static Color GetMfaTimelineColor(string? action) =>
         action switch
         {
+            "account_totp_enrollment_started" => Color.Info,
+            "account_totp_enrollment_confirmed" => Color.Success,
             "profile_mfa_mode_saved" => Color.Primary,
             "account_mfa_recovery_requested" => Color.Warning,
             "account_mfa_recovery_approved" => Color.Success,

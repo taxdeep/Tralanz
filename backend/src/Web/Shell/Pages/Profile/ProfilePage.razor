@@ -178,8 +178,10 @@
             <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
                 <h2 style="margin-top:0;">Multi-Factor Authentication</h2>
                 <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
-                    MFA belongs to the platform identity layer. For now, this profile supports `none` and `email_code`.
-                    Enabling `email_code` requires a verified email address and verified notification readiness.
+                    MFA belongs to the platform identity layer. This profile now supports `none`, `email_code`, and governed
+                    `totp_app` enrollment. Email-code MFA still depends on verified delivery readiness. TOTP enrollment is
+                    challenge-first: start enrollment, bind your authenticator app, then confirm the six-digit code before
+                    future business sign-ins can require it.
                 </p>
                 @if (_profile is not null)
                 {
@@ -262,20 +264,102 @@
                            Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled || _profile is null)">
                     <MudSelectItem T="string" Value="@("none")">Disabled</MudSelectItem>
                     <MudSelectItem T="string" Value="@("email_code")">Email verification code</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("totp_app")">Authenticator app (TOTP)</MudSelectItem>
                 </MudSelect>
+                @if (string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) &&
+                     !string.Equals(_profile?.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase))
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                        Starting TOTP enrollment generates a new authenticator secret for this account. Confirmation is required
+                        before `totp_app` becomes the active MFA mode.
+                    </MudAlert>
+                }
                 <div style="margin-top:0.75rem;">
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
                                Disabled="@MfaSaveDisabled"
                                OnClick="SaveMfaModeAsync">
-                        Save MFA Mode
+                        @GetSaveMfaButtonLabel()
                     </MudButton>
                 </div>
+                @if (_profile?.HasActiveTotpEnrollment == true && _activeTotpEnrollment is null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                        A pending TOTP enrollment already exists and expires
+                        @_profile.ActiveTotpEnrollmentExpiresAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                        Start enrollment again to rotate the secret and receive a fresh bootstrap value.
+                    </MudAlert>
+                }
+                @if (_activeTotpEnrollment is not null)
+                {
+                    <MudPaper Elevation="0" Class="pa-3 mt-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                        <MudStack Spacing="2">
+                            <MudText Typo="Typo.subtitle2">Authenticator app enrollment</MudText>
+                            <MudText Typo="Typo.body2" Class="text-secondary">
+                                Add this secret to your authenticator app. The bootstrap secret is shown once per start/restart action.
+                                Enrollment expires @_activeTotpEnrollment.ExpiresAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            </MudText>
+                            <MudTextField T="string"
+                                          Label="Manual entry key"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Value="@_activeTotpEnrollment.SecretBase32"
+                                          ReadOnly="true" />
+                            <MudTextField T="string"
+                                          Label="OTPAuth URI"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Lines="2"
+                                          Value="@_activeTotpEnrollment.OtpAuthUri"
+                                          ReadOnly="true" />
+                            <MudTextField T="string"
+                                          Label="Authenticator app code"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Value="@_totpVerificationCode"
+                                          ValueChanged="@(value => _totpVerificationCode = value ?? string.Empty)"
+                                          Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled)" />
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Disabled="@TotpConfirmationDisabled"
+                                       OnClick="ConfirmTotpEnrollmentAsync">
+                                Confirm TOTP Enrollment
+                            </MudButton>
+                        </MudStack>
+                    </MudPaper>
+                }
                 <MudDivider Class="my-4" />
                 <MudText Typo="Typo.subtitle2">Lost second factor access?</MudText>
                 <MudText Typo="Typo.body2" Class="text-secondary" Style="margin-bottom:0.75rem;">
-                    Recovery is a governed request. Submit a reason here, then wait for SysAdmin review and controlled execution.
+                    Recovery policy is request-first. You can submit the request here, but MFA does not change immediately:
+                    SysAdmin must review it first, then execute the approved reset as a separate governed action.
                 </MudText>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(_profile?.CanRequestMfaRecovery == true ? Color.Info : Color.Default)">
+                        Self-service request
+                    </MudChip>
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="Color.Warning">
+                        SysAdmin review required
+                    </MudChip>
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(_profile?.IsSysAdminEmergencyMfaResetBlocked == true ? Color.Warning : Color.Secondary)">
+                        Emergency reset is SysAdmin-only
+                    </MudChip>
+                </div>
+                @if (_profile is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        @_profile.MfaRecoveryPolicyReason
+                    </MudAlert>
+                    <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        @_profile.EmergencyMfaResetPolicyReason
+                    </MudAlert>
+                }
                 <MudTextField T="string"
                               Label="Recovery Reason"
                               Variant="Variant.Outlined"
@@ -434,6 +518,8 @@
     private IReadOnlyList<PlatformMfaTimelineEntry> _mfaTimeline = Array.Empty<PlatformMfaTimelineEntry>();
     private string _displayName = string.Empty;
     private string _selectedMfaMode = "none";
+    private PlatformTotpEnrollmentStartResult? _activeTotpEnrollment;
+    private string _totpVerificationCode = string.Empty;
     private string _mfaRecoveryReason = string.Empty;
     private string _newEmail = string.Empty;
     private string _emailChangeCode = string.Empty;
@@ -458,16 +544,22 @@
         _isBusy ||
         ShellState.MaintenanceState.Enabled ||
         _profile is null ||
-        string.Equals(_selectedMfaMode, _profile.MfaMode, StringComparison.OrdinalIgnoreCase) ||
+        (string.Equals(_selectedMfaMode, _profile.MfaMode, StringComparison.OrdinalIgnoreCase) &&
+         !(string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) && _profile.HasActiveTotpEnrollment)) ||
         (!string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase) &&
          !string.IsNullOrWhiteSpace(MfaBlockingReason));
+
+    private bool TotpConfirmationDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _activeTotpEnrollment is null ||
+        string.IsNullOrWhiteSpace(_totpVerificationCode);
 
     private bool MfaRecoveryDisabled =>
         _isBusy ||
         ShellState.MaintenanceState.Enabled ||
         _profile is null ||
-        !_profile.IsMfaEnabled ||
-        _profile.HasActiveMfaRecoveryRequest ||
+        !_profile.CanRequestMfaRecovery ||
         string.IsNullOrWhiteSpace(_mfaRecoveryReason);
 
     private string? MfaBlockingReason =>
@@ -475,6 +567,8 @@
             ? null
             : string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase)
                 ? null
+                : string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase)
+                    ? null
                 : !_profile.IsEmailVerified
                     ? "Verify your platform email before enabling email-code MFA."
                     : !_profile.NotificationVerificationReady
@@ -531,6 +625,12 @@
         {
             _displayName = _profile.DisplayName;
             _selectedMfaMode = _profile.MfaMode;
+            if (!_profile.HasActiveTotpEnrollment &&
+                !string.Equals(_profile.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeTotpEnrollment = null;
+                _totpVerificationCode = string.Empty;
+            }
         }
     }
 
@@ -562,6 +662,28 @@
         await RunBusyAsync(
             async () =>
             {
+                if (string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(_profile?.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase))
+                {
+                    var enrollmentResult = await ProfileClient.BeginTotpEnrollmentAsync(CancellationToken.None);
+                    if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(enrollmentResult, CancellationToken.None))
+                    {
+                        return;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(enrollmentResult.ErrorMessage))
+                    {
+                        throw new InvalidOperationException(enrollmentResult.ErrorMessage);
+                    }
+
+                    _activeTotpEnrollment = enrollmentResult.Value ?? throw new InvalidOperationException("TOTP enrollment could not be started.");
+                    _profile = _activeTotpEnrollment.Profile;
+                    _totpVerificationCode = string.Empty;
+                    await RefreshMfaTimelineAsync();
+                    Snackbar.Add("TOTP enrollment started. Add the secret to your authenticator app, then confirm the code.", Severity.Success);
+                    return;
+                }
+
                 var result = await ProfileClient.SaveMfaModeAsync(_selectedMfaMode, CancellationToken.None);
                 if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
                 {
@@ -575,12 +697,48 @@
 
                 _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
                 _selectedMfaMode = _profile.MfaMode;
+                _activeTotpEnrollment = null;
+                _totpVerificationCode = string.Empty;
                 await RefreshMfaTimelineAsync();
                 Snackbar.Add(
                     string.Equals(_profile.MfaMode, "none", StringComparison.OrdinalIgnoreCase)
                         ? "MFA disabled for future business sign-ins."
                         : $"MFA mode saved: {_profile.MfaModeLabel}. Future business sign-ins will require a second factor.",
                     Severity.Success);
+            });
+    }
+
+    private async Task ConfirmTotpEnrollmentAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                if (_activeTotpEnrollment is null)
+                {
+                    throw new InvalidOperationException("No active TOTP enrollment is pending confirmation.");
+                }
+
+                var result = await ProfileClient.ConfirmTotpEnrollmentAsync(
+                    _activeTotpEnrollment.EnrollmentId,
+                    _totpVerificationCode,
+                    CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                var value = result.Value ?? throw new InvalidOperationException("TOTP enrollment confirmation did not return a result.");
+                _profile = value.Profile;
+                _selectedMfaMode = _profile.MfaMode;
+                _activeTotpEnrollment = null;
+                _totpVerificationCode = string.Empty;
+                await RefreshMfaTimelineAsync();
+                Snackbar.Add("Authenticator-app MFA is now enabled for future business sign-ins.", Severity.Success);
             });
     }
 
@@ -780,6 +938,8 @@
         action?.Trim().ToLowerInvariant() switch
         {
             "profile_mfa_mode_saved" => Color.Primary,
+            "account_totp_enrollment_started" => Color.Info,
+            "account_totp_enrollment_confirmed" => Color.Success,
             "account_mfa_recovery_requested" => Color.Warning,
             "account_mfa_recovery_approved" => Color.Success,
             "account_mfa_recovery_rejected" => Color.Error,
@@ -787,4 +947,10 @@
             "account_mfa_reset" => Color.Warning,
             _ => Color.Default
         };
+
+    private string GetSaveMfaButtonLabel() =>
+        string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_profile?.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase)
+            ? _profile?.HasActiveTotpEnrollment == true ? "Restart TOTP Enrollment" : "Start TOTP Enrollment"
+            : "Save MFA Mode";
 }
