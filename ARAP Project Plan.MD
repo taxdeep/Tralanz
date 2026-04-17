@@ -166,6 +166,7 @@ Status:
 - source-detail reverse control now also exposes a backend-truth-based `Next Legal Action` summary. The shell compresses original reverse request state, subledger blocker progress, and governed execution readiness into one operator-facing decision cue instead of forcing users to combine those panels mentally.
 - open-item detail now also exposes operator-facing next-step summaries for both adjustment control and settlement/application trail. The shell tells users whether the next move is refresh preview, request/submit/review/execute adjustment, await posting, or simply review consuming application history before acting.
 - source/open-item summary captions are now being normalized toward AR/AP operator wording. Labels such as reverse workflow, settlement gate, governed unapply trail, adjustment policy, request workflow, posting readiness, and linked applications are replacing more generic technical headings.
+- open-item adjustment control now also compresses preview/readiness/execution-plan truth into a short operator bullet summary. The shell keeps the detailed backend reason tables below, but the first read now explains whether the current blockage is policy, open-item state, execution planning, or simply missing account selection.
 
 Current AR/AP shell checkpoint:
 

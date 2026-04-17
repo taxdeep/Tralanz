@@ -222,6 +222,22 @@
                 </MudButton>
             </div>
 
+            @{
+                var adjustmentOperatorBullets = GetAdjustmentOperatorBulletSummary();
+            }
+            @if (adjustmentOperatorBullets.Count > 0)
+            {
+                <MudPaper Class="pa-3" Elevation="0" Style="margin-bottom:1rem;background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Operator Summary</MudText>
+                    <ul style="margin:0;padding-left:1.25rem;color:#97a8b7;">
+                        @foreach (var bullet in adjustmentOperatorBullets)
+                        {
+                            <li style="margin-bottom:0.35rem;">@bullet</li>
+                        }
+                    </ul>
+                </MudPaper>
+            }
+
             @if (_adjustmentPreview is not null)
             {
                 <MudAlert Severity="@(_adjustmentPreview.IsAvailable ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
@@ -1292,6 +1308,73 @@
         }
 
         return "Refresh preview to evaluate current governance, open-item, and posting execution state.";
+    }
+
+    private IReadOnlyList<string> GetAdjustmentOperatorBulletSummary()
+    {
+        var bullets = new List<string>();
+
+        if (_adjustmentExecutionResult is not null)
+        {
+            bullets.Add(
+                $"Latest governed adjustment already posted as {_adjustmentExecutionResult.JournalEntryDisplayNumber ?? "a linked journal entry"}.");
+            return bullets;
+        }
+
+        if (_adjustmentPreview is not null)
+        {
+            bullets.Add(
+                _adjustmentPreview.IsAvailable
+                    ? $"Preview is structurally available for {FormatAdjustmentType(_adjustmentType).ToLowerInvariant()} on the current residual amount."
+                    : $"Preview is currently blocked: {_adjustmentPreview.Reason}");
+        }
+
+        if (_adjustmentReadiness is not null)
+        {
+            if (!_adjustmentReadiness.GovernanceReady)
+            {
+                bullets.Add("Governance state is not yet ready for final posting execution.");
+            }
+
+            if (!_adjustmentReadiness.OpenItemReady)
+            {
+                bullets.Add("Open-item state still needs attention before backend adjustment execution can proceed.");
+            }
+
+            if (!_adjustmentReadiness.PostingExecutionReady)
+            {
+                bullets.Add("Posting Engine execution is still blocked on the current request/readiness state.");
+            }
+
+            if (_adjustmentReadiness.IsAvailable)
+            {
+                bullets.Add("Readiness probe is available, so the next decision should come from request workflow or execution planning rather than guessing from balances alone.");
+            }
+        }
+
+        if (_adjustmentExecutionPlan is not null)
+        {
+            var blockedCount = _adjustmentExecutionPlan.Steps.Count(step => string.Equals(step.StepStatus, "blocked", StringComparison.OrdinalIgnoreCase));
+            var readyCount = _adjustmentExecutionPlan.Steps.Count(step => string.Equals(step.StepStatus, "ready", StringComparison.OrdinalIgnoreCase));
+
+            if (_adjustmentExecutionPlan.CanExecute)
+            {
+                bullets.Add(
+                    $"Execution plan is clear with {readyCount}/{_adjustmentExecutionPlan.Steps.Count} steps ready.");
+            }
+            else
+            {
+                bullets.Add(
+                    $"Execution plan still has {blockedCount} blocked step(s) and {readyCount}/{_adjustmentExecutionPlan.Steps.Count} ready step(s).");
+            }
+        }
+
+        if (!HasSelectedGovernedAdjustmentAccount() && (_adjustmentExecutionPlan?.CanExecute == true || _adjustmentReadiness?.PostingExecutionReady == true))
+        {
+            bullets.Add("Select a governed adjustment account before requesting final posting execution from this shell.");
+        }
+
+        return bullets;
     }
 
     private AdjustmentNextLegalActionSummary GetAdjustmentNextLegalActionSummary()
