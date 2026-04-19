@@ -1,4 +1,5 @@
 using Citus.Accounting.Api;
+using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Queries;
@@ -51,6 +52,8 @@ builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySess
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
 builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
 builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
+builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
+builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
 builder.Services.AddSingleton(
     static services => new BusinessSessionDirectory(
         services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
@@ -1941,6 +1944,7 @@ accounting.MapGet(
         [AsParameters] SourceDocumentBrowserLookupQuery query,
         IAccountingDocumentReviewRepository repository,
         IInventoryReceiptStore inventoryReceiptStore,
+        IInventoryShipmentStore inventoryShipmentStore,
         CancellationToken cancellationToken) =>
     {
         var items = await repository.ListSourceDocumentsAsync(
@@ -1951,18 +1955,29 @@ accounting.MapGet(
             query.Limit ?? 100,
             cancellationToken);
 
-        var billReceiptSummaries = new Dictionary<Guid, InventoryBillReceiptHandoffSummary>();
-        foreach (var billItem in items.Where(static item => string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase)))
-        {
-            billReceiptSummaries[billItem.Id] = await inventoryReceiptStore.GetBillHandoffSummaryAsync(
-                billItem.CompanyId.Value,
-                billItem.Id,
-                cancellationToken);
-        }
+        var billIds = items
+            .Where(static item => string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase))
+            .Select(static item => item.Id)
+            .Distinct()
+            .ToArray();
+        var billReceiptSummaries = await inventoryReceiptStore.GetBillPostingGateSnapshotsAsync(
+            query.CompanyId,
+            billIds,
+            cancellationToken);
+        var invoiceIds = items
+            .Where(static item => string.Equals(item.SourceType, "invoice", StringComparison.OrdinalIgnoreCase))
+            .Select(static item => item.Id)
+            .Distinct()
+            .ToArray();
+        var invoiceShipmentSummaries = await inventoryShipmentStore.GetInvoicePostingGateSnapshotsAsync(
+            query.CompanyId,
+            invoiceIds,
+            cancellationToken);
 
         return Results.Ok(items.Select(item =>
         {
             billReceiptSummaries.TryGetValue(item.Id, out var receiptSummary);
+            invoiceShipmentSummaries.TryGetValue(item.Id, out var shipmentSummary);
             return new
             {
                 item.SourceType,
@@ -1983,7 +1998,13 @@ accounting.MapGet(
                 BillReceiptMatchStatus = receiptSummary?.MatchStatus,
                 BillReceiptPostingGateLabel = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateLabel(receiptSummary),
                 BillReceiptPostingGateSummary = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateSummary(receiptSummary),
-                BillReceiptAllowsPost = receiptSummary is null ? (bool?)null : BillReceiptPostingGate.AllowsBillPost(receiptSummary.MatchStatus)
+                BillReceiptAllowsPost = receiptSummary is null ? (bool?)null : BillReceiptPostingGate.AllowsBillPost(receiptSummary.MatchStatus),
+                InvoiceShipmentMatchStatus = shipmentSummary?.MatchStatus,
+                InvoiceShipmentPostingGateLabel = shipmentSummary is null ? null : ShipmentPostingGatePolicy.GetPostingGateLabel(shipmentSummary),
+                InvoiceShipmentPostingGateSummary = shipmentSummary is null ? null : ShipmentPostingGatePolicy.GetPostingGateSummary(shipmentSummary),
+                InvoiceShipmentAllowsPost = shipmentSummary is null ? (bool?)null : ShipmentPostingGatePolicy.AllowsInvoicePost(shipmentSummary.MatchStatus),
+                InvoiceCoverageStatus = shipmentSummary?.InvoiceCoverageStatus,
+                InvoiceCoverageSummary = shipmentSummary is null ? null : BuildInvoiceCoverageSummary(shipmentSummary)
             };
         }));
     });
@@ -3247,7 +3268,10 @@ accounting.MapGet(
                     line.UnitPrice,
                     line.LineAmount,
                     line.TaxCodeId,
-                    line.TaxAmount
+                    line.TaxAmount,
+                    line.ItemId,
+                    line.WarehouseId,
+                    line.UomCode
                 })
             });
     });
@@ -3280,7 +3304,10 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3319,7 +3346,10 @@ accounting.MapPut(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3838,20 +3868,10 @@ accounting.MapGet(
 
 accounting.MapPost(
     "/bills/{documentId:guid}/post",
-    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, IInventoryReceiptStore inventoryReceiptStore, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, CancellationToken cancellationToken) =>
     {
         try
         {
-            var receiptHandoffSummary = await inventoryReceiptStore.GetBillHandoffSummaryAsync(
-                request.CompanyId,
-                documentId,
-                cancellationToken);
-
-            if (!BillReceiptPostingGate.AllowsBillPost(receiptHandoffSummary.MatchStatus))
-            {
-                return Results.BadRequest(new { message = BillReceiptPostingGate.GetBlockedPostMessage(receiptHandoffSummary) });
-            }
-
             var result = await handler.HandleAsync(
                 new PostBillCommand(
                     new(request.CompanyId),
@@ -4555,6 +4575,18 @@ static string MapDocumentReviewLineAccountLabel(string counterpartyRole) =>
         "customer" => "Revenue account",
         "vendor" => "Expense account",
         _ => "Account"
+    };
+
+static string BuildInvoiceCoverageSummary(InventoryInvoiceShipmentPostingGateSnapshot snapshot) =>
+    snapshot.InvoiceCoverageStatus switch
+    {
+        "no_inventory_handoff" => "No shipped/invoiced coverage lane is active for this invoice.",
+        "no_shipment" => "Shipment truth has not started yet, so nothing is formally invoiced against shipped quantity.",
+        "not_invoiced" => $"Shipment truth exists, but {snapshot.RemainingToInvoiceQuantity:N2} shipped quantity still has no formal AR coverage.",
+        "partially_invoiced" => $"{snapshot.RemainingToInvoiceQuantity:N2} shipped quantity is still waiting for formal AR coverage.",
+        "fully_invoiced" => "Current shipped quantity is fully covered by posted AR truth.",
+        "over_invoiced" => "Posted invoice truth currently exceeds shipped quantity and should move into discrepancy review.",
+        _ => "Invoice coverage truth has not been evaluated yet."
     };
 
 static JournalEntryReviewListItemSummary MapJournalEntryReviewListItem(JournalEntryReviewListItem item) =>

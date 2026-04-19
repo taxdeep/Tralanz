@@ -11,6 +11,11 @@ public interface IInventoryReceiptStore
         Guid billDocumentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(
+        Guid companyId,
+        IReadOnlyCollection<Guid> billDocumentIds,
+        CancellationToken cancellationToken);
+
     Task<InventoryPurchaseReceiptSummary> PostAsync(
         InventoryPurchaseReceiptPostRequest request,
         CancellationToken cancellationToken);

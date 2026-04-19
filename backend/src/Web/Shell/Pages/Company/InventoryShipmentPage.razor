@@ -1,0 +1,432 @@
+@page "/company/inventory-shipment"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellCounterpartyOnboardingClient CounterpartyClient
+@inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSourceDocumentDraftClient Drafts
+@inject ISnackbar Snackbar
+
+<PageTitle>Shipment</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudText Typo="Typo.overline" Class="text-secondary">Phase G.3</MudText>
+        <MudText Typo="Typo.h4">Shipment</MudText>
+        <MudText Typo="Typo.body1" Class="text-secondary">
+            Shipment owns fulfillment truth. It records outbound customer, warehouse, quantity, carrier, and tracking without collapsing into invoice or sales issue truth.
+        </MudText>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_sourceInvoiceDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Invoice hand-off <strong>@_sourceInvoiceDisplayNumber</strong> prefilled this shipment workspace. Invoice still carries charge truth only; shipment remains the fulfillment authority.
+        </MudAlert>
+    }
+
+    @if (_invoiceShipmentSummary is not null)
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@(_isSaving || WritesBlocked)" OnClick="ReloadRemainingShipmentLines">
+                Load Remaining From Invoice
+            </MudButton>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption">Invoice outbound qty</MudText>
+                <MudText Typo="Typo.h6">@_invoiceShipmentSummary.InvoiceOutboundQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceShipmentSummary.InvoiceOutboundLineCount inventory-grade line(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption">Already shipped</MudText>
+                <MudText Typo="Typo.h6">@_invoiceShipmentSummary.ShippedQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceShipmentSummary.ShipmentCount shipment(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption">Issued downstream</MudText>
+                <MudText Typo="Typo.h6">@_invoiceShipmentSummary.IssuedQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceShipmentSummary.IssueMatchStatus.Replace('_', ' ')</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption">Invoiced coverage</MudText>
+                <MudText Typo="Typo.h6">@_invoiceShipmentSummary.InvoicedQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@BuildInvoiceCoverageSummary(_invoiceShipmentSummary)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption">Current form qty</MudText>
+                <MudText Typo="Typo.h6">@CurrentShipmentDraftQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ProjectedShipmentStatusSummary</MudText>
+            </MudPaper>
+        </div>
+    }
+
+    @if (_invoiceShipmentSummary is not null && _invoiceShipmentSummary.Discrepancies.Count > 0)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @foreach (var discrepancy in _invoiceShipmentSummary.Discrepancies)
+            {
+                <div>@discrepancy.Summary</div>
+            }
+        </MudAlert>
+    }
+
+    @if (_invoiceShipmentSummary is not null && !HasOutstandingShipmentQuantity)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            The current invoice hand-off is already fully covered by shipment truth. The form stays empty by default to avoid accidental over-shipment.
+        </MudAlert>
+    }
+
+    @if (_lastPostedShipment is not null)
+    {
+        <MudPaper Elevation="0" Class="pa-4">
+            <MudText Typo="Typo.h6">Posted Shipment Review</MudText>
+            <MudText Typo="Typo.body2">Shipment: @_lastPostedShipment.DocumentNumber</MudText>
+            <MudText Typo="Typo.body2">Date: @_lastPostedShipment.PostingDate.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Qty: @_lastPostedShipment.TotalQuantity.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2">Tracking: @(_lastPostedShipment.TrackingNumber ?? "n/a")</MudText>
+            <MudText Typo="Typo.body2">Issue follow-through: @_lastPostedShipment.IssueMatchStatus.Replace('_', ' ')</MudText>
+            <MudText Typo="Typo.body2">Remaining to issue: @_lastPostedShipment.RemainingToIssueQuantity.ToString("N2")</MudText>
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@BuildReturnReceiveHref()">
+                    Receive Customer Return
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@BuildSalesIssueHref()">
+                    Continue To Sales Issue
+                </MudButton>
+                @if (_loadedSourceInvoiceId.HasValue)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Info" Href="@($"/documents/invoice/{_loadedSourceInvoiceId.Value:D}")">
+                        Open Invoice Detail
+                    </MudButton>
+                }
+            </div>
+            @if (_lastPostedShipment.RecentIssues.Count > 0)
+            {
+                <MudTable Items="_lastPostedShipment.RecentIssues" Dense="true" Hover="true" Bordered="true" Style="margin-top:1rem;">
+                    <HeaderContent>
+                        <MudTh>Issue</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Cost</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.DocumentNumber</MudTd>
+                        <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                        <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
+                        <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_error</MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Shipment is closed by default for <strong>@_onboardingSummary.Industry</strong> companies.
+        </MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && _onboardingSummary.SupportsInventoryFoundation && WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">@ShellState.WriteBlockMessage</MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+    }
+    else if (_dashboard is null || _counterpartySummary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5"><MudProgressLinear Indeterminate="true" Color="Color.Info" /></MudPaper>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Operational guardrail: tracked lot/serial outbound selection is still closed here. Shipment currently exposes only warehouse-managed stock items.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6">Shipment header</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="Guid?" Label="Customer" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" Value="_selectedCustomerId" ValueChanged="OnCustomerChangedAsync">
+                        @foreach (var customer in ActiveCustomers)
+                        {
+                            <MudSelectItem T="Guid?" Value="@customer.Id">@customer.DisplayName (@customer.DefaultCurrencyCode)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudDatePicker Label="Ship date" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Date="_postingDate" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudTextField T="string" Label="Carrier" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="_carrierName" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudTextField T="string" Label="Tracking #" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="_trackingNumber" />
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudTextField T="string" Label="Shipping slip" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="_shippingSlipNumber" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="_memo" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                <MudText Typo="Typo.h6">Shipment lines</MudText>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@(_isSaving || WritesBlocked)" OnClick="AddLine">Add Line</MudButton>
+            </MudStack>
+            @foreach (var line in _lineEditors.OrderBy(line => line.LineNo))
+            {
+                <MudPaper Elevation="0" Class="pa-4" Outlined="true" Style="margin-top:.75rem;">
+                    <MudGrid>
+                        <MudItem xs="12" md="1">
+                            <MudTextField T="int" Label="Line" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" Value="@line.LineNo" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudSelect T="Guid?" Label="Item" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" Value="line.ItemId" ValueChanged="@(value => OnItemChangedAsync(line, value))">
+                                @foreach (var item in OperationalItems)
+                                {
+                                    <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudSelect T="Guid?" Label="Warehouse" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.WarehouseId">
+                                @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                                {
+                                    <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="1">
+                            <MudTextField T="string" Label="UOM" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" @bind-Value="line.UomCode" />
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudNumericField T="decimal" Label="Qty" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.Quantity" />
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Reason code" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.ReasonCode" />
+                        </MudItem>
+                        <MudItem xs="12" md="10">
+                            <MudTextField T="string" Label="Line memo" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.Memo" />
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudButton Variant="Variant.Text" Color="Color.Warning" Disabled="@(_isSaving || WritesBlocked || _lineEditors.Count <= 1)" OnClick="@(() => RemoveLine(line))">Remove</MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            }
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Style="margin-top:1rem;">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_isSaving || WritesBlocked)" OnClick="PostShipmentAsync">
+                    @(_isSaving ? "Posting..." : "Post Shipment")
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "customerId")] public Guid? CustomerIdQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "sourceType")] public string? SourceType { get; set; }
+    [SupplyParameterFromQuery(Name = "invoiceId")] public Guid? InvoiceIdQuery { get; set; }
+
+    private InventoryShipmentDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private ShellCounterpartyOnboardingSummary? _counterpartySummary;
+    private InventoryInvoiceShipmentIssueLaneSummary? _invoiceShipmentSummary;
+    private InventoryShipmentSummary? _lastPostedShipment;
+    private string? _error;
+    private bool _isSaving;
+    private Guid? _selectedCustomerId;
+    private DateTime? _postingDate = DateTime.Today;
+    private string? _carrierName;
+    private string? _trackingNumber;
+    private string? _shippingSlipNumber;
+    private string? _memo;
+    private List<ShipmentLineEditorState> _lineEditors = [];
+    private Guid? _loadedSourceInvoiceId;
+    private string? _sourceInvoiceDisplayNumber;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems => _dashboard?.ActiveItems.Where(item => item.ItemKind == InventoryItemKind.Stock && item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).OrderBy(item => item.ItemCode).ToArray() ?? Array.Empty<InventoryManagedItemSummary>();
+    private IReadOnlyList<ShellManagedCounterpartySummary> ActiveCustomers => _counterpartySummary?.ActiveCustomers.Where(customer => customer.IsActive).OrderBy(customer => customer.DisplayName).ToArray() ?? Array.Empty<ShellManagedCounterpartySummary>();
+    private decimal CurrentShipmentDraftQuantity => decimal.Round(_lineEditors.Sum(line => line.Quantity), 6, MidpointRounding.AwayFromZero);
+    private bool HasOutstandingShipmentQuantity => _invoiceShipmentSummary?.RemainingToShipQuantity > 0m;
+    private string ProjectedShipmentStatusSummary => _invoiceShipmentSummary is null ? "This shipment is not anchored to an invoice hand-off." : $"{decimal.Round(_invoiceShipmentSummary.InvoiceOutboundQuantity - (_invoiceShipmentSummary.ShippedQuantity + CurrentShipmentDraftQuantity), 6, MidpointRounding.AwayFromZero):N2} outbound quantity would remain after this shipment.";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe)) return;
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None)) return;
+            if (!onboardingResult.RequiresSignIn && !onboardingResult.IsNotFound && string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage)) _onboardingSummary = onboardingResult.Value;
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation) return;
+            _dashboard = await InventoryShipment.GetDashboardAsync(ShellState.ActiveCompany.Id);
+            _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            SeedHeaderDefaults();
+            SeedLinesIfNeeded();
+            await LoadSourceInvoiceHandoffAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void SeedHeaderDefaults()
+    {
+        var defaultCustomer = CustomerIdQuery.HasValue ? _counterpartySummary?.ActiveCustomers.FirstOrDefault(customer => customer.Id == CustomerIdQuery.Value) : null;
+        _selectedCustomerId ??= defaultCustomer?.Id ?? _counterpartySummary?.ActiveCustomers.FirstOrDefault()?.Id;
+    }
+
+    private void SeedLinesIfNeeded()
+    {
+        if (_dashboard is null || _lineEditors.Count > 0) return;
+        var defaultItem = OperationalItems.FirstOrDefault();
+        _lineEditors.Add(new ShipmentLineEditorState { LineNo = 1, ItemId = defaultItem?.Id, WarehouseId = _dashboard.ActiveWarehouses.FirstOrDefault()?.Id, UomCode = defaultItem?.StockUomCode ?? "EA", Quantity = 1m });
+    }
+
+    private async Task OnCustomerChangedAsync(Guid? customerId) { _selectedCustomerId = customerId; await InvokeAsync(StateHasChanged); }
+
+    private async Task OnItemChangedAsync(ShipmentLineEditorState line, Guid? itemId)
+    {
+        line.ItemId = itemId;
+        line.UomCode = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId)?.StockUomCode ?? string.Empty;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AddLine()
+    {
+        var nextLineNo = _lineEditors.Count == 0 ? 1 : _lineEditors.Max(line => line.LineNo) + 1;
+        var defaultItem = OperationalItems.FirstOrDefault();
+        _lineEditors.Add(new ShipmentLineEditorState { LineNo = nextLineNo, ItemId = defaultItem?.Id, WarehouseId = _dashboard?.ActiveWarehouses.FirstOrDefault()?.Id, UomCode = defaultItem?.StockUomCode ?? "EA", Quantity = 1m });
+    }
+
+    private void RemoveLine(ShipmentLineEditorState line)
+    {
+        _lineEditors.Remove(line);
+        for (var index = 0; index < _lineEditors.Count; index++) _lineEditors[index].LineNo = index + 1;
+    }
+
+    private async Task ReloadRemainingShipmentLines() => await LoadSourceInvoiceHandoffAsync(forceLineReload: true);
+
+    private async Task PostShipmentAsync()
+    {
+        if (TryBlockWrites() || _dashboard is null || _counterpartySummary is null) return;
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var request = new InventoryShipmentPostRequest(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _selectedCustomerId ?? Guid.Empty,
+                DateOnly.FromDateTime((_postingDate ?? DateTime.Today).Date),
+                _carrierName,
+                _trackingNumber,
+                _shippingSlipNumber,
+                string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue ? "ar_invoice" : "web_shell_inventory",
+                string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue ? InvoiceIdQuery.Value : null,
+                _sourceInvoiceDisplayNumber,
+                _memo,
+                _lineEditors.Select(line => new InventoryShipmentLineInput(line.LineNo, line.ItemId ?? Guid.Empty, line.WarehouseId ?? Guid.Empty, line.UomCode, line.Quantity, line.ReasonCode, line.Memo)).ToArray());
+            _lastPostedShipment = await InventoryShipment.PostAsync(request, _dashboard, _counterpartySummary);
+            await ReloadDashboardAsync();
+            ResetForm();
+            await LoadSourceInvoiceHandoffAsync(forceLineReload: true);
+            Snackbar.Add($"Shipment {_lastPostedShipment.DocumentNumber} posted.", Severity.Success);
+        }
+        catch (Exception ex) { _error = ex.Message; Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _isSaving = false; }
+    }
+
+    private async Task ReloadDashboardAsync()
+    {
+        _dashboard = await InventoryShipment.GetDashboardAsync(ShellState.ActiveCompany.Id);
+        _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+    }
+
+    private void ResetForm()
+    {
+        _postingDate = DateTime.Today;
+        _carrierName = null;
+        _trackingNumber = null;
+        _shippingSlipNumber = null;
+        _memo = _loadedSourceInvoiceId.HasValue && !string.IsNullOrWhiteSpace(_sourceInvoiceDisplayNumber) ? $"Shipment-first hand-off from invoice {_sourceInvoiceDisplayNumber}" : null;
+        _lineEditors = [];
+    }
+
+    private async Task LoadSourceInvoiceHandoffAsync(bool forceLineReload = false)
+    {
+        if (!string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) || !InvoiceIdQuery.HasValue || (_loadedSourceInvoiceId == InvoiceIdQuery && !forceLineReload)) return;
+        var invoiceResult = await Drafts.GetInvoiceDraftAsync(ShellState.ActiveCompany.Id, InvoiceIdQuery.Value, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(invoiceResult, CancellationToken.None)) return;
+        var invoice = invoiceResult.Value;
+        if (invoice is null) return;
+        _loadedSourceInvoiceId = invoice.Id;
+        _sourceInvoiceDisplayNumber = invoice.DisplayNumber;
+        _memo ??= $"Shipment-first hand-off from invoice {invoice.DisplayNumber}";
+        if (_counterpartySummary is not null)
+        {
+            var preferredCustomer = _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == invoice.CustomerId);
+            if (preferredCustomer is not null) _selectedCustomerId = preferredCustomer.Id;
+        }
+        _invoiceShipmentSummary = await InventoryShipment.GetInvoiceLaneSummaryAsync(ShellState.ActiveCompany.Id, invoice.Id, CancellationToken.None);
+        var remainingLines = _invoiceShipmentSummary.LineSummaries.Where(line => line.RemainingToShipQuantity > 0m).Select((line, index) => new ShipmentLineEditorState { LineNo = index + 1, ItemId = line.ItemId, WarehouseId = line.WarehouseId, UomCode = line.UomCode, Quantity = line.RemainingToShipQuantity }).ToList();
+        if (forceLineReload || _lineEditors.Count == 0 || string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase)) _lineEditors = remainingLines;
+    }
+
+    private static string BuildInvoiceCoverageSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.InvoiceCoverageStatus switch
+        {
+            "no_inventory_handoff" => "No shipped/invoiced coverage lane is active for this invoice.",
+            "no_shipment" => "Shipment truth has not started yet, so nothing is formally invoiced against shipped quantity.",
+            "not_invoiced" => $"Shipment truth exists, but {summary.RemainingToInvoiceQuantity:N2} shipped quantity still has no formal AR coverage.",
+            "partially_invoiced" => $"{summary.RemainingToInvoiceQuantity:N2} shipped quantity is still waiting to become formal AR truth.",
+            "fully_invoiced" => "Current shipped quantity is fully covered by posted AR truth.",
+            "over_invoiced" => "Posted invoice truth currently exceeds shipped quantity and should move into discrepancy review.",
+            _ => "Invoice coverage truth has not been evaluated yet."
+        };
+
+    private string BuildSalesIssueHref() => _lastPostedShipment is null ? "/company/inventory-sales-issue" : $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={_lastPostedShipment.DocumentId:D}&customerId={_lastPostedShipment.CustomerId:D}";
+
+    private string BuildReturnReceiveHref() => _lastPostedShipment is null ? "/company/inventory-return-receive" : $"/company/inventory-return-receive?shipmentId={_lastPostedShipment.DocumentId:D}";
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked) return false;
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private sealed class ShipmentLineEditorState
+    {
+        public int LineNo { get; set; }
+        public Guid? ItemId { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string UomCode { get; set; } = "EA";
+        public decimal Quantity { get; set; } = 1m;
+        public string? ReasonCode { get; set; }
+        public string? Memo { get; set; }
+    }
+}

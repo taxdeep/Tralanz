@@ -212,7 +212,10 @@ public sealed record SaveInvoiceDraftLineHttpRequest(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    Guid? ItemId = null,
+    Guid? WarehouseId = null,
+    string? UomCode = null);
 
 public sealed record InvoiceLookupQuery(Guid CompanyId);
 

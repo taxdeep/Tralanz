@@ -69,7 +69,10 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
                 line.Quantity,
                 line.UnitPrice,
                 line.TaxCodeId,
-                line.TaxAmount
+                line.TaxAmount,
+                line.ItemId,
+                line.WarehouseId,
+                line.UomCode
             }).ToArray()
         };
 

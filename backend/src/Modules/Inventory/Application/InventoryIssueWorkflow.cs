@@ -23,6 +23,24 @@ public sealed class InventoryIssueWorkflow
         return _store.GetDashboardAsync(companyId, cancellationToken);
     }
 
+    public Task<InventoryInvoiceIssueHandoffSummary> GetInvoiceHandoffSummaryAsync(
+        Guid companyId,
+        Guid invoiceDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (companyId == Guid.Empty)
+        {
+            throw new ArgumentException("Company id is required.", nameof(companyId));
+        }
+
+        if (invoiceDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Invoice document id is required.", nameof(invoiceDocumentId));
+        }
+
+        return _store.GetInvoiceHandoffSummaryAsync(companyId, invoiceDocumentId, cancellationToken);
+    }
+
     public Task<InventorySalesIssueSummary> PostAsync(
         InventorySalesIssuePostRequest request,
         CancellationToken cancellationToken)

@@ -10,6 +10,12 @@ public sealed class ShellInventoryIssueClient(InventoryIssueWorkflow workflow)
         CancellationToken cancellationToken = default) =>
         workflow.GetDashboardAsync(companyId, cancellationToken);
 
+    public Task<InventoryInvoiceIssueHandoffSummary> GetInvoiceHandoffSummaryAsync(
+        Guid companyId,
+        Guid invoiceDocumentId,
+        CancellationToken cancellationToken = default) =>
+        workflow.GetInvoiceHandoffSummaryAsync(companyId, invoiceDocumentId, cancellationToken);
+
     public async Task<InventorySalesIssueSummary> PostAsync(
         InventorySalesIssuePostRequest request,
         InventorySalesIssueDashboard? dashboard,

@@ -9,6 +9,8 @@
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellCounterpartyOnboardingClient CounterpartyClient
 @inject ShellInventoryIssueClient InventoryIssue
+@inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 
 <PageTitle>Sales Issue</PageTitle>
@@ -19,7 +21,7 @@
             <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D</MudText>
             <MudText Typo="Typo.h4">Sales Issue</MudText>
             <MudText Typo="Typo.body1" Class="text-secondary">
-                Record the first outbound inventory truth directly inside Inventory: customer, warehouse, stock item, quantity, and system-derived cost. This stays independent from AR invoice and shipment bridging until that source truth grows item and warehouse-grade outbound semantics.
+                Record outbound inventory and cost truth directly inside Inventory. Shipment remains the fulfillment/source authority, while Sales Issue consumes either invoice-origin intent or shipment-origin fulfillment into inventory and cost truth.
             </MudText>
             <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
                 <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
@@ -36,6 +38,13 @@
     {
         <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
             Company-ready hand-off brought you into the first outbound inventory workspace. Confirm customer, warehouse, item, and quantity here before AR-to-Inventory shipment bridging lands later.
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_sourceDocumentDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            @GetSourceHandoffNotice()
         </MudAlert>
     }
 
@@ -150,7 +159,7 @@
                     </MudItem>
                 </MudGrid>
                 <MudText Typo="Typo.body2" Class="text-secondary">
-                    This first slice posts directly to inventory truth. It derives outbound cost from inventory cost layers and does not yet create or reconcile an AR shipment-side source document.
+                    Sales Issue derives outbound cost from inventory cost layers. Shipment stays the semantic owner of carrier, tracking, and shipping-slip meaning and can feed this workspace as a downstream anchor.
                 </MudText>
             </MudStack>
         </MudPaper>
@@ -329,6 +338,15 @@
     [SupplyParameterFromQuery(Name = "customerId")]
     public Guid? CustomerIdQuery { get; set; }
 
+    [SupplyParameterFromQuery(Name = "sourceType")]
+    public string? SourceType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "invoiceId")]
+    public Guid? InvoiceIdQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "shipmentId")]
+    public Guid? ShipmentIdQuery { get; set; }
+
     private InventorySalesIssueDashboard? _dashboard;
     private WebShellCompanyOnboardingSummary? _onboardingSummary;
     private ShellCounterpartyOnboardingSummary? _counterpartySummary;
@@ -338,6 +356,9 @@
     private DateTime? _postingDate = DateTime.Today;
     private string? _memo;
     private List<IssueLineEditorState> _lineEditors = [];
+    private Guid? _loadedSourceInvoiceId;
+    private Guid? _loadedSourceShipmentId;
+    private string? _sourceDocumentDisplayNumber;
 
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool WritesBlocked => ShellState.AreWritesBlocked;
@@ -386,6 +407,7 @@
 
             SeedHeaderDefaults();
             SeedLinesIfNeeded();
+            await LoadSourceHandoffAsync();
         }
         catch (Exception ex)
         {
@@ -486,9 +508,9 @@
                 ShellState.CurrentUserId,
                 _selectedCustomerId ?? Guid.Empty,
                 DateOnly.FromDateTime((_postingDate ?? DateTime.Today).Date),
-                SourceModule: "web_shell_inventory",
-                SourceDocumentId: null,
-                SourceDocumentNumber: null,
+                SourceModule: ResolveSourceModule(),
+                SourceDocumentId: ResolveSourceDocumentId(),
+                SourceDocumentNumber: _sourceDocumentDisplayNumber,
                 _memo,
                 _lineEditors.Select(line => new InventorySalesIssueLineInput(
                     line.LineNo,
@@ -524,10 +546,109 @@
     private void ResetForm()
     {
         _postingDate = DateTime.Today;
-        _memo = null;
+        _memo = ResolveDefaultMemo();
         _lineEditors = [];
         SeedHeaderDefaults();
         SeedLinesIfNeeded();
+    }
+
+    private async Task LoadSourceHandoffAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        if (string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) &&
+            ShipmentIdQuery.HasValue &&
+            ShipmentIdQuery != _loadedSourceShipmentId)
+        {
+            var shipment = await InventoryShipment.GetAsync(ShellState.ActiveCompany.Id, ShipmentIdQuery.Value, CancellationToken.None);
+            if (shipment is null)
+            {
+                return;
+            }
+
+            _loadedSourceShipmentId = shipment.DocumentId;
+            _sourceDocumentDisplayNumber = shipment.DocumentNumber;
+            _memo ??= $"Sales issue anchored from shipment {shipment.DocumentNumber}";
+
+            if (_counterpartySummary is not null)
+            {
+                var preferredCustomer = _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == shipment.CustomerId);
+                if (preferredCustomer is not null)
+                {
+                    _selectedCustomerId = preferredCustomer.Id;
+                }
+            }
+
+            if (shipment.Lines.Count > 0)
+            {
+                _lineEditors = shipment.Lines
+                    .Select(line => new IssueLineEditorState
+                    {
+                        LineNo = line.LineNo,
+                        ItemId = line.ItemId,
+                        WarehouseId = line.WarehouseId,
+                        UomCode = line.UomCode,
+                        Quantity = line.Quantity
+                    })
+                    .OrderBy(line => line.LineNo)
+                    .ToList();
+            }
+
+            return;
+        }
+
+        if (!string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) ||
+            !InvoiceIdQuery.HasValue ||
+            InvoiceIdQuery == _loadedSourceInvoiceId)
+        {
+            return;
+        }
+
+        var invoiceResult = await Drafts.GetInvoiceDraftAsync(ShellState.ActiveCompany.Id, InvoiceIdQuery.Value, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(invoiceResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var invoice = invoiceResult.Value;
+        if (invoice is null)
+        {
+            return;
+        }
+
+        _loadedSourceInvoiceId = invoice.Id;
+        _sourceDocumentDisplayNumber = invoice.DisplayNumber;
+        _memo ??= $"Sales issue anchored from invoice {invoice.DisplayNumber}";
+
+        if (_counterpartySummary is not null)
+        {
+            var preferredCustomer = _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == invoice.CustomerId);
+            if (preferredCustomer is not null)
+            {
+                _selectedCustomerId = preferredCustomer.Id;
+            }
+        }
+
+        var handoffLines = invoice.Lines
+            .Where(line => line.ItemId.HasValue && line.WarehouseId.HasValue && !string.IsNullOrWhiteSpace(line.UomCode))
+            .Select(line => new IssueLineEditorState
+            {
+                LineNo = line.LineNumber,
+                ItemId = line.ItemId,
+                WarehouseId = line.WarehouseId,
+                UomCode = line.UomCode ?? "EA",
+                Quantity = line.Quantity
+            })
+            .OrderBy(line => line.LineNo)
+            .ToList();
+
+        if (handoffLines.Count > 0)
+        {
+            _lineEditors = handoffLines;
+        }
     }
 
     private bool TryBlockWrites()
@@ -540,6 +661,37 @@
         _error = ShellState.WriteBlockMessage;
         Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
         return true;
+    }
+
+    private string? ResolveSourceModule() =>
+        string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && ShipmentIdQuery.HasValue
+            ? "inventory_shipment"
+            : string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue
+                ? "ar_invoice"
+                : "web_shell_inventory";
+
+    private Guid? ResolveSourceDocumentId() =>
+        string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && ShipmentIdQuery.HasValue
+            ? ShipmentIdQuery.Value
+            : string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue
+                ? InvoiceIdQuery.Value
+                : null;
+
+    private string? ResolveDefaultMemo() =>
+        string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_sourceDocumentDisplayNumber)
+            ? $"Sales issue anchored from shipment {_sourceDocumentDisplayNumber}"
+            : string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_sourceDocumentDisplayNumber)
+                ? $"Sales issue anchored from invoice {_sourceDocumentDisplayNumber}"
+                : null;
+
+    private MarkupString GetSourceHandoffNotice()
+    {
+        if (string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase))
+        {
+            return new MarkupString($"Shipment hand-off <strong>{_sourceDocumentDisplayNumber}</strong> prefilled this workspace. Shipment remains the fulfillment truth; Sales Issue now consumes that shipped truth into inventory and cost truth.");
+        }
+
+        return new MarkupString($"Invoice hand-off <strong>{_sourceDocumentDisplayNumber}</strong> prefilled this workspace. Shipment and Sales Issue still remain the authoritative outbound truth; the invoice only carries outbound intent into this seam.");
     }
 
     private sealed class IssueLineEditorState

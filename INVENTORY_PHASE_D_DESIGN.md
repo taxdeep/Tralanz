@@ -730,6 +730,89 @@ Current E checkpoint:
 - the shell now states the intended responsibility split directly: submit hands a move into source-warehouse review, ship declares stock left the source warehouse, and receive declares stock physically arrived at the destination warehouse
 - this is still not the final permission-system integration; it is the first control hardening slice that makes the transfer/write-off lifecycle explicit before formal permission tokens land
 
+## Phase F.1 checkpoint
+
+`Receipt-first AP / inventory bridge` now has a small hardening layer that should be treated as structural, not cosmetic.
+
+- bill posting gate authority moved from API-local helper code into `Citus.Accounting.Application`
+- bill posting now re-checks receipt-first truth inside the command handler, not only at HTTP edge
+- bill hold projection for source browsing now runs as a batch inventory projection rather than per-bill summary lookups
+- this checkpoint intentionally preserves the current truth model: no persisted discrepancy lane yet, but the existing bill/receipt gate is now harder to bypass and cheaper to project
+
+## Phase G checkpoint
+
+The first `Shipment-first AR bridge` slice is now open, but still intentionally narrow.
+
+- invoice lines can now carry outbound inventory-grade hand-off data (`item`, `warehouse`, `stock UOM`) without claiming shipment truth is complete
+- invoice draft read/write seams persist that outbound hand-off set so the AR draft lane can feed later shipment truth without overloading invoice itself
+- the invoice workbench now exposes shipment-first hand-off guidance and can hand control to the independent Sales Issue workspace
+- Sales Issue can now preload invoice-origin outbound intent, but still remains the authoritative outbound inventory and cost lane
+- this checkpoint does **not** yet claim shipped-eligible invoice posting, shipment document truth, or invoice/sales-issue matching; those remain later Phase G work
+
+## Phase G.2 checkpoint
+
+The next `Shipment-first AR bridge` slice now converts invoice-origin outbound hand-off into a real matching and posting-gate lane, while still staying honest that shipment truth is not complete yet.
+
+- inventory now owns an `invoice -> sales_issue` hand-off summary plus a batch posting-gate projection for browser/operator review
+- AR invoice posting now re-checks outbound issue coverage inside `Citus.Accounting.Application`, rather than relying on shell/API edge behavior
+- the source browser and source detail page both surface invoice-side outbound hold truth, so operators can review issue coverage without reopening the invoice editor first
+- the invoice workbench now reflects the same outbound post gate locally when a saved/submitted invoice participates in inventory hand-off
+- this is intentionally still an interim issue-first bridge: `Shipment` as formal fulfillment truth and shipped-eligible invoicing remain later Phase G work, but invoice posting no longer acts as if inventory-grade outbound lines can skip authoritative issue coverage
+
+## Phase G.3 checkpoint
+
+The outbound bridge now introduces a real persisted shipment lane while preserving the authority split:
+
+- `Shipment` is now a persisted inventory document type and owns fulfillment metadata (`carrier / tracking / shipping slip`)
+- `Invoice -> Shipment` matching now survives reloads and review through `IInventoryShipmentStore`, rather than existing only as transient issue coverage
+- AR invoice posting now consumes `persisted shipment truth + computed policy`, not only summary-driven issue coverage
+- shell continuity is now shipment-first across browser, detail, and invoice editor, with `Open Shipment Workspace` becoming the primary fulfillment CTA
+- `Sales Issue` remains downstream inventory/cost truth and can consume `shipment` as its source anchor, rather than being treated as the semantic owner of fulfillment
+- this checkpoint still defers full sales-order state truth, persisted discrepancy workflows, return/disposition, and tracking-aware shipment input
+
+## Phase G completion checkpoint
+
+`Shipment-first AR bridge` should now be treated as phase-complete and review-ready.
+
+- outbound matching truth is now persisted in `inventory_outbound_matching_lanes`, with separate `invoice_shipment` and `shipment_issue` lane types rather than one-off UI summaries
+- the persisted lane is keyed by `(company, source document, item, warehouse, UOM)` so partial shipment, split warehouse fulfillment, and downstream issue follow-through can be expressed without forcing the full final sales-order model yet
+- invoice posting authority now consumes `persisted shipment truth + computed policy`, which means stock invoicing is constrained by shipped-eligible quantity at the application seam instead of relying on transient review-only coverage
+- line-level lane summaries now carry authoritative shipment and issue statuses (`pending`, `partially_*`, `fully_*`, `over_*`), plus remaining quantities to ship and to issue
+- browser continuity stays batch-friendly through posting-gate snapshots, while source detail, invoice editor, and shipment workspace all expose the richer lane with downstream issue follow-through and discrepancy summaries
+- the phase remains honest about later work: full `SO -> Shipment -> Sales Issue -> Invoice` rollup, explicit persisted discrepancy investigation entities, return/disposition truth, and tracking-aware document integration are still intentionally out of scope
+
+## Phase H0 checkpoint
+
+`Return / Disposition Truth` should begin with a very small outbound base-hardening slice. This is not a new outbound bridge; it is the minimum persisted state needed before `return_receive` can be introduced safely.
+
+- outbound discrepancies now persist in `inventory_outbound_discrepancy_lanes`, so mismatch truth survives reloads and no longer depends on read-time recomputation alone
+- discrepancy persistence currently covers:
+  - invoice vs shipment over-coverage
+  - shipment vs sales-issue over-consumption
+  - posted invoice coverage exceeding shipped truth
+- `invoice -> shipment -> sales_issue` lane summaries now also carry formal invoice-coverage state:
+  - `invoiced quantity`
+  - `remaining to invoice`
+  - `invoice coverage status`
+- browser projections remain batch-oriented while source detail, invoice editor, and shipment workspace now expose a consistent outbound base for later return eligibility review
+- this still intentionally stops short of return intake itself: no `return_receive`, no inspect/disposition lane, no refund/credit bridge, and no tracked return integration yet
+
+## Phase H1 checkpoint
+
+The first operational return slice now introduces an inventory-owned `customer return receive` lane without collapsing return truth into invoice, refund, or immediate restock behavior.
+
+- `customer return receive` is now a persisted inventory document type (`customer_return_receipt`) anchored to posted shipment truth
+- shipment remains the physical source anchor; invoice stays only as commercial context and is not allowed to invent returnable quantity
+- return line truth is grouped and guarded at the same authoritative `(item, warehouse, stock UOM)` level used by the outbound lane, so the system can enforce a hard return quantity ceiling against shipped-and-not-yet-returned quantity
+- return intake now captures the future-facing physical seam required by later inspection/disposition work:
+  - `condition_code`
+  - `return_reason_code`
+  - `disposition_reason_code`
+  - per-line memo
+- H1 intentionally records physical return receive truth only; it does **not** yet restore `on_hand`, create inventory ledger mutations, or touch cost layers
+- that means returned stock is now formally received, but it is not yet available inventory until a later inspect/disposition slice decides whether it should be restocked or routed into write-off / scrap / damaged / unsellable outcomes
+- vendor return remains explicitly deferred and will later be modeled as a separate lane anchored to receipt truth, not mixed into this first customer-return seam
+
 ## Immediate Recommendation
 
 The next formal planning step should be:

@@ -113,7 +113,10 @@ public sealed record InvoiceDraftLineSaveModel(
     decimal Quantity,
     decimal UnitPrice,
     Guid? TaxCodeId,
-    decimal TaxAmount);
+    decimal TaxAmount,
+    Guid? ItemId = null,
+    Guid? WarehouseId = null,
+    string? UomCode = null);
 
 public sealed record CreditNoteDraftSaveModel(
     Guid? DocumentId,

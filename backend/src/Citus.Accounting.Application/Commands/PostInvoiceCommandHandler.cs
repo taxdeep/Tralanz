@@ -1,6 +1,7 @@
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Posting;
+using Citus.Modules.Inventory.Application.Contracts;
 
 namespace Citus.Accounting.Application.Commands;
 
@@ -9,17 +10,20 @@ public sealed class PostInvoiceCommandHandler
     private readonly IInvoiceDocumentRepository _documents;
     private readonly IPostingEngine _postingEngine;
     private readonly IArOpenItemRepository _openItems;
+    private readonly IInventoryShipmentStore _inventoryShipmentStore;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostInvoiceCommandHandler(
         IInvoiceDocumentRepository documents,
         IPostingEngine postingEngine,
         IArOpenItemRepository openItems,
+        IInventoryShipmentStore inventoryShipmentStore,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         _postingEngine = postingEngine ?? throw new ArgumentNullException(nameof(postingEngine));
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
+        _inventoryShipmentStore = inventoryShipmentStore ?? throw new ArgumentNullException(nameof(inventoryShipmentStore));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -35,6 +39,16 @@ public sealed class PostInvoiceCommandHandler
             if (document is null)
             {
                 throw new InvalidOperationException("Invoice document was not found in the active company context.");
+            }
+
+            var shipmentHandoffSummary = await _inventoryShipmentStore.GetInvoiceHandoffSummaryAsync(
+                command.CompanyId.Value,
+                command.DocumentId,
+                ct);
+            if (!ShipmentPostingGatePolicy.AllowsInvoicePost(shipmentHandoffSummary.MatchStatus))
+            {
+                throw new InvalidOperationException(
+                    ShipmentPostingGatePolicy.GetBlockedPostMessage(shipmentHandoffSummary));
             }
 
             var acceptedFxSnapshotId =

@@ -6,6 +6,7 @@
 @inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellAccountingDocumentReviewClient ReviewClient
 @inject ShellInventoryReceiptClient InventoryReceiptClient
+@inject ShellInventoryShipmentClient InventoryShipmentClient
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
     <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
@@ -71,6 +72,12 @@
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@adjustmentPolicyHref">
                     Review Adjustment Policy
+                </MudButton>
+            }
+            @if (TryBuildShipmentWorkspaceHref(_document.SourceType, _document.Id, out var shipmentHref))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@shipmentHref" Disabled="WritesBlocked">
+                    Open Shipment Workspace
                 </MudButton>
             }
             @if (TryBuildSourceBrowserHref(_document.SourceType, _document.CounterpartyLabel, _document.CounterpartyId, out var relatedDocumentsHref))
@@ -242,6 +249,135 @@
                             <MudTd>@context.ReceivedQuantity.ToString("N2")</MudTd>
                             <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
                             <MudTd>@FormatBillReceiptMatchStatus(context.MatchStatus)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        }
+
+        @if (IsInvoiceShipmentReview(_document) && _invoiceShipmentLaneSummary is not null)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Shipment-first Matching</MudText>
+                <MudAlert Severity="@GetInvoiceShipmentMatchingSeverity(_invoiceShipmentLaneSummary.ShipmentMatchStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @BuildInvoiceShipmentMatchingNotice(_invoiceShipmentLaneSummary)
+                </MudAlert>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Invoice Outbound Qty</MudText>
+                        <MudText Typo="Typo.h6">@_invoiceShipmentLaneSummary.InvoiceOutboundQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceShipmentLaneSummary.InvoiceOutboundLineCount inventory-grade line(s)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Shipped Qty</MudText>
+                        <MudText Typo="Typo.h6">@_invoiceShipmentLaneSummary.ShippedQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceShipmentLaneSummary.ShipmentCount anchored shipment(s)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Remaining Qty</MudText>
+                        <MudText Typo="Typo.h6">@_invoiceShipmentLaneSummary.RemainingToShipQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@BuildInvoiceShipmentRemainingSummary(_invoiceShipmentLaneSummary)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Match Status</MudText>
+                        <MudText Typo="Typo.h6">@FormatInvoiceShipmentMatchStatus(_invoiceShipmentLaneSummary.ShipmentMatchStatus)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">Shipment owns fulfillment truth; Sales Issue remains downstream inventory and cost truth.</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Invoice Coverage</MudText>
+                        <MudText Typo="Typo.h6">@FormatInvoiceShipmentMatchStatus(_invoiceShipmentLaneSummary.InvoiceCoverageStatus)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@BuildInvoiceCoverageSummary(_invoiceShipmentLaneSummary)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Issue Follow-through</MudText>
+                        <MudText Typo="Typo.h6">@FormatInvoiceShipmentMatchStatus(_invoiceShipmentLaneSummary.IssueMatchStatus)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@BuildInvoiceIssueFollowThroughSummary(_invoiceShipmentLaneSummary)</MudText>
+                    </MudPaper>
+                </div>
+                @if (_invoiceShipmentLaneSummary.Discrepancies.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                        @foreach (var discrepancy in _invoiceShipmentLaneSummary.Discrepancies)
+                        {
+                            <div>@discrepancy.Summary</div>
+                        }
+                    </MudAlert>
+                }
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@($"/company/inventory-shipment?sourceType=invoice&invoiceId={_document.Id:D}")">
+                        Open Shipment Workspace
+                    </MudButton>
+                </div>
+                @if (_invoiceShipmentLaneSummary.RecentShipments.Count > 0)
+                {
+                    <MudTable Items="_invoiceShipmentLaneSummary.RecentShipments" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh>Shipment</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Customer</MudTh>
+                            <MudTh>Qty</MudTh>
+                            <MudTh>Tracking</MudTh>
+                            <MudTh>Status</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.DocumentNumber</MudTd>
+                            <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                            <MudTd>@context.CustomerDisplayName</MudTd>
+                            <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
+                            <MudTd>@(context.TrackingNumber ?? "n/a")</MudTd>
+                            <MudTd>@context.Status</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+                @if (_invoiceShipmentLaneSummary.LineSummaries.Count > 0)
+                {
+                    <MudTable Items="_invoiceShipmentLaneSummary.LineSummaries" Dense="true" Hover="true" Bordered="true" Style="margin-top:1rem;">
+                        <HeaderContent>
+                            <MudTh>Item</MudTh>
+                            <MudTh>Warehouse</MudTh>
+                            <MudTh>UOM</MudTh>
+                            <MudTh>Invoice Qty</MudTh>
+                            <MudTh>Shipped Qty</MudTh>
+                            <MudTh>Remaining To Ship</MudTh>
+                            <MudTh>Shipment</MudTh>
+                            <MudTh>Invoiced Qty</MudTh>
+                            <MudTh>Remaining To Invoice</MudTh>
+                            <MudTh>Invoice Coverage</MudTh>
+                            <MudTh>Issued Qty</MudTh>
+                            <MudTh>Remaining To Issue</MudTh>
+                            <MudTh>Issue</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                            <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                            <MudTd>@context.UomCode</MudTd>
+                            <MudTd>@context.InvoiceQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.ShippedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.RemainingToShipQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatInvoiceShipmentMatchStatus(context.ShipmentMatchStatus)</MudTd>
+                            <MudTd>@context.InvoicedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.RemainingToInvoiceQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatInvoiceShipmentMatchStatus(context.InvoiceCoverageStatus)</MudTd>
+                            <MudTd>@context.IssuedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.RemainingToIssueQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatInvoiceShipmentMatchStatus(context.IssueMatchStatus)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+                @if (_invoiceShipmentLaneSummary.RecentIssues.Count > 0)
+                {
+                    <MudTable Items="_invoiceShipmentLaneSummary.RecentIssues" Dense="true" Hover="true" Bordered="true" Style="margin-top:1rem;">
+                        <HeaderContent>
+                            <MudTh>Sales Issue</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Qty</MudTh>
+                            <MudTh>Cost</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.DocumentNumber</MudTd>
+                            <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                            <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
                         </RowTemplate>
                     </MudTable>
                 }
@@ -676,6 +812,7 @@
     private IReadOnlyDictionary<Guid, BlockerReverseDetail> _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
     private IReadOnlyList<ShellSettlementApplicationReversalSummary> _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
     private InventoryBillReceiptHandoffSummary? _billReceiptHandoffSummary;
+    private InventoryInvoiceShipmentIssueLaneSummary? _invoiceShipmentLaneSummary;
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
@@ -700,6 +837,7 @@
         _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
         _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
         _billReceiptHandoffSummary = null;
+        _invoiceShipmentLaneSummary = null;
         _factRows = Array.Empty<FactRow>();
 
         if (!await EnsureWriteGateStateAsync())
@@ -730,6 +868,13 @@
         if (IsBillReceiptReview(document))
         {
             _billReceiptHandoffSummary = await InventoryReceiptClient.GetBillHandoffSummaryAsync(
+                ShellState.ActiveCompany.Id,
+                document.Id,
+                CancellationToken.None);
+        }
+        else if (IsInvoiceShipmentReview(document))
+        {
+            _invoiceShipmentLaneSummary = await InventoryShipmentClient.GetInvoiceLaneSummaryAsync(
                 ShellState.ActiveCompany.Id,
                 document.Id,
                 CancellationToken.None);
@@ -1651,6 +1796,18 @@
         return !string.IsNullOrWhiteSpace(href);
     }
 
+    private static bool TryBuildShipmentWorkspaceHref(string? sourceType, Guid documentId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(sourceType, "invoice", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        href = $"/company/inventory-shipment?sourceType=invoice&invoiceId={documentId:D}";
+        return true;
+    }
+
     private static bool TryBuildSourceBrowserHref(string? sourceType, string? counterpartyLabel, Guid? counterpartyId, out string href)
     {
         href = string.Empty;
@@ -1698,6 +1855,9 @@
     private static bool IsBillReceiptReview(ShellAccountingDocumentReviewSummary? document) =>
         string.Equals(document?.SourceType, "bill", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsInvoiceShipmentReview(ShellAccountingDocumentReviewSummary? document) =>
+        string.Equals(document?.SourceType, "invoice", StringComparison.OrdinalIgnoreCase);
+
     private static string FormatBillReceiptMatchStatus(string? matchStatus) =>
         matchStatus switch
         {
@@ -1734,6 +1894,74 @@
             : summary.RemainingQuantity == 0m
                 ? "Current bill hand-off quantity is fully covered."
                 : "Receipt truth currently exceeds the bill hand-off quantity.";
+
+    private static string FormatInvoiceShipmentMatchStatus(string? matchStatus) =>
+        matchStatus switch
+        {
+            "no_inventory_handoff" => "No inventory hand-off",
+            "no_shipment" => "No shipment yet",
+            "not_invoiced" => "Not invoiced",
+            "partially_invoiced" => "Partially invoiced",
+            "fully_invoiced" => "Fully invoiced",
+            "over_invoiced" => "Over invoiced",
+            "pending_issue" => "Pending issue",
+            "partially_issued" => "Partially issued",
+            "fully_issued" => "Fully issued",
+            "over_issued" => "Over issued",
+            "partially_shipped" => "Partially shipped",
+            "fully_shipped" => "Fully shipped",
+            "over_shipped" => "Over shipped",
+            _ => "Awaiting shipment review"
+        };
+
+    private static Severity GetInvoiceShipmentMatchingSeverity(string? matchStatus) =>
+        matchStatus switch
+        {
+            "fully_shipped" => Severity.Success,
+            "over_shipped" => Severity.Warning,
+            _ => Severity.Info
+        };
+
+    private static string BuildInvoiceShipmentMatchingNotice(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.ShipmentMatchStatus switch
+        {
+            "no_inventory_handoff" => "This invoice has not defined any complete outbound inventory-grade lines yet, so shipment-first matching is not active.",
+            "no_shipment" => "Outbound inventory-grade invoice lines exist, but no anchored shipment has been posted yet.",
+            "partially_shipped" => "Shipment truth exists, but some outbound quantity is still outstanding against the invoice hand-off.",
+            "fully_shipped" => "Anchored shipment truth fully covers the current invoice hand-off quantity.",
+            "over_shipped" => "Anchored shipment quantity now exceeds the current invoice hand-off quantity and should be investigated before AR matching deepens.",
+            _ => "Shipment-first matching truth is not yet available."
+        };
+
+    private static string BuildInvoiceShipmentRemainingSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.RemainingToShipQuantity > 0m
+            ? "Quantity is still outstanding on the shipment side."
+            : summary.RemainingToShipQuantity == 0m
+                ? "Current invoice hand-off quantity is fully covered."
+                : "Shipment truth currently exceeds the invoice hand-off quantity.";
+
+    private static string BuildInvoiceCoverageSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.InvoiceCoverageStatus switch
+        {
+            "no_inventory_handoff" => "No outbound inventory-grade hand-off is active, so there is no shipped/invoiced coverage lane to review.",
+            "no_shipment" => "Shipment truth has not started yet, so nothing is formally invoiced against shipped fulfillment.",
+            "not_invoiced" => $"Shipment truth exists, but {summary.RemainingToInvoiceQuantity:N2} shipped quantity still has no formal AR coverage.",
+            "partially_invoiced" => $"{summary.RemainingToInvoiceQuantity:N2} shipped quantity is still waiting to become formal AR truth.",
+            "fully_invoiced" => "Current shipped quantity is fully covered by posted AR truth.",
+            "over_invoiced" => "Posted invoice truth currently exceeds shipped quantity and should move into discrepancy review before return or settlement work deepens.",
+            _ => "Invoice coverage truth has not been evaluated yet."
+        };
+
+    private static string BuildInvoiceIssueFollowThroughSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.IssueMatchStatus switch
+        {
+            "no_shipment" => "No shipment truth exists yet, so downstream Sales Issue follow-through is not active.",
+            "pending_issue" => "Shipment truth exists, but no downstream Sales Issue has been posted yet.",
+            "partially_issued" => $"Shipment truth is ahead of inventory/cost truth by {summary.RemainingToIssueQuantity:N2}. Continue into Sales Issue to finish the outbound lane.",
+            "fully_issued" => "Shipment and Sales Issue truth are aligned for the current invoice hand-off.",
+            "over_issued" => "Sales Issue truth currently exceeds shipped quantity and should be reviewed before downstream accounting deepens.",
+            _ => "Downstream Sales Issue follow-through has not been evaluated yet."
+        };
 
     private static string GetSettlementFollowUpTitle(ShellAccountingDocumentReviewSummary document)
     {

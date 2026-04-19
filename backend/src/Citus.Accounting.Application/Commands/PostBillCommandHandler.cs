@@ -1,6 +1,7 @@
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Posting;
+using Citus.Modules.Inventory.Application.Contracts;
 
 namespace Citus.Accounting.Application.Commands;
 
@@ -9,17 +10,20 @@ public sealed class PostBillCommandHandler
     private readonly IBillDocumentRepository _documents;
     private readonly IPostingEngine _postingEngine;
     private readonly IApOpenItemRepository _openItems;
+    private readonly IInventoryReceiptStore _inventoryReceiptStore;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostBillCommandHandler(
         IBillDocumentRepository documents,
         IPostingEngine postingEngine,
         IApOpenItemRepository openItems,
+        IInventoryReceiptStore inventoryReceiptStore,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         _postingEngine = postingEngine ?? throw new ArgumentNullException(nameof(postingEngine));
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
+        _inventoryReceiptStore = inventoryReceiptStore ?? throw new ArgumentNullException(nameof(inventoryReceiptStore));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -40,6 +44,17 @@ public sealed class PostBillCommandHandler
             if (!string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("Only submitted bills can be posted.");
+            }
+
+            var receiptHandoffSummary = await _inventoryReceiptStore.GetBillHandoffSummaryAsync(
+                command.CompanyId.Value,
+                command.DocumentId,
+                ct);
+
+            if (!BillReceiptPostingGatePolicy.AllowsBillPost(receiptHandoffSummary.MatchStatus))
+            {
+                throw new InvalidOperationException(
+                    BillReceiptPostingGatePolicy.GetBlockedPostMessage(receiptHandoffSummary));
             }
 
             var acceptedFxSnapshotId =

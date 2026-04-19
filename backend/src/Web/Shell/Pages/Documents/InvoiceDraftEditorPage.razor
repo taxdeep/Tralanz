@@ -1,4 +1,5 @@
 @page "/documents/invoice/draft-editor"
+@using Citus.Modules.Inventory.Application.Contracts
 @using Modules.CompanyAccess.SessionContext
 @using Modules.GL.JournalEntry
 @using Web.Business.AR.SettlementLookup
@@ -11,6 +12,8 @@
 @inject IJournalEntryAccountCatalog Accounts
 @inject ShellTaxCodeLookupService TaxCodes
 @inject ShellProductServiceCatalogClient ProductServices
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellInventoryShipmentClient InventoryShipment
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 
@@ -198,6 +201,97 @@
         </MudTable>
     </MudPaper>
 
+    @if (SupportsInventorySalesIssueHandoff)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
+                <MudText Typo="Typo.h6">Shipment-first outbound hand-off</MudText>
+                @if (_saved is not null && HasReadyInventoryGradeOutboundLines)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildShipmentHandoffHref()">
+                        Open Shipment Workspace
+                    </MudButton>
+                }
+            </div>
+            @if (IncompleteInventoryHandoffLineCount > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                    @IncompleteInventoryHandoffLineCount line(s) started shipment-first hand-off but are still missing item, warehouse, or stock UOM. Complete the outbound set before handing invoice intent into Sales Issue.
+                </MudAlert>
+            }
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:.75rem;">
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Handoff Status</MudText>
+                    <MudText Typo="Typo.h6">@ShipmentHandoffStatusLabel</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@ShipmentHandoffStatusSummary</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Outbound Lines</MudText>
+                    <MudText Typo="Typo.h6">@InventoryGradeOutboundLineCount</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">Invoice lines carrying item + warehouse hand-off truth</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Next Step</MudText>
+                    <MudText Typo="Typo.h6">@ShipmentHandoffNextStepTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@ShipmentHandoffNextStepDetail</MudText>
+                </MudPaper>
+            </div>
+            @if (_invoiceShipmentLaneSummary is not null && InventoryGradeOutboundLineCount > 0)
+            {
+                <MudAlert Severity="@(InvoiceShipmentAllowsPost ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                    <strong>@InvoiceShipmentPostingGateLabel</strong>
+                    <div>@InvoiceShipmentPostingGateSummary</div>
+                </MudAlert>
+                <MudAlert Severity="@InvoiceCoverageSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                    <strong>Invoice coverage: @_invoiceShipmentLaneSummary.InvoiceCoverageStatus.Replace('_', ' ')</strong>
+                    <div>@BuildInvoiceCoverageSummary(_invoiceShipmentLaneSummary)</div>
+                </MudAlert>
+                <MudAlert Severity="@InvoiceIssueFollowThroughSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                    <strong>Downstream issue follow-through: @_invoiceShipmentLaneSummary.IssueMatchStatus.Replace('_', ' ')</strong>
+                    <div>@BuildInvoiceIssueFollowThroughSummary(_invoiceShipmentLaneSummary)</div>
+                </MudAlert>
+                @if (_invoiceShipmentLaneSummary.Discrepancies.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                        @foreach (var discrepancy in _invoiceShipmentLaneSummary.Discrepancies)
+                        {
+                            <div>@discrepancy.Summary</div>
+                        }
+                    </MudAlert>
+                }
+            }
+            <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>#</MudTh><MudTh>Item</MudTh><MudTh>Warehouse</MudTh><MudTh>UOM</MudTh><MudTh>Qty</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.LineNumber</MudTd>
+                    <MudTd>
+                        <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@DraftMutationBlocked" Value="context.ItemId" ValueChanged="@(value => ApplyInventoryItem(context, value))">
+                            <MudSelectItem T="Guid?" Value="@((Guid?)null)">No shipment hand-off</MudSelectItem>
+                            @foreach (var item in InventoryOperationalItems)
+                            {
+                                <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd>
+                        <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.ItemId is null)" @bind-Value="context.WarehouseId">
+                            @foreach (var warehouse in InventoryWarehouses)
+                            {
+                                <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd>
+                        <MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.ItemId is null)" @bind-Value="context.UomCode" />
+                    </MudTd>
+                    <MudTd>@context.Quantity.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
         <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Subtotal</MudText><MudText Typo="Typo.h6">@Subtotal.ToString("N2")</MudText></MudPaper>
         <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Tax</MudText><MudText Typo="Typo.h6">@TaxTotal.ToString("N2")</MudText></MudPaper>
@@ -289,6 +383,9 @@
     private IReadOnlyList<JournalEntryAccountOption> _revenueAccounts = Array.Empty<JournalEntryAccountOption>();
     private IReadOnlyList<ShellTaxCodeLookupOption> _taxCodes = Array.Empty<ShellTaxCodeLookupOption>();
     private IReadOnlyList<ShellManagedProductServiceSummary> _salesProductServices = Array.Empty<ShellManagedProductServiceSummary>();
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private InventoryShipmentDashboard? _inventoryShipmentDashboard;
+    private InventoryInvoiceShipmentIssueLaneSummary? _invoiceShipmentLaneSummary;
     private Guid? _documentId;
     private ShellSourceDocumentDraftSaveResult? _saved;
     private string? _customerIdText;
@@ -317,10 +414,17 @@
     private bool IsSubmitted => string.Equals(_saved?.Status, "submitted", StringComparison.OrdinalIgnoreCase);
     private bool IsPosted => string.Equals(_saved?.Status, "posted", StringComparison.OrdinalIgnoreCase);
     private bool CanEditDraft => _saved is null || IsDraft;
-    private bool CanPost => IsSubmitted && _documentId.HasValue;
+    private bool CanPost => IsSubmitted && _documentId.HasValue && InvoiceShipmentAllowsPost;
     private bool DraftMutationBlocked => WritesBlocked || !CanEditDraft;
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool SupportsInventorySalesIssueHandoff => _onboardingSummary?.SupportsInventoryFoundation == true && _inventoryShipmentDashboard is not null;
+    private IReadOnlyList<InventoryManagedItemSummary> InventoryOperationalItems =>
+        _inventoryShipmentDashboard?.ActiveItems.Where(static item => item.ManageInventoryMethod == Citus.Modules.Inventory.Domain.Shared.ManageInventoryMethod.ManageStock).ToList() ?? [];
+    private IReadOnlyList<InventoryManagedWarehouseSummary> InventoryWarehouses => _inventoryShipmentDashboard?.ActiveWarehouses ?? [];
+    private int InventoryGradeOutboundLineCount => _lines.Count(line => line.ItemId.HasValue);
+    private bool HasReadyInventoryGradeOutboundLines => _lines.Any(IsInventorySalesIssueHandoffReady);
+    private int IncompleteInventoryHandoffLineCount => _lines.Count(line => line.ItemId.HasValue && !IsInventorySalesIssueHandoffReady(line));
     private ShellTaxCodeLookupOption? DefaultSalesTaxCode => _taxCodes.Count == 1 ? _taxCodes[0] : null;
     private int MissingDefaultSalesTaxLineCount => DefaultSalesTaxCode is null ? 0 : _lines.Count(line => string.IsNullOrWhiteSpace(line.TaxCodeIdText));
     private string CustomerTruthLabel => _customerOptions.Count > 0 ? $"{_customerOptions.Count} customer option(s)" : "Customer truth missing";
@@ -337,6 +441,42 @@
     private string ProductServiceTruthSummary => _salesProductServices.Count > 0
         ? "Product and service defaults can now carry description, revenue account, and default sales tax into the first invoice lines."
         : "Invoice lines can still be entered manually. Product and service setup becomes useful once you want reusable account and tax defaults.";
+    private string ShipmentHandoffStatusLabel => InventoryGradeOutboundLineCount == 0
+        ? "No shipment hand-off"
+        : IncompleteInventoryHandoffLineCount > 0
+            ? "Hand-off still incomplete"
+            : "Ready for shipment";
+    private string ShipmentHandoffStatusSummary => InventoryGradeOutboundLineCount == 0
+        ? "This invoice is not yet carrying any outbound inventory-grade hand-off lines, so shipment-first bridging has not started."
+        : IncompleteInventoryHandoffLineCount > 0
+            ? "At least one invoice line started the outbound hand-off set, but shipment-first truth still needs item, warehouse, and stock UOM to be complete."
+            : "Outbound inventory-grade invoice lines are ready to be handed into the independent Sales Issue workspace without treating invoice truth as physical shipment truth.";
+    private string ShipmentHandoffNextStepTitle => InventoryGradeOutboundLineCount == 0
+        ? "Stay in invoice-only draft lane"
+        : IncompleteInventoryHandoffLineCount > 0
+            ? "Finish outbound hand-off"
+            : "Confirm Sales Issue truth";
+    private string ShipmentHandoffNextStepDetail => InventoryGradeOutboundLineCount == 0
+        ? "Keep using invoice draft truth only until this document really needs inventory-linked outbound intent."
+        : IncompleteInventoryHandoffLineCount > 0
+            ? "Finish item, warehouse, and UOM first. Shipment and Sales Issue remain the authoritative physical truth once bridging begins."
+            : "Open Shipment workspace next. Shipment owns fulfillment truth first, and Sales Issue stays the downstream inventory and cost truth.";
+    private bool InvoiceShipmentAllowsPost =>
+        _invoiceShipmentLaneSummary is null || AllowsInvoicePost(_invoiceShipmentLaneSummary.ShipmentMatchStatus);
+    private string InvoiceShipmentPostingGateLabel =>
+        GetInvoiceShipmentPostingGateLabel(_invoiceShipmentLaneSummary);
+    private string InvoiceShipmentPostingGateSummary =>
+        GetInvoiceShipmentPostingGateSummary(_invoiceShipmentLaneSummary);
+    private Severity InvoiceCoverageSeverity =>
+        string.Equals(_invoiceShipmentLaneSummary?.InvoiceCoverageStatus, "fully_invoiced", StringComparison.OrdinalIgnoreCase)
+            ? Severity.Success
+            : string.Equals(_invoiceShipmentLaneSummary?.InvoiceCoverageStatus, "over_invoiced", StringComparison.OrdinalIgnoreCase)
+                ? Severity.Warning
+                : Severity.Info;
+    private Severity InvoiceIssueFollowThroughSeverity =>
+        string.Equals(_invoiceShipmentLaneSummary?.IssueMatchStatus, "fully_issued", StringComparison.OrdinalIgnoreCase)
+            ? Severity.Success
+            : Severity.Info;
     private string InvoicePostingPathLabel => _postedResult is not null ? "Ready for settlement" : IsPosted ? "Posted" : IsSubmitted ? "Submitted, awaiting post" : _saved is not null ? "Draft saved, awaiting submit" : "Draft -> Submit -> Post -> Receive Payment";
     private string InvoicePostingPathSummary => _postedResult is not null
         ? "The first invoice is posted, so the next legal AR step is to move into Receive Payment once receivables need settlement."
@@ -471,6 +611,7 @@
             _saved = saveResult.Value;
             _documentId = _saved.DocumentId;
             _postedResult = null;
+            await LoadShipmentHandoffSummaryAsync();
             Snackbar.Add($"Invoice draft {_saved.DisplayNumber} saved.", Severity.Success);
         }
         catch (Exception ex)
@@ -524,6 +665,7 @@
 
             _saved = submitResult.Value;
             _postedResult = null;
+            await LoadShipmentHandoffSummaryAsync();
             Snackbar.Add($"Invoice {_saved.DisplayNumber} submitted.", Severity.Success);
         }
         catch (Exception ex)
@@ -581,6 +723,7 @@
             {
                 _saved = _saved with { Status = _postedResult.Status };
             }
+            await LoadShipmentHandoffSummaryAsync();
 
             Snackbar.Add($"Invoice posted to journal entry {_postedResult.JournalEntryDisplayNumber}.", Severity.Success);
         }
@@ -603,6 +746,7 @@
             if (string.IsNullOrWhiteSpace(line.Description)) { _error = $"Description missing on line {line.LineNumber}."; lines = []; return false; }
             if (line.Quantity <= 0m || line.UnitPrice <= 0m) { _error = $"Quantity and unit price must be positive on line {line.LineNumber}."; lines = []; return false; }
             if (line.TaxAmount > 0m && !Guid.TryParse(line.TaxCodeIdText, out _)) { _error = $"Tax code missing on line {line.LineNumber}."; lines = []; return false; }
+            if (line.ItemId.HasValue && !IsInventorySalesIssueHandoffReady(line)) { _error = $"Shipment-first hand-off is incomplete on line {line.LineNumber}. Item, warehouse, and stock UOM must all be present once the line joins outbound inventory truth."; lines = []; return false; }
             built.Add(new ShellSalesSourceDocumentDraftLineSaveRequest
             {
                 LineNumber = line.LineNumber,
@@ -611,7 +755,10 @@
                 Quantity = line.Quantity,
                 UnitPrice = line.UnitPrice,
                 TaxCodeId = Guid.TryParse(line.TaxCodeIdText, out var taxCodeId) ? taxCodeId : null,
-                TaxAmount = line.TaxAmount
+                TaxAmount = line.TaxAmount,
+                ItemId = line.ItemId,
+                WarehouseId = line.WarehouseId,
+                UomCode = line.ItemId.HasValue ? string.IsNullOrWhiteSpace(line.UomCode) ? null : line.UomCode.Trim().ToUpperInvariant() : null
             });
         }
 
@@ -668,6 +815,16 @@
             .ToArray();
         _taxCodes = await TaxCodes.ListSalesTaxCodesAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
         _salesProductServices = (await ProductServices.GetSummaryAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ActiveSalesItems;
+        var onboardingResult = await OnboardingClient.GetAsync(CancellationToken.None);
+        if (!onboardingResult.RequiresSignIn && !onboardingResult.IsNotFound && string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+        {
+            _onboardingSummary = onboardingResult.Value;
+        }
+
+        if (_onboardingSummary?.SupportsInventoryFoundation == true)
+        {
+            _inventoryShipmentDashboard = await InventoryShipment.GetDashboardAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
+        }
         if (CustomerId.HasValue &&
             _customerOptions.Any(item => item.Id == CustomerId.Value))
         {
@@ -771,6 +928,7 @@
         _fxRate = draft.FxRate;
         _memo = draft.Memo;
         _postedResult = null;
+        await LoadShipmentHandoffSummaryAsync();
         _lines.Clear();
         _lines.AddRange(draft.Lines.Select(static line => new SalesLine
         {
@@ -780,13 +938,82 @@
             Quantity = line.Quantity,
             UnitPrice = line.UnitPrice,
             TaxCodeIdText = line.TaxCodeId?.ToString("D") ?? string.Empty,
-            TaxAmount = line.TaxAmount
+            TaxAmount = line.TaxAmount,
+            ItemId = line.ItemId,
+            WarehouseId = line.WarehouseId,
+            UomCode = line.UomCode ?? string.Empty
         }));
         if (_lines.Count == 0)
         {
             _lines.Add(SalesLine.Blank(1));
         }
     }
+
+    private async Task LoadShipmentHandoffSummaryAsync()
+    {
+        if (!_documentId.HasValue || !SupportsInventorySalesIssueHandoff)
+        {
+            _invoiceShipmentLaneSummary = null;
+            return;
+        }
+
+        _invoiceShipmentLaneSummary = await InventoryShipment.GetInvoiceLaneSummaryAsync(
+            ShellSession.ActiveCompanyId,
+            _documentId.Value,
+            CancellationToken.None);
+    }
+
+    private static bool AllowsInvoicePost(string? matchStatus) =>
+        string.Equals(matchStatus, "no_inventory_handoff", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(matchStatus, "fully_shipped", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetInvoiceShipmentPostingGateLabel(InventoryInvoiceShipmentIssueLaneSummary? summary) =>
+        summary?.ShipmentMatchStatus switch
+        {
+            "no_shipment" => "Post on hold: no shipment yet",
+            "partially_shipped" => "Post on hold: shipment still partial",
+            "over_shipped" => "Post on hold: shipment mismatch",
+            "fully_shipped" => "Post enabled",
+            "no_inventory_handoff" => "Post enabled",
+            _ => "Awaiting shipment review"
+        };
+
+    private static string GetInvoiceShipmentPostingGateSummary(InventoryInvoiceShipmentIssueLaneSummary? summary)
+    {
+        var remainingQuantity = summary?.RemainingToShipQuantity ?? 0m;
+        return summary?.ShipmentMatchStatus switch
+        {
+            "no_shipment" => "Outbound inventory-grade invoice lines exist, but AR posting must wait until authoritative shipment truth is posted.",
+            "partially_shipped" => $"AR posting stays on hold until the remaining {remainingQuantity:N2} outbound quantity is covered by authoritative shipment truth.",
+            "over_shipped" => "AR posting stays on hold while anchored shipment truth exceeds the current invoice hand-off quantity. Review the outbound mismatch before formalizing AR truth.",
+            "fully_shipped" => "Shipment truth fully covers the current invoice hand-off quantity, so the invoice can move into formal AR posting when you are ready.",
+            "no_inventory_handoff" => "This invoice is not participating in shipment-first bridging, so AR posting remains controlled only by the draft lifecycle lane.",
+            _ => "Shipment-first truth has not been loaded yet."
+        };
+    }
+
+    private static string BuildInvoiceIssueFollowThroughSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.IssueMatchStatus switch
+        {
+            "no_shipment" => "Shipment truth has not started yet, so there is no downstream issue follow-through to review.",
+            "pending_issue" => "Shipment truth exists, but no downstream Sales Issue has been posted yet.",
+            "partially_issued" => $"Shipment truth is ahead of cost truth by {summary.RemainingToIssueQuantity:N2}. Continue into Sales Issue to finish outbound inventory/cost coverage.",
+            "fully_issued" => "Shipment and Sales Issue truth are aligned for the current invoice hand-off.",
+            "over_issued" => "Downstream Sales Issue currently exceeds shipped quantity. Review the outbound mismatch before extending the lane further.",
+            _ => "Downstream issue follow-through has not been evaluated yet."
+        };
+
+    private static string BuildInvoiceCoverageSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.InvoiceCoverageStatus switch
+        {
+            "no_inventory_handoff" => "This invoice is not participating in outbound inventory-grade bridging, so there is no shipped/invoiced coverage lane to review yet.",
+            "no_shipment" => "Shipment truth has not started yet, so no outbound quantity is formally invoiced against shipped fulfillment.",
+            "not_invoiced" => $"Shipment truth exists, but {summary.RemainingToInvoiceQuantity:N2} shipped quantity still has no formal AR coverage.",
+            "partially_invoiced" => $"{summary.RemainingToInvoiceQuantity:N2} shipped quantity is still waiting to become formal AR truth.",
+            "fully_invoiced" => "Current shipped quantity is fully covered by posted AR truth.",
+            "over_invoiced" => "Posted invoice truth currently exceeds shipped quantity and should move into discrepancy review.",
+            _ => "Invoice coverage truth has not been evaluated yet."
+        };
 
     private string GetFirstInvoiceStepOne() =>
         _customerOptions.Count > 0
@@ -813,6 +1040,13 @@
         Guid.TryParse(_customerIdText, out var customerId)
             ? $"/ar/receive-payment?origin=company-ready&customerId={customerId:D}"
             : "/ar/receive-payment?origin=company-ready";
+
+    private string BuildShipmentHandoffHref() =>
+        _saved is null
+            ? "/company/inventory-shipment"
+            : Guid.TryParse(_customerIdText, out var customerId)
+                ? $"/company/inventory-shipment?origin=invoice-draft-handoff&sourceType=invoice&invoiceId={_saved.DocumentId:D}&customerId={customerId:D}"
+                : $"/company/inventory-shipment?origin=invoice-draft-handoff&sourceType=invoice&invoiceId={_saved.DocumentId:D}";
 
     private string BuildPostedDetailHref() =>
         _saved is null
@@ -853,6 +1087,36 @@
         }
     }
 
+    private void ApplyInventoryItem(SalesLine line, Guid? itemId)
+    {
+        if (TryBlockDraftEdits())
+        {
+            return;
+        }
+
+        line.ItemId = itemId;
+        if (!itemId.HasValue)
+        {
+            line.WarehouseId = null;
+            line.UomCode = string.Empty;
+            return;
+        }
+
+        var item = InventoryOperationalItems.FirstOrDefault(current => current.Id == itemId.Value);
+        if (item is null)
+        {
+            return;
+        }
+
+        line.UomCode = item.StockUomCode ?? string.Empty;
+        line.WarehouseId ??= InventoryWarehouses.FirstOrDefault()?.Id;
+    }
+
+    private static bool IsInventorySalesIssueHandoffReady(SalesLine line) =>
+        line.ItemId.HasValue &&
+        line.WarehouseId.HasValue &&
+        !string.IsNullOrWhiteSpace(line.UomCode);
+
     private sealed class SalesLine
     {
         public int LineNumber { get; set; }
@@ -863,6 +1127,9 @@
         public decimal UnitPrice { get; set; } = 1m;
         public string TaxCodeIdText { get; set; } = string.Empty;
         public decimal TaxAmount { get; set; }
+        public Guid? ItemId { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string UomCode { get; set; } = string.Empty;
         public decimal LineAmount => Quantity * UnitPrice;
         public decimal TotalAmount => LineAmount + TaxAmount;
         public static SalesLine Blank(int lineNumber) => new() { LineNumber = lineNumber };

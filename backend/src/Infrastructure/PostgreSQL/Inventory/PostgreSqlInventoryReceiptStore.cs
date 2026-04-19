@@ -1,6 +1,7 @@
 using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Domain.Shared;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Infrastructure.PostgreSQL.Inventory;
 
@@ -99,6 +100,114 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             recentReceipts.FirstOrDefault()?.PostedAt,
             recentReceipts,
             lineSummaries);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(
+        Guid companyId,
+        IReadOnlyCollection<Guid> billDocumentIds,
+        CancellationToken cancellationToken)
+    {
+        if (billDocumentIds.Count == 0)
+        {
+            return new Dictionary<Guid, InventoryBillReceiptPostingGateSnapshot>();
+        }
+
+        _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            with requested_bills as (
+              select unnest(@bill_document_ids::uuid[]) as bill_document_id
+            ),
+            bill_groups as (
+              select
+                l.bill_id as bill_document_id,
+                count(*)::int as bill_inbound_line_count,
+                coalesce(sum(l.quantity), 0) as bill_inbound_quantity
+              from bill_lines l
+              where l.company_id = @company_id
+                and l.bill_id = any(@bill_document_ids)
+                and l.item_id is not null
+                and l.warehouse_id is not null
+                and l.uom_code is not null
+                and l.quantity is not null
+                and l.unit_cost is not null
+              group by l.bill_id
+            ),
+            receipt_groups as (
+              select
+                d.source_document_id as bill_document_id,
+                count(distinct d.id)::int as receipt_count,
+                coalesce(sum(l.base_quantity), 0) as received_quantity,
+                max(d.posted_at) as latest_receipt_posted_at
+              from inventory_documents d
+              join inventory_document_lines l
+                on l.document_id = d.id
+               and l.company_id = d.company_id
+              where d.company_id = @company_id
+                and d.document_type = 'purchase_receipt'
+                and d.source_module = 'ap_bill'
+                and d.source_document_id = any(@bill_document_ids)
+              group by d.source_document_id
+            )
+            select
+              rb.bill_document_id,
+              coalesce(bg.bill_inbound_line_count, 0) as bill_inbound_line_count,
+              coalesce(bg.bill_inbound_quantity, 0) as bill_inbound_quantity,
+              coalesce(rg.receipt_count, 0) as receipt_count,
+              coalesce(rg.received_quantity, 0) as received_quantity,
+              rg.latest_receipt_posted_at
+            from requested_bills rb
+            left join bill_groups bg
+              on bg.bill_document_id = rb.bill_document_id
+            left join receipt_groups rg
+              on rg.bill_document_id = rb.bill_document_id;
+            """;
+        command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            TypedValue = billDocumentIds.Distinct().ToArray()
+        });
+        command.Parameters.AddWithValue("company_id", companyId);
+
+        var snapshots = new Dictionary<Guid, InventoryBillReceiptPostingGateSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var billDocumentId = reader.GetGuid(reader.GetOrdinal("bill_document_id"));
+            var billInboundLineCount = reader.GetInt32(reader.GetOrdinal("bill_inbound_line_count"));
+            var billInboundQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("bill_inbound_quantity")), 6, MidpointRounding.AwayFromZero);
+            var receiptCount = reader.GetInt32(reader.GetOrdinal("receipt_count"));
+            var receivedQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("received_quantity")), 6, MidpointRounding.AwayFromZero);
+            var remainingQuantity = decimal.Round(billInboundQuantity - receivedQuantity, 6, MidpointRounding.AwayFromZero);
+            var matchStatus =
+                billInboundLineCount == 0
+                    ? "no_inventory_handoff"
+                    : receiptCount == 0
+                        ? "no_receipt"
+                        : remainingQuantity > 0m
+                            ? "partially_receipted"
+                            : remainingQuantity == 0m
+                                ? "fully_receipted"
+                                : "over_receipted";
+
+            snapshots[billDocumentId] = new InventoryBillReceiptPostingGateSnapshot(
+                billDocumentId,
+                billInboundLineCount,
+                billInboundQuantity,
+                receiptCount,
+                receivedQuantity,
+                remainingQuantity,
+                matchStatus,
+                reader.IsDBNull(reader.GetOrdinal("latest_receipt_posted_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("latest_receipt_posted_at")));
+        }
+
+        return snapshots;
     }
 
     public async Task<InventoryPurchaseReceiptSummary> PostAsync(

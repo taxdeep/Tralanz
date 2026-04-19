@@ -39,4 +39,24 @@ public sealed record class ShellAccountingSourceDocumentBrowserItem
     public string? BillReceiptPostingGateSummary { get; init; }
 
     public bool? BillReceiptAllowsPost { get; init; }
+
+    public string? InvoiceIssueMatchStatus { get; init; }
+
+    public string? InvoiceIssuePostingGateLabel { get; init; }
+
+    public string? InvoiceIssuePostingGateSummary { get; init; }
+
+    public bool? InvoiceIssueAllowsPost { get; init; }
+
+    public string? InvoiceShipmentMatchStatus { get; init; }
+
+    public string? InvoiceShipmentPostingGateLabel { get; init; }
+
+    public string? InvoiceShipmentPostingGateSummary { get; init; }
+
+    public bool? InvoiceShipmentAllowsPost { get; init; }
+
+    public string? InvoiceCoverageStatus { get; init; }
+
+    public string? InvoiceCoverageSummary { get; init; }
 }

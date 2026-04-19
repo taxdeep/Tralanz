@@ -162,7 +162,10 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         decimal lineAmount,
         decimal taxAmount,
         Guid? payableTaxAccountId,
-        Guid? taxCodeId = null)
+        Guid? taxCodeId = null,
+        Guid? itemId = null,
+        Guid? warehouseId = null,
+        string? uomCode = null)
     {
         if (lineNumber <= 0)
         {
@@ -203,6 +206,9 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         TaxAmount = taxAmount;
         PayableTaxAccountId = payableTaxAccountId;
         TaxCodeId = taxCodeId;
+        ItemId = itemId;
+        WarehouseId = warehouseId;
+        UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
     }
 
     public int LineNumber { get; }
@@ -222,6 +228,12 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
     public Guid? PayableTaxAccountId { get; }
 
     public Guid? TaxCodeId { get; }
+
+    public Guid? ItemId { get; }
+
+    public Guid? WarehouseId { get; }
+
+    public string? UomCode { get; }
 }
 
 public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument

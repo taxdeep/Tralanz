@@ -576,6 +576,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       'opening_balance_receipt',
                       'inventory_adjustment_gain',
                       'sales_issue',
+                      'shipment',
                       'vendor_return_issue',
                       'transfer_ship',
                       'manufacturing_issue',

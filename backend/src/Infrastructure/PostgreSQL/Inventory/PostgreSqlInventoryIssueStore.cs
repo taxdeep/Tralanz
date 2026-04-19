@@ -1,6 +1,7 @@
 using Citus.Modules.Inventory.Application.Contracts;
 using Citus.Modules.Inventory.Domain.Shared;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Infrastructure.PostgreSQL.Inventory;
 
@@ -39,6 +40,172 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
             activeItems,
             activeWarehouses,
             recentIssues);
+    }
+
+    public async Task<InventoryInvoiceIssueHandoffSummary> GetInvoiceHandoffSummaryAsync(
+        Guid companyId,
+        Guid invoiceDocumentId,
+        CancellationToken cancellationToken)
+    {
+        _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+
+        var (invoiceOutboundLineCount, invoiceOutboundQuantity) = await LoadInvoiceOutboundSummaryAsync(
+            connection,
+            null,
+            companyId,
+            invoiceDocumentId,
+            cancellationToken);
+        var lineSummaries = await LoadInvoiceHandoffLineSummariesAsync(
+            connection,
+            null,
+            companyId,
+            invoiceDocumentId,
+            cancellationToken);
+        var recentIssues = await LoadInvoiceAnchoredIssuesAsync(
+            connection,
+            null,
+            companyId,
+            invoiceDocumentId,
+            cancellationToken);
+        var issuedQuantity = decimal.Round(
+            recentIssues.Sum(static issue => issue.TotalQuantity),
+            6,
+            MidpointRounding.AwayFromZero);
+        var remainingQuantity = decimal.Round(
+            invoiceOutboundQuantity - issuedQuantity,
+            6,
+            MidpointRounding.AwayFromZero);
+        var matchStatus =
+            invoiceOutboundLineCount == 0
+                ? "no_inventory_handoff"
+                : recentIssues.Count == 0
+                    ? "no_issue"
+                    : remainingQuantity > 0m
+                        ? "partially_issued"
+                        : remainingQuantity == 0m
+                            ? "fully_issued"
+                            : "over_issued";
+
+        return new InventoryInvoiceIssueHandoffSummary(
+            invoiceDocumentId,
+            invoiceOutboundLineCount,
+            invoiceOutboundQuantity,
+            recentIssues.Count,
+            issuedQuantity,
+            remainingQuantity,
+            matchStatus,
+            recentIssues.FirstOrDefault()?.PostedAt,
+            recentIssues,
+            lineSummaries);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, InventoryInvoiceIssuePostingGateSnapshot>> GetInvoicePostingGateSnapshotsAsync(
+        Guid companyId,
+        IReadOnlyCollection<Guid> invoiceDocumentIds,
+        CancellationToken cancellationToken)
+    {
+        if (invoiceDocumentIds.Count == 0)
+        {
+            return new Dictionary<Guid, InventoryInvoiceIssuePostingGateSnapshot>();
+        }
+
+        _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            with requested_invoices as (
+              select unnest(@invoice_document_ids::uuid[]) as invoice_document_id
+            ),
+            invoice_groups as (
+              select
+                l.invoice_id as invoice_document_id,
+                count(*)::int as invoice_outbound_line_count,
+                coalesce(sum(l.quantity), 0) as invoice_outbound_quantity
+              from invoice_lines l
+              where l.company_id = @company_id
+                and l.invoice_id = any(@invoice_document_ids)
+                and l.item_id is not null
+                and l.warehouse_id is not null
+                and l.uom_code is not null
+              group by l.invoice_id
+            ),
+            issue_groups as (
+              select
+                d.source_document_id as invoice_document_id,
+                count(distinct d.id)::int as issue_count,
+                coalesce(sum(l.base_quantity), 0) as issued_quantity,
+                max(d.posted_at) as latest_issue_posted_at
+              from inventory_documents d
+              join inventory_document_lines l
+                on l.document_id = d.id
+               and l.company_id = d.company_id
+              where d.company_id = @company_id
+                and d.document_type = 'sales_issue'
+                and d.source_module = 'ar_invoice'
+                and d.source_document_id = any(@invoice_document_ids)
+              group by d.source_document_id
+            )
+            select
+              ri.invoice_document_id,
+              coalesce(ig.invoice_outbound_line_count, 0) as invoice_outbound_line_count,
+              coalesce(ig.invoice_outbound_quantity, 0) as invoice_outbound_quantity,
+              coalesce(sg.issue_count, 0) as issue_count,
+              coalesce(sg.issued_quantity, 0) as issued_quantity,
+              sg.latest_issue_posted_at
+            from requested_invoices ri
+            left join invoice_groups ig
+              on ig.invoice_document_id = ri.invoice_document_id
+            left join issue_groups sg
+              on sg.invoice_document_id = ri.invoice_document_id;
+            """;
+        command.Parameters.Add(new NpgsqlParameter<Guid[]>("invoice_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            TypedValue = invoiceDocumentIds.Distinct().ToArray()
+        });
+        command.Parameters.AddWithValue("company_id", companyId);
+
+        var snapshots = new Dictionary<Guid, InventoryInvoiceIssuePostingGateSnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var invoiceDocumentId = reader.GetGuid(reader.GetOrdinal("invoice_document_id"));
+            var invoiceOutboundLineCount = reader.GetInt32(reader.GetOrdinal("invoice_outbound_line_count"));
+            var invoiceOutboundQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("invoice_outbound_quantity")), 6, MidpointRounding.AwayFromZero);
+            var issueCount = reader.GetInt32(reader.GetOrdinal("issue_count"));
+            var issuedQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("issued_quantity")), 6, MidpointRounding.AwayFromZero);
+            var remainingQuantity = decimal.Round(invoiceOutboundQuantity - issuedQuantity, 6, MidpointRounding.AwayFromZero);
+            var matchStatus =
+                invoiceOutboundLineCount == 0
+                    ? "no_inventory_handoff"
+                    : issueCount == 0
+                        ? "no_issue"
+                        : remainingQuantity > 0m
+                            ? "partially_issued"
+                            : remainingQuantity == 0m
+                                ? "fully_issued"
+                                : "over_issued";
+
+            snapshots[invoiceDocumentId] = new InventoryInvoiceIssuePostingGateSnapshot(
+                invoiceDocumentId,
+                invoiceOutboundLineCount,
+                invoiceOutboundQuantity,
+                issueCount,
+                issuedQuantity,
+                remainingQuantity,
+                matchStatus,
+                reader.IsDBNull(reader.GetOrdinal("latest_issue_posted_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("latest_issue_posted_at")));
+        }
+
+        return snapshots;
     }
 
     public async Task<InventorySalesIssueSummary> PostAsync(
@@ -1048,6 +1215,240 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         }
 
         return warehouses;
+    }
+
+    private static async Task<(int LineCount, decimal TotalQuantity)> LoadInvoiceOutboundSummaryAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        Guid invoiceDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              count(*)::int as line_count,
+              coalesce(sum(l.quantity), 0) as total_quantity
+            from invoice_lines l
+            where l.company_id = @company_id
+              and l.invoice_id = @invoice_document_id
+              and l.item_id is not null
+              and l.warehouse_id is not null
+              and l.uom_code is not null;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return (0, 0m);
+        }
+
+        return (
+            reader.GetInt32(reader.GetOrdinal("line_count")),
+            reader.GetFieldValue<decimal>(reader.GetOrdinal("total_quantity")));
+    }
+
+    private static async Task<IReadOnlyList<InventoryInvoiceIssueHandoffLineSummary>> LoadInvoiceHandoffLineSummariesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        Guid invoiceDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            with invoice_groups as (
+                select
+                  l.item_id,
+                  i.item_code,
+                  i.name as item_name,
+                  l.warehouse_id,
+                  w.warehouse_code,
+                  w.name as warehouse_name,
+                  upper(l.uom_code) as uom_code,
+                  count(*)::int as invoice_line_count,
+                  coalesce(sum(l.quantity), 0) as invoice_quantity
+                from invoice_lines l
+                join invoices d
+                  on d.id = l.invoice_id
+                 and d.company_id = l.company_id
+                join inventory_items i
+                  on i.id = l.item_id
+                 and i.company_id = l.company_id
+                join inventory_warehouses w
+                  on w.id = l.warehouse_id
+                 and w.company_id = l.company_id
+                where l.company_id = @company_id
+                  and l.invoice_id = @invoice_document_id
+                  and l.item_id is not null
+                  and l.warehouse_id is not null
+                  and l.uom_code is not null
+                group by
+                  l.item_id,
+                  i.item_code,
+                  i.name,
+                  l.warehouse_id,
+                  w.warehouse_code,
+                  w.name,
+                  upper(l.uom_code)
+            ),
+            issue_groups as (
+                select
+                  l.item_id,
+                  l.warehouse_id,
+                  upper(l.uom_code) as uom_code,
+                  coalesce(sum(l.base_quantity), 0) as issued_quantity
+                from inventory_documents d
+                join inventory_document_lines l
+                  on l.document_id = d.id
+                 and l.company_id = d.company_id
+                where d.company_id = @company_id
+                  and d.document_type = 'sales_issue'
+                  and d.source_module = 'ar_invoice'
+                  and d.source_document_id = @invoice_document_id
+                group by
+                  l.item_id,
+                  l.warehouse_id,
+                  upper(l.uom_code)
+            )
+            select
+              i.item_id,
+              i.item_code,
+              i.item_name,
+              i.warehouse_id,
+              i.warehouse_code,
+              i.warehouse_name,
+              i.uom_code,
+              i.invoice_line_count,
+              i.invoice_quantity,
+              coalesce(s.issued_quantity, 0) as issued_quantity
+            from invoice_groups i
+            left join issue_groups s
+              on s.item_id = i.item_id
+             and s.warehouse_id = i.warehouse_id
+             and s.uom_code = i.uom_code
+            order by i.item_code, i.warehouse_code, i.uom_code;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
+
+        var rows = new List<InventoryInvoiceIssueHandoffLineSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var invoiceQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("invoice_quantity")), 6, MidpointRounding.AwayFromZero);
+            var issuedQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("issued_quantity")), 6, MidpointRounding.AwayFromZero);
+            var remainingQuantity = decimal.Round(invoiceQuantity - issuedQuantity, 6, MidpointRounding.AwayFromZero);
+            var matchStatus =
+                issuedQuantity <= 0m
+                    ? "no_issue"
+                    : remainingQuantity > 0m
+                        ? "partially_issued"
+                        : remainingQuantity == 0m
+                            ? "fully_issued"
+                            : "over_issued";
+
+            rows.Add(new InventoryInvoiceIssueHandoffLineSummary(
+                reader.GetGuid(reader.GetOrdinal("item_id")),
+                reader.GetString(reader.GetOrdinal("item_code")),
+                reader.GetString(reader.GetOrdinal("item_name")),
+                reader.GetGuid(reader.GetOrdinal("warehouse_id")),
+                reader.GetString(reader.GetOrdinal("warehouse_code")),
+                reader.GetString(reader.GetOrdinal("warehouse_name")),
+                reader.GetString(reader.GetOrdinal("uom_code")),
+                reader.GetInt32(reader.GetOrdinal("invoice_line_count")),
+                invoiceQuantity,
+                issuedQuantity,
+                remainingQuantity,
+                matchStatus));
+        }
+
+        return rows;
+    }
+
+    private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadInvoiceAnchoredIssuesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        Guid invoiceDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              d.id,
+              d.company_id,
+              coalesce(d.document_number, d.source_document_number, 'UNNUMBERED') as document_number,
+              d.status,
+              d.posting_date,
+              d.counterparty_id as customer_id,
+              coalesce(c.display_name, 'Unknown customer') as customer_display_name,
+              coalesce(sum(l.base_quantity), 0) as total_quantity,
+              coalesce(sum(l.extended_cost_base), 0) as total_cost_base,
+              count(l.id) as line_count,
+              d.created_at,
+              d.posted_at,
+              d.memo
+            from inventory_documents d
+            left join customers c
+              on c.id = d.counterparty_id
+            left join inventory_document_lines l
+              on l.document_id = d.id
+            where d.company_id = @company_id
+              and d.document_type = 'sales_issue'
+              and d.source_module = 'ar_invoice'
+              and d.source_document_id = @invoice_document_id
+            group by
+              d.id,
+              d.company_id,
+              d.document_number,
+              d.source_document_number,
+              d.status,
+              d.posting_date,
+              d.counterparty_id,
+              c.display_name,
+              d.created_at,
+              d.posted_at,
+              d.memo
+            order by d.posting_date desc, d.created_at desc
+            limit 10;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("invoice_document_id", invoiceDocumentId);
+
+        var issues = new List<InventorySalesIssueSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            issues.Add(new InventorySalesIssueSummary(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("company_id")),
+                reader.GetString(reader.GetOrdinal("document_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
+                reader.GetGuid(reader.GetOrdinal("customer_id")),
+                reader.GetString(reader.GetOrdinal("customer_display_name")),
+                reader.GetFieldValue<decimal>(reader.GetOrdinal("total_quantity")),
+                reader.GetFieldValue<decimal>(reader.GetOrdinal("total_cost_base")),
+                reader.GetInt32(reader.GetOrdinal("line_count")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("memo"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("memo"))));
+        }
+
+        return issues;
     }
 
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadRecentIssuesAsync(

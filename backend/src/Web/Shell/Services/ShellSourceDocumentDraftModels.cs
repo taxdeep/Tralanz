@@ -54,6 +54,9 @@ public sealed record class ShellSalesSourceDocumentDraftReadLine
     public decimal LineAmount { get; init; }
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
+    public Guid? ItemId { get; init; }
+    public Guid? WarehouseId { get; init; }
+    public string? UomCode { get; init; }
 }
 
 public sealed record class ShellPurchaseSourceDocumentDraftReadModel
@@ -136,6 +139,12 @@ public sealed record class ShellSalesSourceDocumentDraftLineSaveRequest
     public Guid? TaxCodeId { get; init; }
 
     public decimal TaxAmount { get; init; }
+
+    public Guid? ItemId { get; init; }
+
+    public Guid? WarehouseId { get; init; }
+
+    public string? UomCode { get; init; }
 }
 
 public sealed record class ShellPurchaseSourceDocumentDraftSaveRequest

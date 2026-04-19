@@ -30,6 +30,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             _executionContextAccessor,
             cancellationToken);
 
+        await EnsureInventoryGradeInvoiceLineColumnsAsync(scope.Connection, scope.Transaction, cancellationToken);
+
         Guid id;
         string entityNumber;
         string invoiceNumber;
@@ -151,7 +153,10 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                            l.line_amount,
                            l.tax_amount,
                            l.tax_code_id,
-                           tc.payable_account_id
+                           tc.payable_account_id,
+                           l.item_id,
+                           l.warehouse_id,
+                           l.uom_code
                          from invoice_lines l
                          left join tax_codes tc
                            on tc.id = l.tax_code_id
@@ -183,7 +188,10 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     reader.GetDecimal(reader.GetOrdinal("line_amount")),
                     reader.GetDecimal(reader.GetOrdinal("tax_amount")),
                     taxPayableAccountId,
-                    taxCodeId));
+                    taxCodeId,
+                    reader.IsDBNull(reader.GetOrdinal("item_id")) ? null : reader.GetGuid(reader.GetOrdinal("item_id")),
+                    reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : reader.GetGuid(reader.GetOrdinal("warehouse_id")),
+                    reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code"))));
             }
         }
 
@@ -232,6 +240,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
 
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureInventoryGradeInvoiceLineColumnsAsync(connection, transaction, cancellationToken);
 
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
@@ -394,6 +404,9 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   line_amount,
                   tax_code_id,
                   tax_amount,
+                  item_id,
+                  warehouse_id,
+                  uom_code,
                   created_at,
                   updated_at
                 )
@@ -409,6 +422,9 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   @line_amount,
                   @tax_code_id,
                   @tax_amount,
+                  @item_id,
+                  @warehouse_id,
+                  @uom_code,
                   now(),
                   now()
                 );
@@ -424,6 +440,9 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.Quantity * line.UnitPrice));
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
+            insertLineCommand.Parameters.AddWithValue("uom_code", string.IsNullOrWhiteSpace(line.UomCode) ? (object)DBNull.Value : line.UomCode.Trim().ToUpperInvariant());
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -501,6 +520,21 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             {
                 throw new InvalidOperationException("Invoice draft lines with tax must provide a tax code.");
             }
+
+            var hasOutboundInventoryField =
+                line.ItemId.HasValue ||
+                line.WarehouseId.HasValue ||
+                !string.IsNullOrWhiteSpace(line.UomCode);
+
+            if (!hasOutboundInventoryField)
+            {
+                continue;
+            }
+
+            if (!line.ItemId.HasValue || !line.WarehouseId.HasValue || string.IsNullOrWhiteSpace(line.UomCode))
+            {
+                throw new InvalidOperationException("Invoice outbound inventory hand-off must include item, warehouse, and UOM together once the line joins shipment-first bridging.");
+            }
         }
 
         ValidateFx(draft.TransactionCurrencyCode, draft.BaseCurrencyCode, draft.FxRate);
@@ -569,6 +603,22 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static async Task EnsureInventoryGradeInvoiceLineColumnsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            alter table invoice_lines add column if not exists item_id uuid;
+            alter table invoice_lines add column if not exists warehouse_id uuid;
+            alter table invoice_lines add column if not exists uom_code text;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,

@@ -338,3 +338,93 @@ Recommended stance:
 - absorb LeptonX patterns selectively for Citus-governed account/admin pages, layout density, theme-token organization, and shell polish
 - do not let LeptonX generic admin layout override Citus accounting-specific navigation, company context, source-document review, AR/AP control panels, or backend-owned workflow cues
 - avoid deep coupling to the imported `5.1.1` source package while the repository is moving on `.NET 11 + C# 15 preview`; use it as reference material unless a specific component proves worth adapting
+
+## Phase F.1 checkpoint
+
+The first hardening slice after `Receipt-first AP / inventory bridge` should solidify the current bill/receipt lane without reopening the whole phase.
+
+Current F.1 checkpoint:
+
+- `BillReceiptPostingGate` now lives in `Citus.Accounting.Application` as a formal posting policy seam instead of remaining API-local glue
+- `PostBillCommandHandler` now enforces the receipt-first gate directly, so non-HTTP posting paths cannot bypass the bill/receipt hold lane
+- source-browser bill hold enrichment now uses a batch inventory projection instead of per-row summary calls, keeping the same authority output while removing the obvious N+1 shape
+- this hardening slice does not introduce persisted discrepancy workflow yet; it only freezes the existing posting gate and browser truth into more stable seams
+
+## Phase G checkpoint
+
+The first `Shipment-first AR bridge` slice should start by upgrading invoice truth into an outbound inventory-grade hand-off seam without pretending shipment truth already exists.
+
+Current G checkpoint:
+
+- invoice draft lines now carry optional outbound inventory-grade fields: `item`, `warehouse`, and `stock UOM`
+- invoice persistence, draft read models, and API save/read contracts now preserve those outbound hand-off fields inside the AR draft seam
+- the invoice workbench now exposes a shipment-first hand-off section that stays explicit about the boundary: invoice only carries outbound intent, while Sales Issue still owns authoritative outbound inventory and cost truth
+- the Sales Issue workspace now accepts invoice-origin hand-off context and can prefill customer plus outbound issue lines from saved invoice truth
+- this slice deliberately stops short of shipment posting gate, shipped-eligible invoicing, or invoice-vs-issue reconciliation; it only establishes the first outbound bridge seam
+
+## Phase G.2 checkpoint
+
+The next `Shipment-first AR bridge` slice now hardens the first outbound seam into an operator-visible review and posting gate without claiming formal shipment truth is finished.
+
+- inventory now projects `invoice -> sales_issue` matching truth through a real hand-off summary plus a batch posting-gate snapshot
+- invoice posting authority moved into `Citus.Accounting.Application`, so AR posting can no longer bypass outbound issue coverage by staying on the HTTP edge
+- source browser now shows invoice-side outbound hold state in the same read surface that already carried bill-side receipt holds
+- source detail now exposes issue-first review for invoices, including anchored sales issues and grouped item/warehouse/UOM remaining quantities
+- the invoice workbench itself now shows the outbound post gate once a saved/submitted invoice participates in inventory hand-off, so operators see the hold before backend rejection
+- this is still an interim issue-first control seam: shipment truth and shipped-eligible invoicing are not yet complete, but outbound AR posting no longer pretends invoice truth alone is enough once inventory-grade hand-off lines exist
+
+## Phase G.3 checkpoint
+
+This slice moves the outbound lane from `issue-gated usable` into a more formal `shipment-first matching / posting / fulfillment-truth` lane without pretending the whole SO/fulfillment model is done.
+
+- inventory now owns a persisted `shipment` document type inside `inventory_documents` / `inventory_document_lines`, so invoice outbound coverage is no longer only an issue summary plus gate
+- shipment truth now carries fulfillment-owned metadata (`carrier / tracking / shipping slip`) and stays distinct from both invoice charge truth and sales-issue cost truth
+- AR invoice posting now gates against anchored shipment coverage in `Citus.Accounting.Application`, so stock invoicing no longer outruns persisted fulfillment truth once outbound inventory-grade hand-off lines exist
+- the source browser, source detail page, and invoice workbench now all project shipment-first hold state and continuity, with `Open Shipment Workspace` replacing the old issue-first entry point
+- Sales Issue remains in the lane, but now as the downstream inventory/cost consumer: shipment can hand control into sales issue through `sourceType=shipment&shipmentId=...`
+- this slice still intentionally defers full `SO -> Shipment -> Sales Issue -> Invoice` state truth, persisted discrepancy investigation, return/disposition, and tracking-aware document integration
+
+## Phase G completion checkpoint
+
+`Shipment-first AR bridge` is now complete as a coherent phase boundary. The project has moved from `issue-gated usability` to a persisted outbound matching lane that can survive reloads, browser review, and later investigation work without collapsing invoice truth into fulfillment truth.
+
+- inventory now persists outbound matching projections in `inventory_outbound_matching_lanes` for both `invoice_shipment` and `shipment_issue`, keyed by `company + source document + item + warehouse + UOM`
+- invoice posting now consumes `persisted shipment truth + computed posting policy`, so shipped-eligible invoicing for stock lines is enforced from the application seam rather than only from ephemeral summaries
+- partial and split fulfillment are now expressed through persisted line-level lane summaries: `pending / partially / fully / over` shipped and issued states are calculated per `(item, warehouse, stock UOM)` instead of assuming one full outbound event
+- source browser remains batch-friendly by reading shipment posting-gate snapshots, while source detail, invoice workbench, and shipment workspace now expose the richer `invoice -> shipment -> sales_issue` lane including downstream issue follow-through and outbound discrepancies
+- this completes Phase G without overclaiming later truths: full `SO -> Shipment -> Sales Issue -> Invoice` state rollup, explicit discrepancy/investigation entities, return/disposition, and tracking-aware document integration remain deliberately deferred to later phases
+
+## Phase H0 checkpoint
+
+The first `Return / Disposition Truth` prerequisite slice should only close the outbound base needed by return. It should not reopen Phase G or pretend return itself already exists.
+
+- outbound discrepancy truth is now persisted in `inventory_outbound_discrepancy_lanes` instead of remaining only a computed review summary
+- the persisted discrepancy lane currently tracks three concrete mismatch families:
+  - `invoice_shipment`
+  - `shipment_issue`
+  - `invoice_coverage`
+- invoice shipment summaries now carry formal outbound state truth for both fulfillment and AR coverage:
+  - `shipped`
+  - `remaining_to_ship`
+  - `invoiced`
+  - `remaining_to_invoice`
+  - `invoice coverage status`
+- source browser stays batch-friendly while still surfacing invoice coverage review, and source detail / invoice editor / shipment workspace now all project the same persisted outbound base
+- this H0 slice still does **not** introduce `return_receive`, inspection, disposition, or financial return bridging; it only finishes the outbound foundation required before those lanes open
+
+## Phase H1 checkpoint
+
+The first real `Return / Disposition Truth` slice now opens an inventory-owned `customer return receive` lane, but still stops short of restock, write-off, or any financial bridge.
+
+- return receive is now anchored to posted shipment truth, not to invoice truth; `invoice` remains commercial context while `shipment` remains the physical source anchor
+- the system now persists `customer_return_receipt` documents inside the inventory seam and ties them back to the originating shipment document
+- H1 enforces a real return quantity ceiling: each grouped `(item, warehouse, stock UOM)` return line can only receive up to the shipped-and-not-yet-returned remaining quantity
+- return intake now captures physical-return seam data up front:
+  - source anchor
+  - item
+  - quantity
+  - condition
+  - return reason
+  - disposition-reason seam
+- this slice deliberately does **not** move stock back to `on_hand`; no inventory ledger, balance, or cost-layer mutation occurs until later inspect/disposition logic decides whether the returned goods are restockable
+- vendor return remains intentionally deferred to a later lane anchored to receipt truth rather than being mixed into this first customer-return intake path

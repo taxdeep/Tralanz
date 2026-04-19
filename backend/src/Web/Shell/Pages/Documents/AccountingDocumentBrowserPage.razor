@@ -140,6 +140,25 @@
                                     @context.BillReceiptPostingGateSummary
                                 </MudText>
                             }
+                            @if (HasInvoiceShipmentPostingGate(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetInvoiceShipmentPostingGateColor(context)"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    @context.InvoiceShipmentPostingGateLabel
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @context.InvoiceShipmentPostingGateSummary
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.InvoiceCoverageSummary))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                        @context.InvoiceCoverageSummary
+                                    </MudText>
+                                }
+                            }
                         </MudStack>
                     </MudTd>
                     <MudTd>
@@ -172,6 +191,12 @@
                             {
                                 <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@receiptHref" Disabled="WritesBlocked">
                                     Open Receipt Workspace
+                                </MudButton>
+                            }
+                            @if (TryBuildShipmentWorkspaceHref(context.SourceType, context.Id, out var shipmentHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@shipmentHref" Disabled="WritesBlocked">
+                                    Open Shipment Workspace
                                 </MudButton>
                             }
                             @if (TryBuildDraftEditorHref(context.SourceType, context.Status, context.Id, out var editHref))
@@ -476,6 +501,18 @@
         return true;
     }
 
+    private static bool TryBuildShipmentWorkspaceHref(string? sourceType, Guid documentId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(sourceType, "invoice", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        href = $"/company/inventory-shipment?sourceType=invoice&invoiceId={documentId:D}";
+        return true;
+    }
+
     private static bool HasBillReceiptPostingGate(ShellAccountingSourceDocumentBrowserItem item) =>
         string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase) &&
         !string.IsNullOrWhiteSpace(item.BillReceiptPostingGateLabel);
@@ -485,6 +522,20 @@
         {
             true => Color.Success,
             false => string.Equals(item.BillReceiptMatchStatus, "over_receipted", StringComparison.OrdinalIgnoreCase)
+                ? Color.Warning
+                : Color.Info,
+            _ => Color.Default
+        };
+
+    private static bool HasInvoiceShipmentPostingGate(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "invoice", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(item.InvoiceShipmentPostingGateLabel);
+
+    private static Color GetInvoiceShipmentPostingGateColor(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.InvoiceShipmentAllowsPost switch
+        {
+            true => Color.Success,
+            false => string.Equals(item.InvoiceShipmentMatchStatus, "over_shipped", StringComparison.OrdinalIgnoreCase)
                 ? Color.Warning
                 : Color.Info,
             _ => Color.Default
