@@ -4,6 +4,8 @@
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject WebShellState ShellState
 
 <PageTitle>Login | Citus Web Shell</PageTitle>
@@ -171,10 +173,25 @@
         ShellState.ApplyAuthenticatedSession(result.SessionToken, result.Context!, result.ExpiresAtUtc);
         await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", result.SessionToken);
 
+        var destination = "/";
+        var onboardingResult = await OnboardingClient.GetAsync();
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (!onboardingResult.RequiresSignIn &&
+            !onboardingResult.IsNotFound &&
+            string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage) &&
+            onboardingResult.Value?.RequiresOnboarding == true)
+        {
+            destination = "/company/ready";
+        }
+
         Snackbar.Add(
             $"Signed in as {result.Context!.User.DisplayName} in {result.Context.ActiveCompany.CompanyName}.",
             Severity.Success);
-        NavigationManager.NavigateTo("/");
+        NavigationManager.NavigateTo(destination);
     }
 
     private static string FormatSecondFactor(string factor) =>

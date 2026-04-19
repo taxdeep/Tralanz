@@ -103,6 +103,8 @@ public sealed class PlatformNotificationReadinessWorkflowTests
 
         public PlatformNotificationReadinessState? SavedState { get; private set; }
 
+        public PlatformFirstCompanySetupState? FirstCompanySetupState { get; set; }
+
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<PlatformMaintenanceState?> GetMaintenanceStateAsync(CancellationToken cancellationToken) =>
@@ -124,6 +126,14 @@ public sealed class PlatformNotificationReadinessWorkflowTests
             NotificationState = state;
             return Task.FromResult(state);
         }
+
+        public Task<PlatformFirstCompanySetupState?> GetFirstCompanySetupStateAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(FirstCompanySetupState);
+
+        public Task<PlatformFirstCompanySetupState> UpsertFirstCompanySetupStateAsync(
+            PlatformFirstCompanySetupState state,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(FirstCompanySetupState = state);
     }
 
     private sealed class FakeNotificationSender : IPlatformVerificationNotificationSender

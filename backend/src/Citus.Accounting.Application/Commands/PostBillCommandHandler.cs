@@ -37,6 +37,11 @@ public sealed class PostBillCommandHandler
                 throw new InvalidOperationException("Bill document was not found in the active company context.");
             }
 
+            if (!string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Only submitted bills can be posted.");
+            }
+
             var acceptedFxSnapshotId =
                 command.AcceptedFxSnapshotId ??
                 (document.FxSnapshot is { SnapshotId: var snapshotId } && snapshotId != Guid.Empty

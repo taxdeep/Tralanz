@@ -73,4 +73,6 @@ public sealed record class ShellTaxCodeLookupOption
     public bool IsRecoverableOnPurchase { get; init; }
 
     public string DisplayLabel => $"{Code} {Name} ({RatePercent:N2}%)";
+
+    public string DefaultSummaryLabel => $"{Code} - {Name}";
 }

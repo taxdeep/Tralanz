@@ -1595,6 +1595,27 @@ Core rules:
 - FX changes after receipt may affect AR / AP settlement and remeasurement, but they must not silently rewrite historical inventory-layer cost
 - purchase-bill timing differences, late vendor bills, and future landed-cost or variance handling must remain explicit and auditable
 
+### 13.22A Inventory Phase D Operational Guardrails
+
+The first governed `Inventory` implementation must assume multi-warehouse from the start.
+
+Phase D guardrails:
+
+- inventory quantity truth must distinguish at least `on_hand`, `reserved`, and transfer-related in-transit states
+- `available` quantity is a read model derived from governed quantity truth, not a separately editable field
+- movement history must be append-only and auditable; warehouse/item balance rows are caches, not the only truth
+- warehouse transfer must remain a first-class lifecycle with explicit ship and receive stages; it must not collapse into two invisible stock mutations
+- transfer ship and transfer receive must remain separately controllable authority points; one user role may be allowed to release stock from a source warehouse without automatically gaining the authority to receive it into the target warehouse
+- `AP Bill` and future `Sales Out` may feed inventory workflows, but they must not directly rewrite inventory quantity truth or cost-layer truth
+- outbound inventory cost must be system-derived from governed inventory costing truth, not manually keyed into a sales-side issue flow
+- write-off, adjustment, and transfer changes must pass through explicit company-scoped authority hooks
+- inventory costing policy belongs to company governance and must not be downgraded into a normal warehouse-operator capability
+- negative stock must default to strict disallow mode; if a company later enables negative stock, that must happen through an explicit governed company-level switch with auditability
+- `Product / Service Setup` should remain as a valid setup surface, but its evolution depends on company type:
+  - trading / inventory-led companies may evolve it toward a stricter inventory item master
+  - professional-service companies may evolve it toward a lightweight service catalog and later task-management integration
+  - service-led companies may keep inventory-facing item controls disabled by default without deleting the setup entry point from the overall product model
+
 ### 13.23 Payment Gateway Boundary
 
 `PaymentGateway` is a separate payment-channel module.
@@ -1902,6 +1923,7 @@ Used for accounting truth and company-owned business control, such as:
 - company functional-currency judgment / primary-book base currency
 - numbering rules
 - tax setup
+- sales tax reporting / filed-sales-tax workflow
 - document templates
 - posting defaults
 - AR/AP account mappings
@@ -1931,6 +1953,14 @@ Settings > Company should progressively organize into clear domains such as:
 - Books / Accounting Standards / Accounting Policy
 
 These are company-level controlled areas.
+
+For `Sales Tax`, the direction is not only tax-code maintenance. It must eventually cover:
+
+- tax code governance
+- sales tax report visibility
+- governed `File Sales Tax` workflow
+
+These future surfaces must consume backend-owned line-level tax truth and posted tax semantics rather than recomputing tax from UI-only state.
 
 ### 19.4 User Menu
 

@@ -10,6 +10,7 @@
 @inject IApSettlementLookupService Vendors
 @inject IJournalEntryAccountCatalog Accounts
 @inject ShellTaxCodeLookupService TaxCodes
+@inject ShellProductServiceCatalogClient ProductServices
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 
@@ -53,14 +54,41 @@
     <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
             <MudText Typo="Typo.h6">Lines</MudText>
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@WritesBlocked" OnClick="AddLine">Add line</MudButton>
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                @if (DefaultPurchaseTaxCode is not null)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@WritesBlocked" OnClick="ApplyDefaultSetupTaxToDraft">
+                        Default Tax From Setup
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@WritesBlocked" OnClick="AddLine">Add line</MudButton>
+            </div>
         </div>
+        @if (MissingDefaultPurchaseTaxLineCount > 0 && DefaultPurchaseTaxCode is not null)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                @MissingDefaultPurchaseTaxLineCount line(s) still show <strong>No tax</strong>. The setup default <strong>@DefaultPurchaseTaxCode.DefaultSummaryLabel</strong> is available if those vendor-credit lines should carry purchase tax and recoverability truth.
+            </MudAlert>
+        }
         <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
             <HeaderContent>
-                <MudTh>#</MudTh><MudTh>Expense</MudTh><MudTh>Description</MudTh><MudTh>Amount</MudTh><MudTh>Tax Code</MudTh><MudTh>Tax</MudTh><MudTh>Recoverable</MudTh><MudTh>Total</MudTh><MudTh></MudTh>
+                <MudTh>#</MudTh><MudTh>Product / Service</MudTh><MudTh>Expense</MudTh><MudTh>Description</MudTh><MudTh>Amount</MudTh><MudTh>Tax Code</MudTh><MudTh>Tax</MudTh><MudTh>Recoverable</MudTh><MudTh>Total</MudTh><MudTh></MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd>@context.LineNumber</MudTd>
+                <MudTd>
+                    <MudSelect T="string"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Value="context.ProductServiceIdText"
+                               ValueChanged="@(value => ApplyProductService(context, value))">
+                        <MudSelectItem T="string" Value="@string.Empty">No product / service</MudSelectItem>
+                        @foreach (var productService in _purchaseProductServices)
+                        {
+                            <MudSelectItem T="string" Value="@productService.Id.ToString("D")">@productService.DisplayLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
                 <MudTd>
                     <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.AccountIdText">
                         @foreach (var account in _expenseAccounts)
@@ -79,6 +107,12 @@
                             <MudSelectItem T="string" Value="@taxCode.Id.ToString("D")">@taxCode.DisplayLabel</MudSelectItem>
                         }
                     </MudSelect>
+                    @if (!string.IsNullOrWhiteSpace(GetPurchaseTaxEditorHint(context)))
+                    {
+                        <MudText Typo="Typo.caption" Style="display:block;margin-top:.25rem;color:#97a8b7;">
+                            @GetPurchaseTaxEditorHint(context)
+                        </MudText>
+                    }
                 </MudTd>
                 <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0m" Immediate="true" @bind-Value="context.TaxAmount" /></MudTd>
                 <MudTd><MudCheckBox T="bool" @bind-Value="context.IsTaxRecoverable" /></MudTd>
@@ -145,10 +179,14 @@
     [SupplyParameterFromQuery(Name = "draftId")]
     public Guid? DraftId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "productServiceId")]
+    public Guid? ProductServiceId { get; set; }
+
     private readonly List<PurchaseLine> _lines = [PurchaseLine.Blank(1)];
     private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _vendorOptions = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
     private IReadOnlyList<JournalEntryAccountOption> _expenseAccounts = Array.Empty<JournalEntryAccountOption>();
     private IReadOnlyList<ShellTaxCodeLookupOption> _taxCodes = Array.Empty<ShellTaxCodeLookupOption>();
+    private IReadOnlyList<ShellManagedProductServiceSummary> _purchaseProductServices = Array.Empty<ShellManagedProductServiceSummary>();
     private Guid? _documentId;
     private ShellSourceDocumentDraftSaveResult? _saved;
     private string? _vendorIdText;
@@ -166,6 +204,7 @@
     private DateTime? _documentDatePicker = DateTime.Today;
     private DateTime? _dueDatePicker = DateTime.Today.AddDays(30);
     private Guid? _loadedDraftId;
+    private Guid? _loadedProductServiceHintId;
 
     private decimal Subtotal => _lines.Sum(static x => x.LineAmount);
     private decimal TaxTotal => _lines.Sum(static x => x.TaxAmount);
@@ -173,6 +212,8 @@
     private bool IsIdentityFx => string.Equals(_txCurrency, _baseCurrency, StringComparison.OrdinalIgnoreCase);
     private bool IsPosted => string.Equals(_saved?.Status, "posted", StringComparison.OrdinalIgnoreCase);
     private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private ShellTaxCodeLookupOption? DefaultPurchaseTaxCode => _taxCodes.Count == 1 ? _taxCodes[0] : null;
+    private int MissingDefaultPurchaseTaxLineCount => DefaultPurchaseTaxCode is null ? 0 : _lines.Count(line => string.IsNullOrWhiteSpace(line.TaxCodeIdText));
 
     protected override async Task OnParametersSetAsync()
     {
@@ -192,8 +233,36 @@
         if (TryBlockWrites()) return;
         _lines.Add(PurchaseLine.Blank(_lines.Count + 1));
     }
+    private void ApplyDefaultSetupTaxToDraft()
+    {
+        if (TryBlockWrites()) return;
+        if (DefaultPurchaseTaxCode is null) return;
+
+        foreach (var line in _lines.Where(static line => string.IsNullOrWhiteSpace(line.TaxCodeIdText)))
+        {
+            ApplyTaxCode(line, DefaultPurchaseTaxCode);
+        }
+    }
     private void RemoveLine(PurchaseLine line) { if (TryBlockWrites()) return; _lines.Remove(line); for (var i = 0; i < _lines.Count; i++) _lines[i].LineNumber = i + 1; }
-    private void ApplyRate(PurchaseLine line) { if (TryBlockWrites()) return; var taxCode = _taxCodes.FirstOrDefault(x => x.Id.ToString("D") == line.TaxCodeIdText); if (taxCode is not null) { line.TaxAmount = Math.Round(line.LineAmount * taxCode.RatePercent / 100m, 2, MidpointRounding.AwayFromZero); line.IsTaxRecoverable = taxCode.IsRecoverableOnPurchase; } }
+    private void ApplyRate(PurchaseLine line)
+    {
+        if (TryBlockWrites()) return;
+        var taxCode = _taxCodes.FirstOrDefault(x => x.Id.ToString("D") == line.TaxCodeIdText) ?? DefaultPurchaseTaxCode;
+        if (taxCode is null) return;
+        ApplyTaxCode(line, taxCode);
+    }
+
+    private static void ApplyTaxCode(PurchaseLine line, ShellTaxCodeLookupOption taxCode)
+    {
+        line.TaxCodeIdText = taxCode.Id.ToString("D");
+        line.TaxAmount = Math.Round(line.LineAmount * taxCode.RatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+        line.IsTaxRecoverable = taxCode.IsRecoverableOnPurchase;
+    }
+
+    private string? GetPurchaseTaxEditorHint(PurchaseLine line) =>
+        DefaultPurchaseTaxCode is null || !string.IsNullOrWhiteSpace(line.TaxCodeIdText)
+            ? null
+            : $"Setup default {DefaultPurchaseTaxCode.DefaultSummaryLabel} is ready. Use Rate or Default Tax From Setup if this line should carry purchase tax.";
 
     private async Task SaveAsync()
     {
@@ -301,7 +370,16 @@
         _vendorOptions = await Vendors.ListVendorsAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
         _expenseAccounts = (await Accounts.ListManualPostingAccountsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).Where(static x => x.TypeLabel.Contains("Expense", StringComparison.OrdinalIgnoreCase)).ToArray();
         _taxCodes = await TaxCodes.ListPurchaseTaxCodesAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
+        _purchaseProductServices = (await ProductServices.GetSummaryAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ActivePurchaseItems;
         if (_vendorOptions.Count == 1 && string.IsNullOrWhiteSpace(_vendorIdText)) _vendorIdText = _vendorOptions[0].Id.ToString("D");
+        if (!DraftId.HasValue &&
+            ProductServiceId.HasValue &&
+            ProductServiceId != _loadedProductServiceHintId &&
+            _purchaseProductServices.Any(item => item.Id == ProductServiceId.Value))
+        {
+            ApplyProductService(_lines[0], ProductServiceId.Value.ToString("D"));
+            _loadedProductServiceHintId = ProductServiceId.Value;
+        }
         return true;
     }
 
@@ -346,9 +424,36 @@
         if (_lines.Count == 0) _lines.Add(PurchaseLine.Blank(1));
     }
 
+    private void ApplyProductService(PurchaseLine line, string? productServiceIdText)
+    {
+        if (TryBlockWrites()) return;
+
+        line.ProductServiceIdText = productServiceIdText ?? string.Empty;
+
+        var productService = _purchaseProductServices.FirstOrDefault(
+            item => string.Equals(item.Id.ToString("D"), line.ProductServiceIdText, StringComparison.OrdinalIgnoreCase));
+        if (productService is null) return;
+
+        line.Description = productService.EffectiveLineDescription;
+        if (productService.PurchaseExpenseAccountId.HasValue)
+        {
+            line.AccountIdText = productService.PurchaseExpenseAccountId.Value.ToString("D");
+        }
+
+        if (productService.DefaultPurchaseTaxCodeId.HasValue)
+        {
+            var taxCode = _taxCodes.FirstOrDefault(option => option.Id == productService.DefaultPurchaseTaxCodeId.Value);
+            if (taxCode is not null)
+            {
+                ApplyTaxCode(line, taxCode);
+            }
+        }
+    }
+
     private sealed class PurchaseLine
     {
         public int LineNumber { get; set; }
+        public string ProductServiceIdText { get; set; } = string.Empty;
         public string AccountIdText { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public decimal LineAmount { get; set; } = 1m;

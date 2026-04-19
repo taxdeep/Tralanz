@@ -569,13 +569,47 @@ dotnet_sdk_version_from_global_json() {
   sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_ROOT}/global.json" | head -n 1
 }
 
+dotnet_sdk_tarball_url() {
+  local sdk_version="$1"
+
+  if [[ -n "${CITUS_DOTNET_SDK_TARBALL_URL:-}" ]]; then
+    printf '%s\n' "${CITUS_DOTNET_SDK_TARBALL_URL}"
+    return 0
+  fi
+
+  [[ -n "${sdk_version}" ]] || return 0
+  printf 'https://builds.dotnet.microsoft.com/dotnet/Sdk/%s/dotnet-sdk-%s-linux-x64.tar.gz\n' "${sdk_version}" "${sdk_version}"
+}
+
+dotnet_sdk_is_installed() {
+  local sdk_version="$1"
+  [[ -x "${DOTNET_INSTALL_DIR}/dotnet" ]] || return 1
+
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" \
+    "${DOTNET_INSTALL_DIR}/dotnet" --list-sdks 2>/dev/null |
+    grep -q "^${sdk_version}[[:space:]]"
+}
+
+install_dotnet_sdk_from_tarball() {
+  local sdk_version="$1"
+  local tarball_url="$2"
+  local archive="/tmp/citus-dotnet-sdk-${sdk_version}.tar.gz"
+
+  log "Installing .NET SDK ${sdk_version} from tarball fallback."
+  curl -fL "${tarball_url}" -o "${archive}"
+  tar -xzf "${archive}" -C "${DOTNET_INSTALL_DIR}"
+  rm -f "${archive}"
+}
+
 ensure_dotnet() {
   ensure_dotnet_dependencies
 
   local sdk_version="${CITUS_DOTNET_SDK_VERSION:-$(dotnet_sdk_version_from_global_json)}"
   local dotnet_channel="${CITUS_DOTNET_CHANNEL:-11.0}"
   local dotnet_quality="${CITUS_DOTNET_QUALITY:-preview}"
+  local allow_channel_fallback="${CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK:-1}"
   local install_script="/tmp/citus-dotnet-install.sh"
+  local tarball_url=""
 
   log "Installing .NET SDK into ${DOTNET_INSTALL_DIR}."
   mkdir -p "${DOTNET_INSTALL_DIR}"
@@ -584,7 +618,19 @@ ensure_dotnet() {
 
   if [[ -n "${sdk_version}" ]]; then
     if ! "${install_script}" --version "${sdk_version}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path; then
-      if is_truthy "${CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK:-1}"; then
+      tarball_url="$(dotnet_sdk_tarball_url "${sdk_version}")"
+
+      if [[ -n "${tarball_url}" ]]; then
+        log "Exact SDK ${sdk_version} was not installed through dotnet-install.sh; trying tarball fallback ${tarball_url}."
+        if ! install_dotnet_sdk_from_tarball "${sdk_version}" "${tarball_url}"; then
+          if is_truthy "${allow_channel_fallback}"; then
+            log "Tarball fallback for ${sdk_version} failed; falling back to channel ${dotnet_channel} (${dotnet_quality})."
+            "${install_script}" --channel "${dotnet_channel}" --quality "${dotnet_quality}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path
+          else
+            fail "Unable to install .NET SDK ${sdk_version} through dotnet-install.sh or tarball fallback."
+          fi
+        fi
+      elif is_truthy "${allow_channel_fallback}"; then
         log "Exact SDK ${sdk_version} was not installed; falling back to channel ${dotnet_channel} (${dotnet_quality})."
         "${install_script}" --channel "${dotnet_channel}" --quality "${dotnet_quality}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path
       else
@@ -597,6 +643,14 @@ ensure_dotnet() {
 
   ln -sfn "${DOTNET_INSTALL_DIR}/dotnet" /usr/local/bin/dotnet
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet --info >/dev/null
+
+  if [[ -n "${sdk_version}" ]] && ! dotnet_sdk_is_installed "${sdk_version}"; then
+    if is_truthy "${allow_channel_fallback}"; then
+      log "Exact SDK ${sdk_version} is still not present after fallback. Continuing with the installed SDK because global.json allows roll-forward."
+    else
+      fail "Expected .NET SDK ${sdk_version} was not installed into ${DOTNET_INSTALL_DIR}."
+    fi
+  fi
 }
 
 ensure_certbot() {

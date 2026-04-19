@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Citus.Accounting.Api\Citus.Accounting.Api.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

@@ -31,6 +31,28 @@
         </div>
     </section>
 
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you here first so you can confirm book truth, remeasurement policy, and formal governance signals before broader business activity.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-4">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/documents/invoice/draft-editor?origin=company-ready">
+                    Start First Invoice
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/bill/draft-editor?origin=company-ready">
+                    Start First Bill
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Open General Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
     <MudPaper Class="book-governance-page__controls" Elevation="0">
         <MudSelect T="Guid"
                    Label="Active Company"
@@ -263,11 +285,15 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
     private DateOnly _asOfDate = DateOnly.FromDateTime(DateTime.Today);
     private DateTime? _asOfDatePicker = DateTime.Today;
     private bool _isBusy;
     private string? _pageError;
     private List<BookGovernanceCardState> _books = [];
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool WritesBlocked => ShellState.AreWritesBlocked;
 
     protected override async Task OnInitializedAsync()

@@ -246,6 +246,88 @@ Planned sequencing from here:
 2. close remaining AR/AP surfaces that still feel demo-driven
 3. then open `Inventory` with multi-warehouse as a first-class assumption
 
+## Inventory Phase D checkpoint
+
+An explicit `Inventory Phase D` design draft now exists in [INVENTORY_PHASE_D_DESIGN.md](d:/Coding/Citus/INVENTORY_PHASE_D_DESIGN.md).
+
+Current planning direction:
+
+- `Inventory` stays an independent module, not a side effect of AP bills or AR invoices
+- `AP Bill` may create or link inbound inventory receipt truth, but may not overwrite quantity or cost truth
+- `Sales Out` / shipment may create or link outbound inventory issue truth, but outbound cost remains inventory-derived instead of operator-entered
+- Phase D should start with multi-warehouse, append-only stock ledger truth, item+warehouse balance cache, cost layers, layer consumption, transfer lifecycle, write-off / adjustment, and BOM-ready manufacturing entry
+
+Phase D / D1 implementation has now started:
+
+- new `Citus.Modules.Inventory.Domain.Shared` foundation types now define item kind, inventory methods, backorder/low-stock policy, document types/status, movement direction/type, and the first inventory foundation record models
+- new `Citus.Modules.Inventory.Application.Contracts` and `Citus.Modules.Inventory.Application` projects now define the first `InventoryFoundationWorkflow` seam plus the `IInventoryFoundationStore` contract
+- `Infrastructure.PostgreSQL` now has a first `PostgreSqlInventoryFoundationStore` that creates the company-scoped inventory foundation tables (`company_inventory_policies`, `inventory_items`, `inventory_warehouses`, `item_warehouse_balances`, `inventory_documents`, `inventory_document_lines`, `inventory_ledger_entries`, `inventory_cost_layers`, `inventory_layer_consumptions`, `warehouse_transfers`, `warehouse_transfer_lines`, `boms`, `bom_lines`) and can ensure/read company foundation summary
+- this is still D1 foundation only: no runtime UI/workflow has been attached yet, and no AP/AR integration has been switched over to inventory truth in the same slice
+- `Web.Shell` now also has a first `/company/inventory-foundation` management entry backed by the inventory module seam; company costing policy, inventory item master rows, and warehouse master rows can be reviewed and minimally governed without collapsing inventory truth back into shell-only tables
+- `Web.Shell` now also respects company type when exposing that inventory-facing entry: trading companies keep `Inventory Foundation` visible by default, while service-led companies stay on the lighter `Product / Service Setup` path unless company governance later opens the stricter inventory track
+- `Inventory D1.3` now extends item-master truth beyond naming and tracking flags: stock-managed items now carry `stock_uom_code` plus default `inventory asset / COGS / write-off / purchase variance` account references inside the inventory seam, and `/company/inventory-foundation` now governs those defaults without making shell invent its own direct GL lookup path
+- `Inventory D2` now has a first independent `purchase_receipt` truth path: `Citus.Modules.Inventory.Application` exposes `InventoryReceiptWorkflow`, `Infrastructure.PostgreSQL` persists posted purchase receipts into `inventory_documents` / `inventory_document_lines` / `inventory_ledger_entries` / `inventory_cost_layers`, and `Web.Shell` exposes `/company/inventory-purchase-receipt` as the first inbound inventory workbench
+- this D2 slice is intentionally inventory-owned and does not yet collapse into `AP Bill`; the current bill truth still lacks `item / warehouse / quantity / unit cost` semantics, so the AP bridge remains a later, explicit follow-up rather than a hidden partial integration
+- `Inventory D4` has now started with transfer-only scope: `Citus.Modules.Inventory.Application` exposes `InventoryTransferWorkflow`, `Infrastructure.PostgreSQL` persists `warehouse_transfers` as first-class transfer masters, and ship/receive now append `transfer_ship` / `transfer_receive` inventory documents plus ledger/balance/cost-layer effects without touching AR/AP bridge logic
+- `Web.Shell` now exposes `/company/inventory-transfer` as the minimal transfer workbench, and that workbench stays deliberately narrow: save draft, submit, ship, receive, and review recent transfers; write-off / adjustment remains a later D4 slice
+- `Inventory D4` now also includes the first adjustment/write-off seam: `InventoryAdjustmentWorkflow` plus `PostgreSqlInventoryAdjustmentStore` post `inventory_adjustment_gain`, `inventory_adjustment_loss`, and `inventory_write_off` as inventory-owned truth, updating ledger, balances, and cost layers/layer consumptions without reaching into AR/AP
+- `Inventory D5` is now implemented as the first manufacturing seam: `InventoryManufacturingWorkflow` plus `PostgreSqlInventoryManufacturingStore` now govern `boms`, component lines, `manufacturing_issue`, and `manufacturing_receipt` entirely inside Inventory without borrowing AP/AR document truth
+- `Web.Shell` now exposes `/company/inventory-manufacturing` as the minimal BOM + manufacturing workbench, including BOM maintenance, estimated roll-up review from open cost layers, and the first inventory-owned manufacturing post path that consumes component layers and creates finished-good layers
+- this D5 slice intentionally stays inside inventory truth: there is still no accounting bridge, no WIP/variance accounting, no routing/work-order layer, and no service/task crossover in the same step
+- `Web.Shell` now exposes `/company/inventory-adjustment` as the minimal count-gain / count-loss / write-off workbench, and company policy is already respected there: when `RequireWriteOffApproval` is true, direct write-off remains blocked until a later approval surface arrives
+- `Inventory D3` now has a first independent `sales_issue` truth path: `Citus.Modules.Inventory.Application` exposes `InventoryIssueWorkflow`, `Infrastructure.PostgreSQL` persists posted sales issues into `inventory_documents` / `inventory_document_lines` / `inventory_ledger_entries` / `inventory_layer_consumptions`, and `Web.Shell` exposes `/company/inventory-sales-issue` as the first outbound inventory workbench
+- this first D3 slice is deliberately inventory-owned and still independent from AR invoice / shipment truth; outbound cost is derived from inventory cost layers instead of being operator-entered, and AR-to-inventory shipment bridging remains a later explicit seam
+- `Inventory D3.2` now adds the first inventory-owned review surface: `Citus.Modules.Inventory.Application` exposes `InventoryReportingWorkflow`, `Infrastructure.PostgreSQL` projects `item_warehouse_balances + inventory_cost_layers + inventory_ledger_entries` into a compact availability/ledger dashboard, and `Web.Shell` exposes `/company/inventory-availability`
+- this D3.2 slice is still read-only by design: it confirms on-hand / reserved / available / in-transit state plus recent stock-ledger truth without introducing transfer, write-off, or accounting bridge behavior ahead of schedule
+- `Inventory D3.3` now adds server-side item/warehouse drill-down on top of that review surface: the same inventory reporting seam can focus both balances and ledger rows by selected item and/or warehouse, while keeping the broader overview intact
+- this D3.3 slice is still intentionally read-only and inventory-owned; it improves inspection depth without pulling in transfer lifecycle, write-off controls, or AR/AP bridging yet
+- the first `Phase E0 / Operational Guardrail` slice is now in place at the shell/foundation boundary: new stock items can no longer be newly switched into the guarded `ManageStockBySku` path, the inventory foundation UI now states that tracked lot/serial document flows are not open yet, and the current receipt / sales-issue / transfer / adjustment / manufacturing workbenches all explicitly expose only warehouse-managed stock items instead of pretending tracked operational flows are ready
+- the first `Phase E / Inventory Control Hardening` slice is now in place for write-off and transfer control lanes: write-off can move through `request -> approve -> post` inside the inventory seam, and warehouse transfer now treats `submit / ship / receive` as distinct control steps with separate shell-side legality checks and responsibility cues even before formal permission tokens are wired
+- the first `Phase F / AP Inbound Truth Bridge` seam is now in progress on the bill side: `Bill` no longer jumps straight from draft-save to post, and the shell/API/repository seam now recognizes `draft -> submitted -> posted` as the controlled bill lifecycle lane even before receipt-first matching is attached
+- submitted bills now also keep source-document continuity in `Web.Shell`: source browser and detail review can reopen the bill workbench for `submitted` status without reopening line edits, so the new lifecycle seam stays operational instead of becoming a one-shot page state
+- bill lines now also carry the first inventory-grade inbound seam (`item / warehouse / uom / quantity / unit cost`) without pretending that bill itself owns inventory truth; `Web.Shell` can hand those lines off into `/company/inventory-purchase-receipt`, where receipt stays authoritative and posts back into inventory with an `ap_bill` source anchor
+- bill workbench now also reads a first receipt-first matching summary back from inventory truth: once a bill has inventory-grade inbound lines, shell can show `no receipt / partial / full / over-receipted` against anchored purchase receipts without letting AP mutate receipt truth
+- bill draft, bill detail, and purchase receipt workspaces now share that same anchored receipt-review continuity: operators can see recent anchored receipts plus mismatch state from either AP-side review or inventory-side posting, while receipt remains the authoritative inbound truth
+- bill lifecycle has now also grown its first controlled off-ramp on the AP side: `submitted` bills can be explicitly cancelled without pretending that posted reverse belongs in the bill workbench; posted reversal continues to stay on the governed source-document review lane
+- receipt-first matching is no longer aggregate-only: bill workbench, bill detail, and purchase receipt now also review bill-vs-receipt groups by `item / warehouse / UOM`, so operators can see which inbound slices remain short, full, or over-receipted without letting AP overwrite inventory truth
+- bill-assisted purchase receipt now defaults to the remaining quantity per `item / warehouse / UOM` group instead of replaying the full bill inbound quantity every time; when bill truth is already fully covered by anchored receipts, the purchase-receipt form now stays empty by default so operators do not drift into accidental over-receipt
+- purchase receipt now also exposes a `Load Remaining From Bill` reset path, so operators can realign the receipt form back to authoritative outstanding bill-linked groups after manual edits without reconstructing grouped remaining quantities by hand
+- source browser now lets bill rows jump straight into `/company/inventory-purchase-receipt?billId=...`, so AP-side review can move into receipt-first matching without always detouring through source detail first
+- bill posting now has a backend-owned receipt-first gate: when inventory-grade inbound lines exist, `submitted -> posted` is blocked until anchored receipt truth is either fully covered or not participating in receipt-first matching at all, and the bill workbench now surfaces that hold state explicitly instead of treating post as an unconditional next step
+- the receipt-first posting gate is now formalized as a small backend authority object (`BillReceiptPostingGate`) with dedicated accounting-api tests, so bill posting legality no longer depends on duplicated inline switch statements alone
+- source browser bill rows now also project that same receipt-first posting gate: AP operators can see `post enabled / hold` state and the backend-owned reason before opening the bill workbench, instead of discovering the hold only when they drill into the bill editor
+
+Post-Phase-D follow-up now explicitly reserved:
+
+- `AP Bill` should later grow a formal lifecycle of `draft -> submitted -> posted -> cancelled/reversed`
+- that AP lifecycle work belongs to the follow-on AP/inventory bridging stream, not the current inventory-owned D2 slice
+- the future AP bridge should only start once bill truth is upgraded to inventory-grade inbound semantics instead of trying to reuse the current expense-only bill lines
+
+Resolved governance constraints guiding D1:
+
+- write-off authority remains a later user-permission surface, but `require_writeoff_approval` is part of the company-scoped foundation now
+- `transfer ship` and `transfer receive` remain separate permission seams and must not be collapsed into one operational action right
+- inventory costing policy belongs to company governance
+- negative stock defaults to strict `Disallow`; any override must remain a deliberate company-scoped governance choice
+- current `Product / Service Setup` remains the shared entry seam, but company type decides whether it evolves toward a strict inventory item master or a lighter service catalog
+
+## Tax note
+
+`Tax Setup` should no longer be treated as a terminal configuration screen.
+
+The intended progression is:
+
+1. governed tax code setup
+2. sales tax report visibility
+3. governed `File Sales Tax` workflow
+
+This means tax-code semantics must remain reporting-safe:
+
+- company-scoped
+- line-level truth carrying through document lifecycle
+- posting-aware recoverability semantics
+- compatible with later filed-period reporting and filing actions
+
 ## UI theme note
 
 The imported `Volo.Abp.LeptonXLiteTheme.SourceCode` package can be integrated as a reference and source-code aid, but it should not become the primary Citus product UI direction.

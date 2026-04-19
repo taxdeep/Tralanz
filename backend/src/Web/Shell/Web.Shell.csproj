@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
     <ProjectReference Include="..\..\Modules\CompanyAccess\Modules.CompanyAccess.csproj" />
     <ProjectReference Include="..\..\Modules\Company\Modules.Company.csproj" />
+    <ProjectReference Include="..\..\Modules\Inventory\Application\Citus.Modules.Inventory.Application.csproj" />
     <ProjectReference Include="..\Business\AR\Web.Business.AR.csproj" />
     <ProjectReference Include="..\Business\AP\Web.Business.AP.csproj" />
     <ProjectReference Include="..\Business\GL\Web.Business.GL.csproj" />

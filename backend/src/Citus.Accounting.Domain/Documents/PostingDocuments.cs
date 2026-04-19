@@ -501,7 +501,12 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         decimal taxAmount,
         bool isTaxRecoverable,
         Guid? recoverableTaxAccountId,
-        Guid? taxCodeId = null)
+        Guid? taxCodeId = null,
+        Guid? itemId = null,
+        Guid? warehouseId = null,
+        string? uomCode = null,
+        decimal? quantity = null,
+        decimal? unitCost = null)
     {
         if (lineNumber <= 0)
         {
@@ -528,6 +533,41 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             throw new InvalidOperationException("Recoverable tax bill lines must resolve to a recoverable tax account.");
         }
 
+        var hasInventorySemantics =
+            itemId.HasValue ||
+            warehouseId.HasValue ||
+            !string.IsNullOrWhiteSpace(uomCode) ||
+            quantity.HasValue ||
+            unitCost.HasValue;
+
+        if (hasInventorySemantics)
+        {
+            if (!itemId.HasValue || itemId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require an item id.");
+            }
+
+            if (!warehouseId.HasValue || warehouseId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a warehouse id.");
+            }
+
+            if (string.IsNullOrWhiteSpace(uomCode))
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a UOM code.");
+            }
+
+            if (!quantity.HasValue || quantity.Value <= 0m)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a positive quantity.");
+            }
+
+            if (!unitCost.HasValue || unitCost.Value < 0m)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a non-negative unit cost.");
+            }
+        }
+
         LineNumber = lineNumber;
         ExpenseAccountId = expenseAccountId;
         Description = description.Trim();
@@ -536,6 +576,11 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         IsTaxRecoverable = isTaxRecoverable;
         RecoverableTaxAccountId = recoverableTaxAccountId;
         TaxCodeId = taxCodeId;
+        ItemId = itemId;
+        WarehouseId = warehouseId;
+        UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
+        Quantity = quantity;
+        UnitCost = unitCost;
     }
 
     public int LineNumber { get; }
@@ -553,6 +598,16 @@ public sealed record BillDocumentLine : IPostingDocumentLine
     public Guid? RecoverableTaxAccountId { get; }
 
     public Guid? TaxCodeId { get; }
+
+    public Guid? ItemId { get; }
+
+    public Guid? WarehouseId { get; }
+
+    public string? UomCode { get; }
+
+    public decimal? Quantity { get; }
+
+    public decimal? UnitCost { get; }
 }
 
 public sealed class BillDocument : IPostingDocument, IOpenItemDocument

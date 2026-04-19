@@ -1,5 +1,6 @@
 @inject WebShellState ShellState
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 
 <nav class="ws-nav">
@@ -66,6 +67,42 @@
     <NavLink href="/company/book-governance" class="ws-nav__link">
         Book Governance
     </NavLink>
+    <NavLink href="/company/bank-and-cash-setup" class="ws-nav__link">
+        Bank & Cash Setup
+    </NavLink>
+    <NavLink href="/company/tax-setup" class="ws-nav__link">
+        Tax Setup
+    </NavLink>
+    <NavLink href="/company/customer-vendor-setup" class="ws-nav__link">
+        Customer & Vendor Setup
+    </NavLink>
+    <NavLink href="/company/product-service-setup" class="ws-nav__link">
+        Product & Service Setup
+    </NavLink>
+    @if (_showInventoryFoundation)
+    {
+        <NavLink href="/company/inventory-foundation" class="ws-nav__link">
+            Inventory Foundation
+        </NavLink>
+        <NavLink href="/company/inventory-purchase-receipt" class="ws-nav__link">
+            Purchase Receipt
+        </NavLink>
+        <NavLink href="/company/inventory-sales-issue" class="ws-nav__link">
+            Sales Issue
+        </NavLink>
+        <NavLink href="/company/inventory-transfer" class="ws-nav__link">
+            Warehouse Transfer
+        </NavLink>
+        <NavLink href="/company/inventory-adjustment" class="ws-nav__link">
+            Inventory Adjustment
+        </NavLink>
+        <NavLink href="/company/inventory-manufacturing" class="ws-nav__link">
+            Manufacturing
+        </NavLink>
+        <NavLink href="/company/inventory-availability" class="ws-nav__link">
+            Inventory Availability
+        </NavLink>
+    }
     <NavLink href="/company/membership-permissions" class="ws-nav__link">
         Membership Permissions
     </NavLink>
@@ -93,6 +130,8 @@
 </nav>
 
 @code {
+    private bool _showInventoryFoundation = true;
+
     private bool WritesBlocked => ShellState.AreWritesBlocked;
 
     protected override async Task OnInitializedAsync()
@@ -102,6 +141,15 @@
         if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
         {
             return;
+        }
+
+        var onboardingResult = await OnboardingClient.GetAsync();
+        if (!onboardingResult.RequiresSignIn &&
+            !onboardingResult.IsNotFound &&
+            string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage) &&
+            onboardingResult.Value is not null)
+        {
+            _showInventoryFoundation = onboardingResult.Value.SupportsInventoryFoundation;
         }
     }
 }

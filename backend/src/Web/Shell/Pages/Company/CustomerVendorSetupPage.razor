@@ -1,0 +1,841 @@
+@page "/company/customer-vendor-setup"
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellCounterpartyOnboardingClient CounterpartyOnboarding
+@inject ISnackbar Snackbar
+
+<PageTitle>Customer & Vendor Setup</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Company Setup</MudText>
+            <MudText Typo="Typo.h4">Customer And Vendor Onboarding</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Create the minimum counterparty truth needed for the first invoice, bill, receipt, and vendor-payment flow. Company name is mandatory; currency is governed by the company currency policy.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you here because the first invoice and bill flow should bind to real customer and vendor truth instead of placeholder counterparties.
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_summary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active customers</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActiveCustomers.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @_summary.ActiveCustomers.Count switch
+                        {
+                            0 => "No customer truth exists yet for the current company.",
+                            1 => "The company already has one active customer and can bind the first receivable to it.",
+                            _ => $"The company already has {_summary.ActiveCustomers.Count} active customers."
+                        }
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active vendors</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActiveVendors.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @_summary.ActiveVendors.Count switch
+                        {
+                            0 => "No vendor truth exists yet for the current company.",
+                            1 => "The company already has one active vendor and can bind the first payable to it.",
+                            _ => $"The company already has {_summary.ActiveVendors.Count} active vendors."
+                        }
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Currency policy</MudText>
+                    <MudText Typo="Typo.h6">@CurrencyPolicyLabel</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@CurrencyPolicySummary</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            This is intentionally the minimum counterparty surface. Optional fields improve contact readiness, but company-scoped name truth is the real blocker for first invoice and bill activity.
+        </MudAlert>
+
+        <MudGrid>
+            <MudItem xs="12" lg="6">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.h6">@(_editingCustomerId.HasValue ? "Edit customer" : "Add customer")</MudText>
+                        @RenderCounterpartyForm(_customer, true)
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="6">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.h6">@(_editingVendorId.HasValue ? "Edit vendor" : "Add vendor")</MudText>
+                        @RenderCounterpartyForm(_vendor, false)
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid>
+            <MudItem xs="12" lg="6">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Customer truth</MudText>
+                    @if (_summary.Customers.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="text-secondary">No customer truth exists yet.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="_summary.Customers" Dense="true" Hover="true" Bordered="true">
+                            <HeaderContent>
+                                <MudTh>Name</MudTh>
+                                <MudTh>Entity #</MudTh>
+                                <MudTh>Currency</MudTh>
+                                <MudTh>Status</MudTh>
+                                <MudTh>Contact</MudTh>
+                                <MudTh>Actions</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.DisplayName</MudTd>
+                                <MudTd>@context.EntityNumber</MudTd>
+                                <MudTd>@context.DefaultCurrencyCode</MudTd>
+                                <MudTd>@GetStatusLabel(context)</MudTd>
+                                <MudTd>@BuildContactSummary(context)</MudTd>
+                                <MudTd>
+                                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                        <MudButton Variant="Variant.Text"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   Disabled="@(_isSaving || WritesBlocked)"
+                                                   OnClick="@(() => EditCustomer(context))">
+                                            Edit
+                                        </MudButton>
+                                        @if (context.IsActive)
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Size="Size.Small"
+                                                       Color="Color.Warning"
+                                                       Disabled="@(_isSaving || WritesBlocked)"
+                                                       OnClick="@(() => SetCustomerActiveAsync(context, false))">
+                                                Deactivate
+                                            </MudButton>
+                                        }
+                                        else
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Size="Size.Small"
+                                                       Color="Color.Success"
+                                                       Disabled="@(_isSaving || WritesBlocked)"
+                                                       OnClick="@(() => SetCustomerActiveAsync(context, true))">
+                                                Reactivate
+                                            </MudButton>
+                                        }
+                                    </div>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="6">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Vendor truth</MudText>
+                    @if (_summary.Vendors.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="text-secondary">No vendor truth exists yet.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="_summary.Vendors" Dense="true" Hover="true" Bordered="true">
+                            <HeaderContent>
+                                <MudTh>Name</MudTh>
+                                <MudTh>Entity #</MudTh>
+                                <MudTh>Currency</MudTh>
+                                <MudTh>Status</MudTh>
+                                <MudTh>Contact</MudTh>
+                                <MudTh>Actions</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.DisplayName</MudTd>
+                                <MudTd>@context.EntityNumber</MudTd>
+                                <MudTd>@context.DefaultCurrencyCode</MudTd>
+                                <MudTd>@GetStatusLabel(context)</MudTd>
+                                <MudTd>@BuildContactSummary(context)</MudTd>
+                                <MudTd>
+                                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                        <MudButton Variant="Variant.Text"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   Disabled="@(_isSaving || WritesBlocked)"
+                                                   OnClick="@(() => EditVendor(context))">
+                                            Edit
+                                        </MudButton>
+                                        @if (context.IsActive)
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Size="Size.Small"
+                                                       Color="Color.Warning"
+                                                       Disabled="@(_isSaving || WritesBlocked)"
+                                                       OnClick="@(() => SetVendorActiveAsync(context, false))">
+                                                Deactivate
+                                            </MudButton>
+                                        }
+                                        else
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Size="Size.Small"
+                                                       Color="Color.Success"
+                                                       Disabled="@(_isSaving || WritesBlocked)"
+                                                       OnClick="@(() => SetVendorActiveAsync(context, true))">
+                                                Reactivate
+                                            </MudButton>
+                                        }
+                                    </div>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                @if (IsCompanyReadyHandOff)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/ready">
+                        Back To Company Ready
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/documents/invoice/draft-editor?origin=company-ready">
+                    Open First Invoice
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/bill/draft-editor?origin=company-ready">
+                    Open First Bill
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+
+        @if (_lastCreatedCustomerId.HasValue)
+        {
+            <MudPaper Elevation="0" Class="pa-5">
+                <MudText Typo="Typo.h6" Class="mb-2">Latest customer continuity</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    Customer <strong>@_lastCreatedCustomerName</strong> was just created. Carry that exact counterparty straight into the first invoice flow instead of re-selecting it manually.
+                </MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildInvoiceHref(_lastCreatedCustomerId)">
+                        Continue to First Invoice
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/ar/receive-payment?origin=company-ready">
+                        Open Receive Payment Later
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+
+        @if (_lastCreatedVendorId.HasValue)
+        {
+            <MudPaper Elevation="0" Class="pa-5">
+                <MudText Typo="Typo.h6" Class="mb-2">Latest vendor continuity</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    Vendor <strong>@_lastCreatedVendorName</strong> was just created. Carry that exact counterparty straight into the first bill flow instead of re-selecting it manually.
+                </MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" Href="@BuildBillHref(_lastCreatedVendorId)">
+                        Continue to First Bill
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/ap/pay-bill?origin=company-ready">
+                        Open Pay Bill Later
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
+    private ShellCounterpartyOnboardingSummary? _summary;
+    private string? _error;
+    private bool _isSaving;
+    private Guid? _editingCustomerId;
+    private Guid? _editingVendorId;
+    private Guid? _lastCreatedCustomerId;
+    private string _lastCreatedCustomerName = string.Empty;
+    private Guid? _lastCreatedVendorId;
+    private string _lastCreatedVendorName = string.Empty;
+    private readonly CounterpartyEditorState _customer = new();
+    private readonly CounterpartyEditorState _vendor = new();
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private string CurrencyPolicyLabel => _summary is null
+        ? string.Empty
+        : _summary.MultiCurrencyEnabled
+            ? $"Multi-currency enabled ({_summary.EnabledCurrencies.Count})"
+            : $"{_summary.BaseCurrencyCode} only";
+
+    private string CurrencyPolicySummary => _summary is null
+        ? string.Empty
+        : _summary.MultiCurrencyEnabled
+            ? "Currency is mandatory for each customer and vendor, and it must come from the enabled company currency set."
+            : $"The company is currently single-currency. New customers and vendors automatically use the base currency {_summary.BaseCurrencyCode}.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _summary = await CounterpartyOnboarding.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            ApplyCurrencyDefaults();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void ApplyCurrencyDefaults()
+    {
+        if (_summary is null)
+        {
+            return;
+        }
+
+        var preferredCurrencyCode =
+            _summary.EnabledCurrencies.FirstOrDefault(item => string.Equals(item.Code, _summary.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))?.Code
+            ?? _summary.EnabledCurrencies.FirstOrDefault()?.Code
+            ?? _summary.BaseCurrencyCode;
+
+        if (string.IsNullOrWhiteSpace(_customer.CurrencyCode))
+        {
+            _customer.CurrencyCode = preferredCurrencyCode;
+        }
+
+        if (string.IsNullOrWhiteSpace(_vendor.CurrencyCode))
+        {
+            _vendor.CurrencyCode = preferredCurrencyCode;
+        }
+    }
+
+    private RenderFragment RenderCounterpartyForm(CounterpartyEditorState editor, bool isCustomer) => @<div>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudTextField T="string"
+                              Label="Company name"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.DisplayName" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                @if (_summary?.MultiCurrencyEnabled == true)
+                {
+                    <MudSelect T="string"
+                               Label="Currency"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               @bind-Value="editor.CurrencyCode">
+                        @foreach (var currency in _summary.EnabledCurrencies)
+                        {
+                            <MudSelectItem T="string" Value="@currency.Code">
+                                @currency.DisplayLabel
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+                else
+                {
+                    <MudTextField T="string"
+                                  Label="Currency"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Disabled="true"
+                                  Value="@(_summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)" />
+                }
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="Email"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.Email" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="Phone"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.Phone" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              Label="Address line"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.AddressLine" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField T="string"
+                              Label="City"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.City" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField T="string"
+                              Label="Province / State"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.ProvinceOrState" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField T="string"
+                              Label="Postal code"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.PostalCode" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string"
+                              Label="Country"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Disabled="@(_isSaving || WritesBlocked)"
+                              @bind-Value="editor.Country" />
+            </MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.body2" Class="text-secondary">
+            @if (_summary?.MultiCurrencyEnabled == true)
+            {
+                <span>Because multi-currency is enabled, this @((isCustomer ? "customer" : "vendor")) must choose one enabled company currency.</span>
+            }
+            else
+            {
+                <span>This company currently operates in the base currency only, so new @((isCustomer ? "customers" : "vendors")) inherit @_summary?.BaseCurrencyCode automatically.</span>
+            }
+        </MudText>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+            <MudButton Variant="Variant.Filled"
+                       Color="@(isCustomer ? Color.Success : Color.Info)"
+                       Disabled="@(_isSaving || WritesBlocked)"
+                       OnClick="@(isCustomer ? SaveCustomerAsync : SaveVendorAsync)">
+                @(_isSaving ? "Saving..." : isCustomer ? _editingCustomerId.HasValue ? "Save Customer" : "Add Customer" : _editingVendorId.HasValue ? "Save Vendor" : "Add Vendor")
+            </MudButton>
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Default"
+                       Disabled="@(_isSaving)"
+                       OnClick="@(() => ClearEditor(editor))">
+                @((isCustomer ? _editingCustomerId : _editingVendorId).HasValue ? "Cancel Edit" : "Clear")
+            </MudButton>
+        </MudStack>
+    </div>;
+
+    private async Task SaveCustomerAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            if (_editingCustomerId.HasValue)
+            {
+                await CounterpartyOnboarding.UpdateCustomerAsync(ShellState.ActiveCompany.Id, _editingCustomerId.Value, _customer.ToRequest());
+                Snackbar.Add("Customer updated.", Severity.Success);
+            }
+            else
+            {
+                _lastCreatedCustomerId = await CounterpartyOnboarding.CreateCustomerAsync(ShellState.ActiveCompany.Id, _customer.ToRequest());
+                _lastCreatedCustomerName = _customer.DisplayName.Trim();
+                Snackbar.Add("Customer created.", Severity.Success);
+            }
+
+            ClearEditor(_customer);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveVendorAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            if (_editingVendorId.HasValue)
+            {
+                await CounterpartyOnboarding.UpdateVendorAsync(ShellState.ActiveCompany.Id, _editingVendorId.Value, _vendor.ToRequest());
+                Snackbar.Add("Vendor updated.", Severity.Success);
+            }
+            else
+            {
+                _lastCreatedVendorId = await CounterpartyOnboarding.CreateVendorAsync(ShellState.ActiveCompany.Id, _vendor.ToRequest());
+                _lastCreatedVendorName = _vendor.DisplayName.Trim();
+                Snackbar.Add("Vendor created.", Severity.Success);
+            }
+
+            ClearEditor(_vendor);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SetCustomerActiveAsync(ShellManagedCounterpartySummary customer, bool isActive)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            await CounterpartyOnboarding.SetCustomerActiveAsync(ShellState.ActiveCompany.Id, customer.Id, isActive);
+            if (_editingCustomerId == customer.Id && !isActive)
+            {
+                ClearEditor(_customer);
+            }
+
+            await LoadAsync();
+            Snackbar.Add(isActive ? "Customer reactivated." : "Customer deactivated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SetVendorActiveAsync(ShellManagedCounterpartySummary vendor, bool isActive)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            await CounterpartyOnboarding.SetVendorActiveAsync(ShellState.ActiveCompany.Id, vendor.Id, isActive);
+            if (_editingVendorId == vendor.Id && !isActive)
+            {
+                ClearEditor(_vendor);
+            }
+
+            await LoadAsync();
+            Snackbar.Add(isActive ? "Vendor reactivated." : "Vendor deactivated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void EditCustomer(ShellManagedCounterpartySummary customer)
+    {
+        _editingCustomerId = customer.Id;
+        _customer.LoadFromSummary(customer, _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode);
+    }
+
+    private void EditVendor(ShellManagedCounterpartySummary vendor)
+    {
+        _editingVendorId = vendor.Id;
+        _vendor.LoadFromSummary(vendor, _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode);
+    }
+
+    private void ClearEditor(CounterpartyEditorState editor)
+    {
+        editor.DisplayName = string.Empty;
+        editor.Email = string.Empty;
+        editor.Phone = string.Empty;
+        editor.AddressLine = string.Empty;
+        editor.City = string.Empty;
+        editor.ProvinceOrState = string.Empty;
+        editor.Country = string.Empty;
+        editor.PostalCode = string.Empty;
+        editor.CurrencyCode = _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode;
+        if (ReferenceEquals(editor, _customer))
+        {
+            _editingCustomerId = null;
+        }
+
+        if (ReferenceEquals(editor, _vendor))
+        {
+            _editingVendorId = null;
+        }
+    }
+
+    private static string BuildContactSummary(ShellManagedCounterpartySummary counterparty)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(counterparty.Email))
+        {
+            parts.Add(counterparty.Email);
+        }
+
+        if (!string.IsNullOrWhiteSpace(counterparty.Phone))
+        {
+            parts.Add(counterparty.Phone);
+        }
+
+        if (!string.IsNullOrWhiteSpace(counterparty.Address))
+        {
+            parts.Add(counterparty.Address.Replace(Environment.NewLine, " | ", StringComparison.Ordinal));
+        }
+
+        return parts.Count == 0 ? "No optional contact details" : string.Join(" | ", parts);
+    }
+
+    private static string GetStatusLabel(ShellManagedCounterpartySummary counterparty) =>
+        counterparty.IsActive ? "Active" : "Inactive";
+
+    private string BuildInvoiceHref(Guid? customerId) =>
+        customerId.HasValue
+            ? $"/documents/invoice/draft-editor?origin=company-ready&customerId={customerId.Value:D}"
+            : "/documents/invoice/draft-editor?origin=company-ready";
+
+    private string BuildBillHref(Guid? vendorId) =>
+        vendorId.HasValue
+            ? $"/documents/bill/draft-editor?origin=company-ready&vendorId={vendorId.Value:D}"
+            : "/documents/bill/draft-editor?origin=company-ready";
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private sealed class CounterpartyEditorState
+    {
+        public string DisplayName { get; set; } = string.Empty;
+
+        public string CurrencyCode { get; set; } = string.Empty;
+
+        public string Email { get; set; } = string.Empty;
+
+        public string Phone { get; set; } = string.Empty;
+
+        public string AddressLine { get; set; } = string.Empty;
+
+        public string City { get; set; } = string.Empty;
+
+        public string ProvinceOrState { get; set; } = string.Empty;
+
+        public string Country { get; set; } = string.Empty;
+
+        public string PostalCode { get; set; } = string.Empty;
+
+        public void LoadFromSummary(ShellManagedCounterpartySummary summary, string fallbackCurrencyCode)
+        {
+            DisplayName = summary.DisplayName;
+            CurrencyCode = string.IsNullOrWhiteSpace(summary.DefaultCurrencyCode) ? fallbackCurrencyCode : summary.DefaultCurrencyCode;
+            Email = summary.Email;
+            Phone = summary.Phone;
+
+            var parsed = ParseAddress(summary.Address);
+            AddressLine = parsed.AddressLine;
+            City = parsed.City;
+            ProvinceOrState = parsed.ProvinceOrState;
+            Country = parsed.Country;
+            PostalCode = parsed.PostalCode;
+        }
+
+        public ShellCounterpartyOnboardingCreateRequest ToRequest() =>
+            new()
+            {
+                DisplayName = DisplayName,
+                CurrencyCode = CurrencyCode,
+                Email = Email,
+                Phone = Phone,
+                AddressLine = AddressLine,
+                City = City,
+                ProvinceOrState = ProvinceOrState,
+                Country = Country,
+                PostalCode = PostalCode
+            };
+
+        private static (string AddressLine, string City, string ProvinceOrState, string Country, string PostalCode) ParseAddress(string address)
+        {
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                return (string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+            }
+
+            var lines = address
+                .Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(static line => !string.IsNullOrWhiteSpace(line))
+                .ToArray();
+            if (lines.Length == 0)
+            {
+                return (string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+            }
+
+            var addressLine = lines[0];
+            var localityLine = lines.Length >= 2 ? lines[1] : string.Empty;
+            var country = lines.Length >= 3
+                ? lines[^1]
+                : localityLine.Contains(',', StringComparison.Ordinal) || localityLine.Any(char.IsDigit)
+                    ? string.Empty
+                    : localityLine;
+
+            if (lines.Length == 2 && string.Equals(country, localityLine, StringComparison.Ordinal))
+            {
+                localityLine = string.Empty;
+            }
+
+            var city = string.Empty;
+            var provinceOrState = string.Empty;
+            var postalCode = string.Empty;
+            if (!string.IsNullOrWhiteSpace(localityLine))
+            {
+                var localityParts = localityLine.Split(',', 2, StringSplitOptions.TrimEntries);
+                city = localityParts[0];
+                if (localityParts.Length > 1)
+                {
+                    var trailing = localityParts[1];
+                    var trailingParts = trailing.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (trailingParts.Length >= 2)
+                    {
+                        postalCode = trailingParts[^1];
+                        provinceOrState = string.Join(" ", trailingParts[..^1]);
+                    }
+                    else
+                    {
+                        provinceOrState = trailing;
+                    }
+                }
+                else if (city.Any(char.IsDigit))
+                {
+                    postalCode = city;
+                    city = string.Empty;
+                }
+            }
+
+            return (addressLine, city, provinceOrState, country, postalCode);
+        }
+    }
+}

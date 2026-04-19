@@ -509,6 +509,8 @@ public sealed class BusinessSessionApiContractTests
     {
         public PlatformMaintenanceState? MaintenanceState { get; set; }
 
+        public PlatformFirstCompanySetupState? FirstCompanySetupState { get; set; }
+
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<PlatformMaintenanceState?> GetMaintenanceStateAsync(CancellationToken cancellationToken) =>
@@ -526,5 +528,13 @@ public sealed class BusinessSessionApiContractTests
             PlatformNotificationReadinessState state,
             CancellationToken cancellationToken) =>
             Task.FromResult(state);
+
+        public Task<PlatformFirstCompanySetupState?> GetFirstCompanySetupStateAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(FirstCompanySetupState);
+
+        public Task<PlatformFirstCompanySetupState> UpsertFirstCompanySetupStateAsync(
+            PlatformFirstCompanySetupState state,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(FirstCompanySetupState = state);
     }
 }

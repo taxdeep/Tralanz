@@ -41,6 +41,7 @@ builder.Services.AddScoped<ICompanyMembershipPermissionStore, PostgreSqlCompanyM
 builder.Services.AddScoped<ICompanyMembershipGovernanceStore, PostgreSqlCompanyMembershipGovernanceStore>();
 builder.Services.AddScoped<ICompanyMembershipGovernanceWorkflow, CompanyMembershipGovernanceWorkflow>();
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
+builder.Services.AddScoped<IPlatformFirstCompanyProvisioningRepository, PostgresPlatformFirstCompanyProvisioningRepository>();
 builder.Services.Configure<SysAdminControlOptions>(builder.Configuration.GetSection(SysAdminControlOptions.SectionName));
 builder.Services.Configure<SysAdminAuthOptions>(builder.Configuration.GetSection(SysAdminAuthOptions.SectionName));
 builder.Services.AddSingleton<SysAdminControlState>();
@@ -176,6 +177,75 @@ auth.MapPost(
             });
         }
     });
+
+auth.MapPost(
+    "/setup/company-decision",
+    async (
+        FirstCompanySetupDecisionRequest request,
+        IPlatformRuntimeStateRepository runtimeRepository,
+        ISysAdminAuthRepository authRepository,
+        IOptions<SysAdminAuthOptions> authOptions,
+        IWebHostEnvironment environment,
+        CancellationToken cancellationToken) =>
+    {
+        await runtimeRepository.UpsertFirstCompanySetupStateAsync(
+            new PlatformFirstCompanySetupState
+            {
+                DecisionStatus = request.CreateCompanyNow
+                    ? PlatformFirstCompanySetupState.PendingDecisionStatus
+                    : PlatformFirstCompanySetupState.DeferredDecisionStatus,
+                DeferredAtUtc = request.CreateCompanyNow ? null : DateTimeOffset.UtcNow
+            },
+            cancellationToken);
+
+        var status = await authRepository.GetSetupStatusAsync(cancellationToken);
+        return Results.Ok(ToSetupStatusResponse(status, authOptions.Value, environment));
+    })
+    .AddEndpointFilter(RequireSysAdminSessionAsync);
+
+auth.MapPost(
+    "/setup/first-company",
+    async (
+        FirstCompanyProvisioningRequest request,
+        HttpContext httpContext,
+        IPlatformFirstCompanyProvisioningRepository provisioningRepository,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await provisioningRepository.ProvisionAsync(
+            new PlatformFirstCompanyProvisioningCommand
+            {
+                SysAdminAccountId = GetAuthenticatedSession(httpContext).SysAdminAccountId,
+                OwnerDisplayName = request.OwnerDisplayName,
+                OwnerEmail = request.OwnerEmail,
+                OwnerPassword = request.OwnerPassword,
+                CompanyName = request.CompanyName,
+                EntityType = request.EntityType,
+                Industry = request.Industry,
+                IncorporatedOn = request.IncorporatedOn,
+                FiscalYearEnd = request.FiscalYearEnd,
+                BusinessNumber = request.BusinessNumber,
+                AccountCodeLength = request.AccountCodeLength,
+                Phone = request.Phone,
+                CompanyEmail = request.CompanyEmail,
+                AddressLine = request.AddressLine,
+                City = request.City,
+                ProvinceState = request.ProvinceState,
+                PostalCode = request.PostalCode,
+                Country = request.Country,
+                TemplateKey = request.TemplateKey,
+                BaseCurrencyCode = request.BaseCurrencyCode
+            },
+            cancellationToken);
+
+        return result.Succeeded
+            ? Results.Ok(result)
+            : Results.BadRequest(new
+            {
+                message = result.FailureMessage,
+                code = result.FailureCode
+            });
+    })
+    .AddEndpointFilter(RequireSysAdminSessionAsync);
 
 auth.MapGet(
     "/session",
@@ -950,9 +1020,19 @@ static SysAdminSetupStatusResponse ToSetupStatusResponse(
     IWebHostEnvironment environment) =>
     new()
     {
+        SetupStage = status.SetupStage,
         AccountCount = status.AccountCount,
+        CompanyCount = status.CompanyCount,
+        OwnerMembershipCount = status.OwnerMembershipCount,
         HasAnyAccount = status.HasAnyAccount,
+        HasAnyCompany = status.HasAnyCompany,
+        HasAnyOwnerMembership = status.HasAnyOwnerMembership,
         SetupRequired = status.SetupRequired,
+        BusinessInitializationPending = status.BusinessInitializationPending,
+        BusinessReady = status.BusinessReady,
+        FirstCompanySetupRequired = status.FirstCompanySetupRequired,
+        FirstCompanySetupDeferred = status.FirstCompanySetupDeferred,
+        FirstCompanySetupDeferredAtUtc = status.FirstCompanySetupDeferredAtUtc,
         BootstrapSeedingEnabled = options.Bootstrap.Enabled,
         BootstrapSeedingActive = options.Bootstrap.IsActive(environment.IsDevelopment()),
         BootstrapEmailHint = string.IsNullOrWhiteSpace(options.Bootstrap.Email)
@@ -994,3 +1074,49 @@ static PlatformMfaTimelineEntrySummary ToPlatformMfaTimelineEntrySummary(Platfor
         ActorDisplayName = auditEvent.ActorDisplayName,
         CreatedAtUtc = auditEvent.CreatedAtUtc
     };
+
+file sealed class FirstCompanySetupDecisionRequest
+{
+    public bool CreateCompanyNow { get; init; }
+}
+
+file sealed class FirstCompanyProvisioningRequest
+{
+    public string OwnerDisplayName { get; init; } = string.Empty;
+
+    public string OwnerEmail { get; init; } = string.Empty;
+
+    public string OwnerPassword { get; init; } = string.Empty;
+
+    public string CompanyName { get; init; } = string.Empty;
+
+    public string EntityType { get; init; } = string.Empty;
+
+    public string Industry { get; init; } = string.Empty;
+
+    public DateTime? IncorporatedOn { get; init; }
+
+    public string FiscalYearEnd { get; init; } = string.Empty;
+
+    public string BusinessNumber { get; init; } = string.Empty;
+
+    public int AccountCodeLength { get; init; }
+
+    public string Phone { get; init; } = string.Empty;
+
+    public string CompanyEmail { get; init; } = string.Empty;
+
+    public string AddressLine { get; init; } = string.Empty;
+
+    public string City { get; init; } = string.Empty;
+
+    public string ProvinceState { get; init; } = string.Empty;
+
+    public string PostalCode { get; init; } = string.Empty;
+
+    public string Country { get; init; } = string.Empty;
+
+    public string TemplateKey { get; init; } = string.Empty;
+
+    public string BaseCurrencyCode { get; init; } = string.Empty;
+}

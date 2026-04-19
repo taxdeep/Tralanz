@@ -7,6 +7,8 @@ using Citus.Platform.Infrastructure.Persistence;
 using Connectors.FX.Frankfurter;
 using Engines.FX.FxRateLookup;
 using Engines.Numbering.JournalEntry;
+using Citus.Modules.Inventory.Application;
+using Citus.Modules.Inventory.Application.Contracts;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.AP;
 using Infrastructure.PostgreSQL.AR;
@@ -14,6 +16,7 @@ using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.FX;
 using Infrastructure.PostgreSQL.GL;
+using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
 using Modules.AP.PayBill;
 using Modules.AP.VendorCreditApplication;
@@ -59,7 +62,14 @@ builder.Services.Configure<PlatformEmailDeliveryOptions>(builder.Configuration.G
 builder.Services.AddScoped<WebShellState>();
 builder.Services.AddScoped<WebShellSessionExpirationCoordinator>();
 builder.Services.AddScoped<ICompanyAccessShellSession, WebShellCompanyAccessShellSession>();
+builder.Services.AddSingleton<IWebShellCompanyOnboardingStore, WebShellCompanyOnboardingStore>();
 builder.Services.AddTransient<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<WebShellCompanyOnboardingClient>(
+    (serviceProvider, client) =>
+    {
+        var navigationManager = serviceProvider.GetRequiredService<NavigationManager>();
+        client.BaseAddress = new Uri(navigationManager.BaseUri);
+    });
 builder.Services.AddHttpClient<PlatformProfileClient>(
     (serviceProvider, client) =>
     {
@@ -166,7 +176,32 @@ builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySess
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
 builder.Services.AddSingleton<ICompanyMembershipPermissionStore, PostgreSqlCompanyMembershipPermissionStore>();
 builder.Services.AddSingleton<ICompanyMembershipPermissionWorkflow, CompanyMembershipPermissionWorkflow>();
+builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
+builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
+builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
+builder.Services.AddSingleton<IInventoryReportingStore, PostgreSqlInventoryReportingStore>();
+builder.Services.AddSingleton<IInventoryTransferStore, PostgreSqlInventoryTransferStore>();
+builder.Services.AddSingleton<IInventoryAdjustmentStore, PostgreSqlInventoryAdjustmentStore>();
+builder.Services.AddSingleton<IInventoryManufacturingStore, PostgreSqlInventoryManufacturingStore>();
+builder.Services.AddSingleton<InventoryFoundationWorkflow>();
+builder.Services.AddSingleton<InventoryReceiptWorkflow>();
+builder.Services.AddSingleton<InventoryIssueWorkflow>();
+builder.Services.AddSingleton<InventoryReportingWorkflow>();
+builder.Services.AddSingleton<InventoryTransferWorkflow>();
+builder.Services.AddSingleton<InventoryAdjustmentWorkflow>();
+builder.Services.AddSingleton<InventoryManufacturingWorkflow>();
 builder.Services.AddSingleton<ShellTaxCodeLookupService>();
+builder.Services.AddSingleton<ShellCompanyTaxSetupClient>();
+builder.Services.AddSingleton<ShellCompanyAccountCatalogClient>();
+builder.Services.AddSingleton<ShellInventoryFoundationClient>();
+builder.Services.AddSingleton<ShellInventoryReceiptClient>();
+builder.Services.AddSingleton<ShellInventoryIssueClient>();
+builder.Services.AddSingleton<ShellInventoryReportingClient>();
+builder.Services.AddSingleton<ShellInventoryTransferClient>();
+builder.Services.AddSingleton<ShellInventoryAdjustmentClient>();
+builder.Services.AddSingleton<ShellInventoryManufacturingClient>();
+builder.Services.AddSingleton<ShellCounterpartyOnboardingClient>();
+builder.Services.AddSingleton<ShellProductServiceCatalogClient>();
 builder.Services.AddSingleton<ICustomerCurrencyStore, PostgreSqlCustomerCurrencyStore>();
 builder.Services.AddSingleton<ICustomerCurrencyWorkflow, CustomerCurrencyWorkflow>();
 builder.Services.AddSingleton<IReceivePaymentDraftPreparationStore, PostgreSqlReceivePaymentDraftPreparationStore>();
@@ -211,20 +246,28 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapBusinessSessionApi();
+app.MapCompanyOnboardingApi();
 app.MapPlatformProfileApi();
 app.MapPlatformNotificationApi();
 
 if (!appHostOptions.DisableRazorComponents)
 {
+    var additionalAssemblies = new[]
+    {
+        typeof(ReceivePaymentPage).Assembly,
+        typeof(CreditApplicationPage).Assembly,
+        typeof(PayBillPage).Assembly,
+        typeof(VendorCreditApplicationPage).Assembly,
+        typeof(JournalEntryEditorPage).Assembly,
+        typeof(CompanyMembershipPermissionsPage).Assembly,
+        typeof(ReportTypeSelectorState).Assembly
+    }
+        .GroupBy(static assembly => assembly.FullName, StringComparer.Ordinal)
+        .Select(static group => group.First())
+        .ToArray();
+
     app.MapRazorComponents<App>()
-        .AddAdditionalAssemblies(
-            typeof(ReceivePaymentPage).Assembly,
-            typeof(CreditApplicationPage).Assembly,
-            typeof(PayBillPage).Assembly,
-            typeof(VendorCreditApplicationPage).Assembly,
-            typeof(JournalEntryEditorPage).Assembly,
-            typeof(CompanyMembershipPermissionsPage).Assembly,
-            typeof(ReportTypeSelectorState).Assembly)
+        .AddAdditionalAssemblies(additionalAssemblies)
         .AddInteractiveServerRenderMode();
 }
 

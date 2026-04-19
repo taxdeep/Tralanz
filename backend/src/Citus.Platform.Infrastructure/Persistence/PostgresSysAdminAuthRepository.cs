@@ -8,7 +8,8 @@ namespace Citus.Platform.Infrastructure.Persistence;
 
 public sealed class PostgresSysAdminAuthRepository(
     PlatformPostgresConnectionFactory connectionFactory,
-    SysAdminPasswordHasher passwordHasher) : ISysAdminAuthRepository
+    SysAdminPasswordHasher passwordHasher,
+    IPlatformRuntimeStateRepository runtimeStateRepository) : ISysAdminAuthRepository
 {
     private const int MinimumSecretLength = 12;
 
@@ -60,21 +61,41 @@ public sealed class PostgresSysAdminAuthRepository(
     public async Task<SysAdminSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
+        await runtimeStateRepository.EnsureSchemaAsync(cancellationToken);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "select count(*) from sysadmin_accounts;";
-        var scalar = await command.ExecuteScalarAsync(cancellationToken);
-        var accountCount = scalar switch
-        {
-            long value => (int)value,
-            int value => value,
-            _ => 0
-        };
+        command.CommandText =
+            """
+            select
+              (select count(*)::int from sysadmin_accounts) as account_count,
+              case
+                when to_regclass('public.companies') is null then 0
+                else (select count(*)::int from companies)
+              end as company_count,
+              case
+                when to_regclass('public.company_memberships') is null then 0
+                else (
+                  select count(*)::int
+                  from company_memberships
+                  where is_active = true
+                    and role = 'owner'
+                )
+              end as owner_membership_count;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+
+        var firstCompanySetupState = await runtimeStateRepository.GetFirstCompanySetupStateAsync(cancellationToken);
 
         return new SysAdminSetupStatus
         {
-            AccountCount = accountCount
+            AccountCount = reader.GetInt32(reader.GetOrdinal("account_count")),
+            CompanyCount = reader.GetInt32(reader.GetOrdinal("company_count")),
+            OwnerMembershipCount = reader.GetInt32(reader.GetOrdinal("owner_membership_count")),
+            FirstCompanySetupDeferred = firstCompanySetupState?.IsDeferred == true,
+            FirstCompanySetupDeferredAtUtc = firstCompanySetupState?.DeferredAtUtc
         };
     }
 

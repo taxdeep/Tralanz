@@ -25,6 +25,95 @@ public sealed class SysAdminAuthenticationClient(HttpClient httpClient, ILogger<
         }
     }
 
+    public async Task<SetupStatusResponse?> SetFirstCompanyDecisionAsync(
+        string sessionToken,
+        bool createCompanyNow,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionToken))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "auth/setup/company-decision");
+            request.Headers.Add(SysAdminAuthConstants.SessionHeaderName, sessionToken.Trim());
+            request.Content = JsonContent.Create(new FirstCompanyDecisionRequest
+            {
+                CreateCompanyNow = createCompanyNow
+            });
+
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "SysAdmin first-company decision returned non-success status code {StatusCode}.",
+                    response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<SetupStatusResponse>(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to persist SysAdmin first-company setup decision.");
+            return null;
+        }
+    }
+
+    public async Task<FirstCompanyProvisioningResponse> ProvisionFirstCompanyAsync(
+        string sessionToken,
+        FirstCompanyProvisioningRequest payload,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionToken))
+        {
+            return new FirstCompanyProvisioningResponse
+            {
+                Succeeded = false,
+                FailureMessage = "SysAdmin session token is required.",
+                FailureCode = "missing_session"
+            };
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "auth/setup/first-company");
+            request.Headers.Add(SysAdminAuthConstants.SessionHeaderName, sessionToken.Trim());
+            request.Content = JsonContent.Create(payload);
+
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<FirstCompanyProvisioningResponse>(cancellationToken) ??
+                       new FirstCompanyProvisioningResponse
+                       {
+                           Succeeded = false,
+                           FailureCode = "empty_response",
+                           FailureMessage = "First-company provisioning returned an empty response."
+                       };
+            }
+
+            return new FirstCompanyProvisioningResponse
+            {
+                Succeeded = false,
+                FailureCode = $"http_{(int)response.StatusCode}",
+                FailureMessage = await ReadMessageAsync(response, cancellationToken)
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to provision the first business company.");
+            return new FirstCompanyProvisioningResponse
+            {
+                Succeeded = false,
+                FailureCode = "request_failed",
+                FailureMessage = "Unable to provision the first business company."
+            };
+        }
+    }
+
     public async Task<SignInResponse?> SignInAsync(
         string email,
         string password,
@@ -232,6 +321,11 @@ public sealed class SysAdminAuthenticationClient(HttpClient httpClient, ILogger<
         public string NewPassword { get; set; } = string.Empty;
     }
 
+    private sealed class FirstCompanyDecisionRequest
+    {
+        public bool CreateCompanyNow { get; set; }
+    }
+
     public sealed class SignInResponse
     {
         public string SessionToken { get; set; } = string.Empty;
@@ -241,17 +335,115 @@ public sealed class SysAdminAuthenticationClient(HttpClient httpClient, ILogger<
 
     public sealed class SetupStatusResponse
     {
+        public string SetupStage { get; set; } = "uninitialized";
+
         public int AccountCount { get; set; }
+
+        public int CompanyCount { get; set; }
+
+        public int OwnerMembershipCount { get; set; }
 
         public bool HasAnyAccount { get; set; }
 
+        public bool HasAnyCompany { get; set; }
+
+        public bool HasAnyOwnerMembership { get; set; }
+
         public bool SetupRequired { get; set; }
+
+        public bool BusinessInitializationPending { get; set; }
+
+        public bool BusinessReady { get; set; }
+
+        public bool FirstCompanySetupRequired { get; set; }
+
+        public bool FirstCompanySetupDeferred { get; set; }
+
+        public DateTimeOffset? FirstCompanySetupDeferredAtUtc { get; set; }
 
         public bool BootstrapSeedingEnabled { get; set; }
 
         public bool BootstrapSeedingActive { get; set; }
 
         public string BootstrapEmailHint { get; set; } = string.Empty;
+    }
+
+    public sealed class FirstCompanyProvisioningRequest
+    {
+        public string OwnerDisplayName { get; set; } = string.Empty;
+
+        public string OwnerEmail { get; set; } = string.Empty;
+
+        public string OwnerPassword { get; set; } = string.Empty;
+
+        public string CompanyName { get; set; } = string.Empty;
+
+        public string EntityType { get; set; } = string.Empty;
+
+        public string Industry { get; set; } = string.Empty;
+
+        public DateTime? IncorporatedOn { get; set; }
+
+        public string FiscalYearEnd { get; set; } = string.Empty;
+
+        public string BusinessNumber { get; set; } = string.Empty;
+
+        public int AccountCodeLength { get; set; }
+
+        public string Phone { get; set; } = string.Empty;
+
+        public string CompanyEmail { get; set; } = string.Empty;
+
+        public string AddressLine { get; set; } = string.Empty;
+
+        public string City { get; set; } = string.Empty;
+
+        public string ProvinceState { get; set; } = string.Empty;
+
+        public string PostalCode { get; set; } = string.Empty;
+
+        public string Country { get; set; } = string.Empty;
+
+        public string TemplateKey { get; set; } = string.Empty;
+
+        public string BaseCurrencyCode { get; set; } = string.Empty;
+    }
+
+    public sealed class FirstCompanyProvisioningResponse
+    {
+        public bool Succeeded { get; set; }
+
+        public string FailureCode { get; set; } = string.Empty;
+
+        public string FailureMessage { get; set; } = string.Empty;
+
+        public Guid CompanyId { get; set; }
+
+        public string CompanyEntityNumber { get; set; } = string.Empty;
+
+        public string CompanyName { get; set; } = string.Empty;
+
+        public Guid OwnerUserId { get; set; }
+
+        public string OwnerEmail { get; set; } = string.Empty;
+
+        public Guid? CompanyBookId { get; set; }
+
+        public string CompanyBookCode { get; set; } = string.Empty;
+
+        public string TemplateKey { get; set; } = string.Empty;
+
+        public string TemplateVersion { get; set; } = string.Empty;
+
+        public string BaseCurrencyCode { get; set; } = string.Empty;
+
+        public int AccountCodeLength { get; set; }
+
+        public IReadOnlyList<string> StarterAccountCodes { get; set; } = Array.Empty<string>();
+
+        public IReadOnlyList<string> ReservedFamilies { get; set; } = Array.Empty<string>();
+
+        public DateTimeOffset ProvisionedAtUtc { get; set; }
     }
 
     public sealed record CommandOutcome(bool Succeeded, string Message);

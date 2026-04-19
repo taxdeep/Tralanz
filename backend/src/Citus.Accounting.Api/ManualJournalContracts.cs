@@ -276,9 +276,18 @@ public sealed record SaveBillDraftLineHttpRequest(
     decimal LineAmount,
     Guid? TaxCodeId,
     decimal TaxAmount,
-    bool IsTaxRecoverable);
+    bool IsTaxRecoverable,
+    Guid? ItemId,
+    Guid? WarehouseId,
+    string? UomCode,
+    decimal? Quantity,
+    decimal? UnitCost);
 
 public sealed record BillLookupQuery(Guid CompanyId);
+
+public sealed record SubmitBillDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
 
 public sealed record PostVendorCreditHttpRequest(
     Guid CompanyId,

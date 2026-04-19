@@ -1,7 +1,9 @@
 @page "/"
 @inject WebShellState ShellState
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject NavigationManager NavigationManager
 
 @code {
     private Citus.Ui.Shared.Business.BusinessSessionContextSummary? _apiSessionContext;
@@ -11,6 +13,21 @@
     protected override async Task OnInitializedAsync()
     {
         await ShellState.EnsureHydratedAsync();
+        var onboardingResult = await OnboardingClient.GetAsync();
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult))
+        {
+            return;
+        }
+
+        if (!onboardingResult.RequiresSignIn &&
+            !onboardingResult.IsNotFound &&
+            string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage) &&
+            onboardingResult.Value?.RequiresOnboarding == true)
+        {
+            NavigationManager.NavigateTo("/company/ready", replace: true);
+            return;
+        }
+
         var probe = await SessionClient.ProbeContextAsync();
         if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
         {
@@ -55,6 +72,12 @@
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
         <MudButton Variant="Variant.Filled" Color="Color.Secondary" Href="/company/book-governance">
             Open Multi-Book governance
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/bank-and-cash-setup">
+            Open Bank & Cash Setup
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/company/tax-setup">
+            Open Tax Setup
         </MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Href="/ar/receive-payment">
             Open Receive Payment

@@ -15,6 +15,37 @@
         Prepare governed AR receipt drafts from existing open receivables in the active company context.
     </p>
 
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            Company-ready hand-off opened the AR settlement workbench so you can continue from the first invoice stage into the first receipt stage once customers, bank accounts, and posted receivables exist.
+        </MudAlert>
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">First-company continuity</MudText>
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/documents/invoice/draft-editor?origin=company-ready">
+                    Start First Invoice
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="/company/customer-vendor-setup?origin=company-ready">
+                    Review Customer Truth
+                </MudButton>
+                @if (SelectedCustomerId.HasValue)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildCustomerBrowserHref()">
+                        Browse Selected Customer Documents
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/bank-and-cash-setup?origin=company-ready">
+                    Review Bank &amp; Cash Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/company/ready">
+                    Back to Company Ready
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
     <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
         Active company: @ShellSession.ActiveCompanyId
         <br />
@@ -26,6 +57,85 @@
         <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
             @ShellSession.WriteBlockMessage
         </MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Bank Readiness</MudText>
+            <MudText Typo="Typo.h6">@BankReadinessLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@BankReadinessSummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Customer Readiness</MudText>
+            <MudText Typo="Typo.h6">@CustomerReadinessLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@CustomerReadinessSummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Receivable Trail</MudText>
+            <MudText Typo="Typo.h6">@ReceivableTrailLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@ReceivableTrailSummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Settlement Availability</MudText>
+            <MudText Typo="Typo.h6">@SettlementAvailabilityLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@SettlementAvailabilitySummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Source Follow-up</MudText>
+            <MudText Typo="Typo.h6">@SourceFollowUpLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@SourceFollowUpSummary</MudText>
+        </MudPaper>
+    </div>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Recommended next operator steps</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem Text="1">
+                    <ChildContent><MudText Typo="Typo.body2">@GetFirstCompanyStepOne()</MudText></ChildContent>
+                </MudListItem>
+                <MudListItem Text="2">
+                    <ChildContent><MudText Typo="Typo.body2">@GetFirstCompanyStepTwo()</MudText></ChildContent>
+                </MudListItem>
+                <MudListItem Text="3">
+                    <ChildContent><MudText Typo="Typo.body2">@GetFirstCompanyStepThree()</MudText></ChildContent>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+        @if (ShouldShowSettlementGapPanel)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">First receipt gap</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3">@ReceiptGapSummary</MudText>
+                <MudList T="string" Dense="true" Class="mb-3">
+                    @foreach (var step in ReceiptGapChecklist)
+                    {
+                        <MudListItem>
+                            <ChildContent><MudText Typo="Typo.body2">@step</MudText></ChildContent>
+                        </MudListItem>
+                    }
+                </MudList>
+                <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                    @if (_customers.Count == 0)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/company/customer-vendor-setup?origin=company-ready">
+                            Create First Customer
+                        </MudButton>
+                    }
+                    else if (SelectedCustomerId.HasValue)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="@BuildCustomerInvoiceHref()">
+                            Open Matching Invoice Flow
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildCustomerBrowserHref()">
+                            Browse Matching Source Documents
+                        </MudButton>
+                    }
+                </div>
+            </MudPaper>
+        }
     }
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
@@ -207,6 +317,100 @@
     private ReceivePaymentDraftResult? _preparedDraft;
     private ArSettlementPostingResult? _postedResult;
     private IReadOnlyList<RowState> SelectedRows => _rows.Where(static row => row.AppliedAmountTx > 0m).ToArray();
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+    [SupplyParameterFromQuery(Name = "customerId")]
+    public Guid? CustomerId { get; set; }
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private Guid? SelectedCustomerId => Guid.TryParse(_selectedCustomerIdText, out var value) ? value : null;
+    private string BankReadinessLabel => _bankAccounts.Count > 0 ? $"{_bankAccounts.Count} active bank account(s)" : "Bank setup required";
+    private string BankReadinessSummary => _bankAccounts.Count > 0
+        ? "An active bank-detail account is available, so receipt settlement drafts can anchor against a real cash account."
+        : "No active bank-detail account is available yet. Complete Bank & Cash Setup before preparing the first receipt draft.";
+    private string CustomerReadinessLabel => _customers.Count > 0 ? $"{_customers.Count} customer option(s)" : "Customer setup pending";
+    private string CustomerReadinessSummary => _customers.Count > 0
+        ? CustomerId.HasValue && SelectedCustomerId == CustomerId
+            ? "The customer carried forward from the first-invoice flow is already selected. Load receivables to check whether the first posted document is ready to settle."
+            : "Customer lookups are available. Select one customer, then load receivables to see what can be settled."
+        : "No customers are available yet. Post the first invoice before expecting receivable settlement candidates here.";
+    private string ReceivableTrailLabel => _rows.Count switch
+    {
+        > 0 => $"{_rows.Count} open receivable candidate(s)",
+        _ when SelectedCustomerId is null => "Customer not selected",
+        _ => "No open receivables loaded"
+    };
+    private string ReceivableTrailSummary => _rows.Count switch
+    {
+        > 0 => "Open receivable candidates are loaded. Enter apply amounts, prepare the draft, and continue into posting.",
+        _ when SelectedCustomerId is null => "Select a customer first so the workbench can check for posted invoices or credit notes that still have open receivables.",
+        _ => "The selected customer currently has no open receivable candidates loaded. If the first invoice has not been posted yet, start there before returning here."
+    };
+    private string SettlementAvailabilityLabel => _rows.Count switch
+    {
+        > 0 => "Ready to settle",
+        _ when _bankAccounts.Count == 0 => "Bank anchor missing",
+        _ when _customers.Count == 0 => "Customer truth missing",
+        _ when SelectedCustomerId is null => "Counterparty not selected",
+        _ when CustomerId.HasValue && SelectedCustomerId == CustomerId => "Likely waiting for first post",
+        _ => "Needs source-document review"
+    };
+    private string SettlementAvailabilitySummary => _rows.Count switch
+    {
+        > 0 => "At least one receivable open item is available, so the first receipt chain can proceed legally.",
+        _ when _bankAccounts.Count == 0 => "Settlement cannot begin until one active bank-detail account exists to anchor the cash side of the receipt.",
+        _ when _customers.Count == 0 => "There is no company-scoped customer truth yet, so no receivable owner can appear in the settlement workbench.",
+        _ when SelectedCustomerId is null => "The workbench still needs one concrete customer selection before it can look for open receivables.",
+        _ when CustomerId.HasValue && SelectedCustomerId == CustomerId => "The selected customer came from the first-invoice flow. If no candidate appears, the most likely gap is that the invoice is not posted yet or already fully consumed.",
+        _ => "A customer is selected, but settlement still needs a posted invoice or credit note that currently carries an open receivable."
+    };
+    private string SourceFollowUpLabel => _rows.Count switch
+    {
+        > 0 => "Posted source confirmed",
+        _ when _customers.Count == 0 => "Create customer truth first",
+        _ when SelectedCustomerId is null => "Choose one receivable owner",
+        _ when CustomerId.HasValue && SelectedCustomerId == CustomerId => "Check first invoice status",
+        _ => "Review matching source history"
+    };
+    private string SourceFollowUpSummary => _rows.Count switch
+    {
+        > 0 => "Open-item truth already exists for the selected customer, so source posting is no longer the blocker.",
+        _ when _customers.Count == 0 => "Without a real customer record, the first invoice cannot produce a receivable owner that later appears in Receive Payment.",
+        _ when SelectedCustomerId is null => "Pick the customer tied to the posted invoice or credit note before diagnosing why no settlement candidate is visible.",
+        _ when CustomerId.HasValue && SelectedCustomerId == CustomerId => "Because this customer came from the first-invoice hand-off, the next check is whether the first invoice is still draft, has been reversed, or was already consumed by another receipt path.",
+        _ => "The next legal check is the matching source-document history for this customer: posted invoice, posted credit note, reversal trail, or prior receipt consumption."
+    };
+    private bool ShouldShowSettlementGapPanel => _customers.Count == 0 || SelectedCustomerId is null || (_rows.Count == 0 && SelectedCustomerId.HasValue);
+    private string ReceiptGapSummary => _customers.Count switch
+    {
+        0 => "No customer truth exists yet, so there is no legal receivable owner to carry into the first receipt flow.",
+        _ when SelectedCustomerId is null => "A customer list exists, but no specific customer is selected yet, so the workbench cannot look for matching receivable open items.",
+        _ when CustomerId.HasValue && SelectedCustomerId == CustomerId => "The selected customer came directly from the first-invoice flow, but no open receivables are visible yet. In practice that usually means the first invoice still needs posting, or that the receivable was already consumed by another receipt path.",
+        _ => "The selected customer is set, but no open receivables are visible yet. Usually that means the first invoice has not been posted for this same customer, or the receivable has already been consumed."
+    };
+    private IReadOnlyList<string> ReceiptGapChecklist => _customers.Count switch
+    {
+        0 =>
+        [
+            "Create one real customer record first so the first invoice can bind to company-scoped counterparty truth.",
+            "Return to the invoice workbench after customer setup, then post the first invoice before opening Receive Payment again."
+        ],
+        _ when SelectedCustomerId is null =>
+        [
+            "Select the customer that owns the first posted invoice or credit note.",
+            "Then load open receivables to confirm whether that counterparty now has a settlement candidate."
+        ],
+        _ when CustomerId.HasValue && SelectedCustomerId == CustomerId =>
+        [
+            "Open the matching invoice flow and confirm the first invoice is already posted rather than just saved as draft.",
+            "If it is posted, browse matching source documents to check whether another receipt already consumed the open receivable."
+        ],
+        _ =>
+        [
+            "Browse matching source documents for this customer and confirm at least one invoice or credit note is posted.",
+            "If posted source exists, check whether the resulting open receivable has already been settled or reversed elsewhere."
+        ]
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -220,6 +424,12 @@
         {
             _customers = (await LookupService.ListCustomersAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
             _bankAccounts = (await LookupService.ListBankAccountsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
+
+            if (CustomerId.HasValue &&
+                _customers.Any(item => item.Id == CustomerId.Value))
+            {
+                _selectedCustomerIdText = CustomerId.Value.ToString();
+            }
 
             if (_customers.Count == 1)
             {
@@ -365,6 +575,35 @@
         _errorText = ShellSession.WriteBlockMessage;
         return true;
     }
+
+    private string GetFirstCompanyStepOne() =>
+        _bankAccounts.Count == 0
+            ? "Provision at least one active bank-detail account first so the receipt draft has a valid settlement anchor."
+            : "Keep the active starter bank selected unless you intentionally want to settle receipts into another cash account.";
+
+    private string GetFirstCompanyStepTwo() =>
+        _customers.Count == 0
+            ? "Create and post the first invoice before expecting any receivable settlement candidates here."
+            : CustomerId.HasValue && SelectedCustomerId == CustomerId
+                ? "The customer from the first posted invoice is already selected. Load receivables now to confirm the new open item is available for settlement."
+                : SelectedCustomerId is null
+                ? "Pick the customer that owns the first posted invoice or credit note, then load open receivables."
+                : "Load open receivables for the selected customer to confirm there is a posted source document waiting to be settled.";
+
+    private string GetFirstCompanyStepThree() =>
+        _rows.Count > 0
+            ? "Once the right receivables appear, enter applied amounts and continue through draft preparation and posting."
+            : "If no receivables appear after loading, go back to the invoice workbench, post the first invoice, then return here.";
+
+    private string BuildCustomerInvoiceHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/documents/invoice/draft-editor?origin=company-ready&customerId={SelectedCustomerId.Value:D}"
+            : "/documents/invoice/draft-editor?origin=company-ready";
+
+    private string BuildCustomerBrowserHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/documents/source-browser?origin=company-ready&sourceType=invoice&counterpartyRole=customer&counterpartyId={SelectedCustomerId.Value:D}"
+            : "/documents/source-browser?origin=company-ready&sourceType=invoice&counterpartyRole=customer";
 
     private sealed class RowState
     {

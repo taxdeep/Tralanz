@@ -1,0 +1,406 @@
+@page "/company/ready"
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Company Ready</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Business onboarding</MudText>
+            <MudText Typo="Typo.h4">Company-ready hand-off</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                This is the first business-side checkpoint after SysAdmin provisions the first company. Review the initialized accounting truth, then continue into the normal workspace.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+
+    @if (_summary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" lg="7">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Provisioned company truth</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.caption" Class="text-secondary">Business owner</MudText>
+                            <MudText Typo="Typo.body1">@_summary.OwnerDisplayName</MudText>
+                            <MudText Typo="Typo.body2" Class="text-secondary">@_summary.OwnerEmail</MudText>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.caption" Class="text-secondary">Company</MudText>
+                            <MudText Typo="Typo.body1">@_summary.CompanyName</MudText>
+                            <MudText Typo="Typo.body2" Class="text-secondary">@_summary.CompanyCode</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@_summary.EntityType / @_summary.Industry</MudText>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.caption" Class="text-secondary">Template</MudText>
+                            <MudText Typo="Typo.body1">@_summary.TemplateKey (@_summary.TemplateVersion)</MudText>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.caption" Class="text-secondary">Base currency / code length</MudText>
+                            <MudText Typo="Typo.body1">@_summary.BaseCurrencyCode / @_summary.AccountCodeLength</MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.caption" Class="text-secondary">First-time setup completed</MudText>
+                            <MudText Typo="Typo.body1">@(_summary.FirstTimeSetupCompletedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "Unknown")</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="5">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Next operator steps</MudText>
+                    <MudList T="string" Dense="true">
+                        <MudListItem Text="1">
+                            <ChildContent><MudText Typo="Typo.body2">Review the starter chart and reserved multi-currency families below.</MudText></ChildContent>
+                        </MudListItem>
+                        <MudListItem Text="2">
+                            <ChildContent><MudText Typo="Typo.body2">Choose the first workspace intentionally instead of dropping into the generic shell home.</MudText></ChildContent>
+                        </MudListItem>
+                        <MudListItem Text="3">
+                            <ChildContent><MudText Typo="Typo.body2">Use governance first if you want to confirm books and policies; use source-document editors first if you want to start operating immediately.</MudText></ChildContent>
+                        </MudListItem>
+                    </MudList>
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Recommended first workspaces</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Disabled="_isAcknowledging"
+                                   OnClick="OpenBookGovernanceAsync">
+                            @(_isAcknowledging ? "Continuing..." : "Start with Book Governance")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Success"
+                                   Disabled="_isAcknowledging"
+                                   OnClick="OpenFirstInvoiceAsync">
+                            Start with First Invoice
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Info"
+                                   Disabled="_isAcknowledging"
+                                   OnClick="OpenFirstBillAsync">
+                            Start with First Bill
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Tertiary"
+                                   Disabled="@(_isAcknowledging || !_summary.HasStarterBankAccount)"
+                                   OnClick="OpenFirstReceivePaymentAsync">
+                            Continue to First Receipt
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Warning"
+                                   Disabled="@(_isAcknowledging || !_summary.HasStarterBankAccount)"
+                                   OnClick="OpenFirstPayBillAsync">
+                            Continue to First Vendor Payment
+                        </MudButton>
+                    </MudStack>
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Optional review surfaces</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/company/book-governance">
+                            Review Book Governance Without Acknowledging
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/bank-and-cash-setup">
+                            Review Bank & Cash Setup
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/company/tax-setup">
+                            Review Tax Setup
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="/company/customer-vendor-setup?origin=company-ready">
+                            Review Customer & Vendor Setup
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" Href="/company/product-service-setup?origin=company-ready">
+                            Review Product & Service Setup
+                        </MudButton>
+                        @if (_summary.SupportsInventoryFoundation)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/inventory-foundation?origin=company-ready">
+                                Review Inventory Foundation
+                            </MudButton>
+                        }
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/open-item-adjustment-account-mappings">
+                            Review Adjustment Mappings
+                        </MudButton>
+                    </MudStack>
+                    @if (!_summary.SupportsInventoryFoundation)
+                    {
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Text" Dense="true" Class="mt-3">
+                            Inventory Foundation stays closed by default for this company type. Keep using Product &amp; Service Setup as the lighter catalog surface unless company governance later promotes this company into inventory-managed trading flow.
+                        </MudAlert>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid>
+            <MudItem xs="12">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Business-ready checklist</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;border:1px solid var(--mud-palette-lines-default);">
+                                <MudStack Spacing="1">
+                                    <MudChip T="string"
+                                             Color="@(_summary.HasStarterChart ? Color.Success : Color.Warning)"
+                                             Variant="Variant.Filled"
+                                             Size="Size.Small">
+                                        @(_summary.HasStarterChart ? "Ready" : "Needs review")
+                                    </MudChip>
+                                    <MudText Typo="Typo.subtitle1">Starter chart</MudText>
+                                    <MudText Typo="Typo.body2" Class="text-secondary">
+                                        @_summary.StarterAccountCount active starter accounts, primary book
+                                        @(_summary.HasPrimaryBook ? "provisioned" : "missing"), and base AR/AP controls
+                                        @(_summary.HasReceivableControlAccount && _summary.HasPayableControlAccount ? "in place" : "still incomplete").
+                                    </MudText>
+                                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/company/book-governance?origin=company-ready">
+                                        Review Book Governance
+                                    </MudButton>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;border:1px solid var(--mud-palette-lines-default);">
+                                <MudStack Spacing="1">
+                                    <MudChip T="string"
+                                             Color="@(_summary.HasStarterBankAccount ? Color.Success : Color.Warning)"
+                                             Variant="Variant.Filled"
+                                             Size="Size.Small">
+                                        @(_summary.HasStarterBankAccount ? "Provisioned" : "Missing")
+                                    </MudChip>
+                                    <MudText Typo="Typo.subtitle1">First bank / cash anchor</MudText>
+                                    <MudText Typo="Typo.body2" Class="text-secondary">
+                                        @if (_summary.HasStarterBankAccount)
+                                        {
+                                            <span>Starter bank account code <strong>@_summary.StarterBankAccountCode</strong> is already provisioned and can anchor the first AR/AP settlement flows.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>No active bank-detail starter account was detected yet, so receive-payment and pay-bill continuity should stay paused until Bank &amp; Cash Setup provisions one.</span>
+                                        }
+                                    </MudText>
+                                    <MudButton Variant="Variant.Text" Color="Color.Secondary" Href="/company/bank-and-cash-setup?origin=company-ready">
+                                        Open Bank & Cash Setup
+                                    </MudButton>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;border:1px solid var(--mud-palette-lines-default);">
+                                <MudStack Spacing="1">
+                                    <MudChip T="string"
+                                             Color="@(_summary.HasActiveTaxCodes ? Color.Success : Color.Warning)"
+                                             Variant="Variant.Filled"
+                                             Size="Size.Small">
+                                        @(_summary.HasActiveTaxCodes ? $"{_summary.ActiveTaxCodeCount} active" : "Pending")
+                                    </MudChip>
+                                    <MudText Typo="Typo.subtitle1">Tax operating setup</MudText>
+                                    <MudText Typo="Typo.body2" Class="text-secondary">
+                                        @if (_summary.HasActiveTaxCodes)
+                                        {
+                                            <span>@_summary.ActiveTaxCodeCount active tax codes are available for first invoice and bill drafts.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>No active tax codes are provisioned yet. The first invoice and bill drafts can still start tax-free, but taxable operations should wait until tax setup is configured and activated.</span>
+                                        }
+                                    </MudText>
+                                    <MudButton Variant="Variant.Text" Color="Color.Warning" Href="/company/tax-setup?origin=company-ready">
+                                        Open Tax Setup
+                                    </MudButton>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;border:1px solid var(--mud-palette-lines-default);">
+                                <MudStack Spacing="1">
+                                    <MudChip T="string"
+                                             Color="@(_summary.SupportsInventoryFoundation ? Color.Info : Color.Default)"
+                                             Variant="Variant.Filled"
+                                             Size="Size.Small">
+                                        @(_summary.SupportsInventoryFoundation ? "Trading flow" : "Default closed")
+                                    </MudChip>
+                                    <MudText Typo="Typo.subtitle1">Inventory foundation</MudText>
+                                    <MudText Typo="Typo.body2" Class="text-secondary">
+                                        @if (_summary.SupportsInventoryFoundation)
+                                        {
+                                            <span>This company type is expected to grow into warehouse, stock, and costing governance. Review Inventory Foundation before AP, Sales Out, and Inventory begin sharing movement truth.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>This company type stays on the lighter service-led path by default. Product &amp; Service Setup remains available, but inventory-facing governance stays closed until company governance deliberately opens it later.</span>
+                                        }
+                                    </MudText>
+                                    @if (_summary.SupportsInventoryFoundation)
+                                    {
+                                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/company/inventory-foundation?origin=company-ready">
+                                            Open Inventory Foundation
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="6">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Starter account codes</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                        @foreach (var accountCode in _summary.StarterAccountCodes)
+                        {
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@accountCode</MudChip>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="6">
+                <MudPaper Elevation="0" Class="pa-5">
+                    <MudText Typo="Typo.h6" Class="mb-3">Reserved multi-currency families</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                        @foreach (var family in _summary.ReservedFamilies)
+                        {
+                            <MudChip T="string" Variant="Variant.Outlined">@family</MudChip>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+</div>
+
+@code
+{
+    private Web.Shell.Services.WebShellCompanyOnboardingSummary? _summary;
+    private string _error = string.Empty;
+    private bool _isAcknowledging;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = string.Empty;
+        var result = await OnboardingClient.GetAsync();
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (result.RequiresSignIn)
+        {
+            _error = Web.Shell.Services.WebShellBusinessSessionClient.AuthenticationRequiredError;
+            return;
+        }
+
+        if (result.IsNotFound || result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            _error = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Company onboarding summary is unavailable."
+                : result.ErrorMessage;
+            return;
+        }
+
+        _summary = result.Value;
+        if (_summary is not null && !_summary.RequiresOnboarding)
+        {
+            NavigationManager.NavigateTo("/", replace: true);
+        }
+    }
+
+    private Task OpenBookGovernanceAsync()
+        => AcknowledgeAndNavigateAsync(
+            "/company/book-governance?origin=company-ready",
+            "Company-ready onboarding acknowledged. Opening Book Governance.");
+
+    private Task OpenFirstInvoiceAsync()
+        => AcknowledgeAndNavigateAsync(
+            "/documents/invoice/draft-editor?origin=company-ready",
+            "Company-ready onboarding acknowledged. Opening Invoice Draft.");
+
+    private Task OpenFirstBillAsync()
+        => AcknowledgeAndNavigateAsync(
+            "/documents/bill/draft-editor?origin=company-ready",
+            "Company-ready onboarding acknowledged. Opening Bill Draft.");
+
+    private Task OpenFirstReceivePaymentAsync()
+        => AcknowledgeAndNavigateAsync(
+            "/ar/receive-payment?origin=company-ready",
+            "Company-ready onboarding acknowledged. Opening Receive Payment.");
+
+    private Task OpenFirstPayBillAsync()
+        => AcknowledgeAndNavigateAsync(
+            "/ap/pay-bill?origin=company-ready",
+            "Company-ready onboarding acknowledged. Opening Pay Bill.");
+
+    private async Task AcknowledgeAndNavigateAsync(string destination, string successMessage)
+    {
+        _isAcknowledging = true;
+        _error = string.Empty;
+
+        try
+        {
+            var result = await OnboardingClient.AcknowledgeAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.RequiresSignIn)
+            {
+                _error = Web.Shell.Services.WebShellBusinessSessionClient.AuthenticationRequiredError;
+                return;
+            }
+
+            if (result.IsNotFound || result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _error = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? "Unable to acknowledge the company-ready onboarding state."
+                    : result.ErrorMessage;
+                return;
+            }
+
+            _summary = result.Value;
+            Snackbar.Add(successMessage, Severity.Success);
+            NavigationManager.NavigateTo(destination, replace: true);
+        }
+        finally
+        {
+            _isAcknowledging = false;
+        }
+    }
+}

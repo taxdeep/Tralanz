@@ -10,6 +10,8 @@ public sealed class AppHostOptions
 
     public string AccountingApiBaseUrl { get; set; } = "http://127.0.0.1:5088/";
 
+    public string BusinessAppBaseUrl { get; set; } = "http://127.0.0.1:8080/";
+
     public static bool HasPathBase(string? pathBase) =>
         !string.IsNullOrWhiteSpace(pathBase) && pathBase != "/";
 

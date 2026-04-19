@@ -1,0 +1,378 @@
+@page "/company/bank-and-cash-setup"
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellCompanyAccountCatalogClient AccountCatalog
+@inject ISnackbar Snackbar
+
+<PageTitle>Bank And Cash Setup</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Company Setup</MudText>
+            <MudText Typo="Typo.h4">Bank And Cash Readiness</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Govern the active bank-detail accounts that anchor receive-payment and pay-bill execution, while preserving the reserved 1000-1099 cash and bank family.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you here to confirm the first bank/cash anchor before wider receive-payment and pay-bill activity.
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_summary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="3">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active bank accounts</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActiveBankAccounts.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @if (_summary.ActiveBankAccounts.Count == 0)
+                        {
+                            <span>No active bank-detail accounts exist yet.</span>
+                        }
+                        else if (_summary.ActiveBankAccounts.Count == 1)
+                        {
+                            <span>The starter company currently has a single active bank anchor.</span>
+                        }
+                        else
+                        {
+                            <span>The company already has multiple active bank-detail accounts.</span>
+                        }
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Base currency / code length</MudText>
+                    <MudText Typo="Typo.h6">@_summary.BaseCurrencyCode / @_summary.AccountCodeLength</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        New bank accounts receive the next available code in the reserved 1000-1099 family, then format to this company length.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">A/R Control</MudText>
+                    <MudText Typo="Typo.h6">@(_summary.ReceivableControlAccount?.Code ?? "Missing")</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @(_summary.ReceivableControlAccount?.DisplayLabel ?? "Base accounts receivable control is not available yet.")
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">A/P Control</MudText>
+                    <MudText Typo="Typo.h6">@(_summary.PayableControlAccount?.Code ?? "Missing")</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @(_summary.PayableControlAccount?.DisplayLabel ?? "Base accounts payable control is not available yet.")
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            This minimal governance flow only adds or reactivates bank-detail accounts inside the reserved cash-and-bank family. It does not yet manage full cashbook metadata or settlement defaults.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Add bank-detail account</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string"
+                                      Label="Bank account name"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_newBankName" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string"
+                                   Label="Currency"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_newBankCurrencyCode">
+                            @foreach (var currency in _summary.EnabledCurrencies)
+                            {
+                                <MudSelectItem T="string" Value="@currency.Code">
+                                    @currency.DisplayLabel
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    The backend will allocate the next available code from the reserved 1000-1099 bank family using the company account-code-length policy.
+                </MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="AddBankAccountAsync">
+                        @(_isSaving ? "Saving..." : "Add Bank Account")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Active bank-detail accounts</MudText>
+            @if (_summary.ActiveBankAccounts.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                    The current company has no active bank-detail accounts. Receive Payment and Pay Bill should stay paused until at least one bank anchor is active.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_summary.ActiveBankAccounts" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Currency</MudTh>
+                        <MudTh>Primary</MudTh>
+                        <MudTh>Manual Posting</MudTh>
+                        <MudTh>Action</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Code</MudTd>
+                        <MudTd>@context.Name</MudTd>
+                        <MudTd>@(string.IsNullOrWhiteSpace(context.CurrencyCode) ? "Base" : context.CurrencyCode)</MudTd>
+                        <MudTd>@(context.IsSystemDefault ? "Yes" : "No")</MudTd>
+                        <MudTd>@(context.AllowManualPosting ? "Allowed" : "System-only")</MudTd>
+                        <MudTd>
+                            @if (context.IsSystemDefault)
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">Protected primary</MudText>
+                            }
+                            else
+                            {
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@(_isSaving || WritesBlocked)"
+                                           OnClick="@(() => SetBankAccountActiveAsync(context, false))">
+                                    Deactivate
+                                </MudButton>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Inactive history</MudText>
+            @if (_summary.InactiveBankAccounts.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No inactive bank-detail accounts.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_summary.InactiveBankAccounts" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Currency</MudTh>
+                        <MudTh>Action</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Code</MudTd>
+                        <MudTd>@context.Name</MudTd>
+                        <MudTd>@(string.IsNullOrWhiteSpace(context.CurrencyCode) ? "Base" : context.CurrencyCode)</MudTd>
+                        <MudTd>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Success"
+                                       Size="Size.Small"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       OnClick="@(() => SetBankAccountActiveAsync(context, true))">
+                                Reactivate
+                            </MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/ar/receive-payment">
+                    Open Receive Payment
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/ap/pay-bill">
+                    Open Pay Bill
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/book-governance">
+                    Review Book Governance
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
+    private ShellCompanyAccountCatalogSummary? _summary;
+    private string? _error;
+    private bool _isSaving;
+    private string _newBankName = string.Empty;
+    private string _newBankCurrencyCode = string.Empty;
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _summary = await AccountCatalog.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            _newBankCurrencyCode = string.IsNullOrWhiteSpace(_newBankCurrencyCode)
+                ? _summary.EnabledCurrencies.FirstOrDefault(item => string.Equals(item.Code, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))?.Code
+                    ?? _summary.EnabledCurrencies.FirstOrDefault()?.Code
+                    ?? string.Empty
+                : _newBankCurrencyCode;
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AddBankAccountAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            await AccountCatalog.AddBankAccountAsync(
+                ShellState.ActiveCompany.Id,
+                new ShellCompanyBankAccountCreateRequest
+                {
+                    Name = _newBankName,
+                    CurrencyCode = _newBankCurrencyCode
+                });
+
+            _newBankName = string.Empty;
+            await LoadAsync();
+            Snackbar.Add("Bank account added.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SetBankAccountActiveAsync(ShellCompanyBankAccountSummary bankAccount, bool isActive)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            await AccountCatalog.SetBankAccountActiveAsync(ShellState.ActiveCompany.Id, bankAccount.Id, isActive);
+            await LoadAsync();
+            Snackbar.Add(isActive ? "Bank account reactivated." : "Bank account deactivated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+}

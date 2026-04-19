@@ -432,6 +432,47 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
     }
 
+    public async Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var (entityNumber, displayNumber) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        await using var submitCommand = connection.CreateCommand();
+        submitCommand.Transaction = transaction;
+        submitCommand.CommandText =
+            """
+            update invoices
+            set status = 'submitted',
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status = 'draft';
+            """;
+        submitCommand.Parameters.AddWithValue("document_id", documentId);
+        submitCommand.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var affectedRows = await submitCommand.ExecuteNonQueryAsync(cancellationToken);
+        if (affectedRows != 1)
+        {
+            throw new InvalidOperationException("Only draft invoices can be submitted.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "submitted");
+    }
+
     private static void ValidateDraft(InvoiceDraftSaveModel draft)
     {
         if (draft.CustomerId == Guid.Empty)

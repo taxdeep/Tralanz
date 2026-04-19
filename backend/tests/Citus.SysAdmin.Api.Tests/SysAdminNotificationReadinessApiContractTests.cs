@@ -18,6 +18,160 @@ namespace Citus.SysAdmin.Api.Tests;
 public sealed class SysAdminNotificationReadinessApiContractTests
 {
     [Fact]
+    public async Task SetFirstCompanyDecision_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/auth/setup/company-decision",
+            new
+            {
+                createCompanyNow = false
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(factory.RuntimeStateRepository.FirstCompanySetupState);
+    }
+
+    [Fact]
+    public async Task SetFirstCompanyDecision_PersistsDeferredState_WhenAuthenticated()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        factory.AuthRepository.OnGetSetupStatus = cancellationToken =>
+            Task.FromResult(
+                new SysAdminSetupStatus
+                {
+                    AccountCount = 1,
+                    FirstCompanySetupDeferred = factory.RuntimeStateRepository.FirstCompanySetupState?.IsDeferred == true,
+                    FirstCompanySetupDeferredAtUtc = factory.RuntimeStateRepository.FirstCompanySetupState?.DeferredAtUtc
+                });
+
+        var response = await client.PostAsJsonAsync(
+            "/auth/setup/company-decision",
+            new
+            {
+                createCompanyNow = false
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<Citus.SysAdmin.Api.Auth.SysAdminSetupStatusResponse>();
+
+        Assert.NotNull(payload);
+        Assert.True(payload!.FirstCompanySetupDeferred);
+        Assert.Equal("platform_ready_deferred", payload.SetupStage);
+        Assert.NotNull(factory.RuntimeStateRepository.FirstCompanySetupState);
+        Assert.True(factory.RuntimeStateRepository.FirstCompanySetupState!.IsDeferred);
+        Assert.Equal(FakeSysAdminAuthRepository.ValidSessionToken, factory.AuthRepository.LastSessionToken);
+    }
+
+    [Fact]
+    public async Task ProvisionFirstCompany_ReturnsUnauthorized_WhenSessionHeaderMissing()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/auth/setup/first-company",
+            new
+            {
+                ownerDisplayName = "Business Owner",
+                ownerEmail = "owner@example.com",
+                ownerPassword = "OwnerPass123!",
+                companyName = "Northwind Studio Ltd.",
+                entityType = "corporation",
+                industry = "general_services",
+                incorporatedOn = new DateTime(2026, 4, 16),
+                fiscalYearEnd = "12-31",
+                businessNumber = "BN-001",
+                accountCodeLength = 4,
+                phone = "604-555-0100",
+                companyEmail = "hello@northwind.example",
+                addressLine = "101 Harbor Street",
+                city = "Vancouver",
+                provinceState = "BC",
+                postalCode = "V6B1A1",
+                country = "Canada",
+                templateKey = "ca_general_small_business",
+                baseCurrencyCode = "CAD"
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(factory.FirstCompanyProvisioningRepository.LastCommand);
+    }
+
+    [Fact]
+    public async Task ProvisionFirstCompany_ReturnsProvisioningPayload_WhenAuthenticated()
+    {
+        using var factory = new SysAdminNotificationApiApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, FakeSysAdminAuthRepository.ValidSessionToken);
+
+        factory.FirstCompanyProvisioningRepository.OnProvision = static (command, _) =>
+            Task.FromResult(
+                new PlatformFirstCompanyProvisioningResult
+                {
+                    Succeeded = true,
+                    CompanyId = Guid.Parse("f5105d94-cfa6-48e2-bdff-4b4e82dd4d62"),
+                    CompanyEntityNumber = "EN202600000001",
+                    CompanyName = command.CompanyName,
+                    OwnerUserId = Guid.Parse("8e576bcb-cd88-4120-a91d-6cf512880343"),
+                    OwnerEmail = command.OwnerEmail,
+                    CompanyBookId = Guid.Parse("5c245d6a-a4da-4d75-a8f1-204f7d8f648f"),
+                    CompanyBookCode = "PRIMARY",
+                    TemplateKey = command.TemplateKey,
+                    TemplateVersion = "2026.04",
+                    BaseCurrencyCode = command.BaseCurrencyCode,
+                    AccountCodeLength = command.AccountCodeLength,
+                    StarterAccountCodes = ["1000", "1200", "3000"],
+                    ReservedFamilies = ["1000-1099", "1210-1249"],
+                    ProvisionedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 0, 0, TimeSpan.Zero)
+                });
+
+        var response = await client.PostAsJsonAsync(
+            "/auth/setup/first-company",
+            new
+            {
+                ownerDisplayName = "Business Owner",
+                ownerEmail = "owner@example.com",
+                ownerPassword = "OwnerPass123!",
+                companyName = "Northwind Studio Ltd.",
+                entityType = "corporation",
+                industry = "general_services",
+                incorporatedOn = new DateTime(2026, 4, 16),
+                fiscalYearEnd = "12-31",
+                businessNumber = "BN-001",
+                accountCodeLength = 4,
+                phone = "604-555-0100",
+                companyEmail = "hello@northwind.example",
+                addressLine = "101 Harbor Street",
+                city = "Vancouver",
+                provinceState = "BC",
+                postalCode = "V6B1A1",
+                country = "Canada",
+                templateKey = "ca_general_small_business",
+                baseCurrencyCode = "CAD"
+            });
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<PlatformFirstCompanyProvisioningResult>();
+
+        Assert.NotNull(payload);
+        Assert.True(payload!.Succeeded);
+        Assert.Equal("Northwind Studio Ltd.", payload.CompanyName);
+        Assert.Equal("EN202600000001", payload.CompanyEntityNumber);
+        Assert.NotNull(factory.FirstCompanyProvisioningRepository.LastCommand);
+        Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.FirstCompanyProvisioningRepository.LastCommand!.SysAdminAccountId);
+        Assert.Equal("owner@example.com", factory.FirstCompanyProvisioningRepository.LastCommand.OwnerEmail);
+        Assert.Equal("ca_general_small_business", factory.FirstCompanyProvisioningRepository.LastCommand.TemplateKey);
+    }
+
+    [Fact]
     public async Task GetNotificationReadiness_ReturnsUnauthorized_WhenSessionHeaderMissing()
     {
         using var factory = new SysAdminNotificationApiApplicationFactory();
@@ -1196,6 +1350,8 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public FakeSysAdminAuthRepository AuthRepository { get; } = new();
 
+        public FakePlatformFirstCompanyProvisioningRepository FirstCompanyProvisioningRepository { get; } = new();
+
         public FakePlatformNotificationReadinessWorkflow NotificationWorkflow { get; } = new();
 
         public FakePlatformGovernanceRepository GovernanceRepository { get; } = new();
@@ -1221,6 +1377,8 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                     services.AddSingleton<IPlatformRuntimeStateRepository>(RuntimeStateRepository);
                     services.RemoveAll<ISysAdminAuthRepository>();
                     services.AddSingleton<ISysAdminAuthRepository>(AuthRepository);
+                    services.RemoveAll<IPlatformFirstCompanyProvisioningRepository>();
+                    services.AddSingleton<IPlatformFirstCompanyProvisioningRepository>(FirstCompanyProvisioningRepository);
                     services.RemoveAll<IPlatformGovernanceRepository>();
                     services.AddSingleton<IPlatformGovernanceRepository>(GovernanceRepository);
                     services.RemoveAll<ICompanyMembershipGovernanceWorkflow>();
@@ -1231,11 +1389,31 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
     }
 
+    private sealed class FakePlatformFirstCompanyProvisioningRepository : IPlatformFirstCompanyProvisioningRepository
+    {
+        public Func<PlatformFirstCompanyProvisioningCommand, CancellationToken, Task<PlatformFirstCompanyProvisioningResult>> OnProvision { get; set; } =
+            static (_, _) => Task.FromResult(new PlatformFirstCompanyProvisioningResult { Succeeded = false, FailureCode = "not_configured", FailureMessage = "Provisioning behavior was not configured for this test." });
+
+        public PlatformFirstCompanyProvisioningCommand? LastCommand { get; private set; }
+
+        public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<PlatformFirstCompanyProvisioningResult> ProvisionAsync(
+            PlatformFirstCompanyProvisioningCommand command,
+            CancellationToken cancellationToken)
+        {
+            LastCommand = command;
+            return OnProvision(command, cancellationToken);
+        }
+    }
+
     private sealed class FakePlatformRuntimeStateRepository : IPlatformRuntimeStateRepository
     {
         public PlatformMaintenanceState? MaintenanceState { get; set; }
 
         public PlatformNotificationReadinessState? NotificationReadinessState { get; set; }
+
+        public PlatformFirstCompanySetupState? FirstCompanySetupState { get; set; }
 
         public PlatformNotificationReadinessState? LastUpsertedNotificationReadinessState { get; private set; }
 
@@ -1263,6 +1441,17 @@ public sealed class SysAdminNotificationReadinessApiContractTests
             LastUpsertedNotificationReadinessState = state;
             return Task.FromResult(state);
         }
+
+        public Task<PlatformFirstCompanySetupState?> GetFirstCompanySetupStateAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(FirstCompanySetupState);
+
+        public Task<PlatformFirstCompanySetupState> UpsertFirstCompanySetupStateAsync(
+            PlatformFirstCompanySetupState state,
+            CancellationToken cancellationToken)
+        {
+            FirstCompanySetupState = state;
+            return Task.FromResult(state);
+        }
     }
 
     private sealed class FakeSysAdminAuthRepository : ISysAdminAuthRepository
@@ -1275,13 +1464,19 @@ public sealed class SysAdminNotificationReadinessApiContractTests
 
         public string LastSessionToken { get; private set; } = string.Empty;
 
+        public SysAdminSetupStatus SetupStatus { get; set; } = new()
+        {
+            AccountCount = 1,
+            CompanyCount = 1,
+            OwnerMembershipCount = 1
+        };
+
+        public Func<CancellationToken, Task<SysAdminSetupStatus>>? OnGetSetupStatus { get; set; }
+
         public Task EnsureSchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<SysAdminSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new SysAdminSetupStatus
-            {
-                AccountCount = 1
-            });
+            OnGetSetupStatus?.Invoke(cancellationToken) ?? Task.FromResult(SetupStatus);
 
         public Task EnsureBootstrapAccountAsync(
             string email,

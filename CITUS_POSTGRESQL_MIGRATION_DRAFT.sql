@@ -121,12 +121,27 @@ CREATE TABLE companies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   entity_number text NOT NULL UNIQUE,
   legal_name text NOT NULL,
+  entity_type text NOT NULL DEFAULT 'corporation',
+  industry text NOT NULL DEFAULT 'general_services',
+  incorporated_on date,
+  fiscal_year_end_month smallint NOT NULL DEFAULT 12,
+  fiscal_year_end_day smallint NOT NULL DEFAULT 31,
+  business_number text,
+  phone text,
+  email text,
+  address_line text,
+  city text,
+  province_state text,
+  postal_code text,
+  country text NOT NULL DEFAULT 'Canada',
+  account_code_length smallint NOT NULL DEFAULT 4,
   base_currency_code char(3) NOT NULL,
   multi_currency_enabled boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT companies_account_code_length_chk CHECK (account_code_length BETWEEN 4 AND 6),
   CONSTRAINT companies_status_chk CHECK (status IN ('active', 'inactive', 'suspended', 'archived'))
 );
 
@@ -340,6 +355,29 @@ CREATE TABLE company_book_remeasurement_policies (
   CONSTRAINT company_book_remeasurement_policies_rounding_chk CHECK (
     fx_rounding_policy IN ('currency_precision')
   )
+);
+
+CREATE TABLE company_chart_template_bindings (
+  company_id uuid PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  template_key text NOT NULL,
+  template_version text NOT NULL,
+  account_code_length smallint NOT NULL,
+  base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  country text NOT NULL,
+  entity_type text NOT NULL,
+  industry text NOT NULL,
+  reserved_ranges jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mandatory_system_roles jsonb NOT NULL DEFAULT '[]'::jsonb,
+  applied_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  applied_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_chart_template_bindings_reserved_ranges_array_chk CHECK (jsonb_typeof(reserved_ranges) = 'array'),
+  CONSTRAINT company_chart_template_bindings_mandatory_roles_array_chk CHECK (jsonb_typeof(mandatory_system_roles) = 'array')
+);
+
+CREATE TABLE platform_entity_number_sequences (
+  entity_year integer PRIMARY KEY,
+  next_number bigint NOT NULL,
+  CONSTRAINT platform_entity_number_sequences_next_number_chk CHECK (next_number > 0)
 );
 
 CREATE TABLE company_book_governed_change_requests (

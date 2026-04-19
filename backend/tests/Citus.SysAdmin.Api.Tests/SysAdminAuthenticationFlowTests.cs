@@ -64,4 +64,60 @@ public sealed class SysAdminAuthenticationFlowTests
         Assert.False(status.SetupRequired);
         Assert.True(status.HasAnyAccount);
     }
+
+    [Fact]
+    public void SysAdminSetupStatus_ReportsPlatformReady_WhenOnlySysAdminExists()
+    {
+        var status = new SysAdminSetupStatus
+        {
+            AccountCount = 1
+        };
+
+        Assert.Equal("platform_ready", status.SetupStage);
+        Assert.True(status.FirstCompanySetupRequired);
+        Assert.False(status.BusinessReady);
+    }
+
+    [Fact]
+    public void SysAdminSetupStatus_ReportsDeferredPlatformReady_WhenCompanySetupWasDeferred()
+    {
+        var status = new SysAdminSetupStatus
+        {
+            AccountCount = 1,
+            FirstCompanySetupDeferred = true
+        };
+
+        Assert.Equal("platform_ready_deferred", status.SetupStage);
+        Assert.False(status.FirstCompanySetupRequired);
+        Assert.True(status.BusinessInitializationPending);
+    }
+
+    [Fact]
+    public void SysAdminSetupStatus_ReportsBusinessInitializing_WhenCompanyExistsWithoutOwnerMembership()
+    {
+        var status = new SysAdminSetupStatus
+        {
+            AccountCount = 1,
+            CompanyCount = 1
+        };
+
+        Assert.Equal("business_initializing", status.SetupStage);
+        Assert.True(status.FirstCompanySetupRequired);
+        Assert.False(status.BusinessReady);
+    }
+
+    [Fact]
+    public void SysAdminSetupStatus_ReportsBusinessReady_WhenCompanyAndOwnerMembershipExist()
+    {
+        var status = new SysAdminSetupStatus
+        {
+            AccountCount = 1,
+            CompanyCount = 1,
+            OwnerMembershipCount = 1
+        };
+
+        Assert.Equal("business_ready", status.SetupStage);
+        Assert.True(status.BusinessReady);
+        Assert.False(status.FirstCompanySetupRequired);
+    }
 }

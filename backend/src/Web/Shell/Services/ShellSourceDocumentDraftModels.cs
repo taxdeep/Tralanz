@@ -85,6 +85,11 @@ public sealed record class ShellPurchaseSourceDocumentDraftReadLine
     public Guid? TaxCodeId { get; init; }
     public decimal TaxAmount { get; init; }
     public bool IsTaxRecoverable { get; init; }
+    public Guid? ItemId { get; init; }
+    public Guid? WarehouseId { get; init; }
+    public string? UomCode { get; init; }
+    public decimal? Quantity { get; init; }
+    public decimal? UnitCost { get; init; }
 }
 
 public sealed record class ShellSalesSourceDocumentDraftSaveRequest
@@ -177,4 +182,14 @@ public sealed record class ShellPurchaseSourceDocumentDraftLineSaveRequest
     public decimal TaxAmount { get; init; }
 
     public bool IsTaxRecoverable { get; init; }
+
+    public Guid? ItemId { get; init; }
+
+    public Guid? WarehouseId { get; init; }
+
+    public string? UomCode { get; init; }
+
+    public decimal? Quantity { get; init; }
+
+    public decimal? UnitCost { get; init; }
 }

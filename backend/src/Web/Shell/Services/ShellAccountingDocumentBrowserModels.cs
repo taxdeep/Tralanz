@@ -31,4 +31,12 @@ public sealed record class ShellAccountingSourceDocumentBrowserItem
     public string BaseCurrencyCode { get; init; } = string.Empty;
 
     public decimal TotalAmount { get; init; }
+
+    public string? BillReceiptMatchStatus { get; init; }
+
+    public string? BillReceiptPostingGateLabel { get; init; }
+
+    public string? BillReceiptPostingGateSummary { get; init; }
+
+    public bool? BillReceiptAllowsPost { get; init; }
 }

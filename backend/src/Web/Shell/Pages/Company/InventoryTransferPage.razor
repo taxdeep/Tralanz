@@ -1,0 +1,680 @@
+@page "/company/inventory-transfer"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellInventoryTransferClient InventoryTransfer
+@inject ISnackbar Snackbar
+
+<PageTitle>Warehouse Transfer</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D / D4</MudText>
+            <MudText Typo="Typo.h4">Warehouse Transfer</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Move stock between company warehouses as a first-class inventory truth. Draft, submit, ship, and receive stay inside Inventory and keep in-transit quantities explicit.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+                @if (!string.IsNullOrWhiteSpace(_currentTransferNumber))
+                {
+                    <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small">
+                        @_currentTransferNumber / @_currentTransferStatus
+                    </MudChip>
+                }
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Warehouse Transfer is closed by default for <strong>@_onboardingSummary.Industry</strong> companies. Keep using lighter service-led setup until company governance opens inventory-managed trading flow.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Info" Href="/company/product-service-setup">
+                    Open Product & Service Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @if (_onboardingSummary is not null && _onboardingSummary.SupportsInventoryFoundation && WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+    }
+    else if (_dashboard is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active stock items</MudText>
+                    <MudText Typo="Typo.h5">@OperationalItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Only warehouse-managed stock items can move between warehouses in this stage.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active warehouses</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.ActiveWarehouses.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Transfer source and destination must stay inside the active warehouse list.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Recent transfers</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.RecentTransfers.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Ship and receive keep base-currency cost trace inside inventory truth.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Operational guardrail: tracked transfer stays closed in this stage. Warehouse Transfer currently exposes only warehouse-managed stock items until tracked transfer input and selection paths are ready.
+        </MudAlert>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Control lane: submit hands the move into source-warehouse review, ship declares stock left the source warehouse, and receive declares stock physically arrived at the destination warehouse. These are separate responsibilities even before formal permission tokens are wired in.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Transfer header</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="Source warehouse"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_sourceWarehouseId">
+                            @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                            {
+                                <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="Destination warehouse"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_destinationWarehouseId">
+                            @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                            {
+                                <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudDatePicker Label="Ship date"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Date="_shipDate" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudDatePicker Label="Receive date"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Date="_receiveDate" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string"
+                                      Label="Memo"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_memo" />
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    This first transfer slice keeps the lifecycle inside inventory: draft, submit, ship, and receive. It does not bridge into AR/AP or accounting approvals yet.
+                </MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    Once shipped or received, transfer truth is append-only. Corrections should move through discrepancy, return transfer, or inventory adjustment rather than silently undoing movement history.
+                </MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">Transfer lines</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="AddLine">
+                        Add Line
+                    </MudButton>
+                </MudStack>
+
+                @foreach (var line in _lineEditors.OrderBy(line => line.LineNo))
+                {
+                    <MudPaper Elevation="0" Class="pa-4" Outlined="true">
+                        <MudGrid>
+                            <MudItem xs="12" md="1">
+                                <MudTextField T="int"
+                                              Label="Line"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Disabled="true"
+                                              Value="@line.LineNo" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudSelect T="Guid?"
+                                           Label="Item"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Disabled="@(_isSaving || WritesBlocked)"
+                                           Value="@line.ItemId"
+                                           ValueChanged="@((Guid? value) => OnItemChanged(line, value))">
+                                    @foreach (var item in OperationalItems)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string"
+                                              Label="UOM"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Disabled="@(_isSaving || WritesBlocked)"
+                                              @bind-Value="line.UomCode" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudNumericField T="decimal"
+                                                 Label="Qty"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Disabled="@(_isSaving || WritesBlocked)"
+                                                 @bind-Value="line.Quantity" />
+                            </MudItem>
+                            <MudItem xs="12" md="3">
+                                <MudTextField T="string"
+                                              Label="Line memo"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Disabled="@(_isSaving || WritesBlocked)"
+                                              @bind-Value="line.Memo" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Warning"
+                                           Disabled="@(_isSaving || WritesBlocked || _lineEditors.Count <= 1)"
+                                           OnClick="@(() => RemoveLine(line))">
+                                    Remove
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                }
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="SaveDraftAsync">
+                        @(_isSaving ? "Saving..." : _currentTransferId.HasValue && string.Equals(_currentTransferStatus, "draft", StringComparison.OrdinalIgnoreCase) ? "Save Draft Changes" : "Save Draft")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Disabled="@(_isSaving || WritesBlocked || !_currentTransferId.HasValue || !string.Equals(_currentTransferStatus, "draft", StringComparison.OrdinalIgnoreCase))"
+                               OnClick="SubmitCurrentDraftAsync">
+                        Submit Current Draft
+                    </MudButton>
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Default"
+                               Disabled="@(_isSaving)"
+                               OnClick="StartNewDraft">
+                        Start New Draft
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recent warehouse transfers</MudText>
+            @if (_dashboard.RecentTransfers.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No warehouse transfers have been recorded yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.RecentTransfers" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Transfer</MudTh>
+                        <MudTh>Route</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Created</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.TransferNumber</MudTd>
+                        <MudTd>@context.SourceWarehouseCode -> @context.DestinationWarehouseCode</MudTd>
+                        <MudTd>@context.TotalQuantity</MudTd>
+                        <MudTd>@context.Status</MudTd>
+                        <MudTd>@context.CreatedAt.ToString("yyyy-MM-dd HH:mm")</MudTd>
+                        <MudTd>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                @if (string.Equals(context.Status, "draft", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Info" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => SubmitTransferAsync(context))">
+                                        Submit
+                                    </MudButton>
+                                }
+                                @if (string.Equals(context.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Warning" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => ShipTransferAsync(context))">
+                                        Ship
+                                    </MudButton>
+                                }
+                                @if (string.Equals(context.Status, "shipped", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Success" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => ReceiveTransferAsync(context))">
+                                        Receive
+                                    </MudButton>
+                                }
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                    <ChildRowContent>
+                        <MudTd colspan="6">
+                            <MudText Typo="Typo.body2" Class="text-secondary">
+                                @GetTransferControlSummary(context)
+                            </MudText>
+                        </MudTd>
+                    </ChildRowContent>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/inventory-foundation">
+                    Inventory Foundation
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/company/inventory-sales-issue">
+                    Sales Issue
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/inventory-availability">
+                    Inventory Availability
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private InventoryTransferDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private string? _error;
+    private bool _isSaving;
+    private Guid? _currentTransferId;
+    private string? _currentTransferNumber;
+    private string? _currentTransferStatus;
+    private Guid? _sourceWarehouseId;
+    private Guid? _destinationWarehouseId;
+    private DateTime? _shipDate = DateTime.Today;
+    private DateTime? _receiveDate = DateTime.Today;
+    private string? _memo;
+    private List<TransferLineEditorState> _lineEditors = [];
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems =>
+        _dashboard?.ActiveItems.Where(item => item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+            {
+                return;
+            }
+
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!onboardingResult.RequiresSignIn &&
+                !onboardingResult.IsNotFound &&
+                string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+            {
+                _onboardingSummary = onboardingResult.Value;
+            }
+
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+            {
+                return;
+            }
+
+            _dashboard = await InventoryTransfer.GetDashboardAsync(ShellState.ActiveCompany.Id);
+            SeedDefaultsIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SeedDefaultsIfNeeded()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        _sourceWarehouseId ??= _dashboard.ActiveWarehouses.FirstOrDefault()?.Id;
+        _destinationWarehouseId ??= _dashboard.ActiveWarehouses.Skip(1).FirstOrDefault()?.Id;
+
+        if (_lineEditors.Count == 0)
+        {
+            var firstItem = OperationalItems.FirstOrDefault();
+            _lineEditors.Add(new TransferLineEditorState
+            {
+                LineNo = 1,
+                ItemId = firstItem?.Id,
+                UomCode = firstItem?.StockUomCode ?? "EA",
+                Quantity = 1m
+            });
+        }
+    }
+
+    private void AddLine()
+    {
+        var nextLineNo = _lineEditors.Count == 0 ? 1 : _lineEditors.Max(line => line.LineNo) + 1;
+        var firstItem = OperationalItems.FirstOrDefault();
+        _lineEditors.Add(new TransferLineEditorState
+        {
+            LineNo = nextLineNo,
+            ItemId = firstItem?.Id,
+            UomCode = firstItem?.StockUomCode ?? "EA",
+            Quantity = 1m
+        });
+    }
+
+    private void RemoveLine(TransferLineEditorState line)
+    {
+        _lineEditors.Remove(line);
+        for (var index = 0; index < _lineEditors.Count; index++)
+        {
+            _lineEditors[index].LineNo = index + 1;
+        }
+    }
+
+    private Task OnItemChanged(TransferLineEditorState line, Guid? itemId)
+    {
+        line.ItemId = itemId;
+        var item = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId);
+        if (item is not null)
+        {
+            line.UomCode = item.StockUomCode ?? line.UomCode;
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (TryBlockWrites() || _dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var request = new InventoryTransferUpsertRequest(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _currentTransferId,
+                _sourceWarehouseId ?? Guid.Empty,
+                _destinationWarehouseId ?? Guid.Empty,
+                _memo,
+                _lineEditors.Select(line => new InventoryTransferLineInput(
+                    line.LineNo,
+                    line.ItemId ?? Guid.Empty,
+                    line.UomCode,
+                    line.Quantity,
+                    line.Memo)).ToArray());
+
+            var summary = await InventoryTransfer.SaveDraftAsync(request, _dashboard);
+            await ReloadDashboardAsync();
+            ApplyCurrentTransfer(summary);
+            Snackbar.Add($"Transfer {summary.TransferNumber} saved as draft.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SubmitCurrentDraftAsync()
+    {
+        if (TryBlockWrites() || !_currentTransferId.HasValue)
+        {
+            return;
+        }
+
+        await SubmitTransferCoreAsync(_currentTransferId.Value);
+    }
+
+    private Task SubmitTransferAsync(InventoryTransferSummary transfer) =>
+        SubmitTransferCoreAsync(transfer.TransferId);
+
+    private async Task SubmitTransferCoreAsync(Guid transferId)
+    {
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var summary = await InventoryTransfer.SubmitAsync(
+                ShellState.ActiveCompany.Id,
+                transferId,
+                ShellState.CurrentUserId,
+                _dashboard);
+            await ReloadDashboardAsync();
+            ApplyCurrentTransfer(summary);
+            Snackbar.Add($"Transfer {summary.TransferNumber} submitted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private Task ShipTransferAsync(InventoryTransferSummary transfer) =>
+        ShipTransferCoreAsync(transfer.TransferId);
+
+    private async Task ShipTransferCoreAsync(Guid transferId)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var summary = await InventoryTransfer.ShipAsync(
+                ShellState.ActiveCompany.Id,
+                transferId,
+                ShellState.CurrentUserId,
+                DateOnly.FromDateTime((_shipDate ?? DateTime.Today).Date),
+                _dashboard);
+            await ReloadDashboardAsync();
+            ApplyCurrentTransfer(summary);
+            Snackbar.Add($"Transfer {summary.TransferNumber} shipped.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private Task ReceiveTransferAsync(InventoryTransferSummary transfer) =>
+        ReceiveTransferCoreAsync(transfer.TransferId);
+
+    private async Task ReceiveTransferCoreAsync(Guid transferId)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var summary = await InventoryTransfer.ReceiveAsync(
+                ShellState.ActiveCompany.Id,
+                transferId,
+                ShellState.CurrentUserId,
+                DateOnly.FromDateTime((_receiveDate ?? DateTime.Today).Date),
+                _dashboard);
+            await ReloadDashboardAsync();
+            ApplyCurrentTransfer(summary);
+            Snackbar.Add($"Transfer {summary.TransferNumber} received.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ReloadDashboardAsync()
+    {
+        _dashboard = await InventoryTransfer.GetDashboardAsync(ShellState.ActiveCompany.Id);
+        SeedDefaultsIfNeeded();
+    }
+
+    private void ApplyCurrentTransfer(InventoryTransferSummary summary)
+    {
+        _currentTransferId = summary.TransferId;
+        _currentTransferNumber = summary.TransferNumber;
+        _currentTransferStatus = summary.Status;
+    }
+
+    private void StartNewDraft()
+    {
+        _currentTransferId = null;
+        _currentTransferNumber = null;
+        _currentTransferStatus = null;
+        _memo = null;
+        _lineEditors = [];
+        SeedDefaultsIfNeeded();
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private static string GetTransferControlSummary(InventoryTransferSummary summary) =>
+        summary.Status.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Draft still belongs to the requesting operator. Review route, quantities, and warehouses before handing it into the ship lane.",
+            "submitted" => "Submitted transfer is ready for source-warehouse ship confirmation. Shipping will reduce source on-hand and open the in-transit state.",
+            "shipped" => "Shipped transfer is waiting on destination-warehouse receive confirmation. Receiving will clear in-transit and create destination on-hand truth.",
+            "received" => "Receive confirmation completed. Any later correction should move through discrepancy, return transfer, or inventory adjustment instead of reopening this transfer.",
+            _ => "Transfer control state is recorded inside inventory truth."
+        };
+
+    private sealed class TransferLineEditorState
+    {
+        public int LineNo { get; set; }
+        public Guid? ItemId { get; set; }
+        public string UomCode { get; set; } = "EA";
+        public decimal Quantity { get; set; } = 1m;
+        public string? Memo { get; set; }
+    }
+}

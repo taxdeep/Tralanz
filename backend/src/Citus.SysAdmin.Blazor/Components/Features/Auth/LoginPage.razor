@@ -210,6 +210,13 @@
             ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session);
             await JS.InvokeVoidAsync("citusSysAdminAuth.setSessionToken", response.SessionToken);
 
+            var setupStatus = await SysAdminAuthenticationClient.GetSetupStatusAsync();
+            if (setupStatus is not null)
+            {
+                _setupStatus = setupStatus;
+                ShellState.ApplySetupStatus(setupStatus);
+            }
+
             var context = await SysAdminControlClient.GetContextAsync();
             if (context is not null)
             {
@@ -217,11 +224,23 @@
             }
 
             Snackbar.Add($"Welcome back, {response.Session.DisplayName}.", Severity.Success);
-            NavigationManager.NavigateTo("overview");
+            NavigationManager.NavigateTo(GetPostSignInRoute());
         }
         finally
         {
             _isSubmitting = false;
         }
+    }
+
+    private string GetPostSignInRoute()
+    {
+        if (_setupStatus?.FirstCompanySetupRequired == true)
+        {
+            return _setupStatus.HasAnyCompany
+                ? "setup/first-company"
+                : "setup/company-decision";
+        }
+
+        return "overview";
     }
 }

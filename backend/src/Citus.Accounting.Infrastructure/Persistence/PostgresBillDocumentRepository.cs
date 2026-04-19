@@ -30,6 +30,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             _executionContextAccessor,
             cancellationToken);
 
+        await EnsureInventoryGradeBillLineColumnsAsync(scope.Connection, scope.Transaction, cancellationToken);
+
         Guid id;
         string entityNumber;
         string billNumber;
@@ -147,6 +149,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                            l.expense_account_id,
                            l.description,
                            l.line_amount,
+                           l.item_id,
+                           l.warehouse_id,
+                           l.uom_code,
+                           l.quantity,
+                           l.unit_cost,
                            l.tax_amount,
                            l.is_tax_recoverable,
                            l.tax_code_id,
@@ -181,7 +188,12 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                     reader.GetDecimal(reader.GetOrdinal("tax_amount")),
                     reader.GetBoolean(reader.GetOrdinal("is_tax_recoverable")),
                     recoverableTaxAccountId,
-                    taxCodeId));
+                    taxCodeId,
+                    reader.IsDBNull(reader.GetOrdinal("item_id")) ? null : reader.GetGuid(reader.GetOrdinal("item_id")),
+                    reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : reader.GetGuid(reader.GetOrdinal("warehouse_id")),
+                    reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code")),
+                    reader.IsDBNull(reader.GetOrdinal("quantity")) ? null : reader.GetDecimal(reader.GetOrdinal("quantity")),
+                    reader.IsDBNull(reader.GetOrdinal("unit_cost")) ? null : reader.GetDecimal(reader.GetOrdinal("unit_cost"))));
             }
         }
 
@@ -230,6 +242,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
 
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureInventoryGradeBillLineColumnsAsync(connection, transaction, cancellationToken);
 
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
@@ -388,6 +402,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   expense_account_id,
                   description,
                   line_amount,
+                  item_id,
+                  warehouse_id,
+                  uom_code,
+                  quantity,
+                  unit_cost,
                   tax_code_id,
                   tax_amount,
                   is_tax_recoverable,
@@ -402,6 +421,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   @expense_account_id,
                   @description,
                   @line_amount,
+                  @item_id,
+                  @warehouse_id,
+                  @uom_code,
+                  @quantity,
+                  @unit_cost,
                   @tax_code_id,
                   @tax_amount,
                   @is_tax_recoverable,
@@ -416,6 +440,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             insertLineCommand.Parameters.AddWithValue("expense_account_id", line.ExpenseAccountId);
             insertLineCommand.Parameters.AddWithValue("description", line.Description.Trim());
             insertLineCommand.Parameters.AddWithValue("line_amount", Round6(line.LineAmount));
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("item_id", NpgsqlDbType.Uuid) { TypedValue = line.ItemId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("warehouse_id", NpgsqlDbType.Uuid) { TypedValue = line.WarehouseId });
+            insertLineCommand.Parameters.AddWithValue("uom_code", string.IsNullOrWhiteSpace(line.UomCode) ? (object)DBNull.Value : line.UomCode.Trim().ToUpperInvariant());
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<decimal?>("quantity", NpgsqlDbType.Numeric) { TypedValue = line.Quantity.HasValue ? Round6(line.Quantity.Value) : null });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<decimal?>("unit_cost", NpgsqlDbType.Numeric) { TypedValue = line.UnitCost.HasValue ? Round6(line.UnitCost.Value) : null });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
             insertLineCommand.Parameters.AddWithValue("is_tax_recoverable", line.IsTaxRecoverable);
@@ -425,6 +454,88 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "draft");
+    }
+
+    public async Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var (entityNumber, displayNumber) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        await using var submitCommand = connection.CreateCommand();
+        submitCommand.Transaction = transaction;
+        submitCommand.CommandText =
+            """
+            update bills
+            set status = 'submitted',
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status = 'draft';
+            """;
+        submitCommand.Parameters.AddWithValue("document_id", documentId);
+        submitCommand.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var affectedRows = await submitCommand.ExecuteNonQueryAsync(cancellationToken);
+        if (affectedRows != 1)
+        {
+            throw new InvalidOperationException("Only draft bills can be submitted.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "submitted");
+    }
+
+    public async Task<SourceDocumentDraftSaveResult> CancelSubmittedAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var (entityNumber, displayNumber) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        await using var cancelCommand = connection.CreateCommand();
+        cancelCommand.Transaction = transaction;
+        cancelCommand.CommandText =
+            """
+            update bills
+            set status = 'cancelled',
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status = 'submitted';
+            """;
+        cancelCommand.Parameters.AddWithValue("document_id", documentId);
+        cancelCommand.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var affectedRows = await cancelCommand.ExecuteNonQueryAsync(cancellationToken);
+        if (affectedRows != 1)
+        {
+            throw new InvalidOperationException("Only submitted bills can be cancelled.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "cancelled");
     }
 
     private static void ValidateDraft(BillDraftSaveModel draft)
@@ -449,6 +560,43 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             if (line.LineAmount <= 0m || line.TaxAmount < 0m)
             {
                 throw new InvalidOperationException("Bill draft amounts must be positive and tax cannot be negative.");
+            }
+
+            var hasInventorySemantics =
+                line.ItemId.HasValue ||
+                line.WarehouseId.HasValue ||
+                !string.IsNullOrWhiteSpace(line.UomCode) ||
+                line.Quantity.HasValue ||
+                line.UnitCost.HasValue;
+
+            if (!hasInventorySemantics)
+            {
+                continue;
+            }
+
+            if (!line.ItemId.HasValue || line.ItemId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require an item.");
+            }
+
+            if (!line.WarehouseId.HasValue || line.WarehouseId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a warehouse.");
+            }
+
+            if (string.IsNullOrWhiteSpace(line.UomCode))
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a UOM code.");
+            }
+
+            if (!line.Quantity.HasValue || line.Quantity.Value <= 0m)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a positive quantity.");
+            }
+
+            if (!line.UnitCost.HasValue || line.UnitCost.Value < 0m)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a non-negative unit cost.");
             }
         }
 
@@ -518,6 +666,24 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static async Task EnsureInventoryGradeBillLineColumnsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            alter table bill_lines add column if not exists item_id uuid;
+            alter table bill_lines add column if not exists warehouse_id uuid;
+            alter table bill_lines add column if not exists uom_code text;
+            alter table bill_lines add column if not exists quantity numeric(18,6);
+            alter table bill_lines add column if not exists unit_cost numeric(18,6);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,

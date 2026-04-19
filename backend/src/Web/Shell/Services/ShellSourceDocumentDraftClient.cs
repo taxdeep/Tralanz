@@ -76,6 +76,20 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
         return SaveAsync(documentId, "accounting/invoices/drafts", payload, cancellationToken);
     }
 
+    public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SubmitInvoiceDraftAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        TransitionDraftAsync(
+            $"accounting/invoices/drafts/{documentId:D}/submit",
+            new
+            {
+                CompanyId = companyId,
+                UserId = userId
+            },
+            cancellationToken);
+
     public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SaveCreditNoteDraftAsync(
         Guid? documentId,
         ShellSalesSourceDocumentDraftSaveRequest request,
@@ -137,7 +151,12 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
                 line.LineAmount,
                 line.TaxCodeId,
                 line.TaxAmount,
-                line.IsTaxRecoverable
+                line.IsTaxRecoverable,
+                line.ItemId,
+                line.WarehouseId,
+                line.UomCode,
+                line.Quantity,
+                line.UnitCost
             }).ToArray()
         };
 
@@ -229,6 +248,34 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
             },
             cancellationToken);
 
+    public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SubmitBillDraftAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        TransitionDraftAsync(
+            $"accounting/bills/drafts/{documentId:D}/submit",
+            new
+            {
+                CompanyId = companyId,
+                UserId = userId
+            },
+            cancellationToken);
+
+    public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> CancelSubmittedBillAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        TransitionDraftAsync(
+            $"accounting/bills/drafts/{documentId:D}/cancel",
+            new
+            {
+                CompanyId = companyId,
+                UserId = userId
+            },
+            cancellationToken);
+
     public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentPostResult>> PostVendorCreditAsync(
         Guid companyId,
         Guid userId,
@@ -287,6 +334,47 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
             logger.LogWarning(ex, "Unable to save source document draft using request path {Path}.", path);
             return WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.Failure(
                 "Draft save failed because the source-document request could not be completed.");
+        }
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> TransitionDraftAsync(
+        string requestUri,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, payload, cancellationToken);
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.RequiresAuthentication();
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                var saved = await response.Content.ReadFromJsonAsync<ShellSourceDocumentDraftSaveResult>(cancellationToken);
+                return saved is null
+                    ? WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.Failure("Draft transition succeeded but returned an empty payload.")
+                    : WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.Success(saved);
+            }
+
+            var message = await TryReadMessageAsync(response, cancellationToken);
+            logger.LogWarning(
+                "Source document draft transition failed for {RequestUri} with status code {StatusCode}: {Message}",
+                requestUri,
+                (int)response.StatusCode,
+                message);
+
+            return response.StatusCode == HttpStatusCode.NotFound
+                ? WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.NotFound(message)
+                : WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.Failure(message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to transition source document draft using request {RequestUri}.", requestUri);
+            return WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.Failure(
+                "Draft transition failed because the source-document request could not be completed.");
         }
     }
 

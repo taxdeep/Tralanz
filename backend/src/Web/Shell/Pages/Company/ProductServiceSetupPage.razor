@@ -1,0 +1,539 @@
+@page "/company/product-service-setup"
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellProductServiceCatalogClient ProductServices
+@inject ISnackbar Snackbar
+
+<PageTitle>Product & Service Setup</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Company Setup</MudText>
+            <MudText Typo="Typo.h4">Product And Service Defaults</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Create a minimal company-scoped catalog for the first invoice and bill flow. Each item can carry default description, account, and tax-code truth so operators do not have to repeat the same choices line by line.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you here because the first invoice and bill flow can move faster when line defaults already know the description, default account, and default tax code.
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_summary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active catalog items</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActiveItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @_summary.ActiveItems.Count switch
+                        {
+                            0 => "No product or service defaults exist yet.",
+                            1 => "One active item is ready to drive first-document defaults.",
+                            _ => $"{_summary.ActiveItems.Count} active items are available to the first-document flow."
+                        }
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Sales-ready defaults</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActiveSalesItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Invoice and credit-note editors can apply these items as line defaults.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Purchase-ready defaults</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActivePurchaseItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Bill and vendor-credit editors can apply these items as line defaults.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            This first slice keeps product/service truth intentionally small. The source-document line still persists description, account, and tax directly; this catalog only helps operators apply those defaults consistently.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">@(_editingId.HasValue ? "Edit product or service" : "Add product or service")</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="string"
+                                   Label="Catalog type"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_editor.CatalogType">
+                            <MudSelectItem T="string" Value="@ShellProductServiceCatalogRules.CatalogTypeProduct">Product</MudSelectItem>
+                            <MudSelectItem T="string" Value="@ShellProductServiceCatalogRules.CatalogTypeService">Service</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="8">
+                        <MudTextField T="string"
+                                      Label="Name"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_editor.Name" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string"
+                                      Label="Default line description"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      HelperText="Leave blank to reuse the product or service name on the source-document line."
+                                      @bind-Value="_editor.Description" />
+                    </MudItem>
+                    <MudItem xs="12" lg="6">
+                        <MudPaper Elevation="0" Class="pa-4" Style="height:100%;border:1px solid var(--mud-palette-lines-default);">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Sales defaults</MudText>
+                            <MudSelect T="string"
+                                       Label="Revenue account"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Value="_editor.SalesRevenueAccountIdText">
+                                <MudSelectItem T="string" Value="@string.Empty">-- None --</MudSelectItem>
+                                @foreach (var account in _summary.SalesRevenueAccountOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@account.AccountId.ToString("D")">@account.DisplayText</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudSelect T="string"
+                                       Label="Default sales tax code"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Value="_editor.DefaultSalesTaxCodeIdText">
+                                <MudSelectItem T="string" Value="@string.Empty">-- None --</MudSelectItem>
+                                @foreach (var taxCode in _summary.SalesTaxCodeOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@taxCode.Id.ToString("D")">@taxCode.DisplayLabel</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudText Typo="Typo.body2" Class="text-secondary">
+                                These defaults apply when the item is picked on invoice or credit-note lines.
+                            </MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" lg="6">
+                        <MudPaper Elevation="0" Class="pa-4" Style="height:100%;border:1px solid var(--mud-palette-lines-default);">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Purchase defaults</MudText>
+                            <MudSelect T="string"
+                                       Label="Expense account"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Value="_editor.PurchaseExpenseAccountIdText">
+                                <MudSelectItem T="string" Value="@string.Empty">-- None --</MudSelectItem>
+                                @foreach (var account in _summary.PurchaseExpenseAccountOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@account.AccountId.ToString("D")">@account.DisplayText</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudSelect T="string"
+                                       Label="Default purchase tax code"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Value="_editor.DefaultPurchaseTaxCodeIdText">
+                                <MudSelectItem T="string" Value="@string.Empty">-- None --</MudSelectItem>
+                                @foreach (var taxCode in _summary.PurchaseTaxCodeOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@taxCode.Id.ToString("D")">@taxCode.DisplayLabel</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudText Typo="Typo.body2" Class="text-secondary">
+                                These defaults apply when the item is picked on bill or vendor-credit lines.
+                            </MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="SaveAsync">
+                        @(_isSaving ? "Saving..." : _editingId.HasValue ? "Save Product / Service" : "Add Product / Service")
+                    </MudButton>
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Default"
+                               Disabled="@_isSaving"
+                               OnClick="ClearEditor">
+                        @(_editingId.HasValue ? "Cancel Edit" : "Clear")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Catalog truth</MudText>
+            @if (_summary.Items.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No product or service truth exists yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_summary.Items" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Sales defaults</MudTh>
+                        <MudTh>Purchase defaults</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudText Typo="Typo.body2">@context.Name</MudText>
+                            @if (!string.IsNullOrWhiteSpace(context.Description))
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.Description</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>@context.CatalogTypeLabel</MudTd>
+                        <MudTd>@context.SalesDefaultsLabel</MudTd>
+                        <MudTd>@context.PurchaseDefaultsLabel</MudTd>
+                        <MudTd>@GetStatusLabel(context)</MudTd>
+                        <MudTd>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                <MudButton Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           Disabled="@(_isSaving || WritesBlocked)"
+                                           OnClick="@(() => EditItem(context))">
+                                    Edit
+                                </MudButton>
+                                @if (context.IsActive)
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               Color="Color.Warning"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               OnClick="@(() => SetActiveAsync(context, false))">
+                                        Deactivate
+                                    </MudButton>
+                                }
+                                else
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               Color="Color.Success"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               OnClick="@(() => SetActiveAsync(context, true))">
+                                        Reactivate
+                                    </MudButton>
+                                }
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                @if (IsCompanyReadyHandOff)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/ready">
+                        Back To Company Ready
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/documents/invoice/draft-editor?origin=company-ready">
+                    Open First Invoice
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/bill/draft-editor?origin=company-ready">
+                    Open First Bill
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+
+        @if (_lastCreatedId.HasValue && (_lastCreatedSupportsSales || _lastCreatedSupportsPurchase))
+        {
+            <MudPaper Elevation="0" Class="pa-5">
+                <MudText Typo="Typo.h6" Class="mb-2">Latest catalog continuity</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    <strong>@_lastCreatedName</strong> was just created. Carry it into the next source-document line if you want the first operator to reuse its account and default tax configuration immediately.
+                </MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    @if (_lastCreatedSupportsSales)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildInvoiceHref(_lastCreatedId)">
+                            Continue to First Invoice
+                        </MudButton>
+                    }
+                    @if (_lastCreatedSupportsPurchase)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildBillHref(_lastCreatedId)">
+                            Continue to First Bill
+                        </MudButton>
+                    }
+                </MudStack>
+            </MudPaper>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
+    private ShellProductServiceCatalogSummary? _summary;
+    private string? _error;
+    private bool _isSaving;
+    private Guid? _editingId;
+    private Guid? _lastCreatedId;
+    private string _lastCreatedName = string.Empty;
+    private bool _lastCreatedSupportsSales;
+    private bool _lastCreatedSupportsPurchase;
+    private readonly ProductServiceEditorState _editor = new();
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _summary = await ProductServices.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            var catalogItemId = await ProductServices.SaveAsync(ShellState.ActiveCompany.Id, _editor.ToRequest(_editingId));
+            await LoadAsync();
+            var savedItem = _summary?.Items.FirstOrDefault(item => item.Id == catalogItemId);
+
+            if (_editingId.HasValue)
+            {
+                Snackbar.Add("Product or service updated.", Severity.Success);
+            }
+            else if (savedItem is not null)
+            {
+                _lastCreatedId = savedItem.Id;
+                _lastCreatedName = savedItem.Name;
+                _lastCreatedSupportsSales = savedItem.SupportsSales;
+                _lastCreatedSupportsPurchase = savedItem.SupportsPurchase;
+                Snackbar.Add("Product or service created.", Severity.Success);
+            }
+
+            ClearEditor();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SetActiveAsync(ShellManagedProductServiceSummary item, bool isActive)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _error = null;
+
+        try
+        {
+            await ProductServices.SetActiveAsync(ShellState.ActiveCompany.Id, item.Id, isActive);
+            if (_editingId == item.Id && !isActive)
+            {
+                ClearEditor();
+            }
+
+            await LoadAsync();
+            Snackbar.Add(isActive ? "Product or service reactivated." : "Product or service deactivated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void EditItem(ShellManagedProductServiceSummary item)
+    {
+        _editingId = item.Id;
+        _editor.LoadFromSummary(item);
+    }
+
+    private void ClearEditor()
+    {
+        _editingId = null;
+        _editor.CatalogType = ShellProductServiceCatalogRules.CatalogTypeService;
+        _editor.Name = string.Empty;
+        _editor.Description = string.Empty;
+        _editor.SalesRevenueAccountIdText = string.Empty;
+        _editor.PurchaseExpenseAccountIdText = string.Empty;
+        _editor.DefaultSalesTaxCodeIdText = string.Empty;
+        _editor.DefaultPurchaseTaxCodeIdText = string.Empty;
+    }
+
+    private static string GetStatusLabel(ShellManagedProductServiceSummary item) =>
+        item.IsActive ? "Active" : "Inactive";
+
+    private string BuildInvoiceHref(Guid? catalogItemId) =>
+        catalogItemId.HasValue
+            ? $"/documents/invoice/draft-editor?origin=company-ready&productServiceId={catalogItemId.Value:D}"
+            : "/documents/invoice/draft-editor?origin=company-ready";
+
+    private string BuildBillHref(Guid? catalogItemId) =>
+        catalogItemId.HasValue
+            ? $"/documents/bill/draft-editor?origin=company-ready&productServiceId={catalogItemId.Value:D}"
+            : "/documents/bill/draft-editor?origin=company-ready";
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private sealed class ProductServiceEditorState
+    {
+        public string CatalogType { get; set; } = ShellProductServiceCatalogRules.CatalogTypeService;
+
+        public string Name { get; set; } = string.Empty;
+
+        public string Description { get; set; } = string.Empty;
+
+        public string SalesRevenueAccountIdText { get; set; } = string.Empty;
+
+        public string PurchaseExpenseAccountIdText { get; set; } = string.Empty;
+
+        public string DefaultSalesTaxCodeIdText { get; set; } = string.Empty;
+
+        public string DefaultPurchaseTaxCodeIdText { get; set; } = string.Empty;
+
+        public void LoadFromSummary(ShellManagedProductServiceSummary summary)
+        {
+            CatalogType = summary.CatalogType;
+            Name = summary.Name;
+            Description = summary.Description;
+            SalesRevenueAccountIdText = summary.SalesRevenueAccountId?.ToString("D") ?? string.Empty;
+            PurchaseExpenseAccountIdText = summary.PurchaseExpenseAccountId?.ToString("D") ?? string.Empty;
+            DefaultSalesTaxCodeIdText = summary.DefaultSalesTaxCodeId?.ToString("D") ?? string.Empty;
+            DefaultPurchaseTaxCodeIdText = summary.DefaultPurchaseTaxCodeId?.ToString("D") ?? string.Empty;
+        }
+
+        public ShellProductServiceUpsertRequest ToRequest(Guid? id) =>
+            new()
+            {
+                Id = id,
+                CatalogType = CatalogType,
+                Name = Name,
+                Description = Description,
+                SalesRevenueAccountId = Guid.TryParse(SalesRevenueAccountIdText, out var salesRevenueAccountId)
+                    ? salesRevenueAccountId
+                    : null,
+                PurchaseExpenseAccountId = Guid.TryParse(PurchaseExpenseAccountIdText, out var purchaseExpenseAccountId)
+                    ? purchaseExpenseAccountId
+                    : null,
+                DefaultSalesTaxCodeId = Guid.TryParse(DefaultSalesTaxCodeIdText, out var defaultSalesTaxCodeId)
+                    ? defaultSalesTaxCodeId
+                    : null,
+                DefaultPurchaseTaxCodeId = Guid.TryParse(DefaultPurchaseTaxCodeIdText, out var defaultPurchaseTaxCodeId)
+                    ? defaultPurchaseTaxCodeId
+                    : null
+            };
+    }
+}

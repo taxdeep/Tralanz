@@ -9,7 +9,9 @@ They target a single-host deployment with:
 
 - `nginx`
 - local `PostgreSQL`
-- `.NET 11 preview / C# 15 preview` installed through the official `dotnet-install.sh` script into `/opt/dotnet`
+- `.NET 11 preview / C# 15 preview` installed into `/opt/dotnet`
+  - first through the official `dotnet-install.sh` script
+  - if Ubuntu 24.04 cannot resolve that exact preview cleanly, the script now falls back to downloading the SDK tarball directly from `builds.dotnet.microsoft.com`
 - optional Let's Encrypt HTTPS via `certbot`
 - `systemd` services for:
   - `Web.Shell` Blazor frontend
@@ -151,6 +153,7 @@ Current usability caveat:
 - `CITUS_DOTNET_SDK_VERSION`
 - `CITUS_DOTNET_CHANNEL`
 - `CITUS_DOTNET_QUALITY`
+- `CITUS_DOTNET_SDK_TARBALL_URL`
 - `CITUS_APT_FORCE_IPV4=1|0`
 - `CITUS_APT_RETRIES`
 - `CITUS_APT_HTTP_TIMEOUT`
@@ -180,3 +183,26 @@ sudo CITUS_APT_FORCE_IPV4=1 \
 ```
 
 After installation, edit `/etc/citus/citus.env` and rerun `sudo ./upgrade.sh` to apply changes to systemd and nginx.
+
+## .NET 11 preview fallback on Ubuntu 24.04
+
+Ubuntu 24.04 does not ship `.NET 11` through the default apt packages, so the deployment scripts install the SDK into `/opt/dotnet`.
+
+The order is now:
+
+1. exact SDK install through `dotnet-install.sh`
+2. direct SDK tarball fallback from `builds.dotnet.microsoft.com`
+3. channel fallback only if exact install still fails and `CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK=1`
+
+For the current repository `global.json`, the exact fallback URL resolves to:
+
+```text
+https://builds.dotnet.microsoft.com/dotnet/Sdk/11.0.100-preview.3.26207.106/dotnet-sdk-11.0.100-preview.3.26207.106-linux-x64.tar.gz
+```
+
+If you need to override that source manually, set:
+
+```bash
+sudo CITUS_DOTNET_SDK_TARBALL_URL=https://builds.dotnet.microsoft.com/dotnet/Sdk/11.0.100-preview.3.26207.106/dotnet-sdk-11.0.100-preview.3.26207.106-linux-x64.tar.gz \
+     ./install.sh
+```

@@ -1,0 +1,999 @@
+@page "/company/inventory-purchase-receipt"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellCounterpartyOnboardingClient CounterpartyClient
+@inject ShellInventoryReceiptClient InventoryReceipt
+@inject ShellSourceDocumentDraftClient Drafts
+@inject ISnackbar Snackbar
+
+<PageTitle>Purchase Receipt</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D</MudText>
+            <MudText Typo="Typo.h4">Purchase Receipt</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Record inbound inventory truth directly inside Inventory: vendor, warehouse, stock item, quantity, and landed unit cost. Bill-assisted hand-off can prefill this form, but receipt remains the authoritative inbound inventory truth.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you into the first inbound inventory workspace. Confirm vendor, warehouse, quantity, and cost here before broader AP-to-Inventory bridging lands later.
+        </MudAlert>
+    }
+
+    @if (IsBillHandoff && !string.IsNullOrWhiteSpace(_billSourceDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Bill-assisted hand-off loaded <strong>@_billSourceDisplayNumber</strong>. The bill supplied draft vendor and line hints, but this receipt still decides the authoritative inbound inventory truth.
+        </MudAlert>
+    }
+    @if (IsBillHandoff && _billReceiptHandoffSummary is not null)
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       Disabled="@(_isSaving || WritesBlocked)"
+                       OnClick="ReloadBillRemainingLines">
+                Load Remaining From Bill
+            </MudButton>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Bill hand-off qty</MudText>
+                <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.BillInboundQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.BillInboundLineCount inventory-grade line(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Already receipted</MudText>
+                <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.ReceivedQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.ReceiptCount anchored receipt(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Current form qty</MudText>
+                <MudText Typo="Typo.h6">@CurrentReceiptDraftQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">Projected total after this receipt: @ProjectedReceiptedQuantity.ToString("N2")</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Projected status</MudText>
+                <MudText Typo="Typo.h6">@ProjectedBillReceiptStatusLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ProjectedBillReceiptStatusSummary</MudText>
+            </MudPaper>
+        </div>
+        @if (_billReceiptHandoffSummary.LineSummaries.Count > 0)
+        {
+            <MudTable Items="_billReceiptHandoffSummary.LineSummaries" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Item</MudTh>
+                    <MudTh>Warehouse</MudTh>
+                    <MudTh>UOM</MudTh>
+                    <MudTh>Bill Qty</MudTh>
+                    <MudTh>Receipted Qty</MudTh>
+                    <MudTh>Remaining</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                    <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                    <MudTd>@context.UomCode</MudTd>
+                    <MudTd>@context.BillQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.ReceivedQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
+                    <MudTd>@FormatBillReceiptLineStatus(context.MatchStatus)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    }
+    @if (IsBillHandoff && _loadedBillSourceId.HasValue && _loadedBillHandoffLineCount == 0)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            The selected bill did not contain any complete inventory hand-off lines, so Purchase Receipt stayed on its normal manual entry path.
+        </MudAlert>
+    }
+    @if (IsBillHandoff && _billReceiptHandoffSummary is not null && !HasOutstandingBillReceiptQuantity)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            The current bill hand-off is already fully covered by anchored receipt truth. The receipt form stays empty by default so the operator does not drift into an accidental over-receipt.
+        </MudAlert>
+    }
+    @if (_lastPostedReceipt is not null)
+    {
+        <MudPaper Elevation="0" Class="pa-4">
+            <MudText Typo="Typo.h6">Posted Receipt Review</MudText>
+            <MudText Typo="Typo.body2">Receipt: @_lastPostedReceipt.DocumentNumber</MudText>
+            <MudText Typo="Typo.body2">Posting date: @_lastPostedReceipt.PostingDate.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Qty: @_lastPostedReceipt.TotalQuantity.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2">Cost (Base): @_lastPostedReceipt.TotalCostBase.ToString("N2")</MudText>
+            @if (_billReceiptHandoffSummary is not null)
+            {
+                <MudAlert Severity="@GetBillReceiptProjectedSeverity(_billReceiptHandoffSummary.MatchStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-top:.75rem;">
+                    @BuildBillReceiptPostedNotice(_billReceiptHandoffSummary)
+                </MudAlert>
+            }
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem;">
+                @if (_loadedBillSourceId.HasValue)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@BuildBillReviewHref()">
+                        Review Bill Matching
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildBillDetailHref()">
+                        Open Bill Detail
+                    </MudButton>
+                }
+            </div>
+        </MudPaper>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Purchase Receipt is closed by default for <strong>@_onboardingSummary.Industry</strong> companies. Keep using lighter service-led setup until company governance opens inventory-managed trading flow.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/product-service-setup">
+                    Open Product & Service Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @if (_onboardingSummary is not null && _onboardingSummary.SupportsInventoryFoundation && WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+    }
+    else if (_dashboard is null || _counterpartySummary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active stock items</MudText>
+                    <MudText Typo="Typo.h5">@OperationalItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Only warehouse-managed stock items can be received into inventory in this stage.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active warehouses</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.ActiveWarehouses.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Purchase receipt lines must land in one active warehouse.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Recent receipts</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.RecentReceipts.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Base currency is @_dashboard.BaseCurrencyCode.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Operational guardrail: tracked lot/serial flows are still closed here. Purchase Receipt currently exposes only warehouse-managed stock items until tracked inbound document input is ready.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Receipt header</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="Vendor"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   Value="_selectedVendorId"
+                                   ValueChanged="OnVendorChangedAsync">
+                            @foreach (var vendor in ActiveVendors)
+                            {
+                                <MudSelectItem T="Guid?" Value="@vendor.Id">@vendor.DisplayName (@vendor.DefaultCurrencyCode)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudDatePicker Label="Posting date"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Date="_postingDate" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudSelect T="string"
+                                   Label="Transaction currency"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_transactionCurrencyCode">
+                            @foreach (var currency in EnabledCurrencies)
+                            {
+                                <MudSelectItem T="string" Value="@currency.Code">@currency.DisplayLabel</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudNumericField T="decimal"
+                                         Label="FX rate"
+                                         Variant="Variant.Outlined"
+                                         Margin="Margin.Dense"
+                                         Disabled="@(_isSaving || WritesBlocked || IsBaseCurrencySelected)"
+                                         @bind-Value="_fxRateToBase" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string"
+                                      Label="Memo"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_memo" />
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    This first slice posts directly to inventory truth. It does not yet create or reconcile an AP bill-side source document.
+                </MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">Receipt lines</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="AddLine">
+                        Add Line
+                    </MudButton>
+                </MudStack>
+
+                @if (_lineEditors.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        Start with at least one stock item line before posting the purchase receipt.
+                    </MudAlert>
+                }
+                else
+                {
+                    @foreach (var line in _lineEditors.OrderBy(line => line.LineNo))
+                    {
+                        <MudPaper Elevation="0" Class="pa-4" Outlined="true">
+                            <MudGrid>
+                                <MudItem xs="12" md="1">
+                                    <MudTextField T="int"
+                                                  Label="Line"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="true"
+                                                  Value="@line.LineNo" />
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudSelect T="Guid?"
+                                               Label="Item"
+                                               Variant="Variant.Outlined"
+                                               Margin="Margin.Dense"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               Value="line.ItemId"
+                                               ValueChanged="@(value => ApplyReceiptItem(line, value))">
+                                        @foreach (var item in OperationalItems)
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudSelect T="Guid?"
+                                               Label="Warehouse"
+                                               Variant="Variant.Outlined"
+                                               Margin="Margin.Dense"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               @bind-Value="line.WarehouseId">
+                                        @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="1">
+                                    <MudTextField T="string"
+                                                  Label="UOM"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="true"
+                                                  @bind-Value="line.UomCode" />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudNumericField T="decimal"
+                                                     Label="Qty"
+                                                     Variant="Variant.Outlined"
+                                                     Margin="Margin.Dense"
+                                                     Disabled="@(_isSaving || WritesBlocked)"
+                                                     @bind-Value="line.Quantity" />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudNumericField T="decimal"
+                                                     Label="Unit Cost"
+                                                     Variant="Variant.Outlined"
+                                                     Margin="Margin.Dense"
+                                                     Disabled="@(_isSaving || WritesBlocked)"
+                                                     @bind-Value="line.UnitCostTx" />
+                                </MudItem>
+                                <MudItem xs="12" md="4">
+                                    <MudTextField T="string"
+                                                  Label="Reason code"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="@(_isSaving || WritesBlocked)"
+                                                  @bind-Value="line.ReasonCode" />
+                                </MudItem>
+                                <MudItem xs="12" md="6">
+                                    <MudTextField T="string"
+                                                  Label="Line memo"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="@(_isSaving || WritesBlocked)"
+                                                  @bind-Value="line.Memo" />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Warning"
+                                               Disabled="@(_isSaving || WritesBlocked || _lineEditors.Count <= 1)"
+                                               OnClick="@(() => RemoveLine(line))">
+                                        Remove
+                                    </MudButton>
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                    }
+                }
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="PostReceiptAsync">
+                        @(_isSaving ? "Posting..." : "Post Purchase Receipt")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recent purchase receipts</MudText>
+            @if (_dashboard.RecentReceipts.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No inventory purchase receipts have been posted yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.RecentReceipts" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Receipt</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Vendor</MudTh>
+                        <MudTh>Currency</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Cost (Base)</MudTh>
+                        <MudTh>Status</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.DocumentNumber</MudTd>
+                        <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                        <MudTd>@context.VendorDisplayName</MudTd>
+                        <MudTd>@context.TransactionCurrencyCode</MudTd>
+                        <MudTd>@context.TotalQuantity</MudTd>
+                        <MudTd>@context.TotalCostBase</MudTd>
+                        <MudTd>@context.Status</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/inventory-foundation">
+                    Back To Inventory Foundation
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/customer-vendor-setup">
+                    Customer & Vendor Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
+    [SupplyParameterFromQuery(Name = "vendorId")]
+    public Guid? VendorIdQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "billId")]
+    public Guid? BillId { get; set; }
+
+    private InventoryPurchaseReceiptDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private ShellCounterpartyOnboardingSummary? _counterpartySummary;
+    private string? _error;
+    private bool _isSaving;
+    private Guid? _selectedVendorId;
+    private DateTime? _postingDate = DateTime.Today;
+    private string _transactionCurrencyCode = string.Empty;
+    private decimal _fxRateToBase = 1m;
+    private string? _memo;
+    private List<ReceiptLineEditorState> _lineEditors = [];
+    private Guid? _loadedBillSourceId;
+    private string? _billSourceDisplayNumber;
+    private string? _loadedBillSourceStatus;
+    private ShellPurchaseSourceDocumentDraftReadModel? _loadedBillDraft;
+    private int _loadedBillHandoffLineCount;
+    private InventoryBillReceiptHandoffSummary? _billReceiptHandoffSummary;
+    private InventoryPurchaseReceiptSummary? _lastPostedReceipt;
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private bool IsBillHandoff => BillId.HasValue;
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool IsBaseCurrencySelected =>
+        string.Equals(_transactionCurrencyCode, _dashboard?.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase);
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems =>
+        _dashboard?.ActiveItems.Where(item => item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).ToList() ?? [];
+    private IReadOnlyList<ShellManagedCounterpartySummary> ActiveVendors => _counterpartySummary?.ActiveVendors ?? [];
+    private IReadOnlyList<ShellCompanyCurrencyOption> EnabledCurrencies => _counterpartySummary?.EnabledCurrencies ?? [];
+    private bool HasOutstandingBillReceiptQuantity => _billReceiptHandoffSummary?.LineSummaries.Any(static line => line.RemainingQuantity > 0m) == true;
+    private decimal CurrentReceiptDraftQuantity => decimal.Round(_lineEditors.Sum(static line => line.Quantity), 6, MidpointRounding.AwayFromZero);
+    private decimal ProjectedReceiptedQuantity => decimal.Round((_billReceiptHandoffSummary?.ReceivedQuantity ?? 0m) + CurrentReceiptDraftQuantity, 6, MidpointRounding.AwayFromZero);
+    private string ProjectedBillReceiptStatusLabel => ComputeProjectedBillReceiptStatus().Label;
+    private string ProjectedBillReceiptStatusSummary => ComputeProjectedBillReceiptStatus().Summary;
+    private static string FormatBillReceiptLineStatus(string? matchStatus) => matchStatus switch
+    {
+        "no_receipt" => "No receipt yet",
+        "partially_receipted" => "Partial",
+        "fully_receipted" => "Full",
+        "over_receipted" => "Over",
+        _ => "Review"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+            {
+                return;
+            }
+
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!onboardingResult.RequiresSignIn &&
+                !onboardingResult.IsNotFound &&
+                string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+            {
+                _onboardingSummary = onboardingResult.Value;
+            }
+
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+            {
+                return;
+            }
+
+            _dashboard = await InventoryReceipt.GetDashboardAsync(ShellState.ActiveCompany.Id);
+            _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            if (BillId.HasValue && BillId != _loadedBillSourceId)
+            {
+                await LoadBillHandoffAsync(BillId.Value);
+            }
+
+            SeedHeaderDefaults();
+            SeedLinesIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task LoadBillHandoffAsync(Guid billId)
+    {
+        var draftResult = await Drafts.GetBillDraftAsync(ShellState.ActiveCompany.Id, billId, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(draftResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var draft = draftResult.Value;
+        if (draft is null)
+        {
+            _error = draftResult.IsNotFound
+                ? "The selected bill hand-off could not be found in the active company context."
+                : draftResult.ErrorMessage ?? "Unable to load the bill hand-off.";
+            return;
+        }
+
+        _loadedBillSourceId = draft.Id;
+        _loadedBillDraft = draft;
+        _billSourceDisplayNumber = draft.DisplayNumber;
+        _loadedBillSourceStatus = draft.Status;
+        _billReceiptHandoffSummary = await InventoryReceipt.GetBillHandoffSummaryAsync(
+            ShellState.ActiveCompany.Id,
+            draft.Id,
+            CancellationToken.None);
+
+        if (_counterpartySummary is not null &&
+            _counterpartySummary.ActiveVendors.Any(vendor => vendor.Id == draft.VendorId))
+        {
+            _selectedVendorId = draft.VendorId;
+        }
+
+        _transactionCurrencyCode = draft.TransactionCurrencyCode;
+        _fxRateToBase = draft.FxRate ?? 1m;
+        _memo = string.IsNullOrWhiteSpace(draft.Memo)
+            ? $"Bill hand-off from {draft.DisplayNumber}"
+            : $"Bill hand-off from {draft.DisplayNumber}: {draft.Memo}";
+
+        var receiptLines = BuildReceiptLinesFromBillHandoff(draft);
+        _loadedBillHandoffLineCount = receiptLines.Count;
+
+        if (receiptLines.Count > 0)
+        {
+            _lineEditors = receiptLines;
+        }
+    }
+
+    private void SeedHeaderDefaults()
+    {
+        if (_counterpartySummary is null || _dashboard is null)
+        {
+            return;
+        }
+
+        var preferredVendor = VendorIdQuery.HasValue
+            ? _counterpartySummary.ActiveVendors.FirstOrDefault(vendor => vendor.Id == VendorIdQuery.Value)
+            : null;
+        var defaultVendor = preferredVendor ?? _counterpartySummary.ActiveVendors.FirstOrDefault();
+
+        _selectedVendorId ??= defaultVendor?.Id;
+
+        if (string.IsNullOrWhiteSpace(_transactionCurrencyCode))
+        {
+            _transactionCurrencyCode =
+                defaultVendor?.DefaultCurrencyCode
+                ?? _counterpartySummary.BaseCurrencyCode
+                ?? _dashboard.BaseCurrencyCode;
+        }
+
+        if (string.Equals(_transactionCurrencyCode, _dashboard.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            _fxRateToBase = 1m;
+        }
+    }
+
+    private void SeedLinesIfNeeded()
+    {
+        if (_dashboard is null || _lineEditors.Count > 0)
+        {
+            return;
+        }
+
+        if (IsBillHandoff && _billReceiptHandoffSummary is not null && !HasOutstandingBillReceiptQuantity)
+        {
+            return;
+        }
+
+        _lineEditors.Add(new ReceiptLineEditorState
+        {
+            LineNo = 1,
+            ItemId = OperationalItems.FirstOrDefault()?.Id,
+            WarehouseId = _dashboard.ActiveWarehouses.FirstOrDefault()?.Id,
+            UomCode = OperationalItems.FirstOrDefault()?.StockUomCode ?? string.Empty,
+            Quantity = 1m,
+            UnitCostTx = 0m
+        });
+    }
+
+    private async Task OnVendorChangedAsync(Guid? vendorId)
+    {
+        _selectedVendorId = vendorId;
+        var vendor = ActiveVendors.FirstOrDefault(item => item.Id == vendorId);
+        if (vendor is not null)
+        {
+            _transactionCurrencyCode = vendor.DefaultCurrencyCode;
+            if (_dashboard is not null &&
+                string.Equals(_transactionCurrencyCode, _dashboard.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+            {
+                _fxRateToBase = 1m;
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AddLine()
+    {
+        var nextLineNo = _lineEditors.Count == 0 ? 1 : _lineEditors.Max(line => line.LineNo) + 1;
+        _lineEditors.Add(new ReceiptLineEditorState
+        {
+            LineNo = nextLineNo,
+            ItemId = OperationalItems.FirstOrDefault()?.Id,
+            WarehouseId = _dashboard?.ActiveWarehouses.FirstOrDefault()?.Id,
+            UomCode = OperationalItems.FirstOrDefault()?.StockUomCode ?? string.Empty,
+            Quantity = 1m,
+            UnitCostTx = 0m
+        });
+    }
+
+    private void ApplyReceiptItem(ReceiptLineEditorState line, Guid? itemId)
+    {
+        line.ItemId = itemId;
+        var item = OperationalItems.FirstOrDefault(current => current.Id == itemId);
+        line.UomCode = item?.StockUomCode ?? string.Empty;
+        line.WarehouseId ??= _dashboard?.ActiveWarehouses.FirstOrDefault()?.Id;
+        if (line.Quantity <= 0m)
+        {
+            line.Quantity = 1m;
+        }
+    }
+
+    private void RemoveLine(ReceiptLineEditorState line)
+    {
+        _lineEditors.Remove(line);
+        for (var index = 0; index < _lineEditors.Count; index++)
+        {
+            _lineEditors[index].LineNo = index + 1;
+        }
+    }
+
+    private void ReloadBillRemainingLines()
+    {
+        if (!IsBillHandoff || _loadedBillSourceId is null)
+        {
+            return;
+        }
+
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        var lines = _loadedBillDraft is null
+            ? []
+            : BuildReceiptLinesFromBillHandoff(_loadedBillDraft);
+        _lineEditors = lines;
+        if (_lineEditors.Count == 0)
+        {
+            Snackbar.Add("No remaining bill quantity is outstanding. The receipt form stays empty by default.", Severity.Info);
+        }
+    }
+
+    private List<ReceiptLineEditorState> BuildReceiptLinesFromBillHandoff(ShellPurchaseSourceDocumentDraftReadModel draft)
+    {
+        var inboundLines = draft.Lines
+            .Where(static line =>
+                line.ItemId.HasValue &&
+                line.WarehouseId.HasValue &&
+                !string.IsNullOrWhiteSpace(line.UomCode) &&
+                line.Quantity.HasValue &&
+                line.UnitCost.HasValue)
+            .ToArray();
+
+        if (inboundLines.Length == 0)
+        {
+            return [];
+        }
+
+        if (_billReceiptHandoffSummary?.LineSummaries.Count > 0)
+        {
+            var billGroups = inboundLines
+                .GroupBy(line => new BillReceiptGroupKey(
+                    line.ItemId!.Value,
+                    line.WarehouseId!.Value,
+                    line.UomCode!.Trim().ToUpperInvariant()))
+                .ToDictionary(group => group.Key, group => group.ToArray());
+
+            var groupedLines = _billReceiptHandoffSummary.LineSummaries
+                .Where(static summary => summary.RemainingQuantity > 0m)
+                .Select(summary =>
+                {
+                    var key = new BillReceiptGroupKey(summary.ItemId, summary.WarehouseId, summary.UomCode.Trim().ToUpperInvariant());
+                    if (!billGroups.TryGetValue(key, out var sourceLines) || sourceLines.Length == 0)
+                    {
+                        return null;
+                    }
+
+                    var totalGroupQuantity = sourceLines.Sum(line => line.Quantity!.Value);
+                    var weightedUnitCost = totalGroupQuantity > 0m
+                        ? decimal.Round(
+                            sourceLines.Sum(line => line.Quantity!.Value * line.UnitCost!.Value) / totalGroupQuantity,
+                            6,
+                            MidpointRounding.AwayFromZero)
+                        : decimal.Round(sourceLines.Average(line => line.UnitCost!.Value), 6, MidpointRounding.AwayFromZero);
+
+                    var lineMemo = sourceLines.Length == 1
+                        ? (string?)sourceLines[0].Description
+                        : $"Bill hand-off aggregate from {draft.DisplayNumber}";
+
+                    return new ReceiptLineEditorState
+                    {
+                        ItemId = summary.ItemId,
+                        WarehouseId = summary.WarehouseId,
+                        UomCode = summary.UomCode,
+                        Quantity = summary.RemainingQuantity,
+                        UnitCostTx = weightedUnitCost,
+                        ReasonCode = "bill_handoff",
+                        Memo = lineMemo
+                    };
+                })
+                .Where(static line => line is not null)
+                .Select(static line => line!)
+                .OrderBy(static line => line.ItemId)
+                .ThenBy(static line => line.WarehouseId)
+                .ToList();
+
+            for (var index = 0; index < groupedLines.Count; index++)
+            {
+                groupedLines[index].LineNo = index + 1;
+            }
+
+            if (groupedLines.Count > 0)
+            {
+                return groupedLines;
+            }
+        }
+
+        return inboundLines
+            .Select(line => new ReceiptLineEditorState
+            {
+                LineNo = line.LineNumber,
+                ItemId = line.ItemId,
+                WarehouseId = line.WarehouseId,
+                UomCode = line.UomCode ?? string.Empty,
+                Quantity = line.Quantity ?? 1m,
+                UnitCostTx = line.UnitCost ?? 0m,
+                ReasonCode = "bill_handoff",
+                Memo = line.Description
+            })
+            .OrderBy(static line => line.LineNo)
+            .ToList();
+    }
+
+    private async Task PostReceiptAsync()
+    {
+        if (TryBlockWrites() || _dashboard is null || _counterpartySummary is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+
+            var request = new InventoryPurchaseReceiptPostRequest(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _selectedVendorId ?? Guid.Empty,
+                DateOnly.FromDateTime((_postingDate ?? DateTime.Today).Date),
+                _transactionCurrencyCode,
+                _fxRateToBase,
+                SourceModule: IsBillHandoff && _loadedBillSourceId.HasValue ? "ap_bill" : "web_shell_inventory",
+                SourceDocumentId: IsBillHandoff ? _loadedBillSourceId : null,
+                SourceDocumentNumber: IsBillHandoff ? _billSourceDisplayNumber : null,
+                _memo,
+                _lineEditors.Select(line => new InventoryPurchaseReceiptLineInput(
+                    line.LineNo,
+                    line.ItemId ?? Guid.Empty,
+                    line.WarehouseId ?? Guid.Empty,
+                    line.UomCode,
+                    line.Quantity,
+                    line.UnitCostTx,
+                    line.ReasonCode,
+                    line.Memo)).ToArray());
+
+            var receipt = await InventoryReceipt.PostAsync(request, _dashboard, _counterpartySummary);
+            await ReloadDashboardAsync();
+            _lastPostedReceipt = receipt;
+            if (IsBillHandoff && _loadedBillSourceId.HasValue)
+            {
+                _billReceiptHandoffSummary = await InventoryReceipt.GetBillHandoffSummaryAsync(
+                    ShellState.ActiveCompany.Id,
+                    _loadedBillSourceId.Value,
+                    CancellationToken.None);
+            }
+
+            ResetForm(preserveBillContext: IsBillHandoff && _loadedBillSourceId.HasValue);
+            Snackbar.Add($"Purchase receipt {receipt.DocumentNumber} posted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ReloadDashboardAsync()
+    {
+        _dashboard = await InventoryReceipt.GetDashboardAsync(ShellState.ActiveCompany.Id);
+        _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+    }
+
+    private void ResetForm(bool preserveBillContext = false)
+    {
+        _postingDate = DateTime.Today;
+        _memo = preserveBillContext && !string.IsNullOrWhiteSpace(_billSourceDisplayNumber)
+            ? $"Bill hand-off from {_billSourceDisplayNumber}"
+            : null;
+        _transactionCurrencyCode = _dashboard?.BaseCurrencyCode ?? string.Empty;
+        _fxRateToBase = 1m;
+        _lineEditors = [];
+        if (!preserveBillContext)
+        {
+            _loadedBillSourceId = null;
+            _billSourceDisplayNumber = null;
+            _loadedBillSourceStatus = null;
+            _loadedBillDraft = null;
+            _loadedBillHandoffLineCount = 0;
+            _billReceiptHandoffSummary = null;
+        }
+        SeedHeaderDefaults();
+        SeedLinesIfNeeded();
+    }
+
+    private string BuildBillReviewHref() =>
+        !IsBillHandoff || !_loadedBillSourceId.HasValue
+            ? "/documents/source-browser"
+            : string.Equals(_loadedBillSourceStatus, "draft", StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(_loadedBillSourceStatus, "submitted", StringComparison.OrdinalIgnoreCase)
+                ? $"/documents/bill/draft-editor?draftId={_loadedBillSourceId.Value:D}"
+                : BuildBillDetailHref();
+
+    private string BuildBillDetailHref() =>
+        _loadedBillSourceId.HasValue
+            ? $"/documents/bill/{_loadedBillSourceId.Value:D}"
+            : "/documents/source-browser";
+
+    private static Severity GetBillReceiptProjectedSeverity(string? matchStatus) =>
+        matchStatus switch
+        {
+            "fully_receipted" => Severity.Success,
+            "over_receipted" => Severity.Warning,
+            "partially_receipted" => Severity.Info,
+            "no_receipt" => Severity.Info,
+            _ => Severity.Info
+        };
+
+    private string BuildBillReceiptPostedNotice(InventoryBillReceiptHandoffSummary summary) =>
+        summary.MatchStatus switch
+        {
+            "fully_receipted" => "This posted receipt brings the bill hand-off into full receipt coverage.",
+            "partially_receipted" => $"This posted receipt advanced receipt truth, but {summary.RemainingQuantity:N2} quantity still remains outstanding on the bill hand-off.",
+            "over_receipted" => "Receipt truth now exceeds the bill hand-off quantity. Review the bill-side matching trail before continuing.",
+            "no_inventory_handoff" => "The bill still has no complete inventory hand-off lines, so this receipt remains inventory-owned without bill-side quantity matching.",
+            _ => "Receipt truth was posted successfully. Review the anchored bill match status before continuing AP-side work."
+        };
+
+    private (string Label, string Summary) ComputeProjectedBillReceiptStatus()
+    {
+        if (_billReceiptHandoffSummary is null)
+        {
+            return ("Awaiting bill truth", "No bill-assisted receipt projection is active in the current context.");
+        }
+
+        if (_billReceiptHandoffSummary.BillInboundLineCount == 0)
+        {
+            return ("No inventory hand-off", "The bill has no complete inventory-grade inbound lines, so receipt projection is not active.");
+        }
+
+        var projectedRemaining = decimal.Round(
+            _billReceiptHandoffSummary.BillInboundQuantity - ProjectedReceiptedQuantity,
+            6,
+            MidpointRounding.AwayFromZero);
+
+        if (ProjectedReceiptedQuantity <= 0m)
+        {
+            return ("No receipt yet", "No inbound quantity has been receipted yet against this bill anchor.");
+        }
+
+        if (projectedRemaining > 0m)
+        {
+            return ("Still partial", "Posting the current receipt would still leave some bill hand-off quantity unreceipted.");
+        }
+
+        if (projectedRemaining == 0m)
+        {
+            return ("Would fully receipt", "Posting the current receipt would bring the bill hand-off quantity into full receipt coverage.");
+        }
+
+        return ("Would over-receipt", "Posting the current receipt would push total receipted quantity above the bill hand-off quantity and should be reviewed carefully.");
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private sealed class ReceiptLineEditorState
+    {
+        public int LineNo { get; set; }
+        public Guid? ItemId { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string UomCode { get; set; } = "EA";
+        public decimal Quantity { get; set; } = 1m;
+        public decimal UnitCostTx { get; set; }
+        public string? ReasonCode { get; set; }
+        public string? Memo { get; set; }
+    }
+
+    private readonly record struct BillReceiptGroupKey(Guid ItemId, Guid WarehouseId, string UomCode);
+}

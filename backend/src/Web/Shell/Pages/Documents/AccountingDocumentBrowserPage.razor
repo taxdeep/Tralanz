@@ -124,7 +124,24 @@
                             <MudText Typo="Typo.caption" Class="text-secondary">@context.EntityNumber</MudText>
                         </MudStack>
                     </MudTd>
-                    <MudTd>@context.Status</MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.Status</MudText>
+                            @if (HasBillReceiptPostingGate(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetBillReceiptPostingGateColor(context)"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    @context.BillReceiptPostingGateLabel
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @context.BillReceiptPostingGateSummary
+                                </MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
                     <MudTd>
                         <MudStack Spacing="0">
                             <MudText Typo="Typo.body2">@context.DocumentDate.ToString("yyyy-MM-dd")</MudText>
@@ -151,10 +168,16 @@
                             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/documents/{context.SourceType}/{context.Id:D}")">
                                 Open Detail
                             </MudButton>
+                            @if (TryBuildReceiptWorkspaceHref(context.SourceType, context.Id, out var receiptHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@receiptHref" Disabled="WritesBlocked">
+                                    Open Receipt Workspace
+                                </MudButton>
+                            }
                             @if (TryBuildDraftEditorHref(context.SourceType, context.Status, context.Id, out var editHref))
                             {
                                 <MudButton Variant="Variant.Text" Color="Color.Success" Href="@editHref" Disabled="WritesBlocked">
-                                    Edit Draft
+                                    @GetDraftWorkbenchLabel(context.SourceType, context.Status)
                                 </MudButton>
                             }
                         </div>
@@ -412,7 +435,9 @@
     private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
     {
         href = string.Empty;
-        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase) &&
+            !(sourceType?.Trim().ToLowerInvariant() is "bill" or "invoice" &&
+              string.Equals(status, "submitted", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -428,6 +453,42 @@
 
         return !string.IsNullOrWhiteSpace(href);
     }
+
+    private static string GetDraftWorkbenchLabel(string? sourceType, string? status) =>
+        string.Equals(status, "submitted", StringComparison.OrdinalIgnoreCase)
+            ? sourceType?.Trim().ToLowerInvariant() switch
+            {
+                "bill" => "Open Bill Workbench",
+                "invoice" => "Open Invoice Workbench",
+                _ => "Open Workbench"
+            }
+            : "Edit Draft";
+
+    private static bool TryBuildReceiptWorkspaceHref(string? sourceType, Guid documentId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(sourceType, "bill", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        href = $"/company/inventory-purchase-receipt?sourceType=bill&billId={documentId:D}";
+        return true;
+    }
+
+    private static bool HasBillReceiptPostingGate(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(item.BillReceiptPostingGateLabel);
+
+    private static Color GetBillReceiptPostingGateColor(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.BillReceiptAllowsPost switch
+        {
+            true => Color.Success,
+            false => string.Equals(item.BillReceiptMatchStatus, "over_receipted", StringComparison.OrdinalIgnoreCase)
+                ? Color.Warning
+                : Color.Info,
+            _ => Color.Default
+        };
 
     private static bool TryNormalizeReturnHref(string? href, out string normalizedHref)
     {

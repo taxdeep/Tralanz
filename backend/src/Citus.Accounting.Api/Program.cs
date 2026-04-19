@@ -13,10 +13,12 @@ using Citus.Ui.Shared.Shell;
 using Citus.Accounting.Infrastructure.Fx;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
+using Citus.Modules.Inventory.Application.Contracts;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.GL;
+using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.SessionContext;
@@ -47,6 +49,8 @@ builder.Services.Configure<BusinessSessionOptions>(builder.Configuration.GetSect
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
 builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySessionContextStore>();
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
+builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
+builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
 builder.Services.AddSingleton(
     static services => new BusinessSessionDirectory(
         services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
@@ -1936,6 +1940,7 @@ accounting.MapGet(
     async (
         [AsParameters] SourceDocumentBrowserLookupQuery query,
         IAccountingDocumentReviewRepository repository,
+        IInventoryReceiptStore inventoryReceiptStore,
         CancellationToken cancellationToken) =>
     {
         var items = await repository.ListSourceDocumentsAsync(
@@ -1946,23 +1951,40 @@ accounting.MapGet(
             query.Limit ?? 100,
             cancellationToken);
 
-        return Results.Ok(items.Select(item => new
+        var billReceiptSummaries = new Dictionary<Guid, InventoryBillReceiptHandoffSummary>();
+        foreach (var billItem in items.Where(static item => string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase)))
         {
-            item.SourceType,
-            SourceTypeLabel = MapDocumentReviewSourceLabel(item.SourceType),
-            item.Id,
-            CompanyId = item.CompanyId.Value,
-            item.EntityNumber,
-            item.DisplayNumber,
-            item.Status,
-            item.DocumentDate,
-            item.DueDate,
-            CounterpartyLabel = MapDocumentReviewCounterpartyLabel(item.CounterpartyRole),
-            item.CounterpartyId,
-            item.CounterpartyDisplayName,
-            item.TransactionCurrencyCode,
-            item.BaseCurrencyCode,
-            item.TotalAmount
+            billReceiptSummaries[billItem.Id] = await inventoryReceiptStore.GetBillHandoffSummaryAsync(
+                billItem.CompanyId.Value,
+                billItem.Id,
+                cancellationToken);
+        }
+
+        return Results.Ok(items.Select(item =>
+        {
+            billReceiptSummaries.TryGetValue(item.Id, out var receiptSummary);
+            return new
+            {
+                item.SourceType,
+                SourceTypeLabel = MapDocumentReviewSourceLabel(item.SourceType),
+                item.Id,
+                CompanyId = item.CompanyId.Value,
+                item.EntityNumber,
+                item.DisplayNumber,
+                item.Status,
+                item.DocumentDate,
+                item.DueDate,
+                CounterpartyLabel = MapDocumentReviewCounterpartyLabel(item.CounterpartyRole),
+                item.CounterpartyId,
+                item.CounterpartyDisplayName,
+                item.TransactionCurrencyCode,
+                item.BaseCurrencyCode,
+                item.TotalAmount,
+                BillReceiptMatchStatus = receiptSummary?.MatchStatus,
+                BillReceiptPostingGateLabel = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateLabel(receiptSummary),
+                BillReceiptPostingGateSummary = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateSummary(receiptSummary),
+                BillReceiptAllowsPost = receiptSummary is null ? (bool?)null : BillReceiptPostingGate.AllowsBillPost(receiptSummary.MatchStatus)
+            };
         }));
     });
 
@@ -3197,8 +3219,8 @@ accounting.MapGet(
             documentId,
             cancellationToken);
 
-        return document is null || document.Status != "draft"
-            ? Results.NotFound(new { message = "Invoice draft was not found in the active company context." })
+        return document is null || (document.Status != "draft" && document.Status != "submitted")
+            ? Results.NotFound(new { message = "Invoice draft or submitted invoice was not found in the active company context." })
             : Results.Ok(new
             {
                 document.Id,
@@ -3298,6 +3320,26 @@ accounting.MapPut(
                         line.UnitPrice,
                         line.TaxCodeId,
                         line.TaxAmount)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/invoices/drafts/{documentId:guid}/submit",
+    async (Guid documentId, SubmitBillDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SubmitDraftAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3577,8 +3619,8 @@ accounting.MapGet(
     async (Guid documentId, [AsParameters] BillLookupQuery query, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
-        return document is null || document.Status != "draft"
-            ? Results.NotFound(new { message = "Bill draft was not found in the active company context." })
+        return document is null || (document.Status != "draft" && document.Status != "submitted")
+            ? Results.NotFound(new { message = "Bill draft or submitted bill was not found in the active company context." })
             : Results.Ok(new
             {
                 document.Id,
@@ -3604,7 +3646,12 @@ accounting.MapGet(
                     line.LineAmount,
                     line.TaxCodeId,
                     line.TaxAmount,
-                    line.IsTaxRecoverable
+                    line.IsTaxRecoverable,
+                    line.ItemId,
+                    line.WarehouseId,
+                    line.UomCode,
+                    line.Quantity,
+                    line.UnitCost
                 })
             });
     });
@@ -3637,7 +3684,12 @@ accounting.MapPost(
                         line.LineAmount,
                         line.TaxCodeId,
                         line.TaxAmount,
-                        line.IsTaxRecoverable)).ToArray()),
+                        line.IsTaxRecoverable,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode,
+                        line.Quantity,
+                        line.UnitCost)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3676,7 +3728,52 @@ accounting.MapPut(
                         line.LineAmount,
                         line.TaxCodeId,
                         line.TaxAmount,
-                        line.IsTaxRecoverable)).ToArray()),
+                        line.IsTaxRecoverable,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode,
+                        line.Quantity,
+                        line.UnitCost)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/bills/drafts/{documentId:guid}/submit",
+    async (Guid documentId, SubmitBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SubmitDraftAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/bills/drafts/{documentId:guid}/cancel",
+    async (Guid documentId, SubmitBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.CancelSubmittedAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3729,17 +3826,32 @@ accounting.MapGet(
                 line.LineAmount,
                 line.TaxAmount,
                 line.IsTaxRecoverable,
-                line.RecoverableTaxAccountId
+                line.RecoverableTaxAccountId,
+                line.ItemId,
+                line.WarehouseId,
+                line.UomCode,
+                line.Quantity,
+                line.UnitCost
             })
         });
     });
 
 accounting.MapPost(
     "/bills/{documentId:guid}/post",
-    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, IInventoryReceiptStore inventoryReceiptStore, CancellationToken cancellationToken) =>
     {
         try
         {
+            var receiptHandoffSummary = await inventoryReceiptStore.GetBillHandoffSummaryAsync(
+                request.CompanyId,
+                documentId,
+                cancellationToken);
+
+            if (!BillReceiptPostingGate.AllowsBillPost(receiptHandoffSummary.MatchStatus))
+            {
+                return Results.BadRequest(new { message = BillReceiptPostingGate.GetBlockedPostMessage(receiptHandoffSummary) });
+            }
+
             var result = await handler.HandleAsync(
                 new PostBillCommand(
                     new(request.CompanyId),

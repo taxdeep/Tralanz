@@ -10,6 +10,7 @@ public sealed class PostgresPlatformRuntimeStateRepository(
 {
     private const string MaintenanceStateKey = "maintenance";
     private const string NotificationReadinessStateKey = "notification_readiness";
+    private const string FirstCompanySetupStateKey = "first_company_setup";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -113,6 +114,55 @@ public sealed class PostgresPlatformRuntimeStateRepository(
         return normalizedState;
     }
 
+    public async Task<PlatformFirstCompanySetupState?> GetFirstCompanySetupStateAsync(CancellationToken cancellationToken)
+    {
+        return await ReadStateAsync<PlatformFirstCompanySetupState>(FirstCompanySetupStateKey, cancellationToken);
+    }
+
+    public async Task<PlatformFirstCompanySetupState> UpsertFirstCompanySetupStateAsync(
+        PlatformFirstCompanySetupState state,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            insert into platform_runtime_state (
+              state_key,
+              json,
+              updated_at
+            )
+            values (
+              @state_key,
+              cast(@json as jsonb),
+              now()
+            )
+            on conflict (state_key) do update
+            set json = excluded.json,
+                updated_at = now();
+            """;
+
+        var normalizedDecisionStatus = NormalizeFirstCompanyDecisionStatus(state.DecisionStatus);
+        var normalizedState = state with
+        {
+            DecisionStatus = normalizedDecisionStatus,
+            DeferredAtUtc = string.Equals(
+                normalizedDecisionStatus,
+                PlatformFirstCompanySetupState.DeferredDecisionStatus,
+                StringComparison.Ordinal)
+                ? state.DeferredAtUtc ?? DateTimeOffset.UtcNow
+                : null,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("state_key", FirstCompanySetupStateKey);
+        command.Parameters.AddWithValue("json", Serialize(normalizedState));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return normalizedState;
+    }
+
     private async Task<T?> ReadStateAsync<T>(string stateKey, CancellationToken cancellationToken)
     {
         const string sql = """
@@ -150,6 +200,21 @@ public sealed class PostgresPlatformRuntimeStateRepository(
             "passed" => "passed",
             "failed" => "failed",
             _ => "untested"
+        };
+    }
+
+    private static string NormalizeFirstCompanyDecisionStatus(string decisionStatus)
+    {
+        if (string.IsNullOrWhiteSpace(decisionStatus))
+        {
+            return PlatformFirstCompanySetupState.PendingDecisionStatus;
+        }
+
+        return decisionStatus.Trim().ToLowerInvariant() switch
+        {
+            PlatformFirstCompanySetupState.DeferredDecisionStatus =>
+                PlatformFirstCompanySetupState.DeferredDecisionStatus,
+            _ => PlatformFirstCompanySetupState.PendingDecisionStatus
         };
     }
 

@@ -1,9 +1,11 @@
 @page "/documents/{SourceType}/{DocumentId:guid}"
+@using Citus.Modules.Inventory.Application.Contracts
 @using Web.Shell.Services
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
 @inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellAccountingDocumentReviewClient ReviewClient
+@inject ShellInventoryReceiptClient InventoryReceiptClient
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
     <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
@@ -17,6 +19,13 @@
     <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
         Source document review stays backend-owned and company-scoped. This page is read-only and is intended for drill-down from settlement and control flows.
     </p>
+
+    @if (IsCompanyReadyHandOff && SupportsSettlementFollowUp(_document))
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            Company-ready hand-off carried the first source document into read-only review so the operator can confirm posting truth before moving into the first settlement workspace.
+        </MudAlert>
+    }
 
     @if (_isLoading)
     {
@@ -40,16 +49,22 @@
     @if (_document is not null)
     {
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-            @if (_document.CanEditDraft && TryBuildDraftEditorHref(_document.SourceType, _document.Status, _document.Id, out var draftEditorHref))
+            @if (CanOpenDraftWorkbench(_document) && TryBuildDraftEditorHref(_document.SourceType, _document.Status, _document.Id, out var draftEditorHref))
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@draftEditorHref" Disabled="WritesBlocked">
-                    Edit Draft
+                    @GetDraftWorkbenchLabel(_document.SourceType, _document.Status)
                 </MudButton>
             }
             @if (_document.JournalEntryId.HasValue)
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_document.JournalEntryId.Value:D}")">
                     Open Journal Entry Review
+                </MudButton>
+            }
+            @if (IsCompanyReadyHandOff && TryBuildSettlementWorkbenchHref(_document, out var settlementWorkbenchHref, out var settlementWorkbenchLabel))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@settlementWorkbenchHref">
+                    @settlementWorkbenchLabel
                 </MudButton>
             }
             @if (TryBuildAdjustmentPolicyHref(_document.SourceType, out var adjustmentPolicyHref))
@@ -137,7 +152,101 @@
                 <MudText Typo="Typo.h6">@_document.DocumentDate.ToString("yyyy-MM-dd")</MudText>
                 <MudText Typo="Typo.body2">@($"Due {_document.DueDate?.ToString("yyyy-MM-dd") ?? "n/a"}")</MudText>
             </MudPaper>
+            @if (SupportsSettlementFollowUp(_document))
+            {
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudText Typo="Typo.caption">Settlement Follow-up</MudText>
+                    <MudText Typo="Typo.h6">@GetSettlementFollowUpTitle(_document)</MudText>
+                    <MudText Typo="Typo.body2">@GetSettlementFollowUpDetail(_document)</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudText Typo="Typo.caption">Counterparty Continuity</MudText>
+                    <MudText Typo="Typo.h6">@GetCounterpartyContinuityTitle(_document)</MudText>
+                    <MudText Typo="Typo.body2">@GetCounterpartyContinuityDetail(_document)</MudText>
+                </MudPaper>
+            }
         </div>
+
+        @if (IsBillReceiptReview(_document) && _billReceiptHandoffSummary is not null)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Receipt-first Matching</MudText>
+                <MudAlert Severity="@GetBillReceiptMatchingSeverity(_billReceiptHandoffSummary.MatchStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @BuildBillReceiptMatchingNotice(_billReceiptHandoffSummary)
+                </MudAlert>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Bill Inbound Qty</MudText>
+                        <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.BillInboundQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.BillInboundLineCount inventory-grade line(s)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Receipted Qty</MudText>
+                        <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.ReceivedQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.ReceiptCount anchored receipt(s)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Remaining Qty</MudText>
+                        <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.RemainingQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@BuildBillReceiptRemainingSummary(_billReceiptHandoffSummary)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.caption">Match Status</MudText>
+                        <MudText Typo="Typo.h6">@FormatBillReceiptMatchStatus(_billReceiptHandoffSummary.MatchStatus)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">Receipt truth remains authoritative over AP charge truth.</MudText>
+                    </MudPaper>
+                </div>
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@($"/company/inventory-purchase-receipt?sourceType=bill&billId={_document.Id:D}")">
+                        Open Receipt Workspace
+                    </MudButton>
+                </div>
+                @if (_billReceiptHandoffSummary.RecentReceipts.Count > 0)
+                {
+                    <MudTable Items="_billReceiptHandoffSummary.RecentReceipts" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh>Receipt</MudTh>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Vendor</MudTh>
+                            <MudTh>Qty</MudTh>
+                            <MudTh>Cost (Base)</MudTh>
+                            <MudTh>Status</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.DocumentNumber</MudTd>
+                            <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                            <MudTd>@context.VendorDisplayName</MudTd>
+                            <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
+                            <MudTd>@context.Status</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+                @if (_billReceiptHandoffSummary.LineSummaries.Count > 0)
+                {
+                    <MudTable Items="_billReceiptHandoffSummary.LineSummaries" Dense="true" Hover="true" Bordered="true" Style="margin-top:1rem;">
+                        <HeaderContent>
+                            <MudTh>Item</MudTh>
+                            <MudTh>Warehouse</MudTh>
+                            <MudTh>UOM</MudTh>
+                            <MudTh>Bill Qty</MudTh>
+                            <MudTh>Receipted Qty</MudTh>
+                            <MudTh>Remaining</MudTh>
+                            <MudTh>Status</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                            <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                            <MudTd>@context.UomCode</MudTd>
+                            <MudTd>@context.BillQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.ReceivedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatBillReceiptMatchStatus(context.MatchStatus)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        }
 
         <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
             <MudText Typo="Typo.h6" Class="mb-3">Facts</MudText>
@@ -551,6 +660,9 @@
     [Parameter]
     public Guid DocumentId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
     private bool _isLoading;
     private bool _isReverseCommandRunning;
     private string? _errorText;
@@ -563,8 +675,10 @@
     private IReadOnlyList<ShellSubledgerReverseBlockerSummary> _subledgerReverseBlockers = Array.Empty<ShellSubledgerReverseBlockerSummary>();
     private IReadOnlyDictionary<Guid, BlockerReverseDetail> _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
     private IReadOnlyList<ShellSettlementApplicationReversalSummary> _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
+    private InventoryBillReceiptHandoffSummary? _billReceiptHandoffSummary;
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
     private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnParametersSetAsync() => await LoadDocumentStateAsync(clearReverseCommandMessage: true);
 
@@ -585,6 +699,7 @@
         _subledgerReverseBlockers = Array.Empty<ShellSubledgerReverseBlockerSummary>();
         _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
         _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
+        _billReceiptHandoffSummary = null;
         _factRows = Array.Empty<FactRow>();
 
         if (!await EnsureWriteGateStateAsync())
@@ -612,6 +727,14 @@
 
         _document = document;
         _factRows = BuildFactRows(document);
+        if (IsBillReceiptReview(document))
+        {
+            _billReceiptHandoffSummary = await InventoryReceiptClient.GetBillHandoffSummaryAsync(
+                ShellState.ActiveCompany.Id,
+                document.Id,
+                CancellationToken.None);
+        }
+
         var reverseRequestResult = await ReviewClient.GetLatestReverseRequestAsync(ShellState.ActiveCompany.Id, SourceType, DocumentId);
         if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(reverseRequestResult, CancellationToken.None))
         {
@@ -1569,6 +1692,140 @@
         return true;
     }
 
+    private static bool SupportsSettlementFollowUp(ShellAccountingDocumentReviewSummary? document) =>
+        document?.SourceType?.Trim().ToLowerInvariant() is "invoice" or "bill";
+
+    private static bool IsBillReceiptReview(ShellAccountingDocumentReviewSummary? document) =>
+        string.Equals(document?.SourceType, "bill", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatBillReceiptMatchStatus(string? matchStatus) =>
+        matchStatus switch
+        {
+            "no_inventory_handoff" => "No inventory hand-off",
+            "no_receipt" => "No receipt yet",
+            "partially_receipted" => "Partially receipted",
+            "fully_receipted" => "Fully receipted",
+            "over_receipted" => "Over receipted",
+            _ => "Awaiting receipt review"
+        };
+
+    private static Severity GetBillReceiptMatchingSeverity(string? matchStatus) =>
+        matchStatus switch
+        {
+            "fully_receipted" => Severity.Success,
+            "over_receipted" => Severity.Warning,
+            _ => Severity.Info
+        };
+
+    private static string BuildBillReceiptMatchingNotice(InventoryBillReceiptHandoffSummary summary) =>
+        summary.MatchStatus switch
+        {
+            "no_inventory_handoff" => "This bill has not defined any complete inventory-grade inbound lines yet, so receipt matching is not active.",
+            "no_receipt" => "Inventory-grade bill lines exist, but no anchored purchase receipt has been posted yet.",
+            "partially_receipted" => "Receipt truth exists, but some inbound quantity is still outstanding against the bill hand-off.",
+            "fully_receipted" => "Anchored receipt truth fully covers the current bill hand-off quantity.",
+            "over_receipted" => "Anchored receipt quantity now exceeds the current bill hand-off quantity and should be investigated before AP matching deepens.",
+            _ => "Receipt-first matching truth is not yet available."
+        };
+
+    private static string BuildBillReceiptRemainingSummary(InventoryBillReceiptHandoffSummary summary) =>
+        summary.RemainingQuantity > 0m
+            ? "Quantity is still outstanding on the receipt side."
+            : summary.RemainingQuantity == 0m
+                ? "Current bill hand-off quantity is fully covered."
+                : "Receipt truth currently exceeds the bill hand-off quantity.";
+
+    private static string GetSettlementFollowUpTitle(ShellAccountingDocumentReviewSummary document)
+    {
+        if (string.Equals(document.Status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Post before settlement";
+        }
+
+        if (string.Equals(document.JournalEntryStatus, "reversed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(document.JournalEntryStatus, "voided", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Historical only";
+        }
+
+        return document.SourceType.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => "Review first receipt",
+            "bill" => "Review first vendor payment",
+            _ => "Review settlement"
+        };
+    }
+
+    private static string GetSettlementFollowUpDetail(ShellAccountingDocumentReviewSummary document)
+    {
+        if (string.Equals(document.Status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Settlement workbenches only surface posted source documents. Save and post this draft before expecting any open item to appear downstream.";
+        }
+
+        if (string.Equals(document.JournalEntryStatus, "reversed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(document.JournalEntryStatus, "voided", StringComparison.OrdinalIgnoreCase))
+        {
+            return "This source document is still visible for audit, but its accounting effect has already changed. If no settlement candidate appears downstream, that is expected.";
+        }
+
+        return document.SourceType.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => "A posted invoice should flow into Receive Payment for the same customer. If no receivable candidate appears there, verify whether another receipt already consumed the open item.",
+            "bill" => "A posted bill should flow into Pay Bill for the same vendor. If no payable candidate appears there, verify whether another vendor payment already consumed the open item.",
+            _ => "Posted source truth should appear in the next legal settlement workbench when an open item still exists."
+        };
+    }
+
+    private static string GetCounterpartyContinuityTitle(ShellAccountingDocumentReviewSummary document) =>
+        document.CounterpartyId.HasValue && !string.IsNullOrWhiteSpace(document.CounterpartyLabel)
+            ? $"{document.CounterpartyLabel} linked"
+            : "Counterparty link missing";
+
+    private static string GetCounterpartyContinuityDetail(ShellAccountingDocumentReviewSummary document)
+    {
+        if (!document.CounterpartyId.HasValue || string.IsNullOrWhiteSpace(document.CounterpartyLabel))
+        {
+            return "No concrete customer/vendor link is visible in this source summary, so the shell cannot carry a specific counterparty into the next settlement step.";
+        }
+
+        return $"This {document.CounterpartyLabel.Trim().ToLowerInvariant()} stays the governing counterparty for the next settlement review step, so the operator should continue with the same counterparty selected.";
+    }
+
+    private static bool TryBuildSettlementWorkbenchHref(
+        ShellAccountingDocumentReviewSummary? document,
+        out string href,
+        out string label)
+    {
+        href = string.Empty;
+        label = string.Empty;
+        if (document is null || !document.CounterpartyId.HasValue)
+        {
+            return false;
+        }
+
+        if (string.Equals(document.Status, "draft", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(document.JournalEntryStatus, "reversed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(document.JournalEntryStatus, "voided", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        switch (document.SourceType.Trim().ToLowerInvariant())
+        {
+            case "invoice":
+                href = $"/ar/receive-payment?origin=company-ready&customerId={document.CounterpartyId.Value:D}";
+                label = "Open First Receipt";
+                return true;
+            case "bill":
+                href = $"/ap/pay-bill?origin=company-ready&vendorId={document.CounterpartyId.Value:D}";
+                label = "Open First Vendor Payment";
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private string BuildBrowserNavigationHref(string href, string origin, string returnLabel)
     {
         var requestDetailHref = $"/documents/{SourceType}/{DocumentId:D}";
@@ -1581,7 +1838,9 @@
     private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
     {
         href = string.Empty;
-        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase) &&
+            !(sourceType?.Trim().ToLowerInvariant() is "bill" or "invoice" &&
+              string.Equals(status, "submitted", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -1597,6 +1856,22 @@
 
         return !string.IsNullOrWhiteSpace(href);
     }
+
+    private static bool CanOpenDraftWorkbench(ShellAccountingDocumentReviewSummary document) =>
+        document.CanEditDraft ||
+        ((string.Equals(document.SourceType, "bill", StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(document.SourceType, "invoice", StringComparison.OrdinalIgnoreCase)) &&
+         string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase));
+
+    private static string GetDraftWorkbenchLabel(string? sourceType, string? status) =>
+        string.Equals(status, "submitted", StringComparison.OrdinalIgnoreCase)
+            ? sourceType?.Trim().ToLowerInvariant() switch
+            {
+                "bill" => "Open Bill Workbench",
+                "invoice" => "Open Invoice Workbench",
+                _ => "Open Workbench"
+            }
+            : "Edit Draft";
 
     private static bool TryBuildJournalEntryLifecycleNotice(
         ShellAccountingDocumentReviewSummary document,

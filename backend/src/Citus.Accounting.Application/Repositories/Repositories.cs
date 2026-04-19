@@ -28,6 +28,12 @@ public interface IInvoiceDocumentRepository
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         InvoiceDraftSaveModel draft,
         CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
 }
 
 public interface ICreditNoteDocumentRepository
@@ -51,6 +57,18 @@ public interface IBillDocumentRepository
 
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         BillDraftSaveModel draft,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SubmitDraftAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> CancelSubmittedAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
         CancellationToken cancellationToken);
 }
 
@@ -145,7 +163,12 @@ public sealed record BillDraftLineSaveModel(
     decimal LineAmount,
     Guid? TaxCodeId,
     decimal TaxAmount,
-    bool IsTaxRecoverable);
+    bool IsTaxRecoverable,
+    Guid? ItemId = null,
+    Guid? WarehouseId = null,
+    string? UomCode = null,
+    decimal? Quantity = null,
+    decimal? UnitCost = null);
 
 public sealed record VendorCreditDraftSaveModel(
     Guid? DocumentId,

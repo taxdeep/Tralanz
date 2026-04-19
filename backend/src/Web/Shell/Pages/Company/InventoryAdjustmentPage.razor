@@ -1,0 +1,617 @@
+@page "/company/inventory-adjustment"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellInventoryAdjustmentClient InventoryAdjustment
+@inject ISnackbar Snackbar
+
+<PageTitle>Inventory Adjustment</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D / D4</MudText>
+            <MudText Typo="Typo.h4">Inventory Adjustment</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Record inventory count gains, count losses, and controlled write-offs directly inside Inventory. This stays separate from AR/AP and respects company write-off policy.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Inventory Adjustment is closed by default for <strong>@_onboardingSummary.Industry</strong> companies. Keep using lighter service-led setup until company governance opens inventory-managed trading flow.
+        </MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && _onboardingSummary.SupportsInventoryFoundation && WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_dashboard is null || (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation))
+    {
+        if (_onboardingSummary is null || _onboardingSummary.SupportsInventoryFoundation)
+        {
+            <MudPaper Elevation="0" Class="pa-5">
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+            </MudPaper>
+        }
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active stock items</MudText>
+                    <MudText Typo="Typo.h5">@OperationalItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Inventory adjustments only operate on warehouse-managed stock items in this stage.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active warehouses</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.ActiveWarehouses.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Adjustment lines stay inside one warehouse per document in this first slice.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Recent adjustments</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.RecentAdjustments.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Base currency is @_dashboard.BaseCurrencyCode.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Operational guardrail: tracked stock adjustments and tracked write-off are still closed here. Inventory Adjustment currently exposes only warehouse-managed stock items until tracked receive/issue and disposition inputs are ready.
+        </MudAlert>
+
+        @if (WriteOffApprovalRequired)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                Company policy currently requires approval for write-off. Count gain and count loss can still post directly; write-off now moves through request, approve, and post inside this inventory control lane.
+            </MudAlert>
+        }
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Adjustment header</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="InventoryAdjustmentKind"
+                                   Label="Adjustment kind"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_adjustmentKind">
+                            @foreach (var option in AdjustmentKindOptions)
+                            {
+                                <MudSelectItem T="InventoryAdjustmentKind" Value="@option">@GetAdjustmentKindLabel(option)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="Warehouse"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_warehouseId">
+                            @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                            {
+                                <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudDatePicker Label="Posting date"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Date="_postingDate" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string"
+                                      Label="Memo"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_memo" />
+                    </MudItem>
+                </MudGrid>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">Adjustment lines</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="AddLine">
+                        Add Line
+                    </MudButton>
+                </MudStack>
+
+                @foreach (var line in _lineEditors.OrderBy(line => line.LineNo))
+                {
+                    <MudPaper Elevation="0" Class="pa-4" Outlined="true">
+                        <MudGrid>
+                            <MudItem xs="12" md="1">
+                                <MudTextField T="int" Label="Line" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" Value="@line.LineNo" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudSelect T="Guid?"
+                                           Label="Item"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Disabled="@(_isSaving || WritesBlocked)"
+                                           Value="@line.ItemId"
+                                           ValueChanged="@((Guid? value) => OnItemChanged(line, value))">
+                                    @foreach (var item in OperationalItems)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="UOM" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.UomCode" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudNumericField T="decimal" Label="Qty" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.Quantity" />
+                            </MudItem>
+                            <MudItem xs="12" md="3">
+                                <MudNumericField T="decimal?"
+                                                 Label="Unit cost (base)"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Disabled="@(_isSaving || WritesBlocked || _adjustmentKind != InventoryAdjustmentKind.Gain)"
+                                                 @bind-Value="line.UnitCostBase" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField T="string" Label="Reason code" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.ReasonCode" />
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudTextField T="string" Label="Line memo" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.Memo" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Disabled="@(_isSaving || WritesBlocked || _lineEditors.Count <= 1)" OnClick="@(() => RemoveLine(line))">
+                                    Remove
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                }
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    @if (_adjustmentKind == InventoryAdjustmentKind.WriteOff && WriteOffApprovalRequired)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   OnClick="RequestWriteOffAsync">
+                            @(_isSaving ? "Requesting..." : "Request Write-Off")
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   OnClick="PostAsync">
+                            @(_isSaving ? "Posting..." : "Post Inventory Adjustment")
+                        </MudButton>
+                    }
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recent inventory adjustments</MudText>
+            @if (_dashboard.RecentAdjustments.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No inventory adjustments have been posted yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.RecentAdjustments" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Document</MudTh>
+                        <MudTh>Kind</MudTh>
+                        <MudTh>Warehouse</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Cost</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.DocumentNumber</MudTd>
+                        <MudTd>@GetAdjustmentKindLabel(context.AdjustmentKind)</MudTd>
+                        <MudTd>@context.WarehouseCode</MudTd>
+                        <MudTd>@context.TotalQuantity</MudTd>
+                        <MudTd>@context.TotalCostBase</MudTd>
+                        <MudTd>@context.Status</MudTd>
+                        <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                        <MudTd>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                @if (context.AdjustmentKind == InventoryAdjustmentKind.WriteOff &&
+                                     string.Equals(context.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               Color="Color.Info"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               OnClick="@(() => ApproveWriteOffAsync(context))">
+                                        Approve
+                                    </MudButton>
+                                }
+                                @if (context.AdjustmentKind == InventoryAdjustmentKind.WriteOff &&
+                                     string.Equals(context.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               Color="Color.Success"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               OnClick="@(() => PostApprovedWriteOffAsync(context))">
+                                        Post
+                                    </MudButton>
+                                }
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private static readonly InventoryAdjustmentKind[] AdjustmentKindOptions =
+    [
+        InventoryAdjustmentKind.Gain,
+        InventoryAdjustmentKind.Loss,
+        InventoryAdjustmentKind.WriteOff
+    ];
+
+    private InventoryAdjustmentDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private string? _error;
+    private bool _isSaving;
+    private InventoryAdjustmentKind _adjustmentKind = InventoryAdjustmentKind.Loss;
+    private Guid? _warehouseId;
+    private DateTime? _postingDate = DateTime.Today;
+    private string? _memo;
+    private List<AdjustmentLineEditorState> _lineEditors = [];
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool WriteOffApprovalRequired => _dashboard?.CostingPolicy?.RequireWriteOffApproval == true;
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems =>
+        _dashboard?.ActiveItems.Where(item => item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+            {
+                return;
+            }
+
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!onboardingResult.RequiresSignIn &&
+                !onboardingResult.IsNotFound &&
+                string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+            {
+                _onboardingSummary = onboardingResult.Value;
+            }
+
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+            {
+                return;
+            }
+
+            _dashboard = await InventoryAdjustment.GetDashboardAsync(ShellState.ActiveCompany.Id);
+            SeedDefaultsIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SeedDefaultsIfNeeded()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        _warehouseId ??= _dashboard.ActiveWarehouses.FirstOrDefault()?.Id;
+        if (_lineEditors.Count == 0)
+        {
+            var firstItem = OperationalItems.FirstOrDefault();
+            _lineEditors.Add(new AdjustmentLineEditorState
+            {
+                LineNo = 1,
+                ItemId = firstItem?.Id,
+                UomCode = firstItem?.StockUomCode ?? "EA",
+                Quantity = 1m
+            });
+        }
+    }
+
+    private void AddLine()
+    {
+        var nextLineNo = _lineEditors.Count == 0 ? 1 : _lineEditors.Max(line => line.LineNo) + 1;
+        var firstItem = OperationalItems.FirstOrDefault();
+        _lineEditors.Add(new AdjustmentLineEditorState
+        {
+            LineNo = nextLineNo,
+            ItemId = firstItem?.Id,
+            UomCode = firstItem?.StockUomCode ?? "EA",
+            Quantity = 1m
+        });
+    }
+
+    private void RemoveLine(AdjustmentLineEditorState line)
+    {
+        _lineEditors.Remove(line);
+        for (var index = 0; index < _lineEditors.Count; index++)
+        {
+            _lineEditors[index].LineNo = index + 1;
+        }
+    }
+
+    private Task OnItemChanged(AdjustmentLineEditorState line, Guid? itemId)
+    {
+        line.ItemId = itemId;
+        var item = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId);
+        if (item is not null)
+        {
+            line.UomCode = item.StockUomCode ?? line.UomCode;
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PostAsync()
+    {
+        if (TryBlockWrites() || _dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var request = new InventoryAdjustmentPostRequest(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _adjustmentKind,
+                _warehouseId ?? Guid.Empty,
+                DateOnly.FromDateTime((_postingDate ?? DateTime.Today).Date),
+                _memo,
+                _lineEditors.Select(line => new InventoryAdjustmentLineInput(
+                    line.LineNo,
+                    line.ItemId ?? Guid.Empty,
+                    line.UomCode,
+                    line.Quantity,
+                    line.UnitCostBase,
+                    line.ReasonCode,
+                    line.Memo)).ToArray());
+
+            var summary = await InventoryAdjustment.PostAsync(request, _dashboard);
+            await ReloadDashboardAsync();
+            ResetEditor();
+            Snackbar.Add($"{GetAdjustmentKindLabel(summary.AdjustmentKind)} {summary.DocumentNumber} posted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task RequestWriteOffAsync()
+    {
+        if (TryBlockWrites() || _dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var summary = await InventoryAdjustment.RequestWriteOffAsync(
+                new InventoryWriteOffRequestPostRequest(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    _warehouseId ?? Guid.Empty,
+                    DateOnly.FromDateTime((_postingDate ?? DateTime.Today).Date),
+                    _memo,
+                    _lineEditors.Select(line => new InventoryAdjustmentLineInput(
+                        line.LineNo,
+                        line.ItemId ?? Guid.Empty,
+                        line.UomCode,
+                        line.Quantity,
+                        null,
+                        line.ReasonCode,
+                        line.Memo)).ToArray()),
+                _dashboard);
+
+            await ReloadDashboardAsync();
+            ResetEditor();
+            Snackbar.Add($"Write-off request {summary.DocumentNumber} submitted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ApproveWriteOffAsync(InventoryAdjustmentSummary summary)
+    {
+        if (TryBlockWrites() || _dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var updated = await InventoryAdjustment.ApproveWriteOffAsync(
+                new InventoryWriteOffApprovePostRequest(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    summary.DocumentId),
+                _dashboard);
+
+            await ReloadDashboardAsync();
+            Snackbar.Add($"Write-off request {updated.DocumentNumber} approved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task PostApprovedWriteOffAsync(InventoryAdjustmentSummary summary)
+    {
+        if (TryBlockWrites() || _dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            var updated = await InventoryAdjustment.PostApprovedWriteOffAsync(
+                new InventoryWriteOffApprovePostRequest(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    summary.DocumentId),
+                _dashboard);
+
+            await ReloadDashboardAsync();
+            Snackbar.Add($"Write-off {updated.DocumentNumber} posted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ReloadDashboardAsync()
+    {
+        _dashboard = await InventoryAdjustment.GetDashboardAsync(ShellState.ActiveCompany.Id);
+        SeedDefaultsIfNeeded();
+    }
+
+    private void ResetEditor()
+    {
+        _memo = null;
+        _postingDate = DateTime.Today;
+        _lineEditors = [];
+        SeedDefaultsIfNeeded();
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private static string GetAdjustmentKindLabel(InventoryAdjustmentKind kind) => kind switch
+    {
+        InventoryAdjustmentKind.Gain => "Count Gain",
+        InventoryAdjustmentKind.Loss => "Count Loss",
+        InventoryAdjustmentKind.WriteOff => "Write-Off",
+        _ => kind.ToString()
+    };
+
+    private sealed class AdjustmentLineEditorState
+    {
+        public int LineNo { get; set; }
+        public Guid? ItemId { get; set; }
+        public string UomCode { get; set; } = "EA";
+        public decimal Quantity { get; set; } = 1m;
+        public decimal? UnitCostBase { get; set; }
+        public string? ReasonCode { get; set; }
+        public string? Memo { get; set; }
+    }
+}

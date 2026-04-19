@@ -17,4 +17,10 @@ public interface IPlatformRuntimeStateRepository
     Task<PlatformNotificationReadinessState> UpsertNotificationReadinessStateAsync(
         PlatformNotificationReadinessState state,
         CancellationToken cancellationToken);
+
+    Task<PlatformFirstCompanySetupState?> GetFirstCompanySetupStateAsync(CancellationToken cancellationToken);
+
+    Task<PlatformFirstCompanySetupState> UpsertFirstCompanySetupStateAsync(
+        PlatformFirstCompanySetupState state,
+        CancellationToken cancellationToken);
 }
