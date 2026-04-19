@@ -84,6 +84,42 @@ public interface IVendorCreditDocumentRepository
         CancellationToken cancellationToken);
 }
 
+public interface IReceiptDocumentRepository
+{
+    Task<ReceiptDocument?> GetAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ReceiptDocumentListItem>> ListAsync(
+        CompanyId companyId,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        ReceiptDraftSaveModel draft,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> PostAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+}
+
+public interface IBillReceiptMatchingRepository
+{
+    Task<BillReceiptMatchingLaneSummary> GetBillLaneSummaryAsync(
+        CompanyId companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<Guid, BillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(
+        CompanyId companyId,
+        IReadOnlyCollection<Guid> billDocumentIds,
+        CancellationToken cancellationToken);
+}
+
 public sealed record SourceDocumentDraftSaveResult(
     Guid DocumentId,
     string EntityNumber,
@@ -197,6 +233,90 @@ public sealed record VendorCreditDraftLineSaveModel(
     Guid? TaxCodeId,
     decimal TaxAmount,
     bool IsTaxRecoverable);
+
+public sealed record ReceiptDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid VendorId,
+    Guid WarehouseId,
+    DateOnly ReceiptDate,
+    string? VendorReference,
+    string? SourceReference,
+    string? Memo,
+    IReadOnlyList<ReceiptDraftLineSaveModel> Lines);
+
+public sealed record ReceiptDraftLineSaveModel(
+    int LineNumber,
+    Guid ItemId,
+    decimal Quantity,
+    string UomCode,
+    string? TrackingCaptureHome);
+
+public sealed record ReceiptDocumentListItem(
+    Guid DocumentId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    Guid VendorId,
+    Guid WarehouseId,
+    DateOnly ReceiptDate,
+    int LineCount,
+    decimal TotalQuantity,
+    string? VendorReference,
+    string? SourceReference,
+    string? Memo,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? PostedAt);
+
+public sealed record BillReceiptPostingGateSnapshot(
+    Guid BillDocumentId,
+    int BillInboundLineCount,
+    decimal BillInboundQuantity,
+    int ReceiptCount,
+    decimal CoveredQuantity,
+    decimal RemainingQuantity,
+    string MatchStatus,
+    DateTimeOffset? LatestReceiptPostedAt);
+
+public sealed record BillReceiptMatchingReceiptSummary(
+    Guid ReceiptDocumentId,
+    string DisplayNumber,
+    DateOnly ReceiptDate,
+    string Status,
+    decimal ReceiptQuantity,
+    decimal MatchedQuantity,
+    string? VendorReference,
+    string? SourceReference,
+    DateTimeOffset? PostedAt);
+
+public sealed record BillReceiptMatchingLineSummary(
+    int BillLineNumber,
+    Guid ItemId,
+    string ItemCode,
+    string ItemName,
+    Guid WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    string UomCode,
+    decimal BillQuantity,
+    decimal CoveredQuantity,
+    decimal RemainingQuantity,
+    int ReceiptCount,
+    string MatchStatus);
+
+public sealed record BillReceiptMatchingLaneSummary(
+    Guid BillDocumentId,
+    int BillInboundLineCount,
+    decimal BillInboundQuantity,
+    int ReceiptCount,
+    decimal CoveredQuantity,
+    decimal RemainingQuantity,
+    string MatchStatus,
+    DateTimeOffset? LatestReceiptPostedAt,
+    IReadOnlyList<BillReceiptMatchingReceiptSummary> RecentReceipts,
+    IReadOnlyList<BillReceiptMatchingLineSummary> LineSummaries);
 
 public interface IReceivePaymentDocumentRepository
 {

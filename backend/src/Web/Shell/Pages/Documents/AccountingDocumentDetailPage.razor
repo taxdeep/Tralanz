@@ -5,7 +5,7 @@
 @inject WebShellBusinessSessionClient SessionClient
 @inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellAccountingDocumentReviewClient ReviewClient
-@inject ShellInventoryReceiptClient InventoryReceiptClient
+@inject ShellBillReceiptMatchingClient BillReceiptMatchingClient
 @inject ShellInventoryShipmentClient InventoryShipmentClient
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
@@ -188,9 +188,9 @@
                         <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.BillInboundLineCount inventory-grade line(s)</MudText>
                     </MudPaper>
                     <MudPaper Class="pa-3" Elevation="0">
-                        <MudText Typo="Typo.caption">Receipted Qty</MudText>
-                        <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.ReceivedQuantity.ToString("N2")</MudText>
-                        <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.ReceiptCount anchored receipt(s)</MudText>
+                        <MudText Typo="Typo.caption">Receipt-covered Qty</MudText>
+                        <MudText Typo="Typo.h6">@_billReceiptHandoffSummary.CoveredQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_billReceiptHandoffSummary.ReceiptCount matched posted receipt(s)</MudText>
                     </MudPaper>
                     <MudPaper Class="pa-3" Elevation="0">
                         <MudText Typo="Typo.caption">Remaining Qty</MudText>
@@ -203,28 +203,23 @@
                         <MudText Typo="Typo.body2" Class="text-secondary">Receipt truth remains authoritative over AP charge truth.</MudText>
                     </MudPaper>
                 </div>
-                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@($"/company/inventory-purchase-receipt?sourceType=bill&billId={_document.Id:D}")">
-                        Open Receipt Workspace
-                    </MudButton>
-                </div>
                 @if (_billReceiptHandoffSummary.RecentReceipts.Count > 0)
                 {
                     <MudTable Items="_billReceiptHandoffSummary.RecentReceipts" Dense="true" Hover="true" Bordered="true">
                         <HeaderContent>
                             <MudTh>Receipt</MudTh>
                             <MudTh>Date</MudTh>
-                            <MudTh>Vendor</MudTh>
-                            <MudTh>Qty</MudTh>
-                            <MudTh>Cost (Base)</MudTh>
+                            <MudTh>Matched Qty</MudTh>
+                            <MudTh>Receipt Qty</MudTh>
+                            <MudTh>Vendor Ref</MudTh>
                             <MudTh>Status</MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd>@context.DocumentNumber</MudTd>
-                            <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
-                            <MudTd>@context.VendorDisplayName</MudTd>
-                            <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
-                            <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
+                            <MudTd>@context.DisplayNumber</MudTd>
+                            <MudTd>@context.ReceiptDate.ToString("yyyy-MM-dd")</MudTd>
+                            <MudTd>@context.MatchedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.ReceiptQuantity.ToString("N2")</MudTd>
+                            <MudTd>@(context.VendorReference ?? "n/a")</MudTd>
                             <MudTd>@context.Status</MudTd>
                         </RowTemplate>
                     </MudTable>
@@ -237,7 +232,7 @@
                             <MudTh>Warehouse</MudTh>
                             <MudTh>UOM</MudTh>
                             <MudTh>Bill Qty</MudTh>
-                            <MudTh>Receipted Qty</MudTh>
+                            <MudTh>Covered Qty</MudTh>
                             <MudTh>Remaining</MudTh>
                             <MudTh>Status</MudTh>
                         </HeaderContent>
@@ -246,7 +241,7 @@
                             <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
                             <MudTd>@context.UomCode</MudTd>
                             <MudTd>@context.BillQuantity.ToString("N2")</MudTd>
-                            <MudTd>@context.ReceivedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.CoveredQuantity.ToString("N2")</MudTd>
                             <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
                             <MudTd>@FormatBillReceiptMatchStatus(context.MatchStatus)</MudTd>
                         </RowTemplate>
@@ -811,7 +806,7 @@
     private IReadOnlyList<ShellSubledgerReverseBlockerSummary> _subledgerReverseBlockers = Array.Empty<ShellSubledgerReverseBlockerSummary>();
     private IReadOnlyDictionary<Guid, BlockerReverseDetail> _blockerReverseDetails = new Dictionary<Guid, BlockerReverseDetail>();
     private IReadOnlyList<ShellSettlementApplicationReversalSummary> _settlementApplicationReversals = Array.Empty<ShellSettlementApplicationReversalSummary>();
-    private InventoryBillReceiptHandoffSummary? _billReceiptHandoffSummary;
+    private ShellBillReceiptMatchingSummary? _billReceiptHandoffSummary;
     private InventoryInvoiceShipmentIssueLaneSummary? _invoiceShipmentLaneSummary;
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
     private bool WritesBlocked => ShellState.AreWritesBlocked;
@@ -867,10 +862,18 @@
         _factRows = BuildFactRows(document);
         if (IsBillReceiptReview(document))
         {
-            _billReceiptHandoffSummary = await InventoryReceiptClient.GetBillHandoffSummaryAsync(
+            var matchingResult = await BillReceiptMatchingClient.GetBillSummaryAsync(
                 ShellState.ActiveCompany.Id,
                 document.Id,
                 CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(matchingResult, CancellationToken.None))
+            {
+                _isLoading = false;
+                return;
+            }
+
+            _billReceiptHandoffSummary = matchingResult.Value;
+            CapturePageError(matchingResult.ErrorMessage);
         }
         else if (IsInvoiceShipmentReview(document))
         {
@@ -1863,37 +1866,32 @@
         {
             "no_inventory_handoff" => "No inventory hand-off",
             "no_receipt" => "No receipt yet",
-            "partially_receipted" => "Partially receipted",
-            "fully_receipted" => "Fully receipted",
-            "over_receipted" => "Over receipted",
+            "partially_covered" => "Partially covered",
+            "fully_covered" => "Fully covered",
             _ => "Awaiting receipt review"
         };
 
     private static Severity GetBillReceiptMatchingSeverity(string? matchStatus) =>
         matchStatus switch
         {
-            "fully_receipted" => Severity.Success,
-            "over_receipted" => Severity.Warning,
+            "fully_covered" => Severity.Success,
             _ => Severity.Info
         };
 
-    private static string BuildBillReceiptMatchingNotice(InventoryBillReceiptHandoffSummary summary) =>
+    private static string BuildBillReceiptMatchingNotice(ShellBillReceiptMatchingSummary summary) =>
         summary.MatchStatus switch
         {
             "no_inventory_handoff" => "This bill has not defined any complete inventory-grade inbound lines yet, so receipt matching is not active.",
-            "no_receipt" => "Inventory-grade bill lines exist, but no anchored purchase receipt has been posted yet.",
-            "partially_receipted" => "Receipt truth exists, but some inbound quantity is still outstanding against the bill hand-off.",
-            "fully_receipted" => "Anchored receipt truth fully covers the current bill hand-off quantity.",
-            "over_receipted" => "Anchored receipt quantity now exceeds the current bill hand-off quantity and should be investigated before AP matching deepens.",
+            "no_receipt" => "Inventory-grade bill lines exist, but no posted first-class receipt has been matched yet.",
+            "partially_covered" => "Posted receipt truth exists, but some inbound quantity is still outstanding against the bill hand-off.",
+            "fully_covered" => "Posted receipt truth fully covers the current bill hand-off quantity.",
             _ => "Receipt-first matching truth is not yet available."
         };
 
-    private static string BuildBillReceiptRemainingSummary(InventoryBillReceiptHandoffSummary summary) =>
+    private static string BuildBillReceiptRemainingSummary(ShellBillReceiptMatchingSummary summary) =>
         summary.RemainingQuantity > 0m
             ? "Quantity is still outstanding on the receipt side."
-            : summary.RemainingQuantity == 0m
-                ? "Current bill hand-off quantity is fully covered."
-                : "Receipt truth currently exceeds the bill hand-off quantity.";
+            : "Current bill hand-off quantity is fully covered.";
 
     private static string FormatInvoiceShipmentMatchStatus(string? matchStatus) =>
         matchStatus switch

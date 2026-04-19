@@ -813,6 +813,62 @@ The first operational return slice now introduces an inventory-owned `customer r
 - that means returned stock is now formally received, but it is not yet available inventory until a later inspect/disposition slice decides whether it should be restocked or routed into write-off / scrap / damaged / unsellable outcomes
 - vendor return remains explicitly deferred and will later be modeled as a separate lane anchored to receipt truth, not mixed into this first customer-return seam
 
+## Phase H.2 checkpoint
+
+This slice stands up `Receipt / ReceiptLine` as first-class document foundation and nothing more. It should be treated as a document bootstrap, not as receipt-first inventory enablement.
+
+- the accounting/source-document seam now persists `receipts` and `receipt_lines` as company-scoped tables distinct from inventory-owned `purchase_receipt`
+- `ReceiptDocument` and `ReceiptDocumentLine` now own minimal document truth only:
+  - vendor
+  - warehouse
+  - receipt date
+  - status
+  - memo
+  - source/vendor references
+  - line-level item / quantity / unit
+  - reserved `tracking_capture_home`
+- lifecycle is intentionally limited to `draft` and `posted`
+- the `posted` state in H.2 is only document-state truth; it does not invoke inventory movement, receipt-first operational gating, or GL posting
+- this slice intentionally stops before all bridge behavior:
+  - no `ReceiveStockFromReceipt`
+  - no inventory ledger / balance / cost-layer mutation
+  - no GR/IR posting
+  - no bill behavior change
+  - no bill/receipt matching
+  - no PPV / variance
+  - no tracked operational intake
+- after H.2, bill remains the current transitional inbound truth lane; receipt has simply become a standing first-class document that later phases can safely bridge into
+
+## Phase H.3 checkpoint
+
+`Receipt-first inbound matching / posting-gate activation` now sits on top of the H.2 receipt foundation, but it still stops short of receipt-driven inventory or GL truth.
+
+- bill/receipt bridge truth is now persisted through `bill_receipt_matching_allocations`, rather than being hidden inside convenience summaries
+- the first authoritative matching anchors are intentionally narrow:
+  - company
+  - vendor
+  - item
+  - warehouse
+  - stock UOM
+  - posted receipt only
+- bill/receipt matching now supports partial and split coverage while enforcing hard ceilings:
+  - bill line coverage may not exceed the bill line quantity basis
+  - receipt line allocation may not exceed remaining posted receipt quantity
+  - draft receipts never count toward receipt-first posting eligibility
+- matching policy now orders bill consumption in a control-friendly way (`posted -> submitted -> draft`) before applying date/id tie-breakers, so formal bill truth does not lose posted receipt coverage to younger drafts
+- bill posting gate authority now consumes persisted matching truth from the application seam, not only older summary-style receipt review logic
+- browser/detail/editor continuity remains intact, but H.3 still avoids turning receipt into an operational inventory document:
+  - no `ReceiveStockFromReceipt`
+  - no inventory ledger or balance mutation from receipt
+  - no cost-layer creation from receipt
+  - no GR/IR
+  - no PPV / variance
+  - no PO truth
+  - no tracked operational enablement
+  - no vendor return lane
+  - no shell-wide receipt expansion
+- after H.3, receipt is now a real participant in inbound control truth, but bill is still the transitional inbound AP path and receipt still does not own inbound inventory or accounting truth
+
 ## Immediate Recommendation
 
 The next formal planning step should be:

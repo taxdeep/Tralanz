@@ -1,7 +1,6 @@
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Posting;
-using Citus.Modules.Inventory.Application.Contracts;
 
 namespace Citus.Accounting.Application.Commands;
 
@@ -10,20 +9,20 @@ public sealed class PostBillCommandHandler
     private readonly IBillDocumentRepository _documents;
     private readonly IPostingEngine _postingEngine;
     private readonly IApOpenItemRepository _openItems;
-    private readonly IInventoryReceiptStore _inventoryReceiptStore;
+    private readonly IBillReceiptMatchingRepository _billReceiptMatchingRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostBillCommandHandler(
         IBillDocumentRepository documents,
         IPostingEngine postingEngine,
         IApOpenItemRepository openItems,
-        IInventoryReceiptStore inventoryReceiptStore,
+        IBillReceiptMatchingRepository billReceiptMatchingRepository,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         _postingEngine = postingEngine ?? throw new ArgumentNullException(nameof(postingEngine));
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
-        _inventoryReceiptStore = inventoryReceiptStore ?? throw new ArgumentNullException(nameof(inventoryReceiptStore));
+        _billReceiptMatchingRepository = billReceiptMatchingRepository ?? throw new ArgumentNullException(nameof(billReceiptMatchingRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -46,8 +45,8 @@ public sealed class PostBillCommandHandler
                 throw new InvalidOperationException("Only submitted bills can be posted.");
             }
 
-            var receiptHandoffSummary = await _inventoryReceiptStore.GetBillHandoffSummaryAsync(
-                command.CompanyId.Value,
+            var receiptHandoffSummary = await _billReceiptMatchingRepository.GetBillLaneSummaryAsync(
+                command.CompanyId,
                 command.DocumentId,
                 ct);
 

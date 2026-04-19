@@ -187,12 +187,6 @@
                             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/documents/{context.SourceType}/{context.Id:D}")">
                                 Open Detail
                             </MudButton>
-                            @if (TryBuildReceiptWorkspaceHref(context.SourceType, context.Id, out var receiptHref))
-                            {
-                                <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@receiptHref" Disabled="WritesBlocked">
-                                    Open Receipt Workspace
-                                </MudButton>
-                            }
                             @if (TryBuildShipmentWorkspaceHref(context.SourceType, context.Id, out var shipmentHref))
                             {
                                 <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@shipmentHref" Disabled="WritesBlocked">
@@ -489,18 +483,6 @@
             }
             : "Edit Draft";
 
-    private static bool TryBuildReceiptWorkspaceHref(string? sourceType, Guid documentId, out string href)
-    {
-        href = string.Empty;
-        if (!string.Equals(sourceType, "bill", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        href = $"/company/inventory-purchase-receipt?sourceType=bill&billId={documentId:D}";
-        return true;
-    }
-
     private static bool TryBuildShipmentWorkspaceHref(string? sourceType, Guid documentId, out string href)
     {
         href = string.Empty;
@@ -521,9 +503,7 @@
         item.BillReceiptAllowsPost switch
         {
             true => Color.Success,
-            false => string.Equals(item.BillReceiptMatchStatus, "over_receipted", StringComparison.OrdinalIgnoreCase)
-                ? Color.Warning
-                : Color.Info,
+            false => Color.Info,
             _ => Color.Default
         };
 

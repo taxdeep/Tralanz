@@ -428,3 +428,68 @@ The first real `Return / Disposition Truth` slice now opens an inventory-owned `
   - disposition-reason seam
 - this slice deliberately does **not** move stock back to `on_hand`; no inventory ledger, balance, or cost-layer mutation occurs until later inspect/disposition logic decides whether the returned goods are restockable
 - vendor return remains intentionally deferred to a later lane anchored to receipt truth rather than being mixed into this first customer-return intake path
+
+## Phase H.2 checkpoint
+
+This slice introduces `Receipt / ReceiptLine` as first-class source-document foundation only. It does **not** reopen the receipt-first bridge or transfer inbound inventory truth away from the current transitional bill path.
+
+- `receipts` and `receipt_lines` now exist as company-scoped persisted document tables inside the accounting/source-document seam
+- `ReceiptDocument` and `ReceiptDocumentLine` now provide the minimal document model for:
+  - vendor
+  - warehouse
+  - receipt date
+  - status
+  - memo
+  - source/vendor references
+  - line-level item / quantity / unit
+  - reserved `tracking_capture_home`
+- the lifecycle skeleton is intentionally minimal:
+  - `draft`
+  - `posted`
+- `posted` now exists only as document status truth; in this phase it does **not** drive inventory movement, cost truth, or GL truth
+- H.2 exposes only document-foundation operations:
+  - create draft
+  - update draft
+  - read one receipt
+  - list receipts
+  - mark draft as posted
+- this slice explicitly does **not** introduce:
+  - `ReceiveStockFromReceipt`
+  - inventory movement from receipt
+  - GR/IR posting
+  - `receipt_required` consumers
+  - bill behavior changes
+  - bill/receipt matching
+  - PPV / variance
+  - tracked operational enablement
+- after H.2, bill remains the active transitional inbound path; receipt exists as a standing first-class document foundation, but it does not yet take over inbound inventory truth
+
+## Phase H.3 checkpoint
+
+This slice activates `Receipt-first inbound matching / posting-gate` on top of the standing `ReceiptDocument` foundation without turning receipt into an inventory or GL driver.
+
+- bill/receipt bridge truth is now persisted in `bill_receipt_matching_allocations`, so bill coverage no longer depends only on transient receipt summaries
+- the authoritative matching anchors in this first version are:
+  - `company`
+  - `vendor`
+  - `item`
+  - `warehouse`
+  - `stock UOM`
+  - `posted receipt only`
+- the matching lane now supports realistic partial coverage:
+  - one bill line can be covered by multiple posted receipt lines
+  - one receipt set can allocate across multiple bill lines
+  - bill coverage never exceeds bill quantity basis
+  - receipt allocation never exceeds remaining posted receipt quantity
+- bill posting authority now consumes persisted bill/receipt matching truth plus computed policy from `Citus.Accounting.Application`; draft receipts do **not** satisfy the receipt-first gate
+- source browser, source detail, and bill editor now all project the same receipt-first coverage truth, while staying batch-friendly through repository-level grouped refresh instead of per-line UI recomputation
+- this slice still deliberately does **not** introduce:
+  - receipt-driven inventory posting
+  - inventory ledger / cost-layer creation from receipt
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - tracked operational enablement
+  - vendor return lane
+  - shell-wide receipt workspace expansion
+- after H.3, bill remains the transitional inbound AP path, but posted `ReceiptDocument` truth now participates as a formal control input in whether bill posting is allowed

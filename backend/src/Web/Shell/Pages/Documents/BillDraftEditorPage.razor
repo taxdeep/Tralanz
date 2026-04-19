@@ -15,6 +15,7 @@
 @inject ShellSourceDocumentDraftClient Drafts
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellInventoryReceiptClient InventoryReceipt
+@inject ShellBillReceiptMatchingClient BillReceiptMatching
 @inject ISnackbar Snackbar
 
 <PageTitle>Bill Draft</PageTitle>
@@ -206,12 +207,6 @@
         <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
                 <MudText Typo="Typo.h6">Inventory Receipt Hand-off</MudText>
-                @if (_saved is not null && HasReadyInventoryGradeInboundLines)
-                {
-                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@BuildPurchaseReceiptHandoffHref()">
-                        Continue To Purchase Receipt
-                    </MudButton>
-                }
             </div>
             <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
                 Fill these fields only when this bill line should later hand off into purchase receipt review. Bill still carries AP truth; receipt remains the authoritative inbound inventory truth.
@@ -236,9 +231,9 @@
                         <MudText Typo="Typo.body2" Class="text-secondary">@_receiptHandoffSummary.BillInboundLineCount inventory-grade line(s)</MudText>
                     </MudPaper>
                     <MudPaper Class="pa-3" Elevation="0">
-                        <MudText Typo="Typo.caption">Receipted Qty</MudText>
-                        <MudText Typo="Typo.h6">@_receiptHandoffSummary.ReceivedQuantity.ToString("N2")</MudText>
-                        <MudText Typo="Typo.body2" Class="text-secondary">@_receiptHandoffSummary.ReceiptCount anchored receipt(s)</MudText>
+                        <MudText Typo="Typo.caption">Receipt-covered Qty</MudText>
+                        <MudText Typo="Typo.h6">@_receiptHandoffSummary.CoveredQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_receiptHandoffSummary.ReceiptCount matched posted receipt(s)</MudText>
                     </MudPaper>
                     <MudPaper Class="pa-3" Elevation="0">
                         <MudText Typo="Typo.caption">Remaining Qty</MudText>
@@ -256,12 +251,6 @@
                     <MudText Typo="Typo.h6">@ReceiptHandoffNextStepTitle</MudText>
                     <MudText Typo="Typo.body2" Class="text-secondary">@ReceiptHandoffNextStepDetail</MudText>
                     <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem;">
-                        @if (_saved is not null && HasReadyInventoryGradeInboundLines)
-                        {
-                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@BuildPurchaseReceiptHandoffHref()">
-                                Open Receipt Workspace
-                            </MudButton>
-                        }
                         @if (_saved is not null)
                         {
                             <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildPostedDetailHref()">
@@ -276,17 +265,17 @@
                         <HeaderContent>
                             <MudTh>Receipt</MudTh>
                             <MudTh>Date</MudTh>
-                            <MudTh>Vendor</MudTh>
-                            <MudTh>Qty</MudTh>
-                            <MudTh>Cost (Base)</MudTh>
+                            <MudTh>Matched Qty</MudTh>
+                            <MudTh>Receipt Qty</MudTh>
+                            <MudTh>Vendor Ref</MudTh>
                             <MudTh>Status</MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd>@context.DocumentNumber</MudTd>
-                            <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
-                            <MudTd>@context.VendorDisplayName</MudTd>
-                            <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
-                            <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
+                            <MudTd>@context.DisplayNumber</MudTd>
+                            <MudTd>@context.ReceiptDate.ToString("yyyy-MM-dd")</MudTd>
+                            <MudTd>@context.MatchedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.ReceiptQuantity.ToString("N2")</MudTd>
+                            <MudTd>@(context.VendorReference ?? "n/a")</MudTd>
                             <MudTd>@context.Status</MudTd>
                         </RowTemplate>
                     </MudTable>
@@ -299,7 +288,7 @@
                             <MudTh>Warehouse</MudTh>
                             <MudTh>UOM</MudTh>
                             <MudTh>Bill Qty</MudTh>
-                            <MudTh>Receipted Qty</MudTh>
+                            <MudTh>Covered Qty</MudTh>
                             <MudTh>Remaining</MudTh>
                             <MudTh>Status</MudTh>
                         </HeaderContent>
@@ -308,7 +297,7 @@
                             <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
                             <MudTd>@context.UomCode</MudTd>
                             <MudTd>@context.BillQuantity.ToString("N2")</MudTd>
-                            <MudTd>@context.ReceivedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.CoveredQuantity.ToString("N2")</MudTd>
                             <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
                             <MudTd>@FormatReceiptGroupMatchStatus(context.MatchStatus)</MudTd>
                         </RowTemplate>
@@ -451,7 +440,7 @@
     private IReadOnlyList<ShellManagedProductServiceSummary> _purchaseProductServices = Array.Empty<ShellManagedProductServiceSummary>();
     private WebShellCompanyOnboardingSummary? _onboardingSummary;
     private InventoryPurchaseReceiptDashboard? _inventoryReceiptDashboard;
-    private InventoryBillReceiptHandoffSummary? _receiptHandoffSummary;
+    private ShellBillReceiptMatchingSummary? _receiptHandoffSummary;
     private Guid? _documentId;
     private ShellSourceDocumentDraftSaveResult? _saved;
     private string? _vendorIdText;
@@ -512,18 +501,16 @@
     {
         "no_inventory_handoff" => "No inventory hand-off",
         "no_receipt" => "No receipt yet",
-        "partially_receipted" => "Partially receipted",
-        "fully_receipted" => "Fully receipted",
-        "over_receipted" => "Over receipted",
+        "partially_covered" => "Partially covered",
+        "fully_covered" => "Fully covered",
         _ => "Awaiting receipt review"
     };
     private string ReceiptHandoffStatusSummary => _receiptHandoffSummary?.MatchStatus switch
     {
         "no_inventory_handoff" => "This bill has not defined any complete inventory-grade inbound lines yet, so receipt matching is not active.",
-        "no_receipt" => "Inventory-grade bill lines exist, but no purchase receipt has yet been posted back against this bill anchor.",
-        "partially_receipted" => "At least one anchored receipt exists, but inventory truth still shows some inbound quantity remaining.",
-        "fully_receipted" => "Anchored receipt truth now fully covers the current bill hand-off quantity.",
-        "over_receipted" => "Receipted quantity now exceeds the current bill hand-off quantity and should be investigated before AP matching deepens.",
+        "no_receipt" => "Inventory-grade bill lines exist, but no posted first-class receipt currently covers this bill hand-off.",
+        "partially_covered" => "At least one posted receipt is matched, but some inbound quantity still remains uncovered.",
+        "fully_covered" => "Posted first-class receipt truth now fully covers the current bill hand-off quantity.",
         _ => "Receipt-first matching truth has not been loaded yet."
     };
     private string ReceiptRemainingSummary => _receiptHandoffSummary is null
@@ -536,49 +523,44 @@
     private string ReceiptHandoffNextStepTitle => _receiptHandoffSummary?.MatchStatus switch
     {
         "no_inventory_handoff" => "Complete bill inbound truth",
-        "no_receipt" => "Post the first purchase receipt",
-        "partially_receipted" => "Continue receipt review",
-        "fully_receipted" => "Bill hand-off is covered",
-        "over_receipted" => "Investigate anchored receipts",
+        "no_receipt" => "Post the first receipt document",
+        "partially_covered" => "Continue receipt matching review",
+        "fully_covered" => "Bill hand-off is covered",
         _ => "Review receipt-first matching"
     };
     private string ReceiptHandoffNextStepDetail => _receiptHandoffSummary?.MatchStatus switch
     {
         "no_inventory_handoff" => "At least one bill line still needs the full item, warehouse, UOM, quantity, and unit-cost hand-off set before receipt matching can start.",
-        "no_receipt" => "Inventory-grade inbound lines exist, but no authoritative purchase receipt has been posted yet against this bill anchor.",
-        "partially_receipted" => "Receipt truth is in progress. Keep reviewing remaining quantity before AP matching assumes the inbound side is complete.",
-        "fully_receipted" => "Receipt-first matching now fully covers the current bill hand-off quantity. Use bill detail or downstream AP review for the next step.",
-        "over_receipted" => "Anchored receipt quantity now exceeds the current bill hand-off quantity. Review recent receipts and bill detail before deepening AP matching.",
+        "no_receipt" => "Inventory-grade inbound lines exist, but no posted first-class receipt has yet been matched against this bill anchor.",
+        "partially_covered" => "Receipt truth is in progress. Keep reviewing remaining quantity before AP matching assumes the inbound side is complete.",
+        "fully_covered" => "Receipt-first matching now fully covers the current bill hand-off quantity. Use bill detail or downstream AP review for the next step.",
         _ => "Receipt-first matching remains the authoritative review lane for this bill."
     };
     private bool ReceiptHandoffAllowsBillPost =>
         _receiptHandoffSummary is null ||
         string.Equals(_receiptHandoffSummary.MatchStatus, "no_inventory_handoff", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(_receiptHandoffSummary.MatchStatus, "fully_receipted", StringComparison.OrdinalIgnoreCase);
+        string.Equals(_receiptHandoffSummary.MatchStatus, "fully_covered", StringComparison.OrdinalIgnoreCase);
     private string ReceiptPostHoldLabel => _receiptHandoffSummary?.MatchStatus switch
     {
         "no_receipt" => "Post on hold: no receipt yet",
-        "partially_receipted" => "Post on hold: receipt still partial",
-        "over_receipted" => "Post on hold: receipt mismatch",
-        "fully_receipted" => "Post enabled",
+        "partially_covered" => "Post on hold: receipt still partial",
+        "fully_covered" => "Post enabled",
         "no_inventory_handoff" => "Post enabled",
         _ => "Awaiting receipt review"
     };
     private string ReceiptPostHoldSummary => _receiptHandoffSummary?.MatchStatus switch
     {
         "no_receipt" => "Inventory-grade inbound lines exist, but AP posting must wait until at least one authoritative purchase receipt is posted.",
-        "partially_receipted" => $"AP posting stays on hold until the remaining {_receiptHandoffSummary.RemainingQuantity:N2} inbound quantity is covered by receipt truth.",
-        "over_receipted" => "AP posting stays on hold while receipt truth exceeds the current bill hand-off quantity. Review the mismatch before formalizing AP truth.",
-        "fully_receipted" => "Receipt-first matching fully covers the current bill hand-off quantity, so the bill can move into formal AP posting when you are ready.",
+        "partially_covered" => $"AP posting stays on hold until the remaining {_receiptHandoffSummary.RemainingQuantity:N2} inbound quantity is covered by posted receipt truth.",
+        "fully_covered" => "Receipt-first matching fully covers the current bill hand-off quantity, so the bill can move into formal AP posting when you are ready.",
         "no_inventory_handoff" => "This bill is not participating in receipt-first matching, so AP posting remains controlled only by the draft lifecycle lane.",
         _ => "Receipt-first matching truth has not been loaded yet."
     };
     private static string FormatReceiptGroupMatchStatus(string? matchStatus) => matchStatus switch
     {
         "no_receipt" => "No receipt yet",
-        "partially_receipted" => "Partial",
-        "fully_receipted" => "Full",
-        "over_receipted" => "Over",
+        "partially_covered" => "Partial",
+        "fully_covered" => "Full",
         _ => "Review"
     };
     private string BillPostingPathLabel => _postedResult is not null ? "Ready for settlement" : IsPosted ? "Posted" : IsCancelled ? "Cancelled" : IsSubmitted ? (ReceiptHandoffAllowsBillPost ? "Submitted, awaiting post" : "Submitted, held by receipt review") : _saved is not null ? "Draft saved, awaiting submit" : "Draft -> Submit -> Post -> Pay Bill";
@@ -980,11 +962,6 @@
             ? $"/ap/pay-bill?origin=company-ready&vendorId={vendorId:D}"
             : "/ap/pay-bill?origin=company-ready";
 
-    private string BuildPurchaseReceiptHandoffHref() =>
-        _saved is null
-            ? "/company/inventory-purchase-receipt"
-            : $"/company/inventory-purchase-receipt?sourceType=bill&billId={_saved.DocumentId:D}";
-
     private string BuildPostedDetailHref() =>
         _saved is null
             ? string.Empty
@@ -1000,10 +977,22 @@
             return;
         }
 
-        _receiptHandoffSummary = await InventoryReceipt.GetBillHandoffSummaryAsync(
+        var result = await BillReceiptMatching.GetBillSummaryAsync(
             ShellSession.ActiveCompanyId,
             _documentId.Value,
             CancellationToken.None);
+
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            _receiptHandoffSummary = null;
+            return;
+        }
+
+        _receiptHandoffSummary = result.Value;
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            _error = result.ErrorMessage;
+        }
     }
 
     private void ApplyProductService(PurchaseLine line, string? productServiceIdText)

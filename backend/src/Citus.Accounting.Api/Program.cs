@@ -66,6 +66,8 @@ builder.Services.AddScoped<IManualJournalDocumentRepository, PostgresManualJourn
 builder.Services.AddScoped<IInvoiceDocumentRepository, PostgresInvoiceDocumentRepository>();
 builder.Services.AddScoped<ICreditNoteDocumentRepository, PostgresCreditNoteDocumentRepository>();
 builder.Services.AddScoped<IBillDocumentRepository, PostgresBillDocumentRepository>();
+builder.Services.AddScoped<IBillReceiptMatchingRepository, PostgresBillReceiptMatchingRepository>();
+builder.Services.AddScoped<IReceiptDocumentRepository, PostgresReceiptDocumentRepository>();
 builder.Services.AddScoped<IVendorCreditDocumentRepository, PostgresVendorCreditDocumentRepository>();
 builder.Services.AddScoped<IReceivePaymentDocumentRepository, PostgresReceivePaymentDocumentRepository>();
 builder.Services.AddScoped<ICreditApplicationDocumentRepository, PostgresCreditApplicationDocumentRepository>();
@@ -1943,7 +1945,7 @@ accounting.MapGet(
     async (
         [AsParameters] SourceDocumentBrowserLookupQuery query,
         IAccountingDocumentReviewRepository repository,
-        IInventoryReceiptStore inventoryReceiptStore,
+        IBillReceiptMatchingRepository billReceiptMatchingRepository,
         IInventoryShipmentStore inventoryShipmentStore,
         CancellationToken cancellationToken) =>
     {
@@ -1960,8 +1962,8 @@ accounting.MapGet(
             .Select(static item => item.Id)
             .Distinct()
             .ToArray();
-        var billReceiptSummaries = await inventoryReceiptStore.GetBillPostingGateSnapshotsAsync(
-            query.CompanyId,
+        var billReceiptSummaries = await billReceiptMatchingRepository.GetBillPostingGateSnapshotsAsync(
+            new(query.CompanyId),
             billIds,
             cancellationToken);
         var invoiceIds = items
@@ -3866,6 +3868,56 @@ accounting.MapGet(
         });
     });
 
+accounting.MapGet(
+    "/bills/{documentId:guid}/receipt-matching",
+    async (Guid documentId, [AsParameters] BillLookupQuery query, IBillReceiptMatchingRepository repository, CancellationToken cancellationToken) =>
+    {
+        var summary = await repository.GetBillLaneSummaryAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            summary.BillDocumentId,
+            summary.BillInboundLineCount,
+            summary.BillInboundQuantity,
+            summary.ReceiptCount,
+            summary.CoveredQuantity,
+            summary.RemainingQuantity,
+            summary.MatchStatus,
+            summary.LatestReceiptPostedAt,
+            RecentReceipts = summary.RecentReceipts.Select(receipt => new
+            {
+                receipt.ReceiptDocumentId,
+                receipt.DisplayNumber,
+                receipt.ReceiptDate,
+                receipt.Status,
+                receipt.ReceiptQuantity,
+                receipt.MatchedQuantity,
+                receipt.VendorReference,
+                receipt.SourceReference,
+                receipt.PostedAt
+            }),
+            LineSummaries = summary.LineSummaries.Select(line => new
+            {
+                line.BillLineNumber,
+                line.ItemId,
+                line.ItemCode,
+                line.ItemName,
+                line.WarehouseId,
+                line.WarehouseCode,
+                line.WarehouseName,
+                line.UomCode,
+                line.BillQuantity,
+                line.CoveredQuantity,
+                line.RemainingQuantity,
+                line.ReceiptCount,
+                line.MatchStatus
+            })
+        });
+    });
+
 accounting.MapPost(
     "/bills/{documentId:guid}/post",
     async (Guid documentId, PostBillHttpRequest request, PostBillCommandHandler handler, CancellationToken cancellationToken) =>
@@ -3889,6 +3941,158 @@ accounting.MapPost(
             {
                 message = ex.Message
             });
+        }
+    });
+
+accounting.MapGet(
+    "/receipts",
+    async ([AsParameters] ReceiptListQuery query, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var documents = await repository.ListAsync(
+            new(query.CompanyId),
+            query.Take ?? 50,
+            cancellationToken);
+
+        return Results.Ok(documents.Select(document => new
+        {
+            document.DocumentId,
+            document.EntityNumber,
+            document.DisplayNumber,
+            document.Status,
+            document.VendorId,
+            document.WarehouseId,
+            document.ReceiptDate,
+            document.LineCount,
+            document.TotalQuantity,
+            document.VendorReference,
+            document.SourceReference,
+            document.Memo,
+            document.CreatedAt,
+            document.UpdatedAt,
+            document.PostedAt
+        }));
+    });
+
+accounting.MapGet(
+    "/receipts/{documentId:guid}",
+    async (Guid documentId, [AsParameters] ReceiptLookupQuery query, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return document is null
+            ? Results.NotFound(new { message = "Receipt document was not found in the active company context." })
+            : Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.SourceType,
+                document.Status,
+                document.VendorId,
+                document.WarehouseId,
+                document.ReceiptDate,
+                document.VendorReference,
+                document.SourceReference,
+                document.Memo,
+                document.PostedAt,
+                Lines = document.ReceiptLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.ItemId,
+                    line.Quantity,
+                    line.UomCode,
+                    line.TrackingCaptureHome
+                })
+            });
+    });
+
+accounting.MapPost(
+    "/receipts/drafts",
+    async (SaveReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new ReceiptDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.WarehouseId,
+                    request.ReceiptDate,
+                    request.VendorReference,
+                    request.SourceReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new ReceiptDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.Quantity,
+                        line.UomCode,
+                        line.TrackingCaptureHome)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/receipts/drafts/{documentId:guid}",
+    async (Guid documentId, SaveReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new ReceiptDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.WarehouseId,
+                    request.ReceiptDate,
+                    request.VendorReference,
+                    request.SourceReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new ReceiptDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.Quantity,
+                        line.UomCode,
+                        line.TrackingCaptureHome)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/post",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.PostAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 

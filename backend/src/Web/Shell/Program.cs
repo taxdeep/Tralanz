@@ -126,6 +126,13 @@ builder.Services.AddHttpClient<ShellSourceDocumentDraftClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
         })
     .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<ShellBillReceiptMatchingClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<ArSettlementPostingClient>(
         (serviceProvider, client) =>
         {

@@ -719,6 +719,157 @@ public sealed class BillDocument : IPostingDocument, IOpenItemDocument
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 }
 
+public static class ReceiptDocumentStatuses
+{
+    public const string Draft = "draft";
+    public const string Posted = "posted";
+
+    public static string Normalize(string? status)
+    {
+        var normalized = string.IsNullOrWhiteSpace(status)
+            ? Draft
+            : status.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            Draft => Draft,
+            Posted => Posted,
+            _ => throw new InvalidOperationException("Receipt documents only support draft or posted status in the current phase.")
+        };
+    }
+
+    public static bool CanEdit(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+
+    public static bool CanPost(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+}
+
+public sealed record ReceiptDocumentLine
+{
+    public ReceiptDocumentLine(
+        int lineNumber,
+        Guid itemId,
+        decimal quantity,
+        string uomCode,
+        string? trackingCaptureHome = null)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+
+        if (quantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Receipt quantity must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(uomCode))
+        {
+            throw new ArgumentException("UOM code is required.", nameof(uomCode));
+        }
+
+        LineNumber = lineNumber;
+        ItemId = itemId;
+        Quantity = quantity;
+        UomCode = uomCode.Trim().ToUpperInvariant();
+        TrackingCaptureHome = string.IsNullOrWhiteSpace(trackingCaptureHome) ? null : trackingCaptureHome.Trim();
+    }
+
+    public int LineNumber { get; }
+
+    public Guid ItemId { get; }
+
+    public decimal Quantity { get; }
+
+    public string UomCode { get; }
+
+    public string? TrackingCaptureHome { get; }
+}
+
+public sealed class ReceiptDocument
+{
+    public ReceiptDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid vendorId,
+        Guid warehouseId,
+        DateOnly receiptDate,
+        IEnumerable<ReceiptDocumentLine> lines,
+        string? vendorReference = null,
+        string? sourceReference = null,
+        string? memo = null,
+        DateTimeOffset? postedAt = null)
+    {
+        if (vendorId == Guid.Empty)
+        {
+            throw new ArgumentException("Vendor id is required.", nameof(vendorId));
+        }
+
+        if (warehouseId == Guid.Empty)
+        {
+            throw new ArgumentException("Warehouse id is required.", nameof(warehouseId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = ReceiptDocumentStatuses.Normalize(status);
+        VendorId = vendorId;
+        WarehouseId = warehouseId;
+        ReceiptDate = receiptDate;
+        VendorReference = string.IsNullOrWhiteSpace(vendorReference) ? null : vendorReference.Trim();
+        SourceReference = string.IsNullOrWhiteSpace(sourceReference) ? null : sourceReference.Trim();
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        PostedAt = postedAt;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Receipt document must contain at least one line.");
+        }
+
+        ReceiptLines = Array.AsReadOnly(materializedLines);
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "receipt";
+
+    public string Status { get; }
+
+    public Guid VendorId { get; }
+
+    public Guid WarehouseId { get; }
+
+    public DateOnly ReceiptDate { get; }
+
+    public string? VendorReference { get; }
+
+    public string? SourceReference { get; }
+
+    public string? Memo { get; }
+
+    public DateTimeOffset? PostedAt { get; }
+
+    public IReadOnlyList<ReceiptDocumentLine> ReceiptLines { get; }
+}
+
 public sealed record VendorCreditDocumentLine : IPostingDocumentLine
 {
     public VendorCreditDocumentLine(

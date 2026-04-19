@@ -292,6 +292,32 @@ public sealed record SubmitBillDraftHttpRequest(
     Guid CompanyId,
     Guid UserId);
 
+public sealed record SaveReceiptDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid VendorId,
+    Guid WarehouseId,
+    DateOnly ReceiptDate,
+    string? VendorReference,
+    string? SourceReference,
+    string? Memo,
+    IReadOnlyList<SaveReceiptDraftLineHttpRequest> Lines);
+
+public sealed record SaveReceiptDraftLineHttpRequest(
+    int LineNumber,
+    Guid ItemId,
+    decimal Quantity,
+    string UomCode,
+    string? TrackingCaptureHome);
+
+public sealed record ReceiptLookupQuery(Guid CompanyId);
+
+public sealed record ReceiptListQuery(Guid CompanyId, int? Take);
+
+public sealed record PostReceiptDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
 public sealed record PostVendorCreditHttpRequest(
     Guid CompanyId,
     Guid UserId,

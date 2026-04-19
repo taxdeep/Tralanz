@@ -1,4 +1,4 @@
-using Citus.Modules.Inventory.Application.Contracts;
+using Citus.Accounting.Application.Repositories;
 
 namespace Citus.Accounting.Api.Tests;
 
@@ -6,10 +6,9 @@ public sealed class BillReceiptPostingGateTests
 {
     [Theory]
     [InlineData("no_inventory_handoff", true)]
-    [InlineData("fully_receipted", true)]
+    [InlineData("fully_covered", true)]
     [InlineData("no_receipt", false)]
-    [InlineData("partially_receipted", false)]
-    [InlineData("over_receipted", false)]
+    [InlineData("partially_covered", false)]
     [InlineData("unexpected", false)]
     public void AllowsBillPost_MatchesReceiptFirstAuthority(string matchStatus, bool expected)
     {
@@ -19,17 +18,17 @@ public sealed class BillReceiptPostingGateTests
     [Fact]
     public void GetBlockedPostMessage_UsesRemainingQuantity_ForPartialReceipt()
     {
-        var summary = new InventoryBillReceiptHandoffSummary(
+        var summary = new BillReceiptMatchingLaneSummary(
             Guid.NewGuid(),
             1,
             12m,
             1,
             4.5m,
             7.5m,
-            "partially_receipted",
+            "partially_covered",
             null,
-            Array.Empty<InventoryPurchaseReceiptSummary>(),
-            Array.Empty<InventoryBillReceiptHandoffLineSummary>());
+            Array.Empty<BillReceiptMatchingReceiptSummary>(),
+            Array.Empty<BillReceiptMatchingLineSummary>());
 
         var message = BillReceiptPostingGate.GetBlockedPostMessage(summary);
 
@@ -39,9 +38,8 @@ public sealed class BillReceiptPostingGateTests
 
     [Theory]
     [InlineData("no_receipt", "Post on hold: no receipt yet")]
-    [InlineData("partially_receipted", "Post on hold: receipt still partial")]
-    [InlineData("over_receipted", "Post on hold: receipt mismatch")]
-    [InlineData("fully_receipted", "Post enabled")]
+    [InlineData("partially_covered", "Post on hold: receipt still partial")]
+    [InlineData("fully_covered", "Post enabled")]
     [InlineData("no_inventory_handoff", "Post enabled")]
     public void GetPostingGateLabel_ReturnsExpectedOperatorLabel(string matchStatus, string expected)
     {
@@ -50,16 +48,16 @@ public sealed class BillReceiptPostingGateTests
         Assert.Equal(expected, BillReceiptPostingGate.GetPostingGateLabel(summary));
     }
 
-    private static InventoryBillReceiptHandoffSummary CreateSummary(string matchStatus) =>
+    private static BillReceiptMatchingLaneSummary CreateSummary(string matchStatus) =>
         new(
             Guid.NewGuid(),
             1,
             10m,
             1,
-            matchStatus == "partially_receipted" ? 7.75m : 10m,
-            matchStatus == "partially_receipted" ? 2.25m : 0m,
+            matchStatus == "partially_covered" ? 7.75m : 10m,
+            matchStatus == "partially_covered" ? 2.25m : 0m,
             matchStatus,
             null,
-            Array.Empty<InventoryPurchaseReceiptSummary>(),
-            Array.Empty<InventoryBillReceiptHandoffLineSummary>());
+            Array.Empty<BillReceiptMatchingReceiptSummary>(),
+            Array.Empty<BillReceiptMatchingLineSummary>());
 }
