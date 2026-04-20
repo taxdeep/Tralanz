@@ -1654,3 +1654,53 @@ Still not included:
 Authority note:
 
 H.20.2 gives the team a place to record review outcomes without weakening the PO anchor hardening. Physical and AP truth still cannot be silently pushed beyond ordered / received / billed governance.
+
+## Phase H.20.3 checkpoint
+
+H.20.3 introduces the smallest guarded PO close / cancel lifecycle surface.
+
+Boundary:
+
+- Lifecycle guard only.
+- No PO approval workflow.
+- No reopen / amendment workflow.
+- No overage execution bypass.
+- No PO-driven receiving / billing automation.
+- No PPV posting.
+- No tracked receipt enablement.
+- No Shell-wide PO lifecycle workspace.
+
+What changed:
+
+- `PurchaseOrderDocument` now carries close / cancel metadata:
+  - `closed_at`
+  - `cancelled_at`
+- Persistence also records the responsible users:
+  - `closed_by_user_id`
+  - `cancelled_by_user_id`
+- Backend lifecycle methods are explicit:
+  - `CloseAsync`
+  - `CancelAsync`
+- API endpoints expose guarded transitions:
+  - `POST /purchase-orders/{id}/close`
+  - `POST /purchase-orders/{id}/cancel`
+- Cancel is allowed only while the PO is draft / issued and untouched by posted Receipt or posted Bill quantity truth.
+- Close is allowed only when the issued PO is fully aligned:
+  - no remaining quantity to receive
+  - no remaining quantity to bill
+  - no active PO quantity discrepancy
+- Closed / cancelled POs continue to reject new Receipt / Bill anchors through the existing H.20.1 governance policy.
+
+Still not included:
+
+- approval / release authority
+- PO reopen / amendment workflow
+- override-authorized overage consumption
+- PO close journal effects
+- PPV recognition
+- tracked receipt operational flow
+- Shell-wide PO workbench
+
+Authority note:
+
+H.20.3 keeps PO as ordered truth. Close / cancel now has backend authority, but neither action is allowed to rewrite Receipt physical truth, Bill AP truth, or existing Bill/Receipt matching truth.

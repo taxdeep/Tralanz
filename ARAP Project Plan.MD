@@ -1280,3 +1280,52 @@ Still deferred:
 Authority note:
 
 H.20.2 separates investigation truth from execution truth. Review can record that an overage was resolved or authorized for further attention, but the system still refuses to let Bill or Receipt silently mutate physical/AP truth beyond the governed PO anchors.
+
+## Phase H.20.3 checkpoint
+
+H.20.3 adds the minimum Purchase Order close / cancel lifecycle guard.
+
+Boundary:
+
+- This is lifecycle control only.
+- It does not introduce PO approval.
+- It does not introduce reopen.
+- It does not let override-authorized discrepancy lanes bypass close / cancel rules.
+- It does not introduce PO-driven receiving, PO-driven billing, PPV posting, or tracked receipt.
+- It does not expand Shell into a PO workbench.
+
+What changed:
+
+- PO documents now persist lifecycle close / cancel metadata:
+  - closed by user
+  - closed at timestamp
+  - cancelled by user
+  - cancelled at timestamp
+- Backend repository methods now own the lifecycle transitions:
+  - `CloseAsync`
+  - `CancelAsync`
+- API endpoints expose the guarded actions:
+  - `POST /purchase-orders/{id}/close`
+  - `POST /purchase-orders/{id}/cancel`
+- Cancel is allowed only for draft / issued POs with no posted received quantity, no posted billed quantity, and no active PO quantity discrepancy.
+- Close is allowed only for issued POs whose three-quantity truth is fully aligned:
+  - ordered quantity equals posted received quantity
+  - ordered quantity equals posted billed quantity
+  - no remaining quantity to receive
+  - no remaining quantity to bill
+  - no active discrepancy
+- Closed / cancelled POs remain blocked by the existing anchor governance policy for new Receipt / Bill anchors.
+
+Still deferred:
+
+- formal PO approval workflow
+- reopen / amendment workflow
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.3 closes the first PO lifecycle loophole without turning PO into receipt or AP truth. A PO can be cancelled only before it has authoritative downstream quantity truth; it can be closed only when ordered / received / billed truth is fully aligned and discrepancy-free.

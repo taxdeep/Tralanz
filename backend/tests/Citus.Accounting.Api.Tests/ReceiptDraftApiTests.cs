@@ -30,6 +30,11 @@ public sealed class ReceiptDraftApiTests
         Assert.False(PurchaseOrderDocumentStatuses.CanEdit("issued"));
         Assert.True(PurchaseOrderDocumentStatuses.CanIssue("draft"));
         Assert.False(PurchaseOrderDocumentStatuses.CanIssue("closed"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanClose("issued"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanClose("draft"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanCancel("draft"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanCancel("issued"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanCancel("closed"));
         Assert.Throws<InvalidOperationException>(() => PurchaseOrderDocumentStatuses.Normalize("posted"));
     }
 

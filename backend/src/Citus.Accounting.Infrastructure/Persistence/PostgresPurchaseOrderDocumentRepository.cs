@@ -48,7 +48,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               expected_date,
               vendor_reference,
               memo,
-              issued_at
+              issued_at,
+              closed_at,
+              cancelled_at
             from {PurchaseOrdersTableName}
             where company_id = @company_id
               and id = @document_id
@@ -67,6 +69,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         string? vendorReference;
         string? memo;
         DateTimeOffset? issuedAt;
+        DateTimeOffset? closedAt;
+        DateTimeOffset? cancelledAt;
 
         await using (var reader = await headerCommand.ExecuteReaderAsync(cancellationToken))
         {
@@ -93,6 +97,12 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             issuedAt = reader.IsDBNull(reader.GetOrdinal("issued_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("issued_at"));
+            closedAt = reader.IsDBNull(reader.GetOrdinal("closed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("closed_at"));
+            cancelledAt = reader.IsDBNull(reader.GetOrdinal("cancelled_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at"));
         }
 
         var lines = await LoadLinesAsync(scope, companyId.Value, documentId, cancellationToken);
@@ -108,7 +118,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             expectedDate,
             vendorReference,
             memo,
-            issuedAt);
+            issuedAt,
+            closedAt,
+            cancelledAt);
     }
 
     public async Task<IReadOnlyList<PurchaseOrderDocumentListItem>> ListAsync(
@@ -140,6 +152,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               po.created_at,
               po.updated_at,
               po.issued_at,
+              po.closed_at,
+              po.cancelled_at,
               count(line.id)::int as line_count,
               coalesce(sum(line.ordered_quantity), 0)::numeric(18,6) as total_ordered_quantity
             from {PurchaseOrdersTableName} po
@@ -172,7 +186,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 reader.IsDBNull(reader.GetOrdinal("memo")) ? null : reader.GetString(reader.GetOrdinal("memo")),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
-                reader.IsDBNull(reader.GetOrdinal("issued_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("issued_at"))));
+                reader.IsDBNull(reader.GetOrdinal("issued_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("issued_at")),
+                reader.IsDBNull(reader.GetOrdinal("closed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("closed_at")),
+                reader.IsDBNull(reader.GetOrdinal("cancelled_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at"))));
         }
 
         return items;
@@ -421,6 +437,117 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Issued);
+    }
+
+    public async Task<SourceDocumentDraftSaveResult> CloseAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureSchemaAsync(connection, transaction, cancellationToken);
+        var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (!PurchaseOrderDocumentStatuses.CanClose(currentStatus))
+        {
+            throw new InvalidOperationException("Only issued purchase orders can be closed.");
+        }
+
+        var summary = await GetThreeQuantitySummaryAsync(companyId, documentId, cancellationToken);
+        EnsureCanClose(summary);
+
+        await using var closeCommand = connection.CreateCommand();
+        closeCommand.Transaction = transaction;
+        closeCommand.CommandText =
+            $"""
+            update {PurchaseOrdersTableName}
+            set status = @closed_status,
+                closed_by_user_id = @closed_by_user_id,
+                closed_at = now(),
+                updated_by_user_id = @updated_by_user_id,
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status = @issued_status;
+            """;
+        closeCommand.Parameters.AddWithValue("document_id", documentId);
+        closeCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        closeCommand.Parameters.AddWithValue("closed_by_user_id", userId.Value);
+        closeCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
+        closeCommand.Parameters.AddWithValue("closed_status", PurchaseOrderDocumentStatuses.Closed);
+        closeCommand.Parameters.AddWithValue("issued_status", PurchaseOrderDocumentStatuses.Issued);
+
+        if (await closeCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Only issued purchase orders can be closed.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Closed);
+    }
+
+    public async Task<SourceDocumentDraftSaveResult> CancelAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureSchemaAsync(connection, transaction, cancellationToken);
+        var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (!PurchaseOrderDocumentStatuses.CanCancel(currentStatus))
+        {
+            throw new InvalidOperationException("Only draft or untouched issued purchase orders can be cancelled.");
+        }
+
+        var summary = await GetThreeQuantitySummaryAsync(companyId, documentId, cancellationToken);
+        EnsureCanCancel(summary);
+
+        await using var cancelCommand = connection.CreateCommand();
+        cancelCommand.Transaction = transaction;
+        cancelCommand.CommandText =
+            $"""
+            update {PurchaseOrdersTableName}
+            set status = @cancelled_status,
+                cancelled_by_user_id = @cancelled_by_user_id,
+                cancelled_at = now(),
+                updated_by_user_id = @updated_by_user_id,
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status in (@draft_status, @issued_status);
+            """;
+        cancelCommand.Parameters.AddWithValue("document_id", documentId);
+        cancelCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        cancelCommand.Parameters.AddWithValue("cancelled_by_user_id", userId.Value);
+        cancelCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
+        cancelCommand.Parameters.AddWithValue("cancelled_status", PurchaseOrderDocumentStatuses.Cancelled);
+        cancelCommand.Parameters.AddWithValue("draft_status", PurchaseOrderDocumentStatuses.Draft);
+        cancelCommand.Parameters.AddWithValue("issued_status", PurchaseOrderDocumentStatuses.Issued);
+
+        if (await cancelCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Only draft or untouched issued purchase orders can be cancelled.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Cancelled);
     }
 
     public async Task ValidateBillAnchorsForPostingAsync(
@@ -1076,6 +1203,47 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return lines;
     }
 
+    private static void EnsureCanClose(PurchaseOrderThreeQuantitySummary? summary)
+    {
+        if (summary is null)
+        {
+            throw new InvalidOperationException("Purchase order three-quantity truth must be available before close.");
+        }
+
+        if (summary.Discrepancies.Count > 0)
+        {
+            throw new InvalidOperationException("Purchase orders with active quantity discrepancy lanes cannot be closed.");
+        }
+
+        if (!string.Equals(summary.QuantityStatus, PurchaseOrderThreeQuantityStatusPolicy.FullyBilled, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Purchase orders can close only after ordered, received, and billed quantities are fully aligned.");
+        }
+
+        if (summary.RemainingToReceiveQuantity != 0m || summary.RemainingToBillQuantity != 0m)
+        {
+            throw new InvalidOperationException("Purchase orders with remaining quantity cannot be closed.");
+        }
+    }
+
+    private static void EnsureCanCancel(PurchaseOrderThreeQuantitySummary? summary)
+    {
+        if (summary is null)
+        {
+            throw new InvalidOperationException("Purchase order three-quantity truth must be available before cancellation.");
+        }
+
+        if (summary.Discrepancies.Count > 0)
+        {
+            throw new InvalidOperationException("Purchase orders with active quantity discrepancy lanes cannot be cancelled.");
+        }
+
+        if (summary.ReceivedQuantity != 0m || summary.BilledQuantity != 0m)
+        {
+            throw new InvalidOperationException("Purchase orders with posted receipt or bill truth cannot be cancelled.");
+        }
+    }
+
     private static async Task<IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary>> LoadQuantityDiscrepanciesAsync(
         PostgresCommandScope scope,
         Guid companyId,
@@ -1307,8 +1475,24 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               updated_by_user_id uuid null,
               updated_at timestamptz not null default now(),
               issued_by_user_id uuid null,
-              issued_at timestamptz null
+              issued_at timestamptz null,
+              closed_by_user_id uuid null,
+              closed_at timestamptz null,
+              cancelled_by_user_id uuid null,
+              cancelled_at timestamptz null
             );
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists closed_by_user_id uuid null;
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists closed_at timestamptz null;
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists cancelled_by_user_id uuid null;
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists cancelled_at timestamptz null;
 
             create unique index if not exists ux_purchase_orders_company_entity_number
               on {PurchaseOrdersTableName} (company_id, entity_number);

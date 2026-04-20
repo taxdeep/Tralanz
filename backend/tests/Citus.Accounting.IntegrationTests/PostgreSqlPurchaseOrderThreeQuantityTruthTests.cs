@@ -1,6 +1,7 @@
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
+using Citus.Accounting.Domain.Documents;
 using Citus.Accounting.Infrastructure.Persistence;
 using Npgsql;
 using Xunit;
@@ -258,6 +259,103 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
             var overBillId = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 5m, "submitted", vendorId);
             await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.ValidateBillAnchorsForPostingAsync(new(companyId), overBillId, CancellationToken.None));
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task PurchaseOrderLifecycleGuard_CancelsOnlyUntouchedAndClosesOnlyFullyAligned()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h203_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var repository = new PostgresPurchaseOrderDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                new PostgresExecutionContextAccessor());
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var vendorId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+
+            var cancellableDraft = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 20),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
+                CancellationToken.None);
+            var cancelledDraft = await repository.CancelAsync(new(companyId), new(userId), cancellableDraft.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledDraft.Status);
+
+            var untouchedIssued = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 21),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
+                CancellationToken.None);
+            _ = await repository.IssueAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
+            var cancelledIssued = await repository.CancelAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledIssued.Status);
+
+            var partiallyReceived = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 22),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
+                CancellationToken.None);
+            _ = await repository.IssueAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None);
+            await SeedReceiptAnchorAsync(schemaConnectionString, companyId, partiallyReceived.DocumentId, 1, itemId, 4m, "posted");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CloseAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None));
+
+            var fullyAligned = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 23),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
+                CancellationToken.None);
+            _ = await repository.IssueAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
+            await SeedReceiptAnchorAsync(schemaConnectionString, companyId, fullyAligned.DocumentId, 1, itemId, 10m, "posted");
+            _ = await SeedBillAnchorAsync(schemaConnectionString, companyId, fullyAligned.DocumentId, 1, itemId, 10m, "posted", vendorId);
+
+            var closed = await repository.CloseAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Closed, closed.Status);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None));
         }
         finally
         {

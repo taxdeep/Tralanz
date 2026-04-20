@@ -129,6 +129,18 @@ public interface IPurchaseOrderDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<SourceDocumentDraftSaveResult> CloseAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> CancelAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
     Task ValidateBillAnchorsForPostingAsync(
         CompanyId companyId,
         Guid billDocumentId,
@@ -361,7 +373,9 @@ public sealed record PurchaseOrderDocumentListItem(
     string? Memo,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? IssuedAt);
+    DateTimeOffset? IssuedAt,
+    DateTimeOffset? ClosedAt,
+    DateTimeOffset? CancelledAt);
 
 public sealed record PurchaseOrderLineThreeQuantitySummary(
     int LineNumber,

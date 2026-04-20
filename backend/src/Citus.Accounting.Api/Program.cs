@@ -4074,6 +4074,8 @@ accounting.MapGet(
             document.CreatedAt,
             document.UpdatedAt,
             document.IssuedAt,
+            document.ClosedAt,
+            document.CancelledAt,
             AnchorGovernance = new
             {
                 AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
@@ -4111,6 +4113,8 @@ accounting.MapGet(
             document.VendorReference,
             document.Memo,
             document.IssuedAt,
+            document.ClosedAt,
+            document.CancelledAt,
             AnchorGovernance = new
             {
                 AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
@@ -4202,6 +4206,46 @@ accounting.MapPost(
         try
         {
             var result = await repository.IssueAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/close",
+    async (Guid documentId, ClosePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.CloseAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/cancel",
+    async (Guid documentId, CancelPurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.CancelAsync(
                 new(request.CompanyId),
                 new(request.UserId),
                 documentId,
