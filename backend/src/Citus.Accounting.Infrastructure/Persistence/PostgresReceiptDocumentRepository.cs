@@ -1,3 +1,4 @@
+using Citus.Accounting.Application;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
@@ -252,6 +253,28 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         string entityNumber;
         string displayNumber;
 
+        await ValidatePurchaseOrderReceiptAnchorsAsync(
+            connection,
+            transaction,
+            draft.CompanyId.Value,
+            draft.VendorId,
+            documentId,
+            draft.Lines
+                .Where(static line => line.PurchaseOrderId.HasValue)
+                .GroupBy(static line => (
+                    PurchaseOrderId: line.PurchaseOrderId!.Value,
+                    PurchaseOrderLineNumber: line.PurchaseOrderLineNumber!.Value,
+                    line.ItemId,
+                    UomCode: line.UomCode.Trim().ToUpperInvariant()))
+                .Select(static group => new PurchaseOrderReceiptAnchorCandidate(
+                    group.Key.PurchaseOrderId,
+                    group.Key.PurchaseOrderLineNumber,
+                    group.Key.ItemId,
+                    group.Key.UomCode,
+                    group.Sum(static line => line.Quantity)))
+                .ToArray(),
+            cancellationToken);
+
         if (draft.DocumentId is null)
         {
             var year = draft.ReceiptDate.Year;
@@ -467,6 +490,13 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             throw new InvalidOperationException("Only draft receipts can be marked as posted.");
         }
 
+        await ValidatePersistedPurchaseOrderReceiptAnchorsAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
         await using var postCommand = connection.CreateCommand();
         postCommand.Transaction = transaction;
         postCommand.CommandText =
@@ -574,6 +604,176 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
 
+    private static async Task ValidatePurchaseOrderReceiptAnchorsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid receiptVendorId,
+        Guid receiptDocumentId,
+        IReadOnlyCollection<PurchaseOrderReceiptAnchorCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        await EnsurePurchaseOrderAnchorTablesAvailableAsync(connection, transaction, cancellationToken);
+
+        foreach (var candidate in candidates)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                with posted_receipt_quantity as (
+                  select coalesce(sum(line.quantity), 0)::numeric(18,6) as posted_received_quantity
+                  from receipt_lines line
+                  join receipts receipt
+                    on receipt.company_id = line.company_id
+                   and receipt.id = line.receipt_id
+                  where line.company_id = @company_id
+                    and line.receipt_id <> @receipt_id
+                    and line.purchase_order_id = @purchase_order_id
+                    and line.purchase_order_line_number = @purchase_order_line_number
+                    and receipt.status = 'posted'
+                )
+                select
+                  po.status,
+                  po.vendor_id,
+                  po_line.item_id,
+                  po_line.uom_code,
+                  po_line.ordered_quantity,
+                  coalesce(posted.posted_received_quantity, 0)::numeric(18,6) as posted_received_quantity
+                from purchase_orders po
+                join purchase_order_lines po_line
+                  on po_line.company_id = po.company_id
+                 and po_line.purchase_order_id = po.id
+                 and po_line.line_number = @purchase_order_line_number
+                cross join posted_receipt_quantity posted
+                where po.company_id = @company_id
+                  and po.id = @purchase_order_id
+                limit 1;
+                """;
+            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+            command.Parameters.AddWithValue("purchase_order_id", candidate.PurchaseOrderId);
+            command.Parameters.AddWithValue("purchase_order_line_number", candidate.PurchaseOrderLineNumber);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new InvalidOperationException("PO-anchored receipt lines must reference an existing purchase order line in the active company context.");
+            }
+
+            PurchaseOrderAnchorPolicy.EnsureAllowsNewAnchor(reader.GetString(reader.GetOrdinal("status")));
+
+            if (reader.GetGuid(reader.GetOrdinal("vendor_id")) != receiptVendorId)
+            {
+                throw new InvalidOperationException($"PO-anchored receipt line {candidate.PurchaseOrderLineNumber} must use the same vendor as the purchase order.");
+            }
+
+            if (reader.GetGuid(reader.GetOrdinal("item_id")) != candidate.ItemId)
+            {
+                throw new InvalidOperationException($"PO-anchored receipt line {candidate.PurchaseOrderLineNumber} must use the same item as the purchase order line.");
+            }
+
+            var poUom = reader.GetString(reader.GetOrdinal("uom_code")).Trim().ToUpperInvariant();
+            if (!string.Equals(poUom, candidate.UomCode, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"PO-anchored receipt line {candidate.PurchaseOrderLineNumber} must use the same stock UOM as the purchase order line.");
+            }
+
+            var orderedQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("ordered_quantity")));
+            var postedReceivedQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("posted_received_quantity")));
+            if (Round6(postedReceivedQuantity + candidate.Quantity) > orderedQuantity)
+            {
+                throw new InvalidOperationException($"PO-anchored receipt quantity exceeds the ordered quantity for purchase order {candidate.PurchaseOrderId:D} line {candidate.PurchaseOrderLineNumber}.");
+            }
+        }
+    }
+
+    private static async Task ValidatePersistedPurchaseOrderReceiptAnchorsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var loadCommand = connection.CreateCommand();
+        loadCommand.Transaction = transaction;
+        loadCommand.CommandText =
+            $"""
+            select
+              receipt.vendor_id,
+              line.purchase_order_id,
+              line.purchase_order_line_number,
+              line.item_id,
+              line.uom_code,
+              sum(line.quantity)::numeric(18,6) as quantity
+            from {ReceiptLinesTableName} line
+            join {ReceiptsTableName} receipt
+              on receipt.company_id = line.company_id
+             and receipt.id = line.receipt_id
+            where line.company_id = @company_id
+              and line.receipt_id = @receipt_id
+              and line.purchase_order_id is not null
+              and line.purchase_order_line_number is not null
+            group by
+              receipt.vendor_id,
+              line.purchase_order_id,
+              line.purchase_order_line_number,
+              line.item_id,
+              line.uom_code;
+            """;
+        loadCommand.Parameters.AddWithValue("company_id", companyId);
+        loadCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+
+        var candidates = new List<PurchaseOrderReceiptAnchorCandidate>();
+        Guid? vendorId = null;
+        await using (var reader = await loadCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                vendorId ??= reader.GetGuid(reader.GetOrdinal("vendor_id"));
+                candidates.Add(new PurchaseOrderReceiptAnchorCandidate(
+                    reader.GetGuid(reader.GetOrdinal("purchase_order_id")),
+                    reader.GetInt32(reader.GetOrdinal("purchase_order_line_number")),
+                    reader.GetGuid(reader.GetOrdinal("item_id")),
+                    reader.GetString(reader.GetOrdinal("uom_code")).Trim().ToUpperInvariant(),
+                    reader.GetDecimal(reader.GetOrdinal("quantity"))));
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        await ValidatePurchaseOrderReceiptAnchorsAsync(
+            connection,
+            transaction,
+            companyId,
+            vendorId!.Value,
+            receiptDocumentId,
+            candidates,
+            cancellationToken);
+    }
+
+    private static async Task EnsurePurchaseOrderAnchorTablesAvailableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select to_regclass('purchase_orders') is not null and to_regclass('purchase_order_lines') is not null;";
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException("PO anchors require first-class purchase order tables to exist.");
+        }
+    }
+
     private static async Task<(string EntityNumber, string DisplayNumber, string Status)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -676,4 +876,11 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private sealed record PurchaseOrderReceiptAnchorCandidate(
+        Guid PurchaseOrderId,
+        int PurchaseOrderLineNumber,
+        Guid ItemId,
+        string UomCode,
+        decimal Quantity);
 }

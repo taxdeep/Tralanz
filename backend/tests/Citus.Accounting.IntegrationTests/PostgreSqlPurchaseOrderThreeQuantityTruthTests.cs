@@ -1,3 +1,4 @@
+using Citus.Accounting.Application;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Infrastructure.Persistence;
@@ -85,6 +86,137 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             Assert.Equal(1, over.OverBilledLineCount);
             Assert.Contains(over.Lines, static line => line.LineNumber == 1 && line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.OverReceived);
             Assert.Contains(over.Lines, static line => line.LineNumber == 2 && line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.OverBilled);
+
+            var refreshed = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            Assert.NotNull(refreshed);
+            Assert.Equal(2, refreshed!.OpenDiscrepancyCount);
+            Assert.Contains(refreshed.Discrepancies, static lane => lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived);
+            Assert.Contains(refreshed.Discrepancies, static lane => lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverBilled);
+
+            var retried = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            Assert.NotNull(retried);
+            Assert.Equal(2, retried!.OpenDiscrepancyCount);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task PurchaseOrderAnchorGovernance_BlocksNonIssuedAndOverReceipt()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h201_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var executionContext = new PostgresExecutionContextAccessor();
+            var poRepository = new PostgresPurchaseOrderDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                executionContext);
+            var receiptRepository = new PostgresReceiptDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                executionContext);
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var vendorId = Guid.NewGuid();
+            var warehouseId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+
+            var saved = await poRepository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 20),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
+                CancellationToken.None);
+
+            var draftAnchor = new ReceiptDraftSaveModel(
+                null,
+                new(companyId),
+                new(userId),
+                vendorId,
+                warehouseId,
+                new DateOnly(2026, 4, 21),
+                null,
+                null,
+                null,
+                [new ReceiptDraftLineSaveModel(1, itemId, 8m, "EA", null, saved.DocumentId, 1)]);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None));
+
+            _ = await poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            var receipt = await receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None);
+            _ = await receiptRepository.PostAsync(new(companyId), new(userId), receipt.DocumentId, CancellationToken.None);
+
+            var overReceipt = draftAnchor with
+            {
+                Lines = [new ReceiptDraftLineSaveModel(1, itemId, 3m, "EA", null, saved.DocumentId, 1)]
+            };
+            await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(overReceipt, CancellationToken.None));
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task PurchaseOrderBillPostingGovernance_BlocksBillAheadOfReceiptTruth()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h201_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var poRepository = new PostgresPurchaseOrderDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                new PostgresExecutionContextAccessor());
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var vendorId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+
+            var saved = await poRepository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 20),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
+                CancellationToken.None);
+            _ = await poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+
+            await SeedReceiptAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 4m, "posted");
+            var coveredBillId = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 4m, "submitted", vendorId);
+            await poRepository.ValidateBillAnchorsForPostingAsync(new(companyId), coveredBillId, CancellationToken.None);
+
+            var overBillId = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 5m, "submitted", vendorId);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.ValidateBillAnchorsForPostingAsync(new(companyId), overBillId, CancellationToken.None));
         }
         finally
         {
@@ -161,14 +293,15 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task SeedBillAnchorAsync(
+    private static async Task<Guid> SeedBillAnchorAsync(
         string connectionString,
         Guid companyId,
         Guid purchaseOrderId,
         int lineNumber,
         Guid itemId,
         decimal quantity,
-        string status)
+        string status,
+        Guid? vendorId = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -178,6 +311,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             create table if not exists bills (
               id uuid primary key,
               company_id uuid not null,
+              vendor_id uuid null,
               status text not null
             );
 
@@ -187,13 +321,14 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
               bill_id uuid not null,
               line_number integer not null,
               item_id uuid null,
+              uom_code text null,
               quantity numeric(18,6) null,
               purchase_order_id uuid null,
               purchase_order_line_number integer null
             );
 
-            insert into bills (id, company_id, status)
-            values (@bill_id, @company_id, @status);
+            insert into bills (id, company_id, vendor_id, status)
+            values (@bill_id, @company_id, @vendor_id, @status);
 
             insert into bill_lines (
               id,
@@ -201,6 +336,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
               bill_id,
               line_number,
               item_id,
+              uom_code,
               quantity,
               purchase_order_id,
               purchase_order_line_number
@@ -211,13 +347,16 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
               @bill_id,
               @line_number,
               @item_id,
+              'EA',
               @quantity,
               @purchase_order_id,
               @purchase_order_line_number
             );
             """;
-        command.Parameters.AddWithValue("bill_id", Guid.NewGuid());
+        var billId = Guid.NewGuid();
+        command.Parameters.AddWithValue("bill_id", billId);
         command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("vendor_id", vendorId ?? Guid.NewGuid());
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("line_number", lineNumber);
         command.Parameters.AddWithValue("item_id", itemId);
@@ -225,6 +364,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
         command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
         command.Parameters.AddWithValue("purchase_order_line_number", lineNumber);
         await command.ExecuteNonQueryAsync();
+        return billId;
     }
 
     private static string? GetPostgreSqlConnectionString() =>

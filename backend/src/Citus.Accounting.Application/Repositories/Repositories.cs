@@ -129,6 +129,11 @@ public interface IPurchaseOrderDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task ValidateBillAnchorsForPostingAsync(
+        CompanyId companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken);
+
     Task<PurchaseOrderThreeQuantitySummary?> GetThreeQuantitySummaryAsync(
         CompanyId companyId,
         Guid purchaseOrderId,
@@ -137,6 +142,12 @@ public interface IPurchaseOrderDocumentRepository
     Task<IReadOnlyDictionary<Guid, PurchaseOrderThreeQuantitySummary>> GetThreeQuantitySummariesAsync(
         CompanyId companyId,
         IReadOnlyCollection<Guid> purchaseOrderIds,
+        CancellationToken cancellationToken);
+
+    Task<PurchaseOrderThreeQuantitySummary?> RefreshQuantityDiscrepanciesAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid purchaseOrderId,
         CancellationToken cancellationToken);
 }
 
@@ -353,6 +364,22 @@ public sealed record PurchaseOrderLineThreeQuantitySummary(
     decimal RemainingToBillQuantity,
     string QuantityStatus);
 
+public sealed record PurchaseOrderQuantityDiscrepancySummary(
+    Guid PurchaseOrderId,
+    int PurchaseOrderLineNumber,
+    string DiscrepancyType,
+    string InvestigationStatus,
+    Guid ItemId,
+    string UomCode,
+    decimal OrderedQuantity,
+    decimal ReceivedQuantity,
+    decimal BilledQuantity,
+    decimal RemainingToReceiveQuantity,
+    decimal RemainingToBillQuantity,
+    string Summary,
+    DateTimeOffset FirstDetectedAt,
+    DateTimeOffset LastDetectedAt);
+
 public sealed record PurchaseOrderThreeQuantitySummary(
     Guid PurchaseOrderId,
     int LineCount,
@@ -363,8 +390,11 @@ public sealed record PurchaseOrderThreeQuantitySummary(
     decimal RemainingToBillQuantity,
     int OverReceivedLineCount,
     int OverBilledLineCount,
+    int BilledAheadOfReceivedLineCount,
+    int OpenDiscrepancyCount,
     string QuantityStatus,
-    IReadOnlyList<PurchaseOrderLineThreeQuantitySummary> Lines);
+    IReadOnlyList<PurchaseOrderLineThreeQuantitySummary> Lines,
+    IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary> Discrepancies);
 
 public static class PurchaseOrderThreeQuantityStatusPolicy
 {
@@ -376,6 +406,7 @@ public static class PurchaseOrderThreeQuantityStatusPolicy
     public const string FullyBilled = "fully_billed";
     public const string OverReceived = "over_received";
     public const string OverBilled = "over_billed";
+    public const string BilledAheadOfReceived = "billed_ahead_of_received";
     public const string Inconsistent = "inconsistent";
 
     public static string ResolveLineStatus(
@@ -396,6 +427,11 @@ public static class PurchaseOrderThreeQuantityStatusPolicy
         if (billedQuantity > orderedQuantity)
         {
             return OverBilled;
+        }
+
+        if (billedQuantity > receivedQuantity)
+        {
+            return BilledAheadOfReceived;
         }
 
         if (billedQuantity == orderedQuantity)
@@ -420,6 +456,7 @@ public static class PurchaseOrderThreeQuantityStatusPolicy
         int lineCount,
         int overReceivedLineCount,
         int overBilledLineCount,
+        int billedAheadOfReceivedLineCount,
         decimal orderedQuantity,
         decimal receivedQuantity,
         decimal billedQuantity)
@@ -437,6 +474,11 @@ public static class PurchaseOrderThreeQuantityStatusPolicy
         if (overBilledLineCount > 0)
         {
             return OverBilled;
+        }
+
+        if (billedAheadOfReceivedLineCount > 0 || billedQuantity > receivedQuantity)
+        {
+            return BilledAheadOfReceived;
         }
 
         if (orderedQuantity <= 0m)

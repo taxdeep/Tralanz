@@ -1,3 +1,4 @@
+using Citus.Accounting.Application;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
@@ -30,6 +31,24 @@ public sealed class ReceiptDraftApiTests
         Assert.True(PurchaseOrderDocumentStatuses.CanIssue("draft"));
         Assert.False(PurchaseOrderDocumentStatuses.CanIssue("closed"));
         Assert.Throws<InvalidOperationException>(() => PurchaseOrderDocumentStatuses.Normalize("posted"));
+    }
+
+    [Theory]
+    [InlineData(PurchaseOrderDocumentStatuses.Draft, false)]
+    [InlineData(PurchaseOrderDocumentStatuses.Issued, true)]
+    [InlineData(PurchaseOrderDocumentStatuses.Closed, false)]
+    [InlineData(PurchaseOrderDocumentStatuses.Cancelled, false)]
+    public void Purchase_order_anchor_policy_only_allows_issued_purchase_orders(string status, bool expected)
+    {
+        Assert.Equal(expected, PurchaseOrderAnchorPolicy.AllowsNewAnchor(status));
+        if (expected)
+        {
+            PurchaseOrderAnchorPolicy.EnsureAllowsNewAnchor(status);
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => PurchaseOrderAnchorPolicy.EnsureAllowsNewAnchor(status));
+        }
     }
 
     [Fact]
@@ -71,6 +90,7 @@ public sealed class ReceiptDraftApiTests
     [InlineData(10, 10, 10, PurchaseOrderThreeQuantityStatusPolicy.FullyBilled)]
     [InlineData(10, 11, 0, PurchaseOrderThreeQuantityStatusPolicy.OverReceived)]
     [InlineData(10, 10, 11, PurchaseOrderThreeQuantityStatusPolicy.OverBilled)]
+    [InlineData(10, 4, 5, PurchaseOrderThreeQuantityStatusPolicy.BilledAheadOfReceived)]
     public void Purchase_order_three_quantity_status_policy_exposes_control_truth(
         decimal orderedQuantity,
         decimal receivedQuantity,
@@ -81,6 +101,32 @@ public sealed class ReceiptDraftApiTests
             orderedQuantity,
             receivedQuantity,
             billedQuantity));
+    }
+
+    [Fact]
+    public void Purchase_order_quantity_discrepancy_policy_maps_open_control_states()
+    {
+        var overReceipt = new PurchaseOrderLineThreeQuantitySummary(
+            1,
+            Guid.NewGuid(),
+            "EA",
+            10m,
+            11m,
+            0m,
+            0m,
+            10m,
+            PurchaseOrderThreeQuantityStatusPolicy.OverReceived);
+        var billedAhead = overReceipt with
+        {
+            ReceivedQuantity = 4m,
+            BilledQuantity = 5m,
+            QuantityStatus = PurchaseOrderThreeQuantityStatusPolicy.BilledAheadOfReceived
+        };
+
+        Assert.Equal(PurchaseOrderQuantityDiscrepancyPolicy.OverReceived, PurchaseOrderQuantityDiscrepancyPolicy.ResolveDiscrepancyType(overReceipt));
+        Assert.Equal(PurchaseOrderQuantityDiscrepancyPolicy.BilledAheadOfReceived, PurchaseOrderQuantityDiscrepancyPolicy.ResolveDiscrepancyType(billedAhead));
+        Assert.True(PurchaseOrderQuantityDiscrepancyPolicy.IsDiscrepancyStatus(PurchaseOrderThreeQuantityStatusPolicy.OverBilled));
+        Assert.False(PurchaseOrderQuantityDiscrepancyPolicy.IsDiscrepancyStatus(PurchaseOrderThreeQuantityStatusPolicy.FullyBilled));
     }
 
     [Fact]

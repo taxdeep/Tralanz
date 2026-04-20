@@ -10,6 +10,7 @@ public sealed class PostBillCommandHandler
     private readonly IPostingEngine _postingEngine;
     private readonly IApOpenItemRepository _openItems;
     private readonly IBillReceiptMatchingRepository _billReceiptMatchingRepository;
+    private readonly IPurchaseOrderDocumentRepository _purchaseOrders;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostBillCommandHandler(
@@ -17,12 +18,14 @@ public sealed class PostBillCommandHandler
         IPostingEngine postingEngine,
         IApOpenItemRepository openItems,
         IBillReceiptMatchingRepository billReceiptMatchingRepository,
+        IPurchaseOrderDocumentRepository purchaseOrders,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         _postingEngine = postingEngine ?? throw new ArgumentNullException(nameof(postingEngine));
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
         _billReceiptMatchingRepository = billReceiptMatchingRepository ?? throw new ArgumentNullException(nameof(billReceiptMatchingRepository));
+        _purchaseOrders = purchaseOrders ?? throw new ArgumentNullException(nameof(purchaseOrders));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -44,6 +47,11 @@ public sealed class PostBillCommandHandler
             {
                 throw new InvalidOperationException("Only submitted bills can be posted.");
             }
+
+            await _purchaseOrders.ValidateBillAnchorsForPostingAsync(
+                command.CompanyId,
+                command.DocumentId,
+                ct);
 
             var receiptHandoffSummary = await _billReceiptMatchingRepository.GetBillLaneSummaryAsync(
                 command.CompanyId,

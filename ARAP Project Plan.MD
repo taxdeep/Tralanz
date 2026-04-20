@@ -1186,3 +1186,55 @@ Still deferred:
 Authority note:
 
 H.20.0 adds ordered truth without weakening receipt-first. PO line anchors are explicit and persisted; no vendor/item soft matching is treated as authoritative.
+
+## Phase H.20.1 checkpoint
+
+H.20.1 hardens the PO anchor governance and over-receipt / over-bill policy without expanding into a full PO workflow.
+
+Boundary:
+
+- PO remains ordered / commitment truth only.
+- Receipt remains physical received truth.
+- Bill remains AP / billed truth.
+- Bill-Receipt matching, GR/IR, settlement, clearing, and variance lanes are not redesigned.
+- This does not introduce PO approval, close/cancel execution, or reopen workflow.
+- This does not introduce PPV posting.
+- This does not enable tracked receipt flows.
+- This does not expand into a Shell-wide PO workspace.
+
+What changed:
+
+- PO anchor governance is now explicit:
+  - only `issued` PO lines can receive new Receipt / Bill anchors
+  - `draft`, `closed`, and `cancelled` PO lines are blocked from new anchors
+- Receipt draft save and receipt posting now validate PO anchors against:
+  - same company
+  - same vendor
+  - same item
+  - same stock UOM
+  - remaining ordered quantity
+- Bill draft save validates PO anchors against issued PO line truth and ordered quantity.
+- Bill posting validates that PO-anchored billed quantity cannot outrun posted receipt truth.
+- The three-quantity policy now distinguishes:
+  - `over_received`
+  - `over_billed`
+  - `billed_ahead_of_received`
+- A persisted PO quantity discrepancy lane now exists:
+  - `purchase_order_quantity_discrepancy_lanes`
+- A refresh endpoint exists:
+  - `POST /purchase-orders/{id}/quantity-discrepancies/refresh`
+- PO list/detail responses expose anchor governance and persisted discrepancy summary truth.
+
+Still deferred:
+
+- privileged over-receipt / over-bill override workflow
+- discrepancy review / resolve / approve permissions
+- formal PO close / cancel lifecycle execution
+- PO-driven receiving or billing automation
+- PPV journal posting
+- tracked receipt enablement
+- Shell-wide PO workbench
+
+Authority note:
+
+H.20.1 turns PO anchors from passive references into backend-governed source truth. Normal operation hard-blocks over-receipt and bill-ahead-of-receipt paths; any historical or externally imported overage is made reviewable through a persisted discrepancy lane rather than hidden in raw three-quantity math.

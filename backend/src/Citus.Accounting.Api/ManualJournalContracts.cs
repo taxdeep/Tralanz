@@ -344,6 +344,10 @@ public sealed record IssuePurchaseOrderHttpRequest(
     Guid CompanyId,
     Guid UserId);
 
+public sealed record RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
 public sealed record PostReceiptDraftHttpRequest(
     Guid CompanyId,
     Guid UserId);

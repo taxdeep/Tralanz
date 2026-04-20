@@ -1561,3 +1561,53 @@ Still not included:
 Authority note:
 
 H.20.0 prevents future H.20 from inventing ordered truth ad hoc. The source truth ladder is now explicit: PO owns ordered truth, Receipt owns received truth, Bill owns billed truth.
+
+## Phase H.20.1 checkpoint
+
+H.20.1 hardens PO anchor governance and overage control before the full PO workflow is introduced.
+
+Boundary:
+
+- PO remains ordered truth only.
+- Receipt remains received / physical inbound truth.
+- Bill remains billed / AP truth.
+- PO anchor governance does not replace Bill-Receipt matching.
+- No PO approval universe.
+- No PO close / cancel execution workflow.
+- No PPV posting.
+- No tracked receipt enablement.
+- No Shell-wide PO operations surface.
+
+What changed:
+
+- Only `issued` PO lines can be used as new Receipt / Bill anchors.
+- `draft`, `closed`, and `cancelled` PO lines are blocked from new anchors.
+- Receipt save/post validates PO anchors against:
+  - company
+  - vendor
+  - item
+  - stock UOM
+  - ordered quantity ceiling
+- Bill save validates PO anchor identity and ordered quantity ceiling.
+- Bill posting validates that PO-anchored bill quantity does not outrun posted receipt truth.
+- The PO three-quantity status model now includes `billed_ahead_of_received`.
+- Persisted PO discrepancy truth exists for:
+  - `over_received`
+  - `over_billed`
+  - `billed_ahead_of_received`
+- PO discrepancy refresh is explicit and idempotent via:
+  - `POST /purchase-orders/{id}/quantity-discrepancies/refresh`
+
+Still not included:
+
+- privileged overage override
+- discrepancy resolution workflow
+- PO approval / close / reopen permissions
+- PO-driven receiving or billing automation
+- PPV journal recognition
+- tracked receipt
+- Shell-wide PO workbench
+
+Authority note:
+
+H.20.1 keeps the truth ladder strict. PO anchor state is now controlled by backend policy, overage cannot be silently created through normal Receipt/Bill paths, and any already-existing PO quantity conflict has a persisted investigation lane.

@@ -1,4 +1,5 @@
 using Citus.Accounting.Application.Repositories;
+using Citus.Accounting.Application;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
 using Npgsql;
@@ -10,6 +11,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 {
     private const string PurchaseOrdersTableName = "purchase_orders";
     private const string PurchaseOrderLinesTableName = "purchase_order_lines";
+    private const string QuantityDiscrepanciesTableName = "purchase_order_quantity_discrepancy_lanes";
 
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
@@ -421,6 +423,195 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Issued);
     }
 
+    public async Task ValidateBillAnchorsForPostingAsync(
+        CompanyId companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (billDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Bill document id is required.", nameof(billDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+
+        if (!await TableExistsAsync(scope, "bills", cancellationToken) ||
+            !await TableExistsAsync(scope, "bill_lines", cancellationToken))
+        {
+            return;
+        }
+
+        await using (var anchorCheckCommand = scope.CreateCommand(
+                         """
+                         select exists (
+                           select 1
+                           from bill_lines
+                           where company_id = @company_id
+                             and bill_id = @bill_id
+                             and purchase_order_id is not null
+                             and purchase_order_line_number is not null
+                         );
+                         """))
+        {
+            anchorCheckCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            anchorCheckCommand.Parameters.AddWithValue("bill_id", billDocumentId);
+            if (await anchorCheckCommand.ExecuteScalarAsync(cancellationToken) is not true)
+            {
+                return;
+            }
+        }
+
+        if (!await TableExistsAsync(scope, "receipts", cancellationToken) ||
+            !await TableExistsAsync(scope, "receipt_lines", cancellationToken))
+        {
+            throw new InvalidOperationException("PO-anchored bill posting requires posted receipt truth before AP posting can continue.");
+        }
+
+        await using var command = scope.CreateCommand(
+            $"""
+            with bill_anchor_lines as (
+              select
+                bill.vendor_id,
+                line.purchase_order_id,
+                line.purchase_order_line_number,
+                line.item_id,
+                line.uom_code,
+                coalesce(sum(line.quantity), 0)::numeric(18,6) as posting_quantity
+              from bill_lines line
+              join bills bill
+                on bill.company_id = line.company_id
+               and bill.id = line.bill_id
+              where line.company_id = @company_id
+                and line.bill_id = @bill_id
+                and line.purchase_order_id is not null
+                and line.purchase_order_line_number is not null
+              group by
+                bill.vendor_id,
+                line.purchase_order_id,
+                line.purchase_order_line_number,
+                line.item_id,
+                line.uom_code
+            ),
+            posted_bill_quantity as (
+              select
+                line.purchase_order_id,
+                line.purchase_order_line_number,
+                coalesce(sum(line.quantity), 0)::numeric(18,6) as posted_billed_quantity
+              from bill_lines line
+              join bills bill
+                on bill.company_id = line.company_id
+               and bill.id = line.bill_id
+              where line.company_id = @company_id
+                and line.bill_id <> @bill_id
+                and line.purchase_order_id is not null
+                and line.purchase_order_line_number is not null
+                and bill.status = 'posted'
+              group by line.purchase_order_id, line.purchase_order_line_number
+            ),
+            posted_receipt_quantity as (
+              select
+                line.purchase_order_id,
+                line.purchase_order_line_number,
+                coalesce(sum(line.quantity), 0)::numeric(18,6) as posted_received_quantity
+              from receipt_lines line
+              join receipts receipt
+                on receipt.company_id = line.company_id
+               and receipt.id = line.receipt_id
+              where line.company_id = @company_id
+                and line.purchase_order_id is not null
+                and line.purchase_order_line_number is not null
+                and receipt.status = 'posted'
+              group by line.purchase_order_id, line.purchase_order_line_number
+            )
+            select
+              anchor.purchase_order_id,
+              anchor.purchase_order_line_number,
+              anchor.vendor_id as bill_vendor_id,
+              anchor.item_id as bill_item_id,
+              anchor.uom_code as bill_uom_code,
+              anchor.posting_quantity,
+              po.status as purchase_order_status,
+              po.vendor_id as purchase_order_vendor_id,
+              po_line.item_id as purchase_order_item_id,
+              po_line.uom_code as purchase_order_uom_code,
+              po_line.ordered_quantity,
+              coalesce(posted_bill.posted_billed_quantity, 0)::numeric(18,6) as posted_billed_quantity,
+              coalesce(posted_receipt.posted_received_quantity, 0)::numeric(18,6) as posted_received_quantity
+            from bill_anchor_lines anchor
+            left join {PurchaseOrdersTableName} po
+              on po.company_id = @company_id
+             and po.id = anchor.purchase_order_id
+            left join {PurchaseOrderLinesTableName} po_line
+              on po_line.company_id = @company_id
+             and po_line.purchase_order_id = anchor.purchase_order_id
+             and po_line.line_number = anchor.purchase_order_line_number
+            left join posted_bill_quantity posted_bill
+              on posted_bill.purchase_order_id = anchor.purchase_order_id
+             and posted_bill.purchase_order_line_number = anchor.purchase_order_line_number
+            left join posted_receipt_quantity posted_receipt
+              on posted_receipt.purchase_order_id = anchor.purchase_order_id
+             and posted_receipt.purchase_order_line_number = anchor.purchase_order_line_number;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("bill_id", billDocumentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reader.IsDBNull(reader.GetOrdinal("purchase_order_status")) ||
+                reader.IsDBNull(reader.GetOrdinal("purchase_order_item_id")))
+            {
+                throw new InvalidOperationException("PO-anchored bill lines must reference an existing purchase order line in the active company context.");
+            }
+
+            PurchaseOrderAnchorPolicy.EnsureAllowsNewAnchor(reader.GetString(reader.GetOrdinal("purchase_order_status")));
+
+            var purchaseOrderId = reader.GetGuid(reader.GetOrdinal("purchase_order_id"));
+            var lineNumber = reader.GetInt32(reader.GetOrdinal("purchase_order_line_number"));
+            var billVendorId = reader.GetGuid(reader.GetOrdinal("bill_vendor_id"));
+            var poVendorId = reader.GetGuid(reader.GetOrdinal("purchase_order_vendor_id"));
+            if (billVendorId != poVendorId)
+            {
+                throw new InvalidOperationException($"PO-anchored bill line {lineNumber} must use the same vendor as the purchase order.");
+            }
+
+            var billItemId = reader.GetGuid(reader.GetOrdinal("bill_item_id"));
+            var poItemId = reader.GetGuid(reader.GetOrdinal("purchase_order_item_id"));
+            if (billItemId != poItemId)
+            {
+                throw new InvalidOperationException($"PO-anchored bill line {lineNumber} must use the same item as the purchase order line.");
+            }
+
+            var billUom = reader.GetString(reader.GetOrdinal("bill_uom_code")).Trim().ToUpperInvariant();
+            var poUom = reader.GetString(reader.GetOrdinal("purchase_order_uom_code")).Trim().ToUpperInvariant();
+            if (!string.Equals(billUom, poUom, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"PO-anchored bill line {lineNumber} must use the same stock UOM as the purchase order line.");
+            }
+
+            var postingQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("posting_quantity")));
+            var orderedQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("ordered_quantity")));
+            var postedBilledQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("posted_billed_quantity")));
+            var postedReceivedQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("posted_received_quantity")));
+            var totalBilledQuantity = Round6(postedBilledQuantity + postingQuantity);
+
+            if (totalBilledQuantity > orderedQuantity)
+            {
+                throw new InvalidOperationException($"PO-anchored bill quantity exceeds the ordered quantity for purchase order {purchaseOrderId:D} line {lineNumber}.");
+            }
+
+            if (totalBilledQuantity > postedReceivedQuantity)
+            {
+                throw new InvalidOperationException($"PO-anchored bill quantity cannot outrun posted receipt truth for purchase order {purchaseOrderId:D} line {lineNumber}.");
+            }
+        }
+    }
+
     public async Task<PurchaseOrderThreeQuantitySummary?> GetThreeQuantitySummaryAsync(
         CompanyId companyId,
         Guid purchaseOrderId,
@@ -573,6 +764,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             var billedQuantity = Round6(lines.Sum(static line => line.BilledQuantity));
             var overReceivedLineCount = lines.Count(static line => line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.OverReceived);
             var overBilledLineCount = lines.Count(static line => line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.OverBilled);
+            var billedAheadOfReceivedLineCount = lines.Count(static line => line.QuantityStatus == PurchaseOrderThreeQuantityStatusPolicy.BilledAheadOfReceived);
             summaries[purchaseOrderId] = new PurchaseOrderThreeQuantitySummary(
                 purchaseOrderId,
                 lines.Count,
@@ -583,17 +775,182 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 Math.Max(Round6(orderedQuantity - billedQuantity), 0m),
                 overReceivedLineCount,
                 overBilledLineCount,
+                billedAheadOfReceivedLineCount,
+                0,
                 PurchaseOrderThreeQuantityStatusPolicy.ResolveSummaryStatus(
                     lines.Count,
                     overReceivedLineCount,
                     overBilledLineCount,
+                    billedAheadOfReceivedLineCount,
                     orderedQuantity,
                     receivedQuantity,
                     billedQuantity),
-                lines);
+                lines,
+                Array.Empty<PurchaseOrderQuantityDiscrepancySummary>());
+        }
+
+        var discrepancyRows = await LoadQuantityDiscrepanciesAsync(scope, companyId.Value, distinctIds, cancellationToken);
+        if (discrepancyRows.Count == 0)
+        {
+            return summaries;
+        }
+
+        foreach (var discrepancyGroup in discrepancyRows.GroupBy(static row => row.PurchaseOrderId))
+        {
+            if (!summaries.TryGetValue(discrepancyGroup.Key, out var summary))
+            {
+                continue;
+            }
+
+            var materialized = discrepancyGroup.ToArray();
+            summaries[discrepancyGroup.Key] = summary with
+            {
+                OpenDiscrepancyCount = materialized.Count(static row => string.Equals(row.InvestigationStatus, "open", StringComparison.Ordinal)),
+                Discrepancies = materialized
+            };
         }
 
         return summaries;
+    }
+
+    public async Task<PurchaseOrderThreeQuantitySummary?> RefreshQuantityDiscrepanciesAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken)
+    {
+        if (purchaseOrderId == Guid.Empty)
+        {
+            throw new ArgumentException("Purchase order document id is required.", nameof(purchaseOrderId));
+        }
+
+        var summary = await GetThreeQuantitySummaryAsync(companyId, purchaseOrderId, cancellationToken);
+        if (summary is null)
+        {
+            return null;
+        }
+
+        var candidates = summary.Lines
+            .Select(line => (Line: line, DiscrepancyType: PurchaseOrderQuantityDiscrepancyPolicy.ResolveDiscrepancyType(line)))
+            .Where(static tuple => tuple.DiscrepancyType is not null)
+            .ToArray();
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+
+        var existing = await LoadExistingQuantityDiscrepancyFirstDetectedAtAsync(
+            scope,
+            companyId.Value,
+            purchaseOrderId,
+            cancellationToken);
+
+        await using (var deleteCommand = scope.CreateCommand(
+                         $"""
+                         delete from {QuantityDiscrepanciesTableName}
+                         where company_id = @company_id
+                           and purchase_order_id = @purchase_order_id
+                           and discrepancy_type in (@over_received, @over_billed, @billed_ahead);
+                         """))
+        {
+            deleteCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            deleteCommand.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
+            deleteCommand.Parameters.AddWithValue("over_received", PurchaseOrderQuantityDiscrepancyPolicy.OverReceived);
+            deleteCommand.Parameters.AddWithValue("over_billed", PurchaseOrderQuantityDiscrepancyPolicy.OverBilled);
+            deleteCommand.Parameters.AddWithValue("billed_ahead", PurchaseOrderQuantityDiscrepancyPolicy.BilledAheadOfReceived);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (candidates.Length > 0)
+        {
+            await using var insertCommand = scope.CreateCommand(
+                $"""
+                insert into {QuantityDiscrepanciesTableName} (
+                  id,
+                  company_id,
+                  purchase_order_id,
+                  purchase_order_line_number,
+                  discrepancy_type,
+                  investigation_status,
+                  item_id,
+                  uom_code,
+                  ordered_quantity,
+                  received_quantity,
+                  billed_quantity,
+                  remaining_to_receive_quantity,
+                  remaining_to_bill_quantity,
+                  summary,
+                  first_detected_at,
+                  last_detected_at,
+                  refreshed_by_user_id
+                )
+                values (
+                  @id,
+                  @company_id,
+                  @purchase_order_id,
+                  @purchase_order_line_number,
+                  @discrepancy_type,
+                  'open',
+                  @item_id,
+                  @uom_code,
+                  @ordered_quantity,
+                  @received_quantity,
+                  @billed_quantity,
+                  @remaining_to_receive_quantity,
+                  @remaining_to_bill_quantity,
+                  @summary,
+                  @first_detected_at,
+                  now(),
+                  @refreshed_by_user_id
+                );
+                """);
+            insertCommand.Parameters.Add(new NpgsqlParameter<Guid>("id", NpgsqlDbType.Uuid));
+            insertCommand.Parameters.AddWithValue("company_id", companyId.Value);
+            insertCommand.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
+            insertCommand.Parameters.Add(new NpgsqlParameter<int>("purchase_order_line_number", NpgsqlDbType.Integer));
+            insertCommand.Parameters.Add(new NpgsqlParameter<string>("discrepancy_type", NpgsqlDbType.Text));
+            insertCommand.Parameters.Add(new NpgsqlParameter<Guid>("item_id", NpgsqlDbType.Uuid));
+            insertCommand.Parameters.Add(new NpgsqlParameter<string>("uom_code", NpgsqlDbType.Text));
+            insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("ordered_quantity", NpgsqlDbType.Numeric));
+            insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("received_quantity", NpgsqlDbType.Numeric));
+            insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("billed_quantity", NpgsqlDbType.Numeric));
+            insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("remaining_to_receive_quantity", NpgsqlDbType.Numeric));
+            insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("remaining_to_bill_quantity", NpgsqlDbType.Numeric));
+            insertCommand.Parameters.Add(new NpgsqlParameter<string>("summary", NpgsqlDbType.Text));
+            insertCommand.Parameters.Add(new NpgsqlParameter<DateTimeOffset>("first_detected_at", NpgsqlDbType.TimestampTz));
+            insertCommand.Parameters.AddWithValue("refreshed_by_user_id", userId.Value);
+
+            foreach (var (line, discrepancyType) in candidates)
+            {
+                var key = (line.LineNumber, discrepancyType!);
+                insertCommand.Parameters["id"].Value = Guid.NewGuid();
+                insertCommand.Parameters["purchase_order_line_number"].Value = line.LineNumber;
+                insertCommand.Parameters["discrepancy_type"].Value = discrepancyType!;
+                insertCommand.Parameters["item_id"].Value = line.ItemId;
+                insertCommand.Parameters["uom_code"].Value = line.UomCode;
+                insertCommand.Parameters["ordered_quantity"].Value = Round6(line.OrderedQuantity);
+                insertCommand.Parameters["received_quantity"].Value = Round6(line.ReceivedQuantity);
+                insertCommand.Parameters["billed_quantity"].Value = Round6(line.BilledQuantity);
+                insertCommand.Parameters["remaining_to_receive_quantity"].Value = Round6(line.RemainingToReceiveQuantity);
+                insertCommand.Parameters["remaining_to_bill_quantity"].Value = Round6(line.RemainingToBillQuantity);
+                insertCommand.Parameters["summary"].Value = PurchaseOrderQuantityDiscrepancyPolicy.BuildDiscrepancySummary(
+                    discrepancyType!,
+                    line.OrderedQuantity,
+                    line.ReceivedQuantity,
+                    line.BilledQuantity,
+                    line.UomCode);
+                insertCommand.Parameters["first_detected_at"].Value = existing.TryGetValue(key, out var firstDetectedAt)
+                    ? firstDetectedAt
+                    : DateTimeOffset.UtcNow;
+
+                await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        return await GetThreeQuantitySummaryAsync(companyId, purchaseOrderId, cancellationToken);
     }
 
     private static async Task<IReadOnlyList<PurchaseOrderDocumentLine>> LoadLinesAsync(
@@ -633,6 +990,100 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         }
 
         return lines;
+    }
+
+    private static async Task<IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary>> LoadQuantityDiscrepanciesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        IReadOnlyCollection<Guid> purchaseOrderIds,
+        CancellationToken cancellationToken)
+    {
+        if (purchaseOrderIds.Count == 0)
+        {
+            return Array.Empty<PurchaseOrderQuantityDiscrepancySummary>();
+        }
+
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              purchase_order_id,
+              purchase_order_line_number,
+              discrepancy_type,
+              investigation_status,
+              item_id,
+              uom_code,
+              ordered_quantity,
+              received_quantity,
+              billed_quantity,
+              remaining_to_receive_quantity,
+              remaining_to_bill_quantity,
+              summary,
+              first_detected_at,
+              last_detected_at
+            from {QuantityDiscrepanciesTableName}
+            where company_id = @company_id
+              and purchase_order_id = any(@purchase_order_ids::uuid[])
+              and investigation_status = 'open'
+            order by purchase_order_id, purchase_order_line_number, discrepancy_type;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.Add(new NpgsqlParameter<Guid[]>("purchase_order_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            TypedValue = purchaseOrderIds.Where(static id => id != Guid.Empty).Distinct().ToArray()
+        });
+
+        var rows = new List<PurchaseOrderQuantityDiscrepancySummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new PurchaseOrderQuantityDiscrepancySummary(
+                reader.GetGuid(reader.GetOrdinal("purchase_order_id")),
+                reader.GetInt32(reader.GetOrdinal("purchase_order_line_number")),
+                reader.GetString(reader.GetOrdinal("discrepancy_type")),
+                reader.GetString(reader.GetOrdinal("investigation_status")),
+                reader.GetGuid(reader.GetOrdinal("item_id")),
+                reader.GetString(reader.GetOrdinal("uom_code")),
+                Round6(reader.GetDecimal(reader.GetOrdinal("ordered_quantity"))),
+                Round6(reader.GetDecimal(reader.GetOrdinal("received_quantity"))),
+                Round6(reader.GetDecimal(reader.GetOrdinal("billed_quantity"))),
+                Round6(reader.GetDecimal(reader.GetOrdinal("remaining_to_receive_quantity"))),
+                Round6(reader.GetDecimal(reader.GetOrdinal("remaining_to_bill_quantity"))),
+                reader.GetString(reader.GetOrdinal("summary")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_detected_at"))));
+        }
+
+        return rows;
+    }
+
+    private static async Task<Dictionary<(int LineNumber, string DiscrepancyType), DateTimeOffset>> LoadExistingQuantityDiscrepancyFirstDetectedAtAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              purchase_order_line_number,
+              discrepancy_type,
+              first_detected_at
+            from {QuantityDiscrepanciesTableName}
+            where company_id = @company_id
+              and purchase_order_id = @purchase_order_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
+
+        var rows = new Dictionary<(int LineNumber, string DiscrepancyType), DateTimeOffset>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows[(reader.GetInt32(reader.GetOrdinal("purchase_order_line_number")), reader.GetString(reader.GetOrdinal("discrepancy_type")))] =
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at"));
+        }
+
+        return rows;
     }
 
     private static void ValidateDraft(PurchaseOrderDraftSaveModel draft)
@@ -788,6 +1239,39 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
             create index if not exists ix_purchase_order_lines_company_order
               on {PurchaseOrderLinesTableName} (company_id, purchase_order_id, line_number);
+
+            create table if not exists {QuantityDiscrepanciesTableName} (
+              id uuid primary key,
+              company_id uuid not null,
+              purchase_order_id uuid not null,
+              purchase_order_line_number integer not null,
+              discrepancy_type text not null,
+              investigation_status text not null,
+              item_id uuid not null,
+              uom_code text not null,
+              ordered_quantity numeric(18,6) not null,
+              received_quantity numeric(18,6) not null,
+              billed_quantity numeric(18,6) not null,
+              remaining_to_receive_quantity numeric(18,6) not null,
+              remaining_to_bill_quantity numeric(18,6) not null,
+              summary text not null,
+              first_detected_at timestamptz not null,
+              last_detected_at timestamptz not null default now(),
+              refreshed_by_user_id uuid not null
+            );
+
+            alter table {QuantityDiscrepanciesTableName}
+              drop constraint if exists ck_purchase_order_quantity_discrepancy_lanes_type;
+
+            alter table {QuantityDiscrepanciesTableName}
+              add constraint ck_purchase_order_quantity_discrepancy_lanes_type
+                check (discrepancy_type in ('over_received', 'over_billed', 'billed_ahead_of_received'));
+
+            create unique index if not exists ux_purchase_order_quantity_discrepancy_lanes_natural
+              on {QuantityDiscrepanciesTableName} (company_id, purchase_order_id, purchase_order_line_number, discrepancy_type);
+
+            create index if not exists ix_purchase_order_quantity_discrepancy_lanes_open
+              on {QuantityDiscrepanciesTableName} (company_id, purchase_order_id, investigation_status);
 
             do $$
             begin

@@ -4074,6 +4074,11 @@ accounting.MapGet(
             document.CreatedAt,
             document.UpdatedAt,
             document.IssuedAt,
+            AnchorGovernance = new
+            {
+                AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
+                Summary = PurchaseOrderAnchorPolicy.BuildAnchorStatusSummary(document.Status)
+            },
             ThreeQuantity = summaries.TryGetValue(document.DocumentId, out var summary) ? summary : null
         }));
     });
@@ -4106,6 +4111,11 @@ accounting.MapGet(
             document.VendorReference,
             document.Memo,
             document.IssuedAt,
+            AnchorGovernance = new
+            {
+                AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
+                Summary = PurchaseOrderAnchorPolicy.BuildAnchorStatusSummary(document.Status)
+            },
             ThreeQuantity = summary,
             Lines = document.PurchaseOrderLines.Select(line => new
             {
@@ -4198,6 +4208,28 @@ accounting.MapPost(
                 cancellationToken);
 
             return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/quantity-discrepancies/refresh",
+    async (Guid documentId, RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var summary = await repository.RefreshQuantityDiscrepanciesAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return summary is null
+                ? Results.NotFound(new { message = "Purchase order document was not found in the active company context." })
+                : Results.Ok(summary);
         }
         catch (InvalidOperationException ex)
         {

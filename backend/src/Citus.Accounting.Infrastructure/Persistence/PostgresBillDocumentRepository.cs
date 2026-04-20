@@ -1,3 +1,4 @@
+using Citus.Accounting.Application;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
@@ -252,6 +253,28 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         var documentId = draft.DocumentId ?? Guid.NewGuid();
         string entityNumber;
         string displayNumber;
+
+        await ValidatePurchaseOrderBillDraftAnchorsAsync(
+            connection,
+            transaction,
+            draft.CompanyId.Value,
+            draft.VendorId,
+            documentId,
+            draft.Lines
+                .Where(static line => line.PurchaseOrderId.HasValue)
+                .GroupBy(static line => (
+                    PurchaseOrderId: line.PurchaseOrderId!.Value,
+                    PurchaseOrderLineNumber: line.PurchaseOrderLineNumber!.Value,
+                    ItemId: line.ItemId!.Value,
+                    UomCode: line.UomCode!.Trim().ToUpperInvariant()))
+                .Select(static group => new PurchaseOrderBillAnchorCandidate(
+                    group.Key.PurchaseOrderId,
+                    group.Key.PurchaseOrderLineNumber,
+                    group.Key.ItemId,
+                    group.Key.UomCode,
+                    group.Sum(static line => line.Quantity!.Value)))
+                .ToArray(),
+            cancellationToken);
 
         if (draft.DocumentId is null)
         {
@@ -694,6 +717,109 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
 
+    private static async Task ValidatePurchaseOrderBillDraftAnchorsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid billVendorId,
+        Guid billDocumentId,
+        IReadOnlyCollection<PurchaseOrderBillAnchorCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        await EnsurePurchaseOrderAnchorTablesAvailableAsync(connection, transaction, cancellationToken);
+
+        foreach (var candidate in candidates)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                with posted_bill_quantity as (
+                  select coalesce(sum(line.quantity), 0)::numeric(18,6) as posted_billed_quantity
+                  from bill_lines line
+                  join bills bill
+                    on bill.company_id = line.company_id
+                   and bill.id = line.bill_id
+                  where line.company_id = @company_id
+                    and line.bill_id <> @bill_id
+                    and line.purchase_order_id = @purchase_order_id
+                    and line.purchase_order_line_number = @purchase_order_line_number
+                    and bill.status = 'posted'
+                )
+                select
+                  po.status,
+                  po.vendor_id,
+                  po_line.item_id,
+                  po_line.uom_code,
+                  po_line.ordered_quantity,
+                  coalesce(posted.posted_billed_quantity, 0)::numeric(18,6) as posted_billed_quantity
+                from purchase_orders po
+                join purchase_order_lines po_line
+                  on po_line.company_id = po.company_id
+                 and po_line.purchase_order_id = po.id
+                 and po_line.line_number = @purchase_order_line_number
+                cross join posted_bill_quantity posted
+                where po.company_id = @company_id
+                  and po.id = @purchase_order_id
+                limit 1;
+                """;
+            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("bill_id", billDocumentId);
+            command.Parameters.AddWithValue("purchase_order_id", candidate.PurchaseOrderId);
+            command.Parameters.AddWithValue("purchase_order_line_number", candidate.PurchaseOrderLineNumber);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new InvalidOperationException("PO-anchored bill lines must reference an existing purchase order line in the active company context.");
+            }
+
+            PurchaseOrderAnchorPolicy.EnsureAllowsNewAnchor(reader.GetString(reader.GetOrdinal("status")));
+
+            if (reader.GetGuid(reader.GetOrdinal("vendor_id")) != billVendorId)
+            {
+                throw new InvalidOperationException($"PO-anchored bill line {candidate.PurchaseOrderLineNumber} must use the same vendor as the purchase order.");
+            }
+
+            if (reader.GetGuid(reader.GetOrdinal("item_id")) != candidate.ItemId)
+            {
+                throw new InvalidOperationException($"PO-anchored bill line {candidate.PurchaseOrderLineNumber} must use the same item as the purchase order line.");
+            }
+
+            var poUom = reader.GetString(reader.GetOrdinal("uom_code")).Trim().ToUpperInvariant();
+            if (!string.Equals(poUom, candidate.UomCode, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"PO-anchored bill line {candidate.PurchaseOrderLineNumber} must use the same stock UOM as the purchase order line.");
+            }
+
+            var orderedQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("ordered_quantity")));
+            var postedBilledQuantity = Round6(reader.GetDecimal(reader.GetOrdinal("posted_billed_quantity")));
+            if (Round6(postedBilledQuantity + candidate.Quantity) > orderedQuantity)
+            {
+                throw new InvalidOperationException($"PO-anchored bill quantity exceeds the ordered quantity for purchase order {candidate.PurchaseOrderId:D} line {candidate.PurchaseOrderLineNumber}.");
+            }
+        }
+    }
+
+    private static async Task EnsurePurchaseOrderAnchorTablesAvailableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select to_regclass('purchase_orders') is not null and to_regclass('purchase_order_lines') is not null;";
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new InvalidOperationException("PO anchors require first-class purchase order tables to exist.");
+        }
+    }
+
     private static async Task EnsureInventoryGradeBillLineColumnsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -747,4 +873,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             reader.GetString(reader.GetOrdinal("entity_number")),
             reader.GetString(reader.GetOrdinal("bill_number")));
     }
+
+    private sealed record PurchaseOrderBillAnchorCandidate(
+        Guid PurchaseOrderId,
+        int PurchaseOrderLineNumber,
+        Guid ItemId,
+        string UomCode,
+        decimal Quantity);
 }
