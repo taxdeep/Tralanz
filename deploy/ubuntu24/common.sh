@@ -469,11 +469,31 @@ configure_ubuntu_mirrors() {
       cp "${ubuntu_sources}" "${ubuntu_sources}${backup_suffix}"
     fi
 
-    sed -i \
-      -e "s|URIs: http://[^ ]*/ubuntu|URIs: ${APT_PRIMARY_MIRROR}|g" \
-      -e "s|URIs: https://[^ ]*/ubuntu|URIs: ${APT_PRIMARY_MIRROR}|g" \
-      -e "0,/URIs: ${APT_PRIMARY_MIRROR}/s|URIs: ${APT_PRIMARY_MIRROR}|URIs: ${APT_SECURITY_MIRROR}|" \
-      "${ubuntu_sources}"
+    local rewritten_sources
+    rewritten_sources="$(mktemp)"
+    awk -v primary="${APT_PRIMARY_MIRROR}" -v security="${APT_SECURITY_MIRROR}" '
+      BEGIN { RS = ""; ORS = ""; }
+      {
+        mirror = ($0 ~ /(^|\n)Suites:[^\n]*noble-security/) ? security : primary;
+        line_count = split($0, lines, "\n");
+        for (line_index = 1; line_index <= line_count; line_index++) {
+          if (lines[line_index] ~ /^URIs: /) {
+            lines[line_index] = "URIs: " mirror;
+          }
+
+          print lines[line_index];
+          if (line_index < line_count) {
+            print "\n";
+          }
+        }
+
+        if (NR > 0) {
+          print "\n\n";
+        }
+      }
+    ' "${ubuntu_sources}" > "${rewritten_sources}"
+    cat "${rewritten_sources}" > "${ubuntu_sources}"
+    rm -f "${rewritten_sources}"
     return
   fi
 
