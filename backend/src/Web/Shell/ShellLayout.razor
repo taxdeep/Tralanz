@@ -2,6 +2,7 @@
 @inject NavigationManager NavigationManager
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
 @inject WebShellState ShellState
+@inject ILogger<ShellLayout> Logger
 
 @inherits LayoutComponentBase
 
@@ -41,11 +42,29 @@ else
                 <div class="ws-brand__title">Web Shell</div>
                 <div class="ws-brand__subtitle">CompanyAccess-backed business workspace</div>
             </div>
-            <NavMenu />
+            <ErrorBoundary>
+                <ChildContent>
+                    <NavMenu />
+                </ChildContent>
+                <ErrorContent>
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
+                        Navigation could not be loaded. Refresh the page after sign-in completes.
+                    </MudAlert>
+                </ErrorContent>
+            </ErrorBoundary>
         </MudDrawer>
 
         <MudMainContent Class="ws-main">
-            @Body
+            <ErrorBoundary>
+                <ChildContent>
+                    @Body
+                </ChildContent>
+                <ErrorContent>
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
+                        This workspace page could not be loaded. The session is still active; refresh or return to Home.
+                    </MudAlert>
+                </ErrorContent>
+            </ErrorBoundary>
         </MudMainContent>
     </MudLayout>
 }
@@ -62,27 +81,21 @@ else
     {
         if (firstRender)
         {
-            var storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
-            if (!string.IsNullOrWhiteSpace(storedToken))
+            try
             {
-                var session = await SessionClient.ResumeSessionAsync(storedToken);
-                if (session is not null)
-                {
-                    ShellState.ApplyAuthenticatedSession(storedToken, session.Context, session.ExpiresAtUtc);
-                }
-                else
-                {
-                    await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
-                    ShellState.ClearAuthenticatedSession();
-                }
+                await RestoreStoredSessionAsync();
             }
-            else
+            catch (Exception ex)
             {
+                Logger.LogError(ex, "Web.Shell failed while restoring the browser business session.");
                 ShellState.ClearAuthenticatedSession();
+                await TryClearStoredSessionTokenAsync();
             }
-
-            _isShellReady = true;
-            StateHasChanged();
+            finally
+            {
+                _isShellReady = true;
+                StateHasChanged();
+            }
         }
 
         if (!_isShellReady)
@@ -97,6 +110,38 @@ else
         else if (ShellState.IsAuthenticated && IsLoginRoute)
         {
             NavigationManager.NavigateTo("/", replace: true);
+        }
+    }
+
+    private async Task RestoreStoredSessionAsync()
+    {
+        var storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
+        if (string.IsNullOrWhiteSpace(storedToken))
+        {
+            ShellState.ClearAuthenticatedSession();
+            return;
+        }
+
+        var session = await SessionClient.ResumeSessionAsync(storedToken);
+        if (session is null)
+        {
+            await TryClearStoredSessionTokenAsync();
+            ShellState.ClearAuthenticatedSession();
+            return;
+        }
+
+        ShellState.ApplyAuthenticatedSession(storedToken, session.Context, session.ExpiresAtUtc);
+    }
+
+    private async Task TryClearStoredSessionTokenAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Web.Shell could not clear the stored browser business session token.");
         }
     }
 }
