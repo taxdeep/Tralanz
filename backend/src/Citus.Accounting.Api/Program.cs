@@ -4237,6 +4237,36 @@ accounting.MapPost(
         }
     });
 
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/quantity-discrepancies/review",
+    async (Guid documentId, ReviewPurchaseOrderQuantityDiscrepancyHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var summary = await repository.ReviewQuantityDiscrepancyAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                request.PurchaseOrderLineNumber,
+                request.DiscrepancyType,
+                request.InvestigationStatus,
+                request.ReviewNote,
+                cancellationToken);
+
+            return summary is null
+                ? Results.NotFound(new { message = "Purchase order document was not found in the active company context." })
+                : Results.Ok(summary);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
 accounting.MapGet(
     "/receipts",
     async (

@@ -1611,3 +1611,46 @@ Still not included:
 Authority note:
 
 H.20.1 keeps the truth ladder strict. PO anchor state is now controlled by backend policy, overage cannot be silently created through normal Receipt/Bill paths, and any already-existing PO quantity conflict has a persisted investigation lane.
+
+## Phase H.20.2 checkpoint
+
+H.20.2 introduces a minimal PO discrepancy review lane while keeping overage execution blocked.
+
+Boundary:
+
+- Review truth is not execution truth.
+- `override_authorized` records authority intent but does not bypass Receipt/Bill anchor hard blocks.
+- No privileged overage execution.
+- No PO approval / close / cancel workflow.
+- No PPV journal recognition.
+- No tracked receipt.
+- No Shell-wide PO review workbench.
+
+What changed:
+
+- PO quantity discrepancy lanes now support:
+  - `open`
+  - `resolved`
+  - `override_authorized`
+- Review metadata is persisted:
+  - review note
+  - reviewed by user
+  - reviewed at timestamp
+- A review endpoint exists:
+  - `POST /purchase-orders/{id}/quantity-discrepancies/review`
+- Resolved lanes are removed from active read truth.
+- Refresh reopens a resolved lane if the underlying quantity discrepancy still exists.
+- Override-authorized lanes remain visible through refresh and keep their review metadata.
+
+Still not included:
+
+- role/permission-backed PO discrepancy review authority
+- operational override consumption by Receipt/Bill save/post
+- PO close/cancel execution semantics
+- PO-driven receiving / billing automation
+- PPV posting
+- tracked receipt enablement
+
+Authority note:
+
+H.20.2 gives the team a place to record review outcomes without weakening the PO anchor hardening. Physical and AP truth still cannot be silently pushed beyond ordered / received / billed governance.

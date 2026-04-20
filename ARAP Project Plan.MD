@@ -1238,3 +1238,45 @@ Still deferred:
 Authority note:
 
 H.20.1 turns PO anchors from passive references into backend-governed source truth. Normal operation hard-blocks over-receipt and bill-ahead-of-receipt paths; any historical or externally imported overage is made reviewable through a persisted discrepancy lane rather than hidden in raw three-quantity math.
+
+## Phase H.20.2 checkpoint
+
+H.20.2 adds the minimum PO quantity discrepancy review / override-authority seam.
+
+Boundary:
+
+- This is review/control truth only.
+- It does not loosen H.20.1 hard blocks.
+- It does not make `override_authorized` an execution bypass.
+- It does not introduce privileged over-receipt or over-bill posting.
+- It does not introduce PO approval, close/cancel execution, or Shell-wide PO workspace.
+
+What changed:
+
+- PO quantity discrepancy lanes now support investigation statuses:
+  - `open`
+  - `resolved`
+  - `override_authorized`
+- Discrepancy rows now retain review metadata:
+  - review note
+  - reviewed by user
+  - reviewed at timestamp
+- A review endpoint exists:
+  - `POST /purchase-orders/{id}/quantity-discrepancies/review`
+- `resolved` lanes disappear from active PO discrepancy read truth.
+- If the underlying quantity conflict still exists, the next refresh reopens a resolved lane.
+- `override_authorized` lanes remain visible across refreshes, but still do not bypass Receipt/Bill hard-block policies.
+
+Still deferred:
+
+- permission-backed discrepancy review roles
+- override execution policy
+- formal PO close / cancel workflow
+- PO-driven receiving or billing automation
+- PPV posting
+- tracked receipt
+- Shell-wide PO review workbench
+
+Authority note:
+
+H.20.2 separates investigation truth from execution truth. Review can record that an overage was resolved or authorized for further attention, but the system still refuses to let Bill or Receipt silently mutate physical/AP truth beyond the governed PO anchors.

@@ -149,6 +149,16 @@ public interface IPurchaseOrderDocumentRepository
         UserId userId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken);
+
+    Task<PurchaseOrderThreeQuantitySummary?> ReviewQuantityDiscrepancyAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid purchaseOrderId,
+        int purchaseOrderLineNumber,
+        string discrepancyType,
+        string investigationStatus,
+        string? reviewNote,
+        CancellationToken cancellationToken);
 }
 
 public interface IBillReceiptMatchingRepository
@@ -378,7 +388,10 @@ public sealed record PurchaseOrderQuantityDiscrepancySummary(
     decimal RemainingToBillQuantity,
     string Summary,
     DateTimeOffset FirstDetectedAt,
-    DateTimeOffset LastDetectedAt);
+    DateTimeOffset LastDetectedAt,
+    string? ReviewNote = null,
+    Guid? ReviewedByUserId = null,
+    DateTimeOffset? ReviewedAt = null);
 
 public sealed record PurchaseOrderThreeQuantitySummary(
     Guid PurchaseOrderId,

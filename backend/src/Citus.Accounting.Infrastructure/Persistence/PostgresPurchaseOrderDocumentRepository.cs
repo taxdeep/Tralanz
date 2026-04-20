@@ -805,7 +805,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             var materialized = discrepancyGroup.ToArray();
             summaries[discrepancyGroup.Key] = summary with
             {
-                OpenDiscrepancyCount = materialized.Count(static row => string.Equals(row.InvestigationStatus, "open", StringComparison.Ordinal)),
+                OpenDiscrepancyCount = materialized.Count(static row => string.Equals(row.InvestigationStatus, PurchaseOrderQuantityDiscrepancyPolicy.Open, StringComparison.Ordinal)),
                 Discrepancies = materialized
             };
         }
@@ -842,7 +842,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
 
-        var existing = await LoadExistingQuantityDiscrepancyFirstDetectedAtAsync(
+        var existing = await LoadExistingQuantityDiscrepancyReviewStateAsync(
             scope,
             companyId.Value,
             purchaseOrderId,
@@ -885,6 +885,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                   summary,
                   first_detected_at,
                   last_detected_at,
+                  review_note,
+                  reviewed_by_user_id,
+                  reviewed_at,
                   refreshed_by_user_id
                 )
                 values (
@@ -893,7 +896,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                   @purchase_order_id,
                   @purchase_order_line_number,
                   @discrepancy_type,
-                  'open',
+                  @investigation_status,
                   @item_id,
                   @uom_code,
                   @ordered_quantity,
@@ -904,6 +907,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                   @summary,
                   @first_detected_at,
                   now(),
+                  @review_note,
+                  @reviewed_by_user_id,
+                  @reviewed_at,
                   @refreshed_by_user_id
                 );
                 """);
@@ -912,6 +918,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             insertCommand.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
             insertCommand.Parameters.Add(new NpgsqlParameter<int>("purchase_order_line_number", NpgsqlDbType.Integer));
             insertCommand.Parameters.Add(new NpgsqlParameter<string>("discrepancy_type", NpgsqlDbType.Text));
+            insertCommand.Parameters.Add(new NpgsqlParameter<string>("investigation_status", NpgsqlDbType.Text));
             insertCommand.Parameters.Add(new NpgsqlParameter<Guid>("item_id", NpgsqlDbType.Uuid));
             insertCommand.Parameters.Add(new NpgsqlParameter<string>("uom_code", NpgsqlDbType.Text));
             insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("ordered_quantity", NpgsqlDbType.Numeric));
@@ -921,14 +928,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             insertCommand.Parameters.Add(new NpgsqlParameter<decimal>("remaining_to_bill_quantity", NpgsqlDbType.Numeric));
             insertCommand.Parameters.Add(new NpgsqlParameter<string>("summary", NpgsqlDbType.Text));
             insertCommand.Parameters.Add(new NpgsqlParameter<DateTimeOffset>("first_detected_at", NpgsqlDbType.TimestampTz));
+            insertCommand.Parameters.Add(new NpgsqlParameter<string?>("review_note", NpgsqlDbType.Text));
+            insertCommand.Parameters.Add(new NpgsqlParameter<Guid?>("reviewed_by_user_id", NpgsqlDbType.Uuid));
+            insertCommand.Parameters.Add(new NpgsqlParameter<DateTimeOffset?>("reviewed_at", NpgsqlDbType.TimestampTz));
             insertCommand.Parameters.AddWithValue("refreshed_by_user_id", userId.Value);
 
             foreach (var (line, discrepancyType) in candidates)
             {
                 var key = (line.LineNumber, discrepancyType!);
+                existing.TryGetValue(key, out var existingState);
                 insertCommand.Parameters["id"].Value = Guid.NewGuid();
                 insertCommand.Parameters["purchase_order_line_number"].Value = line.LineNumber;
                 insertCommand.Parameters["discrepancy_type"].Value = discrepancyType!;
+                insertCommand.Parameters["investigation_status"].Value = PurchaseOrderQuantityDiscrepancyPolicy.PreserveRefreshStatus(existingState?.InvestigationStatus);
                 insertCommand.Parameters["item_id"].Value = line.ItemId;
                 insertCommand.Parameters["uom_code"].Value = line.UomCode;
                 insertCommand.Parameters["ordered_quantity"].Value = Round6(line.OrderedQuantity);
@@ -942,12 +954,84 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                     line.ReceivedQuantity,
                     line.BilledQuantity,
                     line.UomCode);
-                insertCommand.Parameters["first_detected_at"].Value = existing.TryGetValue(key, out var firstDetectedAt)
-                    ? firstDetectedAt
+                insertCommand.Parameters["first_detected_at"].Value = existingState is not null
+                    ? existingState.FirstDetectedAt
                     : DateTimeOffset.UtcNow;
+                insertCommand.Parameters["review_note"].Value = existingState?.ReviewNote is null ? DBNull.Value : existingState.ReviewNote;
+                insertCommand.Parameters["reviewed_by_user_id"].Value = existingState?.ReviewedByUserId is null ? DBNull.Value : existingState.ReviewedByUserId.Value;
+                insertCommand.Parameters["reviewed_at"].Value = existingState?.ReviewedAt is null ? DBNull.Value : existingState.ReviewedAt.Value;
 
                 await insertCommand.ExecuteNonQueryAsync(cancellationToken);
             }
+        }
+
+        return await GetThreeQuantitySummaryAsync(companyId, purchaseOrderId, cancellationToken);
+    }
+
+    public async Task<PurchaseOrderThreeQuantitySummary?> ReviewQuantityDiscrepancyAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid purchaseOrderId,
+        int purchaseOrderLineNumber,
+        string discrepancyType,
+        string investigationStatus,
+        string? reviewNote,
+        CancellationToken cancellationToken)
+    {
+        if (purchaseOrderId == Guid.Empty)
+        {
+            throw new ArgumentException("Purchase order document id is required.", nameof(purchaseOrderId));
+        }
+
+        if (purchaseOrderLineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(purchaseOrderLineNumber), "Purchase order line number must be positive.");
+        }
+
+        var normalizedStatus = PurchaseOrderQuantityDiscrepancyPolicy.NormalizeInvestigationStatus(investigationStatus);
+        var normalizedDiscrepancyType = string.IsNullOrWhiteSpace(discrepancyType)
+            ? throw new InvalidOperationException("PO quantity discrepancy type is required.")
+            : discrepancyType.Trim().ToLowerInvariant();
+
+        if (normalizedStatus == PurchaseOrderQuantityDiscrepancyPolicy.Open)
+        {
+            throw new InvalidOperationException("Use refresh to reopen PO quantity discrepancies. Review actions can resolve or authorize override intent only.");
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            $"""
+            update {QuantityDiscrepanciesTableName}
+            set investigation_status = @investigation_status,
+                review_note = @review_note,
+                reviewed_by_user_id = @reviewed_by_user_id,
+                reviewed_at = now(),
+                last_detected_at = now()
+            where company_id = @company_id
+              and purchase_order_id = @purchase_order_id
+              and purchase_order_line_number = @purchase_order_line_number
+              and discrepancy_type = @discrepancy_type;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
+        command.Parameters.AddWithValue("purchase_order_line_number", purchaseOrderLineNumber);
+        command.Parameters.AddWithValue("discrepancy_type", normalizedDiscrepancyType);
+        command.Parameters.AddWithValue("investigation_status", normalizedStatus);
+        command.Parameters.Add(new NpgsqlParameter<string?>("review_note", NpgsqlDbType.Text)
+        {
+            TypedValue = string.IsNullOrWhiteSpace(reviewNote) ? null : reviewNote.Trim()
+        });
+        command.Parameters.AddWithValue("reviewed_by_user_id", userId.Value);
+
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("PO quantity discrepancy lane was not found for review in the active company context. Refresh discrepancies before reviewing.");
         }
 
         return await GetThreeQuantitySummaryAsync(companyId, purchaseOrderId, cancellationToken);
@@ -1019,11 +1103,14 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               remaining_to_bill_quantity,
               summary,
               first_detected_at,
-              last_detected_at
+              last_detected_at,
+              review_note,
+              reviewed_by_user_id,
+              reviewed_at
             from {QuantityDiscrepanciesTableName}
             where company_id = @company_id
               and purchase_order_id = any(@purchase_order_ids::uuid[])
-              and investigation_status = 'open'
+              and investigation_status in ('open', 'override_authorized')
             order by purchase_order_id, purchase_order_line_number, discrepancy_type;
             """);
         command.Parameters.AddWithValue("company_id", companyId);
@@ -1050,13 +1137,16 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 Round6(reader.GetDecimal(reader.GetOrdinal("remaining_to_bill_quantity"))),
                 reader.GetString(reader.GetOrdinal("summary")),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at")),
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_detected_at"))));
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_detected_at")),
+                reader.IsDBNull(reader.GetOrdinal("review_note")) ? null : reader.GetString(reader.GetOrdinal("review_note")),
+                reader.IsDBNull(reader.GetOrdinal("reviewed_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("reviewed_by_user_id")),
+                reader.IsDBNull(reader.GetOrdinal("reviewed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reviewed_at"))));
         }
 
         return rows;
     }
 
-    private static async Task<Dictionary<(int LineNumber, string DiscrepancyType), DateTimeOffset>> LoadExistingQuantityDiscrepancyFirstDetectedAtAsync(
+    private static async Task<Dictionary<(int LineNumber, string DiscrepancyType), ExistingQuantityDiscrepancyReviewState>> LoadExistingQuantityDiscrepancyReviewStateAsync(
         PostgresCommandScope scope,
         Guid companyId,
         Guid purchaseOrderId,
@@ -1067,7 +1157,11 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             select
               purchase_order_line_number,
               discrepancy_type,
-              first_detected_at
+              investigation_status,
+              first_detected_at,
+              review_note,
+              reviewed_by_user_id,
+              reviewed_at
             from {QuantityDiscrepanciesTableName}
             where company_id = @company_id
               and purchase_order_id = @purchase_order_id;
@@ -1075,12 +1169,17 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
 
-        var rows = new Dictionary<(int LineNumber, string DiscrepancyType), DateTimeOffset>();
+        var rows = new Dictionary<(int LineNumber, string DiscrepancyType), ExistingQuantityDiscrepancyReviewState>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             rows[(reader.GetInt32(reader.GetOrdinal("purchase_order_line_number")), reader.GetString(reader.GetOrdinal("discrepancy_type")))] =
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at"));
+                new ExistingQuantityDiscrepancyReviewState(
+                    reader.GetString(reader.GetOrdinal("investigation_status")),
+                    reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at")),
+                    reader.IsDBNull(reader.GetOrdinal("review_note")) ? null : reader.GetString(reader.GetOrdinal("review_note")),
+                    reader.IsDBNull(reader.GetOrdinal("reviewed_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("reviewed_by_user_id")),
+                    reader.IsDBNull(reader.GetOrdinal("reviewed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reviewed_at")));
         }
 
         return rows;
@@ -1257,8 +1356,20 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               summary text not null,
               first_detected_at timestamptz not null,
               last_detected_at timestamptz not null default now(),
+              review_note text null,
+              reviewed_by_user_id uuid null,
+              reviewed_at timestamptz null,
               refreshed_by_user_id uuid not null
             );
+
+            alter table {QuantityDiscrepanciesTableName}
+              add column if not exists review_note text null;
+
+            alter table {QuantityDiscrepanciesTableName}
+              add column if not exists reviewed_by_user_id uuid null;
+
+            alter table {QuantityDiscrepanciesTableName}
+              add column if not exists reviewed_at timestamptz null;
 
             alter table {QuantityDiscrepanciesTableName}
               drop constraint if exists ck_purchase_order_quantity_discrepancy_lanes_type;
@@ -1266,6 +1377,13 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             alter table {QuantityDiscrepanciesTableName}
               add constraint ck_purchase_order_quantity_discrepancy_lanes_type
                 check (discrepancy_type in ('over_received', 'over_billed', 'billed_ahead_of_received'));
+
+            alter table {QuantityDiscrepanciesTableName}
+              drop constraint if exists ck_purchase_order_quantity_discrepancy_lanes_status;
+
+            alter table {QuantityDiscrepanciesTableName}
+              add constraint ck_purchase_order_quantity_discrepancy_lanes_status
+                check (investigation_status in ('open', 'resolved', 'override_authorized'));
 
             create unique index if not exists ux_purchase_order_quantity_discrepancy_lanes_natural
               on {QuantityDiscrepanciesTableName} (company_id, purchase_order_id, purchase_order_line_number, discrepancy_type);
@@ -1305,4 +1423,11 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private sealed record ExistingQuantityDiscrepancyReviewState(
+        string InvestigationStatus,
+        DateTimeOffset FirstDetectedAt,
+        string? ReviewNote,
+        Guid? ReviewedByUserId,
+        DateTimeOffset? ReviewedAt);
 }

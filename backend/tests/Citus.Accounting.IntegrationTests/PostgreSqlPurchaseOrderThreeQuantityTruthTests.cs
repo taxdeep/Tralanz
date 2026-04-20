@@ -96,6 +96,47 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var retried = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
             Assert.NotNull(retried);
             Assert.Equal(2, retried!.OpenDiscrepancyCount);
+
+            var resolved = await repository.ReviewQuantityDiscrepancyAsync(
+                new(companyId),
+                new(userId),
+                saved.DocumentId,
+                1,
+                PurchaseOrderQuantityDiscrepancyPolicy.OverReceived,
+                PurchaseOrderQuantityDiscrepancyPolicy.Resolved,
+                "Warehouse corrected the receiving investigation note.",
+                CancellationToken.None);
+            Assert.NotNull(resolved);
+            Assert.Equal(1, resolved!.OpenDiscrepancyCount);
+            Assert.DoesNotContain(resolved.Discrepancies, static lane => lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived);
+
+            var reopened = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            Assert.NotNull(reopened);
+            Assert.Equal(2, reopened!.OpenDiscrepancyCount);
+
+            var overrideAuthorized = await repository.ReviewQuantityDiscrepancyAsync(
+                new(companyId),
+                new(userId),
+                saved.DocumentId,
+                1,
+                PurchaseOrderQuantityDiscrepancyPolicy.OverReceived,
+                PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized,
+                "Ops lead authorized tolerance investigation; execution remains separately governed.",
+                CancellationToken.None);
+            Assert.NotNull(overrideAuthorized);
+            Assert.Equal(1, overrideAuthorized!.OpenDiscrepancyCount);
+            Assert.Contains(overrideAuthorized.Discrepancies, static lane =>
+                lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived &&
+                lane.InvestigationStatus == PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized &&
+                lane.ReviewNote is not null &&
+                lane.ReviewedAt.HasValue);
+
+            var preserved = await repository.RefreshQuantityDiscrepanciesAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            Assert.NotNull(preserved);
+            Assert.Equal(1, preserved!.OpenDiscrepancyCount);
+            Assert.Contains(preserved.Discrepancies, static lane =>
+                lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived &&
+                lane.InvestigationStatus == PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized);
         }
         finally
         {

@@ -127,6 +127,11 @@ public sealed class ReceiptDraftApiTests
         Assert.Equal(PurchaseOrderQuantityDiscrepancyPolicy.BilledAheadOfReceived, PurchaseOrderQuantityDiscrepancyPolicy.ResolveDiscrepancyType(billedAhead));
         Assert.True(PurchaseOrderQuantityDiscrepancyPolicy.IsDiscrepancyStatus(PurchaseOrderThreeQuantityStatusPolicy.OverBilled));
         Assert.False(PurchaseOrderQuantityDiscrepancyPolicy.IsDiscrepancyStatus(PurchaseOrderThreeQuantityStatusPolicy.FullyBilled));
+        Assert.Equal(PurchaseOrderQuantityDiscrepancyPolicy.Open, PurchaseOrderQuantityDiscrepancyPolicy.NormalizeInvestigationStatus(null));
+        Assert.Equal(PurchaseOrderQuantityDiscrepancyPolicy.Resolved, PurchaseOrderQuantityDiscrepancyPolicy.NormalizeInvestigationStatus(" resolved "));
+        Assert.Equal(PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized, PurchaseOrderQuantityDiscrepancyPolicy.NormalizeInvestigationStatus("OVERRIDE_AUTHORIZED"));
+        Assert.True(PurchaseOrderQuantityDiscrepancyPolicy.IsReviewVisibleStatus(PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized));
+        Assert.False(PurchaseOrderQuantityDiscrepancyPolicy.IsReviewVisibleStatus(PurchaseOrderQuantityDiscrepancyPolicy.Resolved));
     }
 
     [Fact]

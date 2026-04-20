@@ -348,6 +348,14 @@ public sealed record RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest(
     Guid CompanyId,
     Guid UserId);
 
+public sealed record ReviewPurchaseOrderQuantityDiscrepancyHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    int PurchaseOrderLineNumber,
+    string DiscrepancyType,
+    string InvestigationStatus,
+    string? ReviewNote);
+
 public sealed record PostReceiptDraftHttpRequest(
     Guid CompanyId,
     Guid UserId);

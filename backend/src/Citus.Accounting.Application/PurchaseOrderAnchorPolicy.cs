@@ -30,6 +30,10 @@ public static class PurchaseOrderAnchorPolicy
 
 public static class PurchaseOrderQuantityDiscrepancyPolicy
 {
+    public const string Open = "open";
+    public const string Resolved = "resolved";
+    public const string OverrideAuthorized = "override_authorized";
+
     public const string OverReceived = "over_received";
     public const string OverBilled = "over_billed";
     public const string BilledAheadOfReceived = "billed_ahead_of_received";
@@ -51,6 +55,32 @@ public static class PurchaseOrderQuantityDiscrepancyPolicy
             _ => null
         };
     }
+
+    public static string NormalizeInvestigationStatus(string? investigationStatus)
+    {
+        var normalized = string.IsNullOrWhiteSpace(investigationStatus)
+            ? Open
+            : investigationStatus.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            Open => Open,
+            Resolved => Resolved,
+            OverrideAuthorized => OverrideAuthorized,
+            _ => throw new InvalidOperationException("PO quantity discrepancy review only supports open, resolved, or override_authorized status.")
+        };
+    }
+
+    public static bool IsReviewVisibleStatus(string? investigationStatus)
+    {
+        var normalized = NormalizeInvestigationStatus(investigationStatus);
+        return normalized is Open or OverrideAuthorized;
+    }
+
+    public static string PreserveRefreshStatus(string? existingStatus) =>
+        string.Equals(NormalizeInvestigationStatus(existingStatus), OverrideAuthorized, StringComparison.Ordinal)
+            ? OverrideAuthorized
+            : Open;
 
     public static string BuildDiscrepancySummary(
         string discrepancyType,
