@@ -1109,7 +1109,7 @@ verify_runtime_health() {
   load_env_file
   wait_for_http "citus-accounting-api" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/health"
   wait_for_http "citus-sysadmin-api" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/health"
-  wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
+  wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/health"
 }
 
 obtain_or_renew_tls_certificate() {
