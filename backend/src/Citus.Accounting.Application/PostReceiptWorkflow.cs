@@ -9,13 +9,19 @@ public sealed class PostReceiptWorkflow
 {
     private readonly IReceiptDocumentRepository _documents;
     private readonly IReceiptInventoryActivationStore _activationStore;
+    private readonly IReceiptInventoryValuationStore _valuationStore;
+    private readonly IReceiptInventoryCostLayerEmissionStore _emissionStore;
 
     public PostReceiptWorkflow(
         IReceiptDocumentRepository documents,
-        IReceiptInventoryActivationStore activationStore)
+        IReceiptInventoryActivationStore activationStore,
+        IReceiptInventoryValuationStore valuationStore,
+        IReceiptInventoryCostLayerEmissionStore emissionStore)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         _activationStore = activationStore ?? throw new ArgumentNullException(nameof(activationStore));
+        _valuationStore = valuationStore ?? throw new ArgumentNullException(nameof(valuationStore));
+        _emissionStore = emissionStore ?? throw new ArgumentNullException(nameof(emissionStore));
     }
 
     public async Task<SourceDocumentDraftSaveResult> PostAsync(
@@ -78,6 +84,17 @@ public sealed class PostReceiptWorkflow
                 cancellationToken);
             throw;
         }
+
+        await _valuationStore.RefreshReceiptValuationAsync(
+            companyId.Value,
+            userId.Value,
+            documentId,
+            cancellationToken);
+        await _emissionStore.EmitReceiptCostLayersAsync(
+            companyId.Value,
+            userId.Value,
+            documentId,
+            cancellationToken);
 
         return result;
     }

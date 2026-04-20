@@ -971,12 +971,37 @@ The legacy AP bill inbound path is now governed by explicit retirement policy in
 
 This materially reduces dual-path risk while preserving a narrow transitional lane for existing AP bill-origin purchase receipt usage.
 
+## Phase H.8 checkpoint
+
+Inbound valuation now has a formal boundary lane instead of being implied by whether cost layers happen to exist.
+
+- first-class Receipt still owns physical inbound quantity truth
+- Bill still owns supplier charge / AP evidence and cannot recreate physical truth
+- persisted Bill/Receipt matching now provides the eligibility bridge for valuation boundary truth
+- the new `receipt_inventory_valuation_lines` lane records bill-backed valuation slices against activated receipt lines
+- valuation refresh is idempotent:
+  - repeated refreshes do not duplicate the same receipt/bill line valuation slice
+  - valued quantity is capped by activated receipt quantity
+  - over-covered or over-valued states surface as `valuation_inconsistent`
+- receipt read models can now distinguish:
+  - quantity not activated
+  - quantity activated but awaiting bill coverage
+  - quantity activated but not yet valued
+  - partially valued
+  - valuation boundary complete
+  - inconsistent valuation state
+- H.8 still does **not** create inventory cost layers from first-class receipt valuation
+- H.8 still does **not** introduce GR/IR, PPV, PO truth, GL posting, or tracked receipt enablement
+
+This is an intentional bridge state: valuation evidence is now explicit and reviewable, while actual cost-layer ownership remains a separate design decision.
+
 ## Immediate Recommendation
 
 The next formal planning step should be:
 
-- decide whether to fully remove the remaining `ap_bill` fallback now, or wait until first-class receipt authoring/review is more comfortable
-- plan the valuation boundary separately before introducing receipt cost layers, GR/IR, or PPV
+- decide how and when `receipt_inventory_valuation_lines` should emit or reconcile `inventory_cost_layers`
+- decide whether that emission happens before or after AP bill posting in the transitional architecture
+- decide whether GR/IR should become the accounting bridge before PPV / variance
 - keep tracked receipt enablement behind a later tracking-aware document integration gate
 
 The implementation should continue to protect the existing authority rule:
@@ -985,3 +1010,37 @@ The implementation should continue to protect the existing authority rule:
 - `AP` and `AR` may feed it
 - `Accounting` may consume it
 - none of those modules may replace inventory truth
+
+## Phase H.9 checkpoint
+
+Receipt valuation evidence now has a formal emission path into inventory cost-layer truth.
+
+- H.9 adds a dedicated emission seam instead of treating missing/present cost layers as hidden state:
+  - `IReceiptInventoryCostLayerEmissionStore`
+  - `receipt_inventory_cost_layer_emission_lines`
+- emission is anchored to the existing truth chain:
+  - posted first-class receipt -> quantity activation line
+  - bill/receipt matching -> valuation evidence line
+  - posted bill -> emission eligibility
+  - emission line -> `inventory_cost_layers`
+- submitted bills may still create H.8 valuation evidence, but H.9 does not let them create cost layers; cost-layer emission requires posted bill-backed evidence
+- emission is partial and retry-safe:
+  - only eligible valuation slices emit
+  - each valuation line may emit at most once
+  - retries reuse persisted emission truth rather than creating duplicate cost layers
+- receipt review can now distinguish:
+  - quantity activated but not valuation-backed
+  - valuation-backed but awaiting posted bill
+  - valuation-backed but not emitted
+  - partially emitted
+  - fully emitted
+  - emission inconsistent
+- H.9 still does not introduce:
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - GL posting
+  - tracked receipt enablement
+  - vendor return
+
+The deliberate remaining gap is accounting settlement, not inventory valuation usability: first-class receipts can now feed cost layers for outbound costing, while AP/GL reconciliation remains a later bridge.

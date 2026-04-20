@@ -16,7 +16,9 @@ public sealed class PostReceiptWorkflowTests
         var documentId = Guid.NewGuid();
         var repository = new FakeReceiptDocumentRepository(BuildReceipt(documentId, companyId, ReceiptDocumentStatuses.Draft));
         var activationStore = new FakeReceiptInventoryActivationStore();
-        var workflow = new PostReceiptWorkflow(repository, activationStore);
+        var valuationStore = new FakeReceiptInventoryValuationStore();
+        var emissionStore = new FakeReceiptInventoryCostLayerEmissionStore();
+        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore);
 
         var result = await workflow.PostAsync(companyId, userId, documentId, CancellationToken.None);
 
@@ -24,6 +26,8 @@ public sealed class PostReceiptWorkflowTests
         Assert.Equal(1, activationStore.ValidateCalls);
         Assert.Equal(1, repository.PostCalls);
         Assert.Equal(1, activationStore.ActivateCalls);
+        Assert.Equal(1, valuationStore.RefreshCalls);
+        Assert.Equal(1, emissionStore.EmitCalls);
     }
 
     [Fact]
@@ -34,7 +38,9 @@ public sealed class PostReceiptWorkflowTests
         var documentId = Guid.NewGuid();
         var repository = new FakeReceiptDocumentRepository(BuildReceipt(documentId, companyId, ReceiptDocumentStatuses.Posted));
         var activationStore = new FakeReceiptInventoryActivationStore();
-        var workflow = new PostReceiptWorkflow(repository, activationStore);
+        var valuationStore = new FakeReceiptInventoryValuationStore();
+        var emissionStore = new FakeReceiptInventoryCostLayerEmissionStore();
+        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore);
 
         var result = await workflow.PostAsync(companyId, userId, documentId, CancellationToken.None);
 
@@ -42,6 +48,8 @@ public sealed class PostReceiptWorkflowTests
         Assert.Equal(0, activationStore.ValidateCalls);
         Assert.Equal(0, repository.PostCalls);
         Assert.Equal(1, activationStore.ActivateCalls);
+        Assert.Equal(1, valuationStore.RefreshCalls);
+        Assert.Equal(1, emissionStore.EmitCalls);
     }
 
     [Fact]
@@ -52,7 +60,9 @@ public sealed class PostReceiptWorkflowTests
         var documentId = Guid.NewGuid();
         var repository = new FakeReceiptDocumentRepository(null);
         var activationStore = new FakeReceiptInventoryActivationStore();
-        var workflow = new PostReceiptWorkflow(repository, activationStore);
+        var valuationStore = new FakeReceiptInventoryValuationStore();
+        var emissionStore = new FakeReceiptInventoryCostLayerEmissionStore();
+        var workflow = new PostReceiptWorkflow(repository, activationStore, valuationStore, emissionStore);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => workflow.PostAsync(companyId, userId, documentId, CancellationToken.None));
@@ -60,6 +70,8 @@ public sealed class PostReceiptWorkflowTests
         Assert.Contains("not found", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, repository.PostCalls);
         Assert.Equal(0, activationStore.ActivateCalls);
+        Assert.Equal(0, valuationStore.RefreshCalls);
+        Assert.Equal(0, emissionStore.EmitCalls);
     }
 
     private static ReceiptDocument BuildReceipt(Guid documentId, CompanyId companyId, string status) =>
@@ -156,5 +168,58 @@ public sealed class PostReceiptWorkflowTests
 
         public Task<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>> GetReceiptActivationSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>>(new Dictionary<Guid, ReceiptInventoryActivationSummary>());
+    }
+
+    private sealed class FakeReceiptInventoryValuationStore : IReceiptInventoryValuationStore
+    {
+        public int RefreshCalls { get; private set; }
+
+        public Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(Guid companyId, Guid userId, Guid receiptDocumentId, CancellationToken cancellationToken)
+        {
+            RefreshCalls++;
+            return Task.FromResult(new ReceiptInventoryValuationSummary(
+                receiptDocumentId,
+                ReceiptInventoryValuationStatusPolicy.ValuationBoundaryComplete,
+                3m,
+                3m,
+                3m,
+                0m,
+                1,
+                30m,
+                DateTimeOffset.UtcNow));
+        }
+
+        public Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+            Task.FromResult<ReceiptInventoryValuationSummary?>(null);
+
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> GetReceiptValuationSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>>(new Dictionary<Guid, ReceiptInventoryValuationSummary>());
+    }
+
+    private sealed class FakeReceiptInventoryCostLayerEmissionStore : IReceiptInventoryCostLayerEmissionStore
+    {
+        public int EmitCalls { get; private set; }
+
+        public Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(Guid companyId, Guid userId, Guid receiptDocumentId, CancellationToken cancellationToken)
+        {
+            EmitCalls++;
+            return Task.FromResult(new ReceiptInventoryCostLayerEmissionSummary(
+                receiptDocumentId,
+                ReceiptInventoryCostLayerEmissionStatusPolicy.FullyEmitted,
+                3m,
+                3m,
+                3m,
+                3m,
+                0m,
+                1,
+                30m,
+                DateTimeOffset.UtcNow));
+        }
+
+        public Task<ReceiptInventoryCostLayerEmissionSummary?> GetReceiptCostLayerEmissionSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+            Task.FromResult<ReceiptInventoryCostLayerEmissionSummary?>(null);
+
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>> GetReceiptCostLayerEmissionSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>>(new Dictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>());
     }
 }

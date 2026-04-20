@@ -53,6 +53,8 @@ builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionCont
 builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
 builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
 builder.Services.AddSingleton<IReceiptInventoryActivationStore, PostgreSqlReceiptInventoryActivationStore>();
+builder.Services.AddSingleton<IReceiptInventoryValuationStore, PostgreSqlReceiptInventoryValuationStore>();
+builder.Services.AddSingleton<IReceiptInventoryCostLayerEmissionStore, PostgreSqlReceiptInventoryCostLayerEmissionStore>();
 builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
 builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
 builder.Services.AddSingleton(
@@ -3975,6 +3977,8 @@ accounting.MapGet(
         [AsParameters] ReceiptListQuery query,
         IReceiptDocumentRepository repository,
         IReceiptInventoryActivationStore activationStore,
+        IReceiptInventoryValuationStore valuationStore,
+        IReceiptInventoryCostLayerEmissionStore emissionStore,
         CancellationToken cancellationToken) =>
     {
         var documents = await repository.ListAsync(
@@ -3982,6 +3986,14 @@ accounting.MapGet(
             query.Take ?? 50,
             cancellationToken);
         var activationSummaries = await activationStore.GetReceiptActivationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var valuationSummaries = await valuationStore.GetReceiptValuationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var emissionSummaries = await emissionStore.GetReceiptCostLayerEmissionSummariesAsync(
             query.CompanyId,
             documents.Select(static document => document.DocumentId).ToArray(),
             cancellationToken);
@@ -4017,6 +4029,33 @@ accounting.MapGet(
                     summary.LastFailureMessage,
                     summary.LastFailureAt
                 }
+                : null,
+            InventoryValuation = valuationSummaries.TryGetValue(document.DocumentId, out var valuationSummary)
+                ? new
+                {
+                    valuationSummary.ValuationStatus,
+                    valuationSummary.ActivatedQuantity,
+                    valuationSummary.BillCoveredQuantity,
+                    valuationSummary.ValuedQuantity,
+                    valuationSummary.UnvaluedQuantity,
+                    valuationSummary.ValuationLineCount,
+                    valuationSummary.ValuationAmountBase,
+                    valuationSummary.LastValuedAt
+                }
+                : null,
+            InventoryCostLayerEmission = emissionSummaries.TryGetValue(document.DocumentId, out var emissionSummary)
+                ? new
+                {
+                    emissionSummary.EmissionStatus,
+                    emissionSummary.ActivatedQuantity,
+                    emissionSummary.ValuationBackedQuantity,
+                    emissionSummary.EmissionEligibleQuantity,
+                    emissionSummary.EmittedQuantity,
+                    emissionSummary.UnemittedQuantity,
+                    emissionSummary.EmissionLineCount,
+                    emissionSummary.EmittedCostBase,
+                    emissionSummary.LastEmittedAt
+                }
                 : null
         }));
     });
@@ -4028,6 +4067,8 @@ accounting.MapGet(
         [AsParameters] ReceiptLookupQuery query,
         IReceiptDocumentRepository repository,
         IReceiptInventoryActivationStore activationStore,
+        IReceiptInventoryValuationStore valuationStore,
+        IReceiptInventoryCostLayerEmissionStore emissionStore,
         CancellationToken cancellationToken) =>
     {
         var document = await repository.GetAsync(
@@ -4035,6 +4076,14 @@ accounting.MapGet(
             documentId,
             cancellationToken);
         var activationSummary = await activationStore.GetReceiptActivationSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var valuationSummary = await valuationStore.GetReceiptValuationSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var emissionSummary = await emissionStore.GetReceiptCostLayerEmissionSummaryAsync(
             query.CompanyId,
             documentId,
             cancellationToken);
@@ -4070,6 +4119,33 @@ accounting.MapGet(
                         activationSummary.ActivatedAt,
                         activationSummary.LastFailureMessage,
                         activationSummary.LastFailureAt
+                    },
+                InventoryValuation = valuationSummary is null
+                    ? null
+                    : new
+                    {
+                        valuationSummary.ValuationStatus,
+                        valuationSummary.ActivatedQuantity,
+                        valuationSummary.BillCoveredQuantity,
+                        valuationSummary.ValuedQuantity,
+                        valuationSummary.UnvaluedQuantity,
+                        valuationSummary.ValuationLineCount,
+                        valuationSummary.ValuationAmountBase,
+                        valuationSummary.LastValuedAt
+                    },
+                InventoryCostLayerEmission = emissionSummary is null
+                    ? null
+                    : new
+                    {
+                        emissionSummary.EmissionStatus,
+                        emissionSummary.ActivatedQuantity,
+                        emissionSummary.ValuationBackedQuantity,
+                        emissionSummary.EmissionEligibleQuantity,
+                        emissionSummary.EmittedQuantity,
+                        emissionSummary.UnemittedQuantity,
+                        emissionSummary.EmissionLineCount,
+                        emissionSummary.EmittedCostBase,
+                        emissionSummary.LastEmittedAt
                     },
                 Lines = document.ReceiptLines.Select(line => new
                 {
@@ -4177,6 +4253,46 @@ accounting.MapPost(
             var result = await workflow.PostAsync(
                 new(request.CompanyId),
                 new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/inventory-valuation/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptInventoryValuationStore valuationStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await valuationStore.RefreshReceiptValuationAsync(
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/inventory-cost-layer-emission/emit",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptInventoryCostLayerEmissionStore emissionStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await emissionStore.EmitReceiptCostLayersAsync(
+                request.CompanyId,
+                request.UserId,
                 documentId,
                 cancellationToken);
 

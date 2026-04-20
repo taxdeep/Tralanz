@@ -594,3 +594,78 @@ This slice turns the remaining legacy AP bill inbound fallback from a human conv
   - tracked receipt enablement
 
 The next decision is whether to fully retire the `ap_bill` fallback once first-class receipt authoring/review is operationally comfortable, or to first introduce receipt valuation boundaries so the old cost-layer-creating path can be replaced safely.
+
+## Phase H.8 checkpoint
+
+This slice introduces an explicit inbound valuation boundary lane without copying legacy AP bill cost-layer behavior into first-class receipts.
+
+- receipt remains the owner of inbound physical quantity truth
+- bill remains supplier charge / cost evidence, not physical truth
+- bill/receipt matching now acts as the eligibility bridge for valuation boundary truth
+- `receipt_inventory_valuation_lines` persists bill-backed valuation slices for activated receipt lines:
+  - receipt line anchor
+  - bill line anchor
+  - valued quantity
+  - document/base currency
+  - FX rate
+  - unit and extended base cost evidence
+- valuation refresh is explicit and idempotent through `IReceiptInventoryValuationStore`
+- `PostReceiptWorkflow` now refreshes valuation truth after quantity activation, while still keeping quantity activation separate
+- receipt list/detail read models now expose valuation status alongside activation status
+- the first status model is deliberately bounded:
+  - `no_quantity_activation`
+  - `awaiting_bill_coverage`
+  - `quantity_activated_unvalued`
+  - `partially_valued`
+  - `valuation_boundary_complete`
+  - `valuation_inconsistent`
+- this slice still deliberately does **not** introduce:
+  - inventory cost layer creation from first-class receipt valuation
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - tracked receipt enablement
+  - GL posting from receipt valuation
+
+H.8 therefore makes the current split explicit:
+
+- first-class receipt can own quantity now
+- bill-backed valuation evidence can be persisted now
+- cost layers / GRIR / PPV remain a later accounting and inventory valuation decision
+
+## Phase H.9 checkpoint
+
+This slice introduces the explicit receipt valuation -> cost-layer emission seam without turning it into the full GR/IR or PPV universe.
+
+- `receipt_inventory_valuation_lines` remains valuation evidence, not cost-layer truth by itself
+- `receipt_inventory_cost_layer_emission_lines` now persists emission truth for each valuation slice that has actually produced an `inventory_cost_layers` row
+- cost-layer emission is deliberately strict:
+  - receipt quantity must already be activated
+  - valuation evidence must exist
+  - the linked bill must be `posted`
+  - one valuation slice can emit only once
+- emission is idempotent through `IReceiptInventoryCostLayerEmissionStore`:
+  - repeated workflow retries do not duplicate cost layers
+  - receipt-level advisory locking plus a unique valuation-line emission guard protects concurrent retry
+- `PostReceiptWorkflow` now runs:
+  - quantity activation
+  - valuation evidence refresh
+  - cost-layer emission attempt
+- receipt list/detail read models now expose emission state alongside activation and valuation state:
+  - `no_quantity_activation`
+  - `awaiting_bill_coverage`
+  - `awaiting_posted_bill`
+  - `valuation_backed_not_emitted`
+  - `partially_emitted`
+  - `fully_emitted`
+  - `emission_inconsistent`
+- H.9 still deliberately avoids:
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - GL posting
+  - tracked receipt enablement
+  - vendor return
+  - shell-wide receipt workspace expansion
+
+This phase makes first-class receipt valuation usable by outbound costing through cost layers, while keeping the transitional truth boundary honest: receipt owns quantity, bill-backed matching provides valuation evidence, and accounting settlement remains a later bridge.
