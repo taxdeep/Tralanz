@@ -166,11 +166,12 @@ load_env_file() {
   : "${CITUS_ACCOUNTING_DB:?Missing CITUS_ACCOUNTING_DB}"
   : "${CITUS_SERVER_NAME:?Missing CITUS_SERVER_NAME}"
 
+  AppHost__PublicBaseUrl="${AppHost__PublicBaseUrl:-http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/}"
   AppHost__AccountingApiBaseUrl="${AppHost__AccountingApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/}"
   DOTNET_ROOT="${DOTNET_ROOT:-${DOTNET_INSTALL_DIR}}"
   DOTNET_CLI_TELEMETRY_OPTOUT="${DOTNET_CLI_TELEMETRY_OPTOUT:-1}"
   DOTNET_PRINT_TELEMETRY_MESSAGE="${DOTNET_PRINT_TELEMETRY_MESSAGE:-false}"
-  export AppHost__AccountingApiBaseUrl DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
+  export AppHost__PublicBaseUrl AppHost__AccountingApiBaseUrl DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
 
   validate_identifier "${CITUS_DB_NAME}" "CITUS_DB_NAME"
   validate_identifier "${CITUS_DB_USER}" "CITUS_DB_USER"
@@ -265,6 +266,7 @@ CITUS_DB_NAME=${db_name}
 CITUS_DB_USER=${db_user}
 CITUS_DB_PASSWORD=${db_password}
 CITUS_ACCOUNTING_DB=Host=${db_host};Port=${db_port};Database=${db_name};Username=${db_user};Password=${db_password};Pooling=true
+AppHost__PublicBaseUrl=http://${frontend_host}:${frontend_port}/
 AppHost__AccountingApiBaseUrl=http://${api_host}:${accounting_port}/
 EOF
 
@@ -442,6 +444,7 @@ configure_runtime_preferences() {
     set_env_value "CITUS_AUTO_START" "${auto_start}"
   fi
 
+  set_env_value "AppHost__PublicBaseUrl" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
   set_env_value "AppHost__AccountingApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/"
   validate_https_configuration
 }
@@ -842,6 +845,7 @@ WorkingDirectory=${PUBLISH_DIR}/web-shell
 EnvironmentFile=${ENV_FILE}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
+Environment=AppHost__PublicBaseUrl=http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/
 Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
 ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/web-shell/Web.Shell.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
 Restart=always

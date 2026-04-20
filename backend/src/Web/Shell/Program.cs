@@ -67,20 +67,20 @@ builder.Services.AddTransient<WebShellBusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<WebShellCompanyOnboardingClient>(
     (serviceProvider, client) =>
     {
-        var navigationManager = serviceProvider.GetRequiredService<NavigationManager>();
-        client.BaseAddress = new Uri(navigationManager.BaseUri);
+        var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.PublicBaseUrl);
     });
 builder.Services.AddHttpClient<PlatformProfileClient>(
     (serviceProvider, client) =>
     {
-        var navigationManager = serviceProvider.GetRequiredService<NavigationManager>();
-        client.BaseAddress = new Uri(navigationManager.BaseUri);
+        var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.PublicBaseUrl);
     });
 builder.Services.AddHttpClient<WebShellBusinessSessionClient>(
         (serviceProvider, client) =>
         {
-            var navigationManager = serviceProvider.GetRequiredService<NavigationManager>();
-            client.BaseAddress = new Uri(navigationManager.BaseUri);
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.PublicBaseUrl);
         })
     ;
 builder.Services.AddHttpClient(
