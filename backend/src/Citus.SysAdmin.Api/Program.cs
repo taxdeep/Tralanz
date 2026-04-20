@@ -17,8 +17,8 @@ using Modules.CompanyAccess.Memberships;
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString =
-    builder.Configuration.GetConnectionString("AccountingCore") ??
-    builder.Configuration["CITUS_ACCOUNTING_DB"];
+    builder.Configuration["CITUS_ACCOUNTING_DB"] ??
+    builder.Configuration.GetConnectionString("AccountingCore");
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {

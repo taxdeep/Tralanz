@@ -156,8 +156,8 @@ builder.Services.AddHttpClient<ShellSettlementPostingClient>(
     .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
 
 var connectionString =
-    builder.Configuration.GetConnectionString("AccountingCore")
-    ?? Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
+    Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
+    ?? builder.Configuration.GetConnectionString("AccountingCore")
     ?? throw new InvalidOperationException(
         "A PostgreSQL connection string is required. Configure ConnectionStrings:AccountingCore or CITUS_ACCOUNTING_DB.");
 
