@@ -387,11 +387,6 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             return Failed("invalid_account_code_length", "Account code length must be between 4 and 6.");
         }
 
-        if (string.IsNullOrWhiteSpace(command.Phone))
-        {
-            return Failed("missing_company_phone", "Company phone is required.");
-        }
-
         if (string.IsNullOrWhiteSpace(command.CompanyEmail))
         {
             return Failed("missing_company_email", "Company email is required.");

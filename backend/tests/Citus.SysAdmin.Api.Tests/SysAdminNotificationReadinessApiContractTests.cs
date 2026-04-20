@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Core.Runtime;
@@ -127,7 +128,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                     TemplateVersion = "2026.04",
                     BaseCurrencyCode = command.BaseCurrencyCode,
                     AccountCodeLength = command.AccountCodeLength,
-                    StarterAccountCodes = ["1000", "1200", "3000"],
+                    StarterAccountCodes = ["10000", "12000", "30000"],
                     ReservedFamilies = ["1000-1099", "1210-1249"],
                     ProvisionedAtUtc = new DateTimeOffset(2026, 4, 16, 23, 0, 0, TimeSpan.Zero)
                 });
@@ -145,8 +146,8 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                 incorporatedOn = new DateTime(2026, 4, 16),
                 fiscalYearEnd = "12-31",
                 businessNumber = "BN-001",
-                accountCodeLength = 4,
-                phone = "604-555-0100",
+                accountCodeLength = 5,
+                phone = "",
                 companyEmail = "hello@northwind.example",
                 addressLine = "101 Harbor Street",
                 city = "Vancouver",
@@ -169,6 +170,30 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.Equal(FakeSysAdminAuthRepository.ValidSysAdminAccountId, factory.FirstCompanyProvisioningRepository.LastCommand!.SysAdminAccountId);
         Assert.Equal("owner@example.com", factory.FirstCompanyProvisioningRepository.LastCommand.OwnerEmail);
         Assert.Equal("ca_general_small_business", factory.FirstCompanyProvisioningRepository.LastCommand.TemplateKey);
+        Assert.Equal(5, factory.FirstCompanyProvisioningRepository.LastCommand.AccountCodeLength);
+        Assert.Equal(string.Empty, factory.FirstCompanyProvisioningRepository.LastCommand.Phone);
+        Assert.Contains("10000", payload.StarterAccountCodes);
+    }
+
+    [Theory]
+    [InlineData("1001", 4, "1001")]
+    [InlineData("1001", 5, "10010")]
+    [InlineData("1001", 6, "100100")]
+    [InlineData("3000", 5, "30000")]
+    public void FirstCompanyTemplateAccountCodes_AreRightPadded_ToSelectedLength(
+        string canonicalCode,
+        int accountCodeLength,
+        string expectedCode)
+    {
+        var repositoryType = Type.GetType(
+            "Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository, Citus.Platform.Infrastructure",
+            throwOnError: true)!;
+        var formatter = repositoryType.GetMethod(
+            "FormatAccountCode",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(formatter);
+        Assert.Equal(expectedCode, formatter!.Invoke(null, [canonicalCode, accountCodeLength]));
     }
 
     [Fact]
