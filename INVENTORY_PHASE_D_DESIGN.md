@@ -1474,3 +1474,40 @@ Boundary:
 - No tracked receipt enablement.
 - No Shell-wide settlement operations surface.
 - No semantic expansion beyond transactional execution hardening.
+
+## Phase H.19 checkpoint
+
+H.19 adds the minimum purchase-variance boundary after GR/IR settlement and AP open-item clearing.
+
+Boundary:
+
+- This is persisted read/control truth only.
+- This does not post PPV / variance journals.
+- This does not introduce PO ordered / received / billed truth.
+- This does not enable tracked receipt flows.
+- This does not create a Shell-wide variance workbench.
+
+What changed:
+
+- `receipt_grir_ap_purchase_variance_lines` persists variance candidate truth at the settlement batch-line slice.
+- The lane compares cleared GR/IR settlement value against the proportional posted Bill line charge.
+- Receipt and Bill review summaries now expose purchase variance counts, status, amount, and refresh timestamp.
+- A refresh endpoint exists:
+  - `POST /receipts/{id}/grir-settlement/purchase-variance/refresh`
+- Supported review states include:
+  - `no_variance`
+  - `candidate_not_reviewed`
+  - blocked settlement / journal / AP clearing / bill / quantity-basis states
+
+Still not included:
+
+- PPV journal posting
+- PPV approval or variance disposition workflow
+- PO three-way truth
+- FX-aware purchase variance
+- tracked receipt enablement
+- Shell-wide variance operations surface
+
+Authority note:
+
+H.19 keeps the truth ladder intact. Receipt owns inbound physical quantity, GR/IR owns interim accounting recognition, AP open-item clearing proves the settled subledger slice, and purchase variance is surfaced as unresolved control truth rather than silently posted.

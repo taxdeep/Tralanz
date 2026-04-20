@@ -16,6 +16,12 @@ public interface IReceiptGrIrApSettlementControlStore
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
+    Task<ReceiptGrIrApSettlementSummary> RefreshReceiptSettlementVarianceControlAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken);
+
     Task<ReceiptGrIrApSettlementSummary?> GetReceiptSettlementSummaryAsync(
         CompanyId companyId,
         Guid receiptDocumentId,
@@ -86,6 +92,13 @@ public sealed record ReceiptGrIrApSettlementSummary(
     string OpenItemClearingStatus,
     DateTimeOffset? LastOpenItemClearedAt,
     DateTimeOffset? LastOpenItemReversedAt,
+    int PurchaseVarianceLineCount,
+    int PurchaseVarianceCandidateLineCount,
+    int PurchaseVarianceNoVarianceLineCount,
+    int PurchaseVarianceBlockedLineCount,
+    string PurchaseVarianceStatus,
+    decimal PurchaseVarianceAmountBase,
+    DateTimeOffset? LastPurchaseVarianceRefreshedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
 
@@ -122,6 +135,13 @@ public sealed record BillGrIrApSettlementSummary(
     string OpenItemClearingStatus,
     DateTimeOffset? LastOpenItemClearedAt,
     DateTimeOffset? LastOpenItemReversedAt,
+    int PurchaseVarianceLineCount,
+    int PurchaseVarianceCandidateLineCount,
+    int PurchaseVarianceNoVarianceLineCount,
+    int PurchaseVarianceBlockedLineCount,
+    string PurchaseVarianceStatus,
+    decimal PurchaseVarianceAmountBase,
+    DateTimeOffset? LastPurchaseVarianceRefreshedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
 
@@ -270,6 +290,44 @@ public static class ReceiptGrIrApOpenItemClearingStatusPolicy
         }
 
         return openItemNotClearedBatchCount > 0 ? NotCleared : NotApplicable;
+    }
+}
+
+public static class ReceiptGrIrApPurchaseVarianceStatusPolicy
+{
+    public const string NotApplicable = "not_applicable";
+    public const string NoVariance = "no_variance";
+    public const string CandidateNotReviewed = "candidate_not_reviewed";
+    public const string Blocked = "blocked";
+    public const string BlockedSettlementNotPosted = "blocked_settlement_not_posted";
+    public const string BlockedJournalNotPosted = "blocked_journal_not_posted";
+    public const string BlockedOpenItemNotCleared = "blocked_open_item_not_cleared";
+    public const string BlockedBillNotPosted = "blocked_bill_not_posted";
+    public const string BlockedQuantityBasisMissing = "blocked_quantity_basis_missing";
+    public const string VarianceInconsistent = "variance_inconsistent";
+
+    public static string ResolveSummaryStatus(
+        int varianceLineCount,
+        int candidateLineCount,
+        int noVarianceLineCount,
+        int blockedLineCount)
+    {
+        if (varianceLineCount <= 0)
+        {
+            return NotApplicable;
+        }
+
+        if (blockedLineCount > 0)
+        {
+            return Blocked;
+        }
+
+        if (candidateLineCount > 0)
+        {
+            return CandidateNotReviewed;
+        }
+
+        return noVarianceLineCount == varianceLineCount ? NoVariance : NotApplicable;
     }
 }
 

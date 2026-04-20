@@ -3911,6 +3911,13 @@ accounting.MapGet(
                     grIrSettlementSummary.OpenItemClearingStatus,
                     grIrSettlementSummary.LastOpenItemClearedAt,
                     grIrSettlementSummary.LastOpenItemReversedAt,
+                    grIrSettlementSummary.PurchaseVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceCandidateLineCount,
+                    grIrSettlementSummary.PurchaseVarianceNoVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceBlockedLineCount,
+                    grIrSettlementSummary.PurchaseVarianceStatus,
+                    grIrSettlementSummary.PurchaseVarianceAmountBase,
+                    grIrSettlementSummary.LastPurchaseVarianceRefreshedAt,
                     grIrSettlementSummary.LastRefreshedAt,
                     grIrSettlementSummary.LastSettledAt
                 },
@@ -4198,6 +4205,13 @@ accounting.MapGet(
                     grIrSettlementSummary.OpenItemClearingStatus,
                     grIrSettlementSummary.LastOpenItemClearedAt,
                     grIrSettlementSummary.LastOpenItemReversedAt,
+                    grIrSettlementSummary.PurchaseVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceCandidateLineCount,
+                    grIrSettlementSummary.PurchaseVarianceNoVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceBlockedLineCount,
+                    grIrSettlementSummary.PurchaseVarianceStatus,
+                    grIrSettlementSummary.PurchaseVarianceAmountBase,
+                    grIrSettlementSummary.LastPurchaseVarianceRefreshedAt,
                     grIrSettlementSummary.LastRefreshedAt,
                     grIrSettlementSummary.LastSettledAt
                 }
@@ -4430,6 +4444,13 @@ accounting.MapGet(
                         grIrSettlementSummary.OpenItemClearingStatus,
                         grIrSettlementSummary.LastOpenItemClearedAt,
                         grIrSettlementSummary.LastOpenItemReversedAt,
+                        grIrSettlementSummary.PurchaseVarianceLineCount,
+                        grIrSettlementSummary.PurchaseVarianceCandidateLineCount,
+                        grIrSettlementSummary.PurchaseVarianceNoVarianceLineCount,
+                        grIrSettlementSummary.PurchaseVarianceBlockedLineCount,
+                        grIrSettlementSummary.PurchaseVarianceStatus,
+                        grIrSettlementSummary.PurchaseVarianceAmountBase,
+                        grIrSettlementSummary.LastPurchaseVarianceRefreshedAt,
                         grIrSettlementSummary.LastRefreshedAt,
                         grIrSettlementSummary.LastSettledAt
                     },
@@ -4637,6 +4658,26 @@ accounting.MapPost(
         try
         {
             var result = await grIrSettlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/purchase-variance/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrSettlementStore.RefreshReceiptSettlementVarianceControlAsync(
                 new(request.CompanyId),
                 new(request.UserId),
                 documentId,

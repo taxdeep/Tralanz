@@ -1082,3 +1082,47 @@ Boundary:
 - No tracked receipt enablement.
 - No new AP settlement workbench.
 - No change to H.18 clearing/reversal semantics beyond making execution transactional.
+
+## Phase H.19 checkpoint
+
+H.19 introduces the minimal PPV / purchase-variance boundary as persisted read/control truth.
+
+Boundary:
+
+- This is not PPV journal posting.
+- This is not PO ordered / received / billed truth.
+- This does not enable tracked receipt flows.
+- This does not expand into a Shell-wide variance workbench.
+- This does not let Bill retake physical quantity ownership.
+
+What changed:
+
+- `receipt_grir_ap_purchase_variance_lines` now persists variance review truth by receipt / bill / settlement batch line.
+- Variance control consumes only already-cleared GR/IR/AP settlement truth.
+- Receipt and Bill GR/IR settlement summaries expose:
+  - purchase variance line count
+  - candidate line count
+  - no-variance line count
+  - blocked line count
+  - overall purchase variance status
+  - candidate variance amount
+  - last purchase variance refresh timestamp
+- A refresh endpoint exists:
+  - `POST /receipts/{id}/grir-settlement/purchase-variance/refresh`
+- The current boundary can distinguish:
+  - `no_variance`
+  - `candidate_not_reviewed`
+  - blocked settlement / journal / open-item / bill / quantity-basis states
+
+Still deferred:
+
+- PPV / variance journal recognition
+- PPV approval or write-off style control
+- PO three-way truth
+- FX-aware variance calculation
+- tracked receipt enablement
+- Shell-wide variance review workspace
+
+Authority note:
+
+H.19 makes the price-difference risk visible after GR/IR settlement and AP open-item clearing, but it deliberately stops before recognizing PPV in accounting. Receipt remains physical quantity owner, GR/IR remains interim accounting recognition, Bill remains supplier charge truth, and purchase variance is only a reviewable boundary for the next phase.

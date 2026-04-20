@@ -1055,6 +1055,14 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             Assert.Equal("closed", apOpenItem.Status);
             Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared, firstClear.Summary.OpenItemClearingStatus);
             Assert.Equal(1, firstClear.Summary.OpenItemClearedBatchCount);
+            var noVarianceSummary = await settlementStore.RefreshReceiptSettlementVarianceControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance, noVarianceSummary.PurchaseVarianceStatus);
+            Assert.Equal(1, noVarianceSummary.PurchaseVarianceLineCount);
+            Assert.Equal(0m, noVarianceSummary.PurchaseVarianceAmountBase);
 
             await SetJournalStatusAsync(schemaConnectionString, settlementPost.JournalEntryId, "void");
             var staleSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
@@ -1103,6 +1111,189 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             Assert.Equal("open", restoredOpenItem.Status);
             Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed, firstReverse.Summary.OpenItemClearingStatus);
             Assert.Equal(1, firstReverse.Summary.OpenItemReversedBatchCount);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshReceiptSettlementVarianceControlAsync_SurfacesCandidateAfterClearedGrIrSettlement()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h19_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var inventoryConnectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
+            var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
+            var executionContextAccessor = new PostgresExecutionContextAccessor();
+            var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
+            var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var postingEngine = new DefaultPostingEngine(
+                new DefaultPostingValidator(),
+                new NullTaxEngine(),
+                new IdentityFxResolutionService(),
+                new AccountingPostingFragmentBuilder(),
+                new DefaultJournalAggregator(),
+                new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor));
+            var grIrPostingHandler = new PostReceiptGrIrCommandHandler(
+                grIrBridgeStore,
+                clearingPolicyRepository,
+                new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                postingEngine,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementPostingHandler = new PostReceiptGrIrSettlementJournalCommandHandler(
+                new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                postingEngine,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementClearingHandler = new ClearReceiptGrIrSettlementOpenItemCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var receiptId = Guid.NewGuid();
+            var billId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+            var warehouseId = Guid.NewGuid();
+            var inventoryDocumentId = Guid.NewGuid();
+            var inventoryDocumentLineId = Guid.NewGuid();
+            var ledgerEntryId = Guid.NewGuid();
+            var inventoryAssetAccountId = Guid.NewGuid();
+            var grIrClearingAccountId = Guid.NewGuid();
+            var billOffsetAccountId = Guid.NewGuid();
+
+            await SeedCompanyAsync(schemaConnectionString, companyId);
+            await SeedPostingFoundationAsync(schemaConnectionString);
+            await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
+            await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
+            await SeedAccountAsync(schemaConnectionString, companyId, billOffsetAccountId, "5100", "Bill Goods Offset", "expense");
+            await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
+                new(companyId),
+                new(userId),
+                grIrClearingAccountId,
+                CancellationToken.None);
+            await foundationStore.EnsureCompanyFoundationAsync(
+                new InventoryFoundationEnsureRequest(
+                    companyId,
+                    userId,
+                    InventoryCostingMethod.Fifo,
+                    NegativeStockAllowed: false,
+                    RequireWriteOffApproval: true),
+                CancellationToken.None);
+            await SeedReceiptValuationFixtureAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId,
+                ledgerEntryId);
+            await SeedBillLineAsync(
+                schemaConnectionString,
+                companyId,
+                billId,
+                billOffsetAccountId,
+                quantity: 5m,
+                unitCost: 10m,
+                lineAmount: 55m);
+            await SeedApOpenItemAsync(schemaConnectionString, companyId, billId, amount: 55m);
+            await SetDefaultInventoryAssetAccountAsync(
+                schemaConnectionString,
+                companyId,
+                itemId,
+                inventoryAssetAccountId);
+
+            _ = await activationStore.GetReceiptActivationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            _ = await valuationStore.GetReceiptValuationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            await SeedActivationAndValuationRowsAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId);
+            _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrPostingHandler.HandleAsync(
+                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                CancellationToken.None);
+            _ = await settlementStore.RefreshReceiptSettlementControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var settlement = await settlementHandler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    SettlementAmountBase: null,
+                    IdempotencyKey: "h19-settlement"),
+                CancellationToken.None);
+            _ = await settlementPostingHandler.HandleAsync(
+                new PostReceiptGrIrSettlementJournalCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId,
+                    IdempotencyKey: "h19-journal"),
+                CancellationToken.None);
+            _ = await settlementClearingHandler.HandleAsync(
+                new ClearReceiptGrIrSettlementOpenItemCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId),
+                CancellationToken.None);
+
+            var varianceSummary = await settlementStore.RefreshReceiptSettlementVarianceControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var billSummary = await settlementStore.GetBillSettlementSummaryAsync(
+                new(companyId),
+                billId,
+                CancellationToken.None);
+            var apOpenItem = await GetApOpenItemStateByBillAsync(schemaConnectionString, companyId, billId);
+
+            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed, varianceSummary.PurchaseVarianceStatus);
+            Assert.Equal(1, varianceSummary.PurchaseVarianceLineCount);
+            Assert.Equal(1, varianceSummary.PurchaseVarianceCandidateLineCount);
+            Assert.Equal(5m, varianceSummary.PurchaseVarianceAmountBase);
+            Assert.NotNull(billSummary);
+            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed, billSummary!.PurchaseVarianceStatus);
+            Assert.Equal(5m, billSummary.PurchaseVarianceAmountBase);
+            Assert.Equal(5m, apOpenItem.OpenAmountBase);
+            Assert.Equal("partially_applied", apOpenItem.Status);
         }
         finally
         {
@@ -1354,7 +1545,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
     private static async Task SeedApOpenItemAsync(
         string connectionString,
         Guid companyId,
-        Guid billId)
+        Guid billId,
+        decimal amount = 50m)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -1386,16 +1578,17 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               'credit',
               'USD',
               'USD',
-              50,
-              50,
-              50,
-              50,
+              @amount,
+              @amount,
+              @amount,
+              @amount,
               'open',
               '2026-04-19'
             );
             """;
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("bill_id", billId);
+        command.Parameters.AddWithValue("amount", amount);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -1403,7 +1596,10 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         string connectionString,
         Guid companyId,
         Guid billId,
-        Guid expenseAccountId)
+        Guid expenseAccountId,
+        decimal quantity = 5m,
+        decimal unitCost = 10m,
+        decimal lineAmount = 50m)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -1418,6 +1614,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               expense_account_id uuid not null references accounts(id),
               description text not null,
               line_amount numeric(20, 6) not null,
+              quantity numeric(18, 6) null,
+              unit_cost numeric(18, 6) null,
               tax_amount numeric(20, 6) not null default 0,
               is_tax_recoverable boolean not null default false,
               created_at timestamptz not null default now(),
@@ -1431,6 +1629,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               expense_account_id,
               description,
               line_amount,
+              quantity,
+              unit_cost,
               tax_amount,
               is_tax_recoverable
             )
@@ -1440,7 +1640,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               1,
               @expense_account_id,
               'Receipt matched goods',
-              50,
+              @line_amount,
+              @quantity,
+              @unit_cost,
               0,
               false
             );
@@ -1448,6 +1650,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("bill_id", billId);
         command.Parameters.AddWithValue("expense_account_id", expenseAccountId);
+        command.Parameters.AddWithValue("quantity", quantity);
+        command.Parameters.AddWithValue("unit_cost", unitCost);
+        command.Parameters.AddWithValue("line_amount", lineAmount);
         await command.ExecuteNonQueryAsync();
     }
 

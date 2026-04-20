@@ -11,6 +11,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
     private const string SettlementLinesTableName = "receipt_grir_ap_settlement_lines";
     private const string SettlementBatchesTableName = "receipt_grir_ap_settlement_batches";
     private const string SettlementBatchLinesTableName = "receipt_grir_ap_settlement_batch_lines";
+    private const string PurchaseVarianceLinesTableName = "receipt_grir_ap_purchase_variance_lines";
     private const string BridgeLinesTableName = "receipt_grir_bridge_lines";
 
     private readonly PostgresConnectionFactory _connections;
@@ -50,6 +51,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
@@ -80,6 +82,38 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+    }
+
+    public async Task<ReceiptGrIrApSettlementSummary> RefreshReceiptSettlementVarianceControlAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
+        {
+            return BuildEmptyReceiptSummary(receiptDocumentId);
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
@@ -368,6 +402,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             settlementBatchId,
             cancellationToken);
         await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadOpenItemClearingResultAsync(
             scope,
@@ -477,6 +512,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             Round6(applications.Sum(static application => application.AppliedAmountTx)),
             Round6(applications.Sum(static application => application.AppliedAmountBase)),
             cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadOpenItemClearingReversalResultAsync(
             scope,
@@ -504,19 +540,15 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         PostgresCommandScope scope,
         CancellationToken cancellationToken)
     {
-        if (await TableExistsAsync(scope, SettlementBatchesTableName, cancellationToken) &&
-            await TableExistsAsync(scope, SettlementBatchLinesTableName, cancellationToken))
-        {
-            return true;
-        }
-
         if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
         {
             return false;
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        return true;
+        return await TableExistsAsync(scope, SettlementBatchesTableName, cancellationToken) &&
+            await TableExistsAsync(scope, SettlementBatchLinesTableName, cancellationToken) &&
+            await TableExistsAsync(scope, PurchaseVarianceLinesTableName, cancellationToken);
     }
 
     private static string BuildSettlementIdempotencyKey(
@@ -684,6 +716,178 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             """);
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task UpsertReceiptSettlementPurchaseVarianceLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(scope, PurchaseVarianceLinesTableName, cancellationToken))
+        {
+            return;
+        }
+
+        await using (var deleteCommand = scope.CreateCommand(
+            $"""
+            delete from {PurchaseVarianceLinesTableName}
+            where company_id = @company_id
+              and receipt_id = @receipt_id;
+            """))
+        {
+            deleteCommand.Parameters.AddWithValue("company_id", companyId);
+            deleteCommand.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var command = scope.CreateCommand(
+            $"""
+            with batch_truth as (
+              select
+                batch.company_id,
+                settlement_line.receipt_id,
+                settlement_line.receipt_line_number,
+                batch.id as settlement_batch_id,
+                batch_line.id as settlement_batch_line_id,
+                settlement_line.id as settlement_line_id,
+                settlement_line.bridge_line_id,
+                settlement_line.bill_id,
+                settlement_line.bill_line_number,
+                settlement_line.item_id,
+                settlement_line.warehouse_id,
+                settlement_line.uom_code,
+                batch.status as batch_status,
+                batch.journal_status,
+                batch.open_item_clearing_status,
+                bill.status as bill_status,
+                bill.fx_rate,
+                bill_line.quantity as bill_line_quantity,
+                bill_line.line_amount,
+                batch_line.settled_quantity,
+                batch_line.settled_amount_base as grir_amount_base
+              from {SettlementBatchLinesTableName} batch_line
+              join {SettlementBatchesTableName} batch
+                on batch.company_id = batch_line.company_id
+               and batch.id = batch_line.settlement_batch_id
+              join {SettlementLinesTableName} settlement_line
+                on settlement_line.company_id = batch_line.company_id
+               and settlement_line.id = batch_line.settlement_line_id
+              join bills bill
+                on bill.company_id = settlement_line.company_id
+               and bill.id = settlement_line.bill_id
+              join bill_lines bill_line
+                on bill_line.company_id = settlement_line.company_id
+               and bill_line.bill_id = settlement_line.bill_id
+               and bill_line.line_number = settlement_line.bill_line_number
+              where batch.company_id = @company_id
+                and settlement_line.receipt_id = @receipt_id
+                and batch.status = 'posted'
+            ),
+            measured as (
+              select
+                *,
+                case
+                  when bill_line_quantity is null or round(bill_line_quantity, 6) <= 0 then null
+                  else round(settled_quantity * round(line_amount * fx_rate, 6) / bill_line_quantity, 6)
+                end as bill_amount_base
+              from batch_truth
+            ),
+            classified as (
+              select
+                *,
+                round(coalesce(bill_amount_base, 0) - grir_amount_base, 6) as variance_amount_base,
+                case
+                  when batch_status <> 'posted' then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedSettlementNotPosted}'
+                  when journal_status <> '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}' then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedJournalNotPosted}'
+                  when open_item_clearing_status <> '{ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared}' then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedOpenItemNotCleared}'
+                  when bill_status <> 'posted' then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedBillNotPosted}'
+                  when bill_amount_base is null then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedQuantityBasisMissing}'
+                  when abs(round(bill_amount_base - grir_amount_base, 6)) = 0 then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance}'
+                  else '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}'
+                end as variance_status,
+                case
+                  when batch_status <> 'posted' then 'settlement_batch_not_posted'
+                  when journal_status <> '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}' then 'journal_not_posted_or_stale'
+                  when open_item_clearing_status <> '{ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared}' then 'open_item_not_cleared'
+                  when bill_status <> 'posted' then 'bill_not_posted'
+                  when bill_amount_base is null then 'bill_line_quantity_missing'
+                  else null
+                end as blocked_reason_code
+              from measured
+            )
+            insert into {PurchaseVarianceLinesTableName} (
+              id,
+              company_id,
+              receipt_id,
+              receipt_line_number,
+              settlement_batch_id,
+              settlement_batch_line_id,
+              settlement_line_id,
+              bridge_line_id,
+              bill_id,
+              bill_line_number,
+              item_id,
+              warehouse_id,
+              uom_code,
+              settled_quantity,
+              grir_amount_base,
+              bill_amount_base,
+              variance_amount_base,
+              variance_status,
+              blocked_reason_code,
+              refreshed_by_user_id,
+              refreshed_at
+            )
+            select
+              gen_random_uuid(),
+              company_id,
+              receipt_id,
+              receipt_line_number,
+              settlement_batch_id,
+              settlement_batch_line_id,
+              settlement_line_id,
+              bridge_line_id,
+              bill_id,
+              bill_line_number,
+              item_id,
+              warehouse_id,
+              uom_code,
+              settled_quantity,
+              grir_amount_base,
+              coalesce(bill_amount_base, 0)::numeric(20,6),
+              variance_amount_base,
+              variance_status,
+              blocked_reason_code,
+              @user_id,
+              now()
+            from classified
+            on conflict (company_id, settlement_batch_line_id)
+            do update set
+              receipt_id = excluded.receipt_id,
+              receipt_line_number = excluded.receipt_line_number,
+              settlement_batch_id = excluded.settlement_batch_id,
+              settlement_line_id = excluded.settlement_line_id,
+              bridge_line_id = excluded.bridge_line_id,
+              bill_id = excluded.bill_id,
+              bill_line_number = excluded.bill_line_number,
+              item_id = excluded.item_id,
+              warehouse_id = excluded.warehouse_id,
+              uom_code = excluded.uom_code,
+              settled_quantity = excluded.settled_quantity,
+              grir_amount_base = excluded.grir_amount_base,
+              bill_amount_base = excluded.bill_amount_base,
+              variance_amount_base = excluded.variance_amount_base,
+              variance_status = excluded.variance_status,
+              blocked_reason_code = excluded.blocked_reason_code,
+              refreshed_by_user_id = excluded.refreshed_by_user_id,
+              refreshed_at = excluded.refreshed_at;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("user_id", userId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1682,6 +1886,10 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             var openItemBlockedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_blocked_batch_count"));
             var openItemStaleBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_stale_batch_count"));
             var openItemInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_inconsistent_batch_count"));
+            var purchaseVarianceLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_line_count"));
+            var purchaseVarianceCandidateLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_candidate_line_count"));
+            var purchaseVarianceNoVarianceLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_no_variance_line_count"));
+            var purchaseVarianceBlockedLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_blocked_line_count"));
             summaries[receiptDocumentId] = new ReceiptGrIrApSettlementSummary(
                 receiptDocumentId,
                 ReceiptGrIrApSettlementStatusPolicy.ResolveSummaryStatus(
@@ -1738,6 +1946,19 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 reader.IsDBNull(reader.GetOrdinal("last_open_item_reversed_at"))
                     ? null
                     : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_open_item_reversed_at")),
+                purchaseVarianceLineCount,
+                purchaseVarianceCandidateLineCount,
+                purchaseVarianceNoVarianceLineCount,
+                purchaseVarianceBlockedLineCount,
+                ReceiptGrIrApPurchaseVarianceStatusPolicy.ResolveSummaryStatus(
+                    purchaseVarianceLineCount,
+                    purchaseVarianceCandidateLineCount,
+                    purchaseVarianceNoVarianceLineCount,
+                    purchaseVarianceBlockedLineCount),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("purchase_variance_amount_base"))),
+                reader.IsDBNull(reader.GetOrdinal("last_purchase_variance_refreshed_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_purchase_variance_refreshed_at")),
                 reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                     ? null
                     : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
@@ -1790,6 +2011,10 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         var openItemBlockedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_blocked_batch_count"));
         var openItemStaleBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_stale_batch_count"));
         var openItemInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_inconsistent_batch_count"));
+        var purchaseVarianceLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_line_count"));
+        var purchaseVarianceCandidateLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_candidate_line_count"));
+        var purchaseVarianceNoVarianceLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_no_variance_line_count"));
+        var purchaseVarianceBlockedLineCount = reader.GetInt32(reader.GetOrdinal("purchase_variance_blocked_line_count"));
 
         return new BillGrIrApSettlementSummary(
             billDocumentId,
@@ -1847,6 +2072,19 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             reader.IsDBNull(reader.GetOrdinal("last_open_item_reversed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_open_item_reversed_at")),
+            purchaseVarianceLineCount,
+            purchaseVarianceCandidateLineCount,
+            purchaseVarianceNoVarianceLineCount,
+            purchaseVarianceBlockedLineCount,
+            ReceiptGrIrApPurchaseVarianceStatusPolicy.ResolveSummaryStatus(
+                purchaseVarianceLineCount,
+                purchaseVarianceCandidateLineCount,
+                purchaseVarianceNoVarianceLineCount,
+                purchaseVarianceBlockedLineCount),
+            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("purchase_variance_amount_base"))),
+            reader.IsDBNull(reader.GetOrdinal("last_purchase_variance_refreshed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_purchase_variance_refreshed_at")),
             reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
@@ -1917,6 +2155,20 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           where line.company_id = @company_id
             and line.{documentColumn} = any(@{parameterName})
           group by line.{documentColumn}
+        ),
+        variance_groups as (
+          select
+            variance.{documentColumn} as document_id,
+            count(*)::int as purchase_variance_line_count,
+            count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}')::int as purchase_variance_candidate_line_count,
+            count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance}')::int as purchase_variance_no_variance_line_count,
+            count(*) filter (where variance.variance_status like 'blocked_%' or variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.VarianceInconsistent}')::int as purchase_variance_blocked_line_count,
+            coalesce(sum(variance.variance_amount_base) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}'), 0)::numeric(20,6) as purchase_variance_amount_base,
+            max(variance.refreshed_at) as last_purchase_variance_refreshed_at
+          from {PurchaseVarianceLinesTableName} variance
+          where variance.company_id = @company_id
+            and variance.{documentColumn} = any(@{parameterName})
+          group by variance.{documentColumn}
         )
         select
           rd.document_id,
@@ -1948,13 +2200,21 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           bg.last_journal_refreshed_at,
           bg.last_open_item_cleared_at,
           bg.last_open_item_reversed_at,
+          coalesce(vg.purchase_variance_line_count, 0) as purchase_variance_line_count,
+          coalesce(vg.purchase_variance_candidate_line_count, 0) as purchase_variance_candidate_line_count,
+          coalesce(vg.purchase_variance_no_variance_line_count, 0) as purchase_variance_no_variance_line_count,
+          coalesce(vg.purchase_variance_blocked_line_count, 0) as purchase_variance_blocked_line_count,
+          coalesce(vg.purchase_variance_amount_base, 0)::numeric(20,6) as purchase_variance_amount_base,
+          vg.last_purchase_variance_refreshed_at,
           sg.last_refreshed_at,
           sg.last_settled_at
         from requested_documents rd
         left join settlement_groups sg
           on sg.document_id = rd.document_id
         left join batch_groups bg
-          on bg.document_id = rd.document_id;
+          on bg.document_id = rd.document_id
+        left join variance_groups vg
+          on vg.document_id = rd.document_id;
         """;
 
     private static async Task EnsureSchemaAsync(
@@ -2087,6 +2347,39 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
             create index if not exists ix_receipt_grir_ap_settlement_batch_lines_bridge
               on {SettlementBatchLinesTableName} (company_id, bridge_line_id);
+
+            create table if not exists {PurchaseVarianceLinesTableName} (
+              id uuid primary key default gen_random_uuid(),
+              company_id uuid not null references companies(id) on delete cascade,
+              receipt_id uuid not null,
+              receipt_line_number integer not null,
+              settlement_batch_id uuid not null references {SettlementBatchesTableName}(id) on delete cascade,
+              settlement_batch_line_id uuid not null references {SettlementBatchLinesTableName}(id) on delete cascade,
+              settlement_line_id uuid not null references {SettlementLinesTableName}(id) on delete cascade,
+              bridge_line_id uuid not null references {BridgeLinesTableName}(id) on delete cascade,
+              bill_id uuid not null,
+              bill_line_number integer not null,
+              item_id uuid not null,
+              warehouse_id uuid not null,
+              uom_code text not null,
+              settled_quantity numeric(20,6) not null,
+              grir_amount_base numeric(20,6) not null,
+              bill_amount_base numeric(20,6) not null,
+              variance_amount_base numeric(20,6) not null,
+              variance_status text not null,
+              blocked_reason_code text null,
+              refreshed_by_user_id uuid not null,
+              refreshed_at timestamptz not null default now()
+            );
+
+            create unique index if not exists ux_receipt_grir_ap_purchase_variance_batch_line
+              on {PurchaseVarianceLinesTableName} (company_id, settlement_batch_line_id);
+
+            create index if not exists ix_receipt_grir_ap_purchase_variance_receipt
+              on {PurchaseVarianceLinesTableName} (company_id, receipt_id, variance_status);
+
+            create index if not exists ix_receipt_grir_ap_purchase_variance_bill
+              on {PurchaseVarianceLinesTableName} (company_id, bill_id, bill_line_number, variance_status);
             """);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -2135,6 +2428,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             ReceiptGrIrApOpenItemClearingStatusPolicy.NotApplicable,
             null,
             null,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApPurchaseVarianceStatusPolicy.NotApplicable,
+            0m,
+            null,
             null,
             null);
 
@@ -2171,6 +2471,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             0,
             ReceiptGrIrApOpenItemClearingStatusPolicy.NotApplicable,
             null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApPurchaseVarianceStatusPolicy.NotApplicable,
+            0m,
             null,
             null,
             null);
