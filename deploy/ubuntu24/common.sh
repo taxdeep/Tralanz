@@ -731,15 +731,12 @@ ensure_postgres_database() {
     -v ON_ERROR_STOP=1 \
     --set=citus_db_user="${CITUS_DB_USER}" \
     --set=citus_db_password="${CITUS_DB_PASSWORD}" <<'SQL'
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'citus_db_user') THEN
-    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password');
-  ELSE
-    EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password');
-  END IF;
+SELECT CASE
+  WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'citus_db_user')
+    THEN format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password')
+  ELSE format('CREATE ROLE %I LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password')
 END
-$$;
+\gexec
 SQL
 
   if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${CITUS_DB_NAME}'" | grep -q 1; then
