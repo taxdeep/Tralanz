@@ -9,101 +9,136 @@
 
 <PageTitle>Login | Citus SysAdmin</PageTitle>
 
-<MudPaper Class="pa-6 mt-10">
+<MudPaper Class="pa-0 mt-10 sys-login">
+    <div class="sys-login__bar">
+        <MudText Typo="Typo.body2" Class="sys-login__bar-title">
+            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" />
+            SysAdmin Login
+        </MudText>
+        <MudText Typo="Typo.caption" Class="sys-login__bar-meta">PlatformOps</MudText>
+    </div>
+
     @if (_isLoadingSetup)
     {
-        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" />
     }
 
-    @if (_setupStatus?.SetupRequired == true)
-    {
-        <MudStack Spacing="2">
-            <MudText Typo="Typo.overline" Class="text-secondary">PlatformOps</MudText>
-            <MudText Typo="Typo.h4">Create First SysAdmin</MudText>
-            <MudText Typo="Typo.body2" Class="text-secondary">
-                No SysAdmin operator exists yet. Provision the first independent platform admin before protected control surfaces can be used.
-            </MudText>
-        </MudStack>
+    <div class="sys-login__body">
+        <div class="sys-login__crest" aria-hidden="true">
+            <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Large" />
+        </div>
 
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-4">
-            Bootstrap credential seeding is not the primary path here. This setup flow is the governed way to create the first SysAdmin operator.
-        </MudAlert>
+        @if (_setupStatus?.SetupRequired == true)
+        {
+            <MudStack Spacing="1">
+                <MudText Typo="Typo.h5" Class="sys-login__title">Create first SysAdmin</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    No SysAdmin operator exists yet. Provision the independent platform admin before protected control surfaces can be used.
+                </MudText>
+            </MudStack>
 
-        <MudForm Class="mt-6" @ref="_setupForm">
-            <MudStack Spacing="3">
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mt-4">
+                This is the governed first-use setup path. Keep SysAdmin separate from business users.
+            </MudAlert>
+
+            <div class="sys-login__rule"></div>
+
+            <MudForm Class="mt-4" @ref="_setupForm">
+                <MudStack Spacing="3">
                 <MudTextField @bind-Value="_setupDisplayName"
                               Label="Display name"
                               Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Badge"
                               Required="true"
                               Immediate="true"
                               ShrinkLabel="true" />
                 <MudTextField @bind-Value="_setupEmail"
                               Label="Email"
                               Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Email"
                               Required="true"
                               Immediate="true"
                               ShrinkLabel="true" />
                 <MudTextField @bind-Value="_setupPassword"
                               Label="Password"
                               Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Lock"
                               InputType="InputType.Password"
                               Required="true"
                               ShrinkLabel="true" />
                 <MudTextField @bind-Value="_setupPasswordConfirm"
                               Label="Confirm password"
                               Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.LockReset"
                               InputType="InputType.Password"
                               Required="true"
                               ShrinkLabel="true" />
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
+                           Class="sys-login__primary-action"
                            Disabled="_isSubmitting"
                            OnClick="ProvisionFirstAccountAsync">
                     @(_isSubmitting ? "Provisioning..." : "Create first SysAdmin")
                 </MudButton>
-            </MudStack>
-        </MudForm>
-    }
-    else
-    {
-        <MudStack Spacing="2">
-            <MudText Typo="Typo.overline" Class="text-secondary">PlatformOps</MudText>
-            <MudText Typo="Typo.h4">SysAdmin Sign In</MudText>
-            <MudText Typo="Typo.body2" Class="text-secondary">
-                Independent platform governance session for maintenance, company lifecycle, and account control.
-            </MudText>
-        </MudStack>
-
-        @if (_setupStatus?.BootstrapSeedingActive == true)
-        {
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
-                Development bootstrap seeding is active for `@_setupStatus.BootstrapEmailHint`. Use it only as a local bootstrap path and rotate the secret immediately after sign-in.
-            </MudAlert>
+                </MudStack>
+            </MudForm>
         }
+        else
+        {
+            <MudStack Spacing="1">
+                <MudText Typo="Typo.h5" Class="sys-login__title">SysAdmin sign in</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    Independent platform governance session for maintenance, company lifecycle, and account control.
+                </MudText>
+            </MudStack>
 
-        <MudForm Class="mt-6" @ref="_signInForm">
-            <MudStack Spacing="3">
+            @if (_setupStatus?.BootstrapSeedingActive == true)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-4">
+                    Development bootstrap seeding is active for `@_setupStatus.BootstrapEmailHint`. Use it only as a local bootstrap path and rotate the secret immediately after sign-in.
+                </MudAlert>
+            }
+
+            <div class="sys-login__rule"></div>
+
+            <MudForm Class="mt-4" @ref="_signInForm">
+                <MudStack Spacing="3">
                 <MudTextField @bind-Value="_email"
                               Label="Email"
                               Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Email"
                               Required="true"
                               Immediate="true"
                               ShrinkLabel="true" />
                 <MudTextField @bind-Value="_password"
                               Label="Password"
                               Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Lock"
                               InputType="InputType.Password"
                               Required="true"
                               ShrinkLabel="true" />
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
+                           Class="sys-login__primary-action"
                            Disabled="_isSubmitting"
                            OnClick="SignInAsync">
                     @(_isSubmitting ? "Signing in..." : "Sign in")
                 </MudButton>
-            </MudStack>
-        </MudForm>
-    }
+                </MudStack>
+            </MudForm>
+        }
+    </div>
+
+    <div class="sys-login__switcher">
+        <MudText Typo="Typo.caption" Class="text-secondary">Not the correct login?</MudText>
+        <MudLink Href="/login" Class="sys-login__switch-link">Login as business user</MudLink>
+    </div>
 </MudPaper>
 
 @code

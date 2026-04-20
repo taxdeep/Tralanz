@@ -10,41 +10,55 @@
 
 <PageTitle>Login | Citus Web Shell</PageTitle>
 
-<MudPaper Class="pa-6 mt-10 ws-login">
-    <MudStack Spacing="2">
-        <MudText Typo="Typo.overline" Class="text-secondary">Business App</MudText>
-        <MudText Typo="Typo.h4">Sign In</MudText>
-        <MudText Typo="Typo.body2" Class="text-secondary">
-            Platform account login followed by CompanyAccess-resolved active company context.
+<MudPaper Class="pa-0 mt-10 ws-login">
+    <div class="ws-login__bar">
+        <MudText Typo="Typo.body2" Class="ws-login__bar-title">
+            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
+            User Login
         </MudText>
-    </MudStack>
+        <MudText Typo="Typo.caption" Class="ws-login__bar-meta">Business App</MudText>
+    </div>
 
-    <MudForm Class="mt-6" @ref="_form">
-        <MudStack Spacing="3">
+    <div class="ws-login__body">
+        <div class="ws-login__mascot" aria-hidden="true">
+            <div class="ws-login__envelope"></div>
+            <div class="ws-login__badge">C</div>
+        </div>
+
+        <MudStack Spacing="1">
+            <MudText Typo="Typo.h5" Class="ws-login__title">Citus business login</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Sign in with a business platform account. CompanyAccess resolves the active company after authentication.
+            </MudText>
+        </MudStack>
+
+        <div class="ws-login__rule"></div>
+
+        <MudForm Class="mt-4" @ref="_form">
+            <MudStack Spacing="3">
             <MudTextField @bind-Value="_login"
-                          Label="Email or username"
+                          Label="Email address or username"
                           Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Person"
                           Required="true"
                           Immediate="true"
                           ShrinkLabel="true" />
             <MudTextField @bind-Value="_password"
                           Label="Password"
                           Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Lock"
                           InputType="InputType.Password"
                           Required="true"
                           ShrinkLabel="true" />
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
+                       Class="ws-login__primary-action"
                        Disabled="_isSubmitting"
                        OnClick="SignInAsync">
                 @(_isSubmitting ? "Signing in..." : "Sign in")
             </MudButton>
-
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-                First-time platform setup is handled in SysAdmin.
-                <MudLink Href="/sysadmin/login" Color="Color.Info">Create or sign in to SysAdmin</MudLink>
-                before creating the first business company.
-            </MudAlert>
 
             @if (_mfaChallengeId.HasValue)
             {
@@ -68,8 +82,16 @@
                     @(_isSubmitting ? "Verifying..." : "Complete MFA")
                 </MudButton>
             }
-        </MudStack>
-    </MudForm>
+            </MudStack>
+        </MudForm>
+    </div>
+
+    <div class="ws-login__switcher">
+        <MudText Typo="Typo.caption" Class="text-secondary">Not the correct login?</MudText>
+        <MudLink Href="/sysadmin/login" Class="ws-login__switch-link">
+            Create or sign in to SysAdmin
+        </MudLink>
+    </div>
 </MudPaper>
 
 @code
