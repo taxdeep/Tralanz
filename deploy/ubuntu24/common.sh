@@ -394,6 +394,23 @@ validate_https_configuration() {
     fail "CITUS_CERTBOT_EMAIL is required when HTTPS automation is enabled."
 }
 
+get_public_frontend_url() {
+  load_env_file
+
+  if supports_public_tls_server_name "${CITUS_SERVER_NAME}"; then
+    if is_truthy "${CITUS_ENABLE_HTTPS}"; then
+      printf 'https://%s/\n' "${CITUS_SERVER_NAME}"
+    else
+      printf 'http://%s/\n' "${CITUS_SERVER_NAME}"
+    fi
+    return
+  fi
+
+  local public_ip
+  public_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf 'http://%s/\n' "${public_ip}"
+}
+
 configure_runtime_preferences() {
   ensure_env_defaults
   apply_cli_overrides_to_env_file
@@ -461,7 +478,7 @@ configure_runtime_preferences() {
   set_env_value "AppHost__AccountingApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/"
   append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "${CITUS_SYSADMIN_WEB_PORT:-3010}"
   set_env_value "AppHost__SysAdminApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/"
-  set_env_value "AppHost__BusinessAppBaseUrl" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
+  set_env_value "AppHost__BusinessAppBaseUrl" "$(get_public_frontend_url)"
   set_env_value "AppHost__PathBase" "/sysadmin"
   validate_https_configuration
 }
@@ -894,7 +911,7 @@ Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
 Environment=AppHost__PathBase=/sysadmin
 Environment=AppHost__SysAdminApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/
 Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
-Environment=AppHost__BusinessAppBaseUrl=http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/
+Environment=AppHost__BusinessAppBaseUrl=${AppHost__BusinessAppBaseUrl}
 ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/sysadmin-web/Citus.SysAdmin.Blazor.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}
 Restart=always
 RestartSec=5
@@ -1227,13 +1244,8 @@ backup_datastores() {
 
 print_install_summary() {
   load_env_file
-  local public_ip
-  public_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  local frontend_url="http://${public_ip}/"
-
-  if is_truthy "${CITUS_ENABLE_HTTPS}" && certificate_files_exist; then
-    frontend_url="https://${CITUS_SERVER_NAME}/"
-  fi
+  local frontend_url
+  frontend_url="$(get_public_frontend_url)"
 
   cat <<EOF
 

@@ -176,13 +176,21 @@ else
     private string GetBusinessLoginHref()
     {
         var configured = HostOptions.Value.BusinessAppBaseUrl?.Trim();
-        if (string.IsNullOrWhiteSpace(configured))
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            Uri.TryCreate(configured, UriKind.Absolute, out var configuredUri) &&
+            !IsLoopbackBrowserHost(configuredUri.Host))
         {
-            return string.Empty;
+            return configured.EndsWith("/login", StringComparison.OrdinalIgnoreCase)
+                ? configured
+                : configured.TrimEnd('/') + "/login";
         }
 
-        return configured.EndsWith("/login", StringComparison.OrdinalIgnoreCase)
-            ? configured
-            : configured.TrimEnd('/') + "/login";
+        var browserOrigin = NavigationManager.ToAbsoluteUri("/").GetLeftPart(UriPartial.Authority);
+        return browserOrigin.TrimEnd('/') + "/login";
     }
+
+    private static bool IsLoopbackBrowserHost(string host) =>
+        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
 }
