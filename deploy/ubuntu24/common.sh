@@ -412,6 +412,8 @@ get_public_frontend_url() {
 }
 
 configure_runtime_preferences() {
+  local deployment_mode="${1:-install}"
+
   ensure_env_defaults
   apply_cli_overrides_to_env_file
   load_env_file
@@ -423,43 +425,47 @@ configure_runtime_preferences() {
   local server_name="${CITUS_SERVER_NAME}"
 
   if is_interactive_session; then
-    if ! supports_public_tls_server_name "${server_name}"; then
-      local prompted_server_name
-      prompted_server_name="$(
-        prompt_optional_value \
-          "Public domain for Citus; leave blank for HTTP/IP-only deployment:" \
-          ""
-      )"
-      if [[ -n "${prompted_server_name}" ]]; then
-        server_name="${prompted_server_name}"
-        set_env_value "CITUS_SERVER_NAME" "${server_name}"
-      fi
-    fi
-
-    if supports_public_tls_server_name "${server_name}"; then
-      local https_prompt
-      if is_truthy "${enable_https}"; then
-        https_prompt="Keep HTTPS enabled and request or renew a Let's Encrypt certificate for ${server_name}?"
-      else
-        https_prompt="Enable HTTPS and request a Let's Encrypt certificate for ${server_name}?"
+    if [[ "${deployment_mode}" == "upgrade" ]]; then
+      log "Skipping HTTPS prompts during upgrade; using saved settings from ${ENV_FILE} plus any CLI overrides."
+    else
+      if ! supports_public_tls_server_name "${server_name}"; then
+        local prompted_server_name
+        prompted_server_name="$(
+          prompt_optional_value \
+            "Public domain for Citus; leave blank for HTTP/IP-only deployment:" \
+            ""
+        )"
+        if [[ -n "${prompted_server_name}" ]]; then
+          server_name="${prompted_server_name}"
+          set_env_value "CITUS_SERVER_NAME" "${server_name}"
+        fi
       fi
 
-      if prompt_yes_no "${https_prompt}" "$(default_prompt_choice "${enable_https}")"; then
-        enable_https="1"
-        certbot_email="$(prompt_nonempty_value "Let's Encrypt contact email:" "${certbot_email}")"
-        if prompt_yes_no "Redirect plain HTTP traffic to HTTPS for ${server_name}?" "$(default_prompt_choice "${https_redirect}")"; then
-          https_redirect="1"
+      if supports_public_tls_server_name "${server_name}"; then
+        local https_prompt
+        if is_truthy "${enable_https}"; then
+          https_prompt="Keep HTTPS enabled and request or renew a Let's Encrypt certificate for ${server_name}?"
         else
-          https_redirect="0"
+          https_prompt="Enable HTTPS and request a Let's Encrypt certificate for ${server_name}?"
+        fi
+
+        if prompt_yes_no "${https_prompt}" "$(default_prompt_choice "${enable_https}")"; then
+          enable_https="1"
+          certbot_email="$(prompt_nonempty_value "Let's Encrypt contact email:" "${certbot_email}")"
+          if prompt_yes_no "Redirect plain HTTP traffic to HTTPS for ${server_name}?" "$(default_prompt_choice "${https_redirect}")"; then
+            https_redirect="1"
+          else
+            https_redirect="0"
+          fi
+        else
+          enable_https="0"
         fi
       else
+        log "Skipping HTTPS certificate prompt because CITUS_SERVER_NAME=${server_name} is not a public DNS name."
         enable_https="0"
+        https_redirect="1"
+        certbot_email=""
       fi
-    else
-      log "Skipping HTTPS certificate prompt because CITUS_SERVER_NAME=${server_name} is not a public DNS name."
-      enable_https="0"
-      https_redirect="1"
-      certbot_email=""
     fi
 
     if prompt_yes_no "Start the Citus application services when deployment finishes?" "$(default_prompt_choice "${auto_start}")"; then
@@ -1296,7 +1302,7 @@ install_main() {
   ensure_layout
   ensure_env_file
   ensure_env_defaults
-  configure_runtime_preferences
+  configure_runtime_preferences "install"
   load_env_file
   stop_application_services
   sync_source_tree
@@ -1328,7 +1334,7 @@ upgrade_main() {
   ensure_app_user
   ensure_layout
   ensure_env_defaults
-  configure_runtime_preferences
+  configure_runtime_preferences "upgrade"
   load_env_file
   stop_application_services
   backup_datastores
