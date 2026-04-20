@@ -974,3 +974,44 @@ Still deferred:
 Authority note:
 
 H.16 is the accounting boundary for settlement execution, not the full AP settlement universe. It does not let Bill retake physical truth, and it does not invent PPV or PO truth.
+
+## Phase H.17 checkpoint
+
+H.17 formalizes settlement journal reversal / stale reconciliation before AP open item clearing.
+
+Boundary:
+
+- This is journal lifecycle reconciliation truth only.
+- It does not clear AP open item balances.
+- It does not create settlement applications.
+- It does not introduce PPV / variance.
+- It does not introduce PO truth.
+- It does not enable tracked receipt flows.
+
+What changed:
+
+- Settlement batch journal state now distinguishes:
+  - `not_posted`
+  - `posted`
+  - `journal_stale`
+  - `journal_inconsistent`
+- `journal_stale` means the linked settlement journal exists but is no longer posted, such as voided / reversed / non-posted lifecycle state.
+- `journal_inconsistent` means the linked journal anchor is broken, missing, or source-mismatched.
+- Receipt and Bill GR/IR settlement summaries now expose journal reconciliation counts and status.
+- Receipt API now has a dedicated journal reconciliation refresh endpoint:
+  - `POST /receipts/{id}/grir-settlement/journal-reconciliation/refresh`
+- Settlement journal reposting is blocked when a linked journal is stale or inconsistent.
+
+Still not included:
+
+- AP open item balance clearing
+- AP subledger settlement applications
+- settlement reversal documents
+- PPV / variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- Shell-wide settlement operations surface
+
+Authority note:
+
+H.17 closes the lifecycle gap between H.16 settlement journal posting and future H.18 AP open item clearing. H.18 must consume only reconciled, posted settlement journal truth, not stale or inconsistent settlement batches.

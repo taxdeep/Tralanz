@@ -48,6 +48,36 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+    }
+
+    public async Task<ReceiptGrIrApSettlementSummary> RefreshReceiptSettlementJournalReconciliationAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
+        {
+            return BuildEmptyReceiptSummary(receiptDocumentId);
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
@@ -64,6 +94,11 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             cancellationToken);
 
         if (!await TableExistsAsync(scope, SettlementLinesTableName, cancellationToken))
+        {
+            return BuildEmptyReceiptSummary(receiptDocumentId);
+        }
+
+        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
         {
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
@@ -95,6 +130,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 static id => BuildEmptyReceiptSummary(id));
         }
 
+        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        {
+            return distinctIds.ToDictionary(
+                static id => id,
+                static id => BuildEmptyReceiptSummary(id));
+        }
+
         return await LoadReceiptSettlementSummariesAsync(scope, companyId.Value, distinctIds, cancellationToken);
     }
 
@@ -109,6 +151,11 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             cancellationToken);
 
         if (!await TableExistsAsync(scope, SettlementLinesTableName, cancellationToken))
+        {
+            return BuildEmptyBillSummary(billDocumentId);
+        }
+
+        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
         {
             return BuildEmptyBillSummary(billDocumentId);
         }
@@ -158,6 +205,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
 
         var existing = await TryLoadSettlementExecutionResultAsync(
             scope,
@@ -226,6 +274,25 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await TableExistsAsync(scope, "ap_open_items", cancellationToken) &&
         await TableExistsAsync(scope, "journal_entries", cancellationToken);
 
+    private static async Task<bool> EnsureSettlementBatchSchemaForReadAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        if (await TableExistsAsync(scope, SettlementBatchesTableName, cancellationToken) &&
+            await TableExistsAsync(scope, SettlementBatchLinesTableName, cancellationToken))
+        {
+            return true;
+        }
+
+        if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
+        {
+            return false;
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        return true;
+    }
+
     private static string BuildSettlementIdempotencyKey(
         Guid companyId,
         Guid receiptDocumentId,
@@ -251,6 +318,45 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
     {
         await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
         command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement:{companyId:N}:{receiptDocumentId:N}");
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RefreshReceiptSettlementJournalStatusesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            update {SettlementBatchesTableName} batch
+            set journal_status = case
+                  when batch.journal_entry_id is null then '{ReceiptGrIrApSettlementJournalStatusPolicy.NotPosted}'
+                  when je.id is null then '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}'
+                  when je.source_type <> 'receipt_grir_ap_settlement_posting' or je.source_id <> batch.id then '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}'
+                  when je.status = 'posted' then '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}'
+                  else '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}'
+                end,
+                journal_blocked_reason_code = case
+                  when batch.journal_entry_id is null then null
+                  when je.id is null then 'journal_missing'
+                  when je.source_type <> 'receipt_grir_ap_settlement_posting' or je.source_id <> batch.id then 'journal_source_mismatch'
+                  when je.status = 'posted' then null
+                  else 'journal_not_posted'
+                end,
+                journal_refreshed_at = now()
+            from {SettlementBatchesTableName} b
+            left join journal_entries je
+              on je.company_id = b.company_id
+             and je.id = b.journal_entry_id
+            where batch.company_id = b.company_id
+              and batch.id = b.id
+              and batch.company_id = @company_id
+              and batch.receipt_id = @receipt_id
+              and batch.status = 'posted';
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -732,6 +838,11 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             var blockedLineCount = reader.GetInt32(reader.GetOrdinal("blocked_line_count"));
             var partiallySettledLineCount = reader.GetInt32(reader.GetOrdinal("partially_settled_line_count"));
             var settledLineCount = reader.GetInt32(reader.GetOrdinal("settled_line_count"));
+            var settlementBatchCount = reader.GetInt32(reader.GetOrdinal("settlement_batch_count"));
+            var journalNotPostedBatchCount = reader.GetInt32(reader.GetOrdinal("journal_not_posted_batch_count"));
+            var journalPostedBatchCount = reader.GetInt32(reader.GetOrdinal("journal_posted_batch_count"));
+            var journalStaleBatchCount = reader.GetInt32(reader.GetOrdinal("journal_stale_batch_count"));
+            var journalInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("journal_inconsistent_batch_count"));
             summaries[receiptDocumentId] = new ReceiptGrIrApSettlementSummary(
                 receiptDocumentId,
                 ReceiptGrIrApSettlementStatusPolicy.ResolveSummaryStatus(
@@ -754,6 +865,20 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("eligible_amount_base"))),
                 Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"))),
                 Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("remaining_amount_base"))),
+                settlementBatchCount,
+                journalNotPostedBatchCount,
+                journalPostedBatchCount,
+                journalStaleBatchCount,
+                journalInconsistentBatchCount,
+                ReceiptGrIrApSettlementJournalStatusPolicy.ResolveSummaryStatus(
+                    settlementBatchCount,
+                    journalNotPostedBatchCount,
+                    journalPostedBatchCount,
+                    journalStaleBatchCount,
+                    journalInconsistentBatchCount),
+                reader.IsDBNull(reader.GetOrdinal("last_journal_refreshed_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_journal_refreshed_at")),
                 reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                     ? null
                     : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
@@ -795,6 +920,11 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         var blockedLineCount = reader.GetInt32(reader.GetOrdinal("blocked_line_count"));
         var partiallySettledLineCount = reader.GetInt32(reader.GetOrdinal("partially_settled_line_count"));
         var settledLineCount = reader.GetInt32(reader.GetOrdinal("settled_line_count"));
+        var settlementBatchCount = reader.GetInt32(reader.GetOrdinal("settlement_batch_count"));
+        var journalNotPostedBatchCount = reader.GetInt32(reader.GetOrdinal("journal_not_posted_batch_count"));
+        var journalPostedBatchCount = reader.GetInt32(reader.GetOrdinal("journal_posted_batch_count"));
+        var journalStaleBatchCount = reader.GetInt32(reader.GetOrdinal("journal_stale_batch_count"));
+        var journalInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("journal_inconsistent_batch_count"));
 
         return new BillGrIrApSettlementSummary(
             billDocumentId,
@@ -818,6 +948,20 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("eligible_amount_base"))),
             Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"))),
             Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("remaining_amount_base"))),
+            settlementBatchCount,
+            journalNotPostedBatchCount,
+            journalPostedBatchCount,
+            journalStaleBatchCount,
+            journalInconsistentBatchCount,
+            ReceiptGrIrApSettlementJournalStatusPolicy.ResolveSummaryStatus(
+                settlementBatchCount,
+                journalNotPostedBatchCount,
+                journalPostedBatchCount,
+                journalStaleBatchCount,
+                journalInconsistentBatchCount),
+            reader.IsDBNull(reader.GetOrdinal("last_journal_refreshed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_journal_refreshed_at")),
             reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
@@ -860,6 +1004,26 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           where line.company_id = @company_id
             and line.{documentColumn} = any(@{parameterName})
           group by line.{documentColumn}
+        ),
+        batch_groups as (
+          select
+            line.{documentColumn} as document_id,
+            count(distinct batch.id)::int as settlement_batch_count,
+            count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.NotPosted}')::int as journal_not_posted_batch_count,
+            count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}')::int as journal_posted_batch_count,
+            count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}')::int as journal_stale_batch_count,
+            count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}')::int as journal_inconsistent_batch_count,
+            max(batch.journal_refreshed_at) as last_journal_refreshed_at
+          from {SettlementLinesTableName} line
+          join {SettlementBatchLinesTableName} batch_line
+            on batch_line.company_id = line.company_id
+           and batch_line.settlement_line_id = line.id
+          join {SettlementBatchesTableName} batch
+            on batch.company_id = batch_line.company_id
+           and batch.id = batch_line.settlement_batch_id
+          where line.company_id = @company_id
+            and line.{documentColumn} = any(@{parameterName})
+          group by line.{documentColumn}
         )
         select
           rd.document_id,
@@ -877,11 +1041,19 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           coalesce(sg.eligible_amount_base, 0)::numeric(20,6) as eligible_amount_base,
           coalesce(sg.settled_amount_base, 0)::numeric(20,6) as settled_amount_base,
           coalesce(sg.remaining_amount_base, 0)::numeric(20,6) as remaining_amount_base,
+          coalesce(bg.settlement_batch_count, 0) as settlement_batch_count,
+          coalesce(bg.journal_not_posted_batch_count, 0) as journal_not_posted_batch_count,
+          coalesce(bg.journal_posted_batch_count, 0) as journal_posted_batch_count,
+          coalesce(bg.journal_stale_batch_count, 0) as journal_stale_batch_count,
+          coalesce(bg.journal_inconsistent_batch_count, 0) as journal_inconsistent_batch_count,
+          bg.last_journal_refreshed_at,
           sg.last_refreshed_at,
           sg.last_settled_at
         from requested_documents rd
         left join settlement_groups sg
-          on sg.document_id = rd.document_id;
+          on sg.document_id = rd.document_id
+        left join batch_groups bg
+          on bg.document_id = rd.document_id;
         """;
 
     private static async Task EnsureSchemaAsync(
@@ -1016,6 +1188,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             0m,
             0m,
             0m,
+            0,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApSettlementJournalStatusPolicy.NotApplicable,
+            null,
             null,
             null);
 
@@ -1037,6 +1216,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             0m,
             0m,
             0m,
+            0,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApSettlementJournalStatusPolicy.NotApplicable,
+            null,
             null,
             null);
 

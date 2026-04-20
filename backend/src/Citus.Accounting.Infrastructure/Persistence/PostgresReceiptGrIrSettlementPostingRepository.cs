@@ -158,14 +158,16 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             """
             update receipt_grir_ap_settlement_batches batch
             set journal_status = case
-                  when batch.journal_entry_id is null then batch.journal_status
+                  when batch.journal_entry_id is null then 'not_posted'
                   when je.id is null then 'journal_inconsistent'
+                  when je.source_type <> 'receipt_grir_ap_settlement_posting' or je.source_id <> batch.id then 'journal_inconsistent'
                   when je.status = 'posted' then 'posted'
-                  else 'journal_inconsistent'
+                  else 'journal_stale'
                 end,
                 journal_blocked_reason_code = case
-                  when batch.journal_entry_id is null then batch.journal_blocked_reason_code
+                  when batch.journal_entry_id is null then null
                   when je.id is null then 'journal_missing'
+                  when je.source_type <> 'receipt_grir_ap_settlement_posting' or je.source_id <> batch.id then 'journal_source_mismatch'
                   when je.status = 'posted' then null
                   else 'journal_not_posted'
                 end,
@@ -245,19 +247,25 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             throw new InvalidOperationException("Only executed GR/IR settlement batches can be posted to journal.");
         }
 
-        if (journalStatus == "journal_inconsistent")
+        if (journalStatus == ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent)
         {
             throw new InvalidOperationException(
                 $"GR/IR settlement batch journal state is inconsistent ({journalBlockedReasonCode ?? "unknown"}). Refresh and resolve reversal/void before retrying.");
         }
 
-        if (journalStatus is not ("not_posted" or "posted"))
+        if (journalStatus == ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale)
+        {
+            throw new InvalidOperationException(
+                $"GR/IR settlement batch journal state is stale ({journalBlockedReasonCode ?? "unknown"}). Refresh and resolve reversal/void before retrying.");
+        }
+
+        if (journalStatus is not (ReceiptGrIrApSettlementJournalStatusPolicy.NotPosted or ReceiptGrIrApSettlementJournalStatusPolicy.Posted))
         {
             throw new InvalidOperationException($"GR/IR settlement batch journal status '{journalStatus}' cannot be posted.");
         }
 
         var lines = await LoadPostingLinesAsync(scope, companyId, settlementBatchId, cancellationToken);
-        var documentStatus = journalStatus == "posted" ? "posted" : "draft";
+        var documentStatus = journalStatus == ReceiptGrIrApSettlementJournalStatusPolicy.Posted ? "posted" : "draft";
         var displayNumber = $"GRIR-SET-{settlementBatchId:N}"[..18].ToUpperInvariant();
 
         return new ReceiptGrIrSettlementPostingDocument(

@@ -10,6 +10,12 @@ public interface IReceiptGrIrApSettlementControlStore
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
+    Task<ReceiptGrIrApSettlementSummary> RefreshReceiptSettlementJournalReconciliationAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken);
+
     Task<ReceiptGrIrApSettlementSummary?> GetReceiptSettlementSummaryAsync(
         CompanyId companyId,
         Guid receiptDocumentId,
@@ -50,6 +56,13 @@ public sealed record ReceiptGrIrApSettlementSummary(
     decimal EligibleAmountBase,
     decimal SettledAmountBase,
     decimal RemainingAmountBase,
+    int SettlementBatchCount,
+    int JournalNotPostedBatchCount,
+    int JournalPostedBatchCount,
+    int JournalStaleBatchCount,
+    int JournalInconsistentBatchCount,
+    string JournalReconciliationStatus,
+    DateTimeOffset? LastJournalRefreshedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
 
@@ -70,6 +83,13 @@ public sealed record BillGrIrApSettlementSummary(
     decimal EligibleAmountBase,
     decimal SettledAmountBase,
     decimal RemainingAmountBase,
+    int SettlementBatchCount,
+    int JournalNotPostedBatchCount,
+    int JournalPostedBatchCount,
+    int JournalStaleBatchCount,
+    int JournalInconsistentBatchCount,
+    string JournalReconciliationStatus,
+    DateTimeOffset? LastJournalRefreshedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
 
@@ -128,5 +148,52 @@ public static class ReceiptGrIrApSettlementStatusPolicy
         }
 
         return eligibleLineCount > 0 ? EligibleNotSettled : NotEligible;
+    }
+}
+
+public static class ReceiptGrIrApSettlementJournalStatusPolicy
+{
+    public const string NotApplicable = "not_applicable";
+    public const string NotPosted = "not_posted";
+    public const string Posted = "posted";
+    public const string PartiallyPosted = "partially_posted";
+    public const string JournalStale = "journal_stale";
+    public const string JournalInconsistent = "journal_inconsistent";
+
+    public static string ResolveSummaryStatus(
+        int settlementBatchCount,
+        int journalNotPostedBatchCount,
+        int journalPostedBatchCount,
+        int journalStaleBatchCount,
+        int journalInconsistentBatchCount)
+    {
+        if (settlementBatchCount <= 0)
+        {
+            return NotApplicable;
+        }
+
+        if (journalInconsistentBatchCount > 0)
+        {
+            return JournalInconsistent;
+        }
+
+        if (journalStaleBatchCount > 0)
+        {
+            return JournalStale;
+        }
+
+        if (journalPostedBatchCount == settlementBatchCount)
+        {
+            return Posted;
+        }
+
+        if (journalPostedBatchCount > 0 || journalNotPostedBatchCount > 0)
+        {
+            return journalPostedBatchCount > 0
+                ? PartiallyPosted
+                : NotPosted;
+        }
+
+        return NotApplicable;
     }
 }

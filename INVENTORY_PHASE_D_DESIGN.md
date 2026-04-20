@@ -1357,3 +1357,47 @@ Still not included:
 Authority note:
 
 H.16 gives the settlement execution lane an accounting boundary while preserving the truth ladder: Receipt owns physical quantity, Bill owns supplier charge, GR/IR owns interim recognition, and this journal only clears the matched GR/IR/Bill-side recognition slice.
+
+## Phase H.17 checkpoint
+
+H.17 formalizes settlement journal reversal / stale reconciliation as a reviewable control truth.
+
+Boundary:
+
+- This is not AP open item clearing.
+- This is not AP subledger settlement application.
+- This is not PPV / variance.
+- This is not PO truth.
+- This is not tracked receipt enablement.
+
+What changed:
+
+- Settlement journal lifecycle is now explicit in the settlement control lane:
+  - `not_posted`
+  - `posted`
+  - `journal_stale`
+  - `journal_inconsistent`
+- `journal_stale` is used when a linked settlement journal exists but is no longer posted.
+- `journal_inconsistent` is reserved for broken anchors, missing journals, or source mismatches.
+- Receipt and Bill settlement read models now expose:
+  - settlement batch count
+  - journal not-posted / posted / stale / inconsistent counts
+  - overall journal reconciliation status
+  - last journal refresh timestamp
+- A dedicated journal reconciliation refresh endpoint keeps review truth current without executing AP clearing:
+  - `POST /receipts/{id}/grir-settlement/journal-reconciliation/refresh`
+- Settlement journal reposting now respects stale / inconsistent lifecycle truth and blocks instead of silently reusing bad state.
+
+Still not included:
+
+- AP open item balance clearing
+- settlement applications
+- settlement reversal documents
+- PPV / variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- Shell-wide settlement operations surface
+
+Authority note:
+
+H.17 makes the settlement journal lane safe enough to be consumed by the later AP open item clearing phase. Future clearing must require posted, reconciled settlement journal truth and must block stale or inconsistent batches.

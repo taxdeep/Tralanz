@@ -3893,6 +3893,13 @@ accounting.MapGet(
                     grIrSettlementSummary.EligibleAmountBase,
                     grIrSettlementSummary.SettledAmountBase,
                     grIrSettlementSummary.RemainingAmountBase,
+                    grIrSettlementSummary.SettlementBatchCount,
+                    grIrSettlementSummary.JournalNotPostedBatchCount,
+                    grIrSettlementSummary.JournalPostedBatchCount,
+                    grIrSettlementSummary.JournalStaleBatchCount,
+                    grIrSettlementSummary.JournalInconsistentBatchCount,
+                    grIrSettlementSummary.JournalReconciliationStatus,
+                    grIrSettlementSummary.LastJournalRefreshedAt,
                     grIrSettlementSummary.LastRefreshedAt,
                     grIrSettlementSummary.LastSettledAt
                 },
@@ -4164,6 +4171,13 @@ accounting.MapGet(
                     grIrSettlementSummary.EligibleAmountBase,
                     grIrSettlementSummary.SettledAmountBase,
                     grIrSettlementSummary.RemainingAmountBase,
+                    grIrSettlementSummary.SettlementBatchCount,
+                    grIrSettlementSummary.JournalNotPostedBatchCount,
+                    grIrSettlementSummary.JournalPostedBatchCount,
+                    grIrSettlementSummary.JournalStaleBatchCount,
+                    grIrSettlementSummary.JournalInconsistentBatchCount,
+                    grIrSettlementSummary.JournalReconciliationStatus,
+                    grIrSettlementSummary.LastJournalRefreshedAt,
                     grIrSettlementSummary.LastRefreshedAt,
                     grIrSettlementSummary.LastSettledAt
                 }
@@ -4380,6 +4394,13 @@ accounting.MapGet(
                         grIrSettlementSummary.EligibleAmountBase,
                         grIrSettlementSummary.SettledAmountBase,
                         grIrSettlementSummary.RemainingAmountBase,
+                        grIrSettlementSummary.SettlementBatchCount,
+                        grIrSettlementSummary.JournalNotPostedBatchCount,
+                        grIrSettlementSummary.JournalPostedBatchCount,
+                        grIrSettlementSummary.JournalStaleBatchCount,
+                        grIrSettlementSummary.JournalInconsistentBatchCount,
+                        grIrSettlementSummary.JournalReconciliationStatus,
+                        grIrSettlementSummary.LastJournalRefreshedAt,
                         grIrSettlementSummary.LastRefreshedAt,
                         grIrSettlementSummary.LastSettledAt
                     },
@@ -4567,6 +4588,26 @@ accounting.MapPost(
         try
         {
             var result = await grIrSettlementStore.RefreshReceiptSettlementControlAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/journal-reconciliation/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrSettlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
                 new(request.CompanyId),
                 new(request.UserId),
                 documentId,

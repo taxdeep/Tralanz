@@ -824,9 +824,23 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 schemaConnectionString,
                 companyId,
                 settlement.SettlementBatchId);
+            var postedJournalSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
 
             await SetJournalStatusAsync(schemaConnectionString, firstPost.JournalEntryId, "void");
-            var inconsistent = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            var staleJournalSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var staleSettlementBatchStatus = await GetSettlementBatchJournalStatusAsync(
+                schemaConnectionString,
+                companyId,
+                settlement.SettlementBatchId);
+            var stale = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 settlementPostingHandler.HandleAsync(
                     new PostReceiptGrIrSettlementJournalCommand(
                         new(companyId),
@@ -841,7 +855,13 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             Assert.Equal(50m, journalTotals.TotalCredit);
             Assert.Equal("posted", settlementBatchStatus.JournalStatus);
             Assert.Equal(firstPost.JournalEntryId, settlementBatchStatus.JournalEntryId);
-            Assert.Contains("inconsistent", inconsistent.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(ReceiptGrIrApSettlementJournalStatusPolicy.Posted, postedJournalSummary.JournalReconciliationStatus);
+            Assert.Equal(1, postedJournalSummary.JournalPostedBatchCount);
+            Assert.Equal(ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale, staleJournalSummary.JournalReconciliationStatus);
+            Assert.Equal(1, staleJournalSummary.JournalStaleBatchCount);
+            Assert.Equal(ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale, staleSettlementBatchStatus.JournalStatus);
+            Assert.Equal(firstPost.JournalEntryId, staleSettlementBatchStatus.JournalEntryId);
+            Assert.Contains("stale", stale.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
