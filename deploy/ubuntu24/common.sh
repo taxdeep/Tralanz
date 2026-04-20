@@ -793,6 +793,12 @@ publish_backends() {
   load_env_file
 
   log "Publishing .NET services and Web.Shell."
+  rm -rf \
+    "${PUBLISH_DIR}/web-shell" \
+    "${PUBLISH_DIR}/accounting-api" \
+    "${PUBLISH_DIR}/sysadmin-api" \
+    "${PUBLISH_DIR}/consoleapp"
+
   mkdir -p \
     "${PUBLISH_DIR}/web-shell" \
     "${PUBLISH_DIR}/accounting-api" \
@@ -1207,6 +1213,7 @@ install_main() {
   ensure_env_defaults
   configure_runtime_preferences
   load_env_file
+  stop_application_services
   sync_source_tree
   ensure_postgres_database
   apply_backend_baseline_if_needed
