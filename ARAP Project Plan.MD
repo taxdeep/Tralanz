@@ -1329,3 +1329,28 @@ Still deferred:
 Authority note:
 
 H.20.3 closes the first PO lifecycle loophole without turning PO into receipt or AP truth. A PO can be cancelled only before it has authoritative downstream quantity truth; it can be closed only when ordered / received / billed truth is fully aligned and discrepancy-free.
+
+## Mainline pause marker after H.20.3
+
+Current pushed checkpoint:
+
+- `a7c092c add purchase order close cancel guards`
+
+Resume trigger:
+
+- Do not continue the PO mainline until the user explicitly says `继续 h.20.4`.
+
+Planned next mainline:
+
+- H.20.4 should return to PO lifecycle hardening without reopening H.20.0-H.20.3.
+- Candidate focus:
+  - PO approval / release boundary, or
+  - PO reopen / amendment policy hardening.
+
+Still out of scope until explicitly restarted:
+
+- full PO workflow universe
+- PPV posting
+- tracked receipt
+- Shell-wide PO workbench
+- any redesign of Receipt-first / Bill truth ownership

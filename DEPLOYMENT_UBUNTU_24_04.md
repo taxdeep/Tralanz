@@ -206,3 +206,12 @@ If you need to override that source manually, set:
 sudo CITUS_DOTNET_SDK_TARBALL_URL=https://builds.dotnet.microsoft.com/dotnet/Sdk/11.0.100-preview.3.26207.106/dotnet-sdk-11.0.100-preview.3.26207.106-linux-x64.tar.gz \
      ./install.sh
 ```
+
+If you see this apt error:
+
+```text
+E: Unable to locate package dotnet-sdk-11.0
+E: Unable to locate package aspnetcore-runtime-11.0
+```
+
+you are running an outdated install path or an old checkout. Do not try to fix it by adding more apt sources on Ubuntu 24.04. Pull the latest repository version and rerun `./install.sh`; the current installer uses `dotnet-install.sh` and the direct SDK tarball fallback instead of `apt install dotnet-sdk-11.0`.
