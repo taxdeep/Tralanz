@@ -1,3 +1,4 @@
+using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
 
@@ -18,11 +19,68 @@ public sealed class ReceiptDraftApiTests
     }
 
     [Fact]
+    public void Purchase_order_status_helpers_are_foundation_only()
+    {
+        Assert.Equal(PurchaseOrderDocumentStatuses.Draft, PurchaseOrderDocumentStatuses.Normalize("draft"));
+        Assert.Equal(PurchaseOrderDocumentStatuses.Issued, PurchaseOrderDocumentStatuses.Normalize("issued"));
+        Assert.Equal(PurchaseOrderDocumentStatuses.Closed, PurchaseOrderDocumentStatuses.Normalize("closed"));
+        Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, PurchaseOrderDocumentStatuses.Normalize("cancelled"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanEdit("draft"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanEdit("issued"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanIssue("draft"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanIssue("closed"));
+        Assert.Throws<InvalidOperationException>(() => PurchaseOrderDocumentStatuses.Normalize("posted"));
+    }
+
+    [Fact]
     public void Receipt_line_requires_item_quantity_and_uom()
     {
         Assert.Throws<ArgumentException>(() => new ReceiptDocumentLine(1, Guid.Empty, 1m, "EA"));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ReceiptDocumentLine(1, Guid.NewGuid(), 0m, "EA"));
         Assert.Throws<ArgumentException>(() => new ReceiptDocumentLine(1, Guid.NewGuid(), 1m, ""));
+        Assert.Throws<InvalidOperationException>(() => new ReceiptDocumentLine(1, Guid.NewGuid(), 1m, "EA", purchaseOrderId: Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => new ReceiptDocumentLine(1, Guid.NewGuid(), 1m, "EA", purchaseOrderLineNumber: 1));
+    }
+
+    [Fact]
+    public void Purchase_order_document_requires_ordered_truth()
+    {
+        Assert.Throws<ArgumentException>(() => new PurchaseOrderDocumentLine(1, Guid.Empty, 1m, "EA"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PurchaseOrderDocumentLine(1, Guid.NewGuid(), 0m, "EA"));
+        Assert.Throws<ArgumentException>(() => new PurchaseOrderDocumentLine(1, Guid.NewGuid(), 1m, ""));
+
+        var line = new PurchaseOrderDocumentLine(1, Guid.NewGuid(), 2.5m, "kg");
+        Assert.Equal("KG", line.UomCode);
+
+        Assert.Throws<InvalidOperationException>(() => new PurchaseOrderDocument(
+            Guid.NewGuid(),
+            new CompanyId(Guid.NewGuid()),
+            new EntityNumber("EN202600000001"),
+            new DocumentNumber("PO-000001"),
+            PurchaseOrderDocumentStatuses.Draft,
+            Guid.NewGuid(),
+            new DateOnly(2026, 4, 20),
+            Array.Empty<PurchaseOrderDocumentLine>()));
+    }
+
+    [Theory]
+    [InlineData(10, 0, 0, PurchaseOrderThreeQuantityStatusPolicy.OrderedOnly)]
+    [InlineData(10, 5, 0, PurchaseOrderThreeQuantityStatusPolicy.PartiallyReceived)]
+    [InlineData(10, 10, 0, PurchaseOrderThreeQuantityStatusPolicy.FullyReceived)]
+    [InlineData(10, 10, 5, PurchaseOrderThreeQuantityStatusPolicy.PartiallyBilled)]
+    [InlineData(10, 10, 10, PurchaseOrderThreeQuantityStatusPolicy.FullyBilled)]
+    [InlineData(10, 11, 0, PurchaseOrderThreeQuantityStatusPolicy.OverReceived)]
+    [InlineData(10, 10, 11, PurchaseOrderThreeQuantityStatusPolicy.OverBilled)]
+    public void Purchase_order_three_quantity_status_policy_exposes_control_truth(
+        decimal orderedQuantity,
+        decimal receivedQuantity,
+        decimal billedQuantity,
+        string expected)
+    {
+        Assert.Equal(expected, PurchaseOrderThreeQuantityStatusPolicy.ResolveLineStatus(
+            orderedQuantity,
+            receivedQuantity,
+            billedQuantity));
     }
 
     [Fact]

@@ -72,6 +72,7 @@ builder.Services.AddScoped<ICreditNoteDocumentRepository, PostgresCreditNoteDocu
 builder.Services.AddScoped<IBillDocumentRepository, PostgresBillDocumentRepository>();
 builder.Services.AddScoped<IBillReceiptMatchingRepository, PostgresBillReceiptMatchingRepository>();
 builder.Services.AddScoped<IReceiptDocumentRepository, PostgresReceiptDocumentRepository>();
+builder.Services.AddScoped<IPurchaseOrderDocumentRepository, PostgresPurchaseOrderDocumentRepository>();
 builder.Services.AddScoped<IVendorCreditDocumentRepository, PostgresVendorCreditDocumentRepository>();
 builder.Services.AddScoped<IReceivePaymentDocumentRepository, PostgresReceivePaymentDocumentRepository>();
 builder.Services.AddScoped<ICreditApplicationDocumentRepository, PostgresCreditApplicationDocumentRepository>();
@@ -3699,7 +3700,9 @@ accounting.MapGet(
                     line.WarehouseId,
                     line.UomCode,
                     line.Quantity,
-                    line.UnitCost
+                    line.UnitCost,
+                    line.PurchaseOrderId,
+                    line.PurchaseOrderLineNumber
                 })
             });
     });
@@ -3737,7 +3740,9 @@ accounting.MapPost(
                         line.WarehouseId,
                         line.UomCode,
                         line.Quantity,
-                        line.UnitCost)).ToArray()),
+                        line.UnitCost,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3781,7 +3786,9 @@ accounting.MapPut(
                         line.WarehouseId,
                         line.UomCode,
                         line.Quantity,
-                        line.UnitCost)).ToArray()),
+                        line.UnitCost,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -3934,7 +3941,9 @@ accounting.MapGet(
                 line.WarehouseId,
                 line.UomCode,
                 line.Quantity,
-                line.UnitCost
+                line.UnitCost,
+                line.PurchaseOrderId,
+                line.PurchaseOrderLineNumber
             })
         });
     });
@@ -4033,6 +4042,166 @@ accounting.MapPost(
             {
                 message = ex.Message
             });
+        }
+    });
+
+accounting.MapGet(
+    "/purchase-orders",
+    async (
+        [AsParameters] PurchaseOrderListQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var documents = await repository.ListAsync(new(query.CompanyId), query.Take ?? 50, cancellationToken);
+        var summaries = await repository.GetThreeQuantitySummariesAsync(
+            new(query.CompanyId),
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+
+        return Results.Ok(documents.Select(document => new
+        {
+            document.DocumentId,
+            document.EntityNumber,
+            document.DisplayNumber,
+            document.Status,
+            document.VendorId,
+            document.OrderDate,
+            document.ExpectedDate,
+            document.LineCount,
+            document.TotalOrderedQuantity,
+            document.VendorReference,
+            document.Memo,
+            document.CreatedAt,
+            document.UpdatedAt,
+            document.IssuedAt,
+            ThreeQuantity = summaries.TryGetValue(document.DocumentId, out var summary) ? summary : null
+        }));
+    });
+
+accounting.MapGet(
+    "/purchase-orders/{documentId:guid}",
+    async (
+        Guid documentId,
+        [AsParameters] PurchaseOrderLookupQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Purchase order document was not found in the active company context." });
+        }
+
+        var summary = await repository.GetThreeQuantitySummaryAsync(new(query.CompanyId), documentId, cancellationToken);
+        return Results.Ok(new
+        {
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            document.VendorId,
+            document.OrderDate,
+            document.ExpectedDate,
+            document.VendorReference,
+            document.Memo,
+            document.IssuedAt,
+            ThreeQuantity = summary,
+            Lines = document.PurchaseOrderLines.Select(line => new
+            {
+                line.LineNumber,
+                line.ItemId,
+                line.OrderedQuantity,
+                line.UomCode,
+                line.Description,
+                line.UnitCost
+            })
+        });
+    });
+
+accounting.MapPost(
+    "/purchase-orders/drafts",
+    async (SavePurchaseOrderDraftHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.OrderDate,
+                    request.ExpectedDate,
+                    request.VendorReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new PurchaseOrderDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.OrderedQuantity,
+                        line.UomCode,
+                        line.Description,
+                        line.UnitCost)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/purchase-orders/drafts/{documentId:guid}",
+    async (Guid documentId, SavePurchaseOrderDraftHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.OrderDate,
+                    request.ExpectedDate,
+                    request.VendorReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new PurchaseOrderDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.OrderedQuantity,
+                        line.UomCode,
+                        line.Description,
+                        line.UnitCost)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/issue",
+    async (Guid documentId, IssuePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.IssueAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 
@@ -4460,7 +4629,9 @@ accounting.MapGet(
                     line.ItemId,
                     line.Quantity,
                     line.UomCode,
-                    line.TrackingCaptureHome
+                    line.TrackingCaptureHome,
+                    line.PurchaseOrderId,
+                    line.PurchaseOrderLineNumber
                 })
             });
     });
@@ -4487,7 +4658,9 @@ accounting.MapPost(
                         line.ItemId,
                         line.Quantity,
                         line.UomCode,
-                        line.TrackingCaptureHome)).ToArray()),
+                        line.TrackingCaptureHome,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -4520,7 +4693,9 @@ accounting.MapPut(
                         line.ItemId,
                         line.Quantity,
                         line.UomCode,
-                        line.TrackingCaptureHome)).ToArray()),
+                        line.TrackingCaptureHome,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
                 cancellationToken);
 
             return Results.Ok(result);

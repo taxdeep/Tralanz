@@ -284,7 +284,9 @@ public sealed record SaveBillDraftLineHttpRequest(
     Guid? WarehouseId,
     string? UomCode,
     decimal? Quantity,
-    decimal? UnitCost);
+    decimal? UnitCost,
+    Guid? PurchaseOrderId = null,
+    int? PurchaseOrderLineNumber = null);
 
 public sealed record BillLookupQuery(Guid CompanyId);
 
@@ -308,11 +310,39 @@ public sealed record SaveReceiptDraftLineHttpRequest(
     Guid ItemId,
     decimal Quantity,
     string UomCode,
-    string? TrackingCaptureHome);
+    string? TrackingCaptureHome,
+    Guid? PurchaseOrderId = null,
+    int? PurchaseOrderLineNumber = null);
 
 public sealed record ReceiptLookupQuery(Guid CompanyId);
 
 public sealed record ReceiptListQuery(Guid CompanyId, int? Take);
+
+public sealed record SavePurchaseOrderDraftHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid VendorId,
+    DateOnly OrderDate,
+    DateOnly? ExpectedDate,
+    string? VendorReference,
+    string? Memo,
+    IReadOnlyList<SavePurchaseOrderDraftLineHttpRequest> Lines);
+
+public sealed record SavePurchaseOrderDraftLineHttpRequest(
+    int LineNumber,
+    Guid ItemId,
+    decimal OrderedQuantity,
+    string UomCode,
+    string? Description,
+    decimal? UnitCost);
+
+public sealed record PurchaseOrderLookupQuery(Guid CompanyId);
+
+public sealed record PurchaseOrderListQuery(Guid CompanyId, int? Take);
+
+public sealed record IssuePurchaseOrderHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
 
 public sealed record PostReceiptDraftHttpRequest(
     Guid CompanyId,

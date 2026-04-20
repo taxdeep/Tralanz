@@ -154,6 +154,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                            l.uom_code,
                            l.quantity,
                            l.unit_cost,
+                           l.purchase_order_id,
+                           l.purchase_order_line_number,
                            l.tax_amount,
                            l.is_tax_recoverable,
                            l.tax_code_id,
@@ -193,7 +195,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                     reader.IsDBNull(reader.GetOrdinal("warehouse_id")) ? null : reader.GetGuid(reader.GetOrdinal("warehouse_id")),
                     reader.IsDBNull(reader.GetOrdinal("uom_code")) ? null : reader.GetString(reader.GetOrdinal("uom_code")),
                     reader.IsDBNull(reader.GetOrdinal("quantity")) ? null : reader.GetDecimal(reader.GetOrdinal("quantity")),
-                    reader.IsDBNull(reader.GetOrdinal("unit_cost")) ? null : reader.GetDecimal(reader.GetOrdinal("unit_cost"))));
+                    reader.IsDBNull(reader.GetOrdinal("unit_cost")) ? null : reader.GetDecimal(reader.GetOrdinal("unit_cost")),
+                    reader.IsDBNull(reader.GetOrdinal("purchase_order_id")) ? null : reader.GetGuid(reader.GetOrdinal("purchase_order_id")),
+                    reader.IsDBNull(reader.GetOrdinal("purchase_order_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("purchase_order_line_number"))));
             }
         }
 
@@ -407,6 +411,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   uom_code,
                   quantity,
                   unit_cost,
+                  purchase_order_id,
+                  purchase_order_line_number,
                   tax_code_id,
                   tax_amount,
                   is_tax_recoverable,
@@ -426,6 +432,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                   @uom_code,
                   @quantity,
                   @unit_cost,
+                  @purchase_order_id,
+                  @purchase_order_line_number,
                   @tax_code_id,
                   @tax_amount,
                   @is_tax_recoverable,
@@ -445,6 +453,8 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             insertLineCommand.Parameters.AddWithValue("uom_code", string.IsNullOrWhiteSpace(line.UomCode) ? (object)DBNull.Value : line.UomCode.Trim().ToUpperInvariant());
             insertLineCommand.Parameters.Add(new NpgsqlParameter<decimal?>("quantity", NpgsqlDbType.Numeric) { TypedValue = line.Quantity.HasValue ? Round6(line.Quantity.Value) : null });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<decimal?>("unit_cost", NpgsqlDbType.Numeric) { TypedValue = line.UnitCost.HasValue ? Round6(line.UnitCost.Value) : null });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("purchase_order_id", NpgsqlDbType.Uuid) { TypedValue = line.PurchaseOrderId });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<int?>("purchase_order_line_number", NpgsqlDbType.Integer) { TypedValue = line.PurchaseOrderLineNumber });
             insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("tax_code_id", NpgsqlDbType.Uuid) { TypedValue = line.TaxCodeId });
             insertLineCommand.Parameters.AddWithValue("tax_amount", Round6(line.TaxAmount));
             insertLineCommand.Parameters.AddWithValue("is_tax_recoverable", line.IsTaxRecoverable);
@@ -567,7 +577,9 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 line.WarehouseId.HasValue ||
                 !string.IsNullOrWhiteSpace(line.UomCode) ||
                 line.Quantity.HasValue ||
-                line.UnitCost.HasValue;
+                line.UnitCost.HasValue ||
+                line.PurchaseOrderId.HasValue ||
+                line.PurchaseOrderLineNumber.HasValue;
 
             if (!hasInventorySemantics)
             {
@@ -597,6 +609,21 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             if (!line.UnitCost.HasValue || line.UnitCost.Value < 0m)
             {
                 throw new InvalidOperationException("Inventory-grade bill lines require a non-negative unit cost.");
+            }
+
+            if (line.PurchaseOrderId.HasValue != line.PurchaseOrderLineNumber.HasValue)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require both purchase order id and purchase order line number.");
+            }
+
+            if (line.PurchaseOrderId.HasValue && line.PurchaseOrderId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a valid purchase order id.");
+            }
+
+            if (line.PurchaseOrderLineNumber.HasValue && line.PurchaseOrderLineNumber.Value <= 0)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a positive purchase order line number.");
             }
         }
 
@@ -681,6 +708,11 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             alter table bill_lines add column if not exists uom_code text;
             alter table bill_lines add column if not exists quantity numeric(18,6);
             alter table bill_lines add column if not exists unit_cost numeric(18,6);
+            alter table bill_lines add column if not exists purchase_order_id uuid;
+            alter table bill_lines add column if not exists purchase_order_line_number integer;
+
+            create index if not exists ix_bill_lines_company_purchase_order_line
+              on bill_lines (company_id, purchase_order_id, purchase_order_line_number);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

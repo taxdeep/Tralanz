@@ -105,7 +105,9 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                            l.item_id,
                            l.quantity,
                            l.uom_code,
-                           l.tracking_capture_home
+                           l.tracking_capture_home,
+                           l.purchase_order_id,
+                           l.purchase_order_line_number
                          from {ReceiptLinesTableName} l
                          where l.company_id = @company_id
                            and l.receipt_id = @document_id
@@ -125,7 +127,13 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                     reader.GetString(reader.GetOrdinal("uom_code")),
                     reader.IsDBNull(reader.GetOrdinal("tracking_capture_home"))
                         ? null
-                        : reader.GetString(reader.GetOrdinal("tracking_capture_home"))));
+                        : reader.GetString(reader.GetOrdinal("tracking_capture_home")),
+                    reader.IsDBNull(reader.GetOrdinal("purchase_order_id"))
+                        ? null
+                        : reader.GetGuid(reader.GetOrdinal("purchase_order_id")),
+                    reader.IsDBNull(reader.GetOrdinal("purchase_order_line_number"))
+                        ? null
+                        : reader.GetInt32(reader.GetOrdinal("purchase_order_line_number"))));
             }
         }
 
@@ -389,6 +397,8 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                   quantity,
                   uom_code,
                   tracking_capture_home,
+                  purchase_order_id,
+                  purchase_order_line_number,
                   created_at,
                   updated_at
                 )
@@ -401,6 +411,8 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                   @quantity,
                   @uom_code,
                   @tracking_capture_home,
+                  @purchase_order_id,
+                  @purchase_order_line_number,
                   now(),
                   now()
                 );
@@ -415,6 +427,14 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             insertLineCommand.Parameters.Add(new NpgsqlParameter<string?>("tracking_capture_home", NpgsqlDbType.Text)
             {
                 TypedValue = string.IsNullOrWhiteSpace(line.TrackingCaptureHome) ? null : line.TrackingCaptureHome.Trim()
+            });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<Guid?>("purchase_order_id", NpgsqlDbType.Uuid)
+            {
+                TypedValue = line.PurchaseOrderId
+            });
+            insertLineCommand.Parameters.Add(new NpgsqlParameter<int?>("purchase_order_line_number", NpgsqlDbType.Integer)
+            {
+                TypedValue = line.PurchaseOrderLineNumber
             });
             await insertLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -509,7 +529,9 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                 line.ItemId,
                 line.Quantity,
                 line.UomCode,
-                line.TrackingCaptureHome);
+                line.TrackingCaptureHome,
+                line.PurchaseOrderId,
+                line.PurchaseOrderLineNumber);
         }
     }
 
@@ -631,15 +653,26 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               quantity numeric(18,6) not null,
               uom_code text not null,
               tracking_capture_home text null,
+              purchase_order_id uuid null,
+              purchase_order_line_number integer null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now()
             );
+
+            alter table {ReceiptLinesTableName}
+              add column if not exists purchase_order_id uuid null;
+
+            alter table {ReceiptLinesTableName}
+              add column if not exists purchase_order_line_number integer null;
 
             create unique index if not exists ux_receipt_lines_company_receipt_line
               on {ReceiptLinesTableName} (company_id, receipt_id, line_number);
 
             create index if not exists ix_receipt_lines_company_receipt
               on {ReceiptLinesTableName} (company_id, receipt_id, line_number);
+
+            create index if not exists ix_receipt_lines_company_purchase_order_line
+              on {ReceiptLinesTableName} (company_id, purchase_order_id, purchase_order_line_number);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

@@ -518,7 +518,9 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         Guid? warehouseId = null,
         string? uomCode = null,
         decimal? quantity = null,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        Guid? purchaseOrderId = null,
+        int? purchaseOrderLineNumber = null)
     {
         if (lineNumber <= 0)
         {
@@ -580,6 +582,25 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             }
         }
 
+        var hasPurchaseOrderAnchor = purchaseOrderId.HasValue || purchaseOrderLineNumber.HasValue;
+        if (hasPurchaseOrderAnchor)
+        {
+            if (!purchaseOrderId.HasValue || purchaseOrderId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a purchase order id.");
+            }
+
+            if (!purchaseOrderLineNumber.HasValue || purchaseOrderLineNumber.Value <= 0)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a positive purchase order line number.");
+            }
+
+            if (!quantity.HasValue || quantity.Value <= 0m)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a positive quantity.");
+            }
+        }
+
         LineNumber = lineNumber;
         ExpenseAccountId = expenseAccountId;
         Description = description.Trim();
@@ -593,6 +614,8 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
         Quantity = quantity;
         UnitCost = unitCost;
+        PurchaseOrderId = purchaseOrderId;
+        PurchaseOrderLineNumber = purchaseOrderLineNumber;
     }
 
     public int LineNumber { get; }
@@ -620,6 +643,10 @@ public sealed record BillDocumentLine : IPostingDocumentLine
     public decimal? Quantity { get; }
 
     public decimal? UnitCost { get; }
+
+    public Guid? PurchaseOrderId { get; }
+
+    public int? PurchaseOrderLineNumber { get; }
 }
 
 public sealed class BillDocument : IPostingDocument, IOpenItemDocument
@@ -752,7 +779,9 @@ public sealed record ReceiptDocumentLine
         Guid itemId,
         decimal quantity,
         string uomCode,
-        string? trackingCaptureHome = null)
+        string? trackingCaptureHome = null,
+        Guid? purchaseOrderId = null,
+        int? purchaseOrderLineNumber = null)
     {
         if (lineNumber <= 0)
         {
@@ -774,11 +803,27 @@ public sealed record ReceiptDocumentLine
             throw new ArgumentException("UOM code is required.", nameof(uomCode));
         }
 
+        var hasPurchaseOrderAnchor = purchaseOrderId.HasValue || purchaseOrderLineNumber.HasValue;
+        if (hasPurchaseOrderAnchor)
+        {
+            if (!purchaseOrderId.HasValue || purchaseOrderId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("PO-anchored receipt lines require a purchase order id.");
+            }
+
+            if (!purchaseOrderLineNumber.HasValue || purchaseOrderLineNumber.Value <= 0)
+            {
+                throw new InvalidOperationException("PO-anchored receipt lines require a positive purchase order line number.");
+            }
+        }
+
         LineNumber = lineNumber;
         ItemId = itemId;
         Quantity = quantity;
         UomCode = uomCode.Trim().ToUpperInvariant();
         TrackingCaptureHome = string.IsNullOrWhiteSpace(trackingCaptureHome) ? null : trackingCaptureHome.Trim();
+        PurchaseOrderId = purchaseOrderId;
+        PurchaseOrderLineNumber = purchaseOrderLineNumber;
     }
 
     public int LineNumber { get; }
@@ -790,6 +835,165 @@ public sealed record ReceiptDocumentLine
     public string UomCode { get; }
 
     public string? TrackingCaptureHome { get; }
+
+    public Guid? PurchaseOrderId { get; }
+
+    public int? PurchaseOrderLineNumber { get; }
+}
+
+public static class PurchaseOrderDocumentStatuses
+{
+    public const string Draft = "draft";
+    public const string Issued = "issued";
+    public const string Closed = "closed";
+    public const string Cancelled = "cancelled";
+
+    public static string Normalize(string? status)
+    {
+        var normalized = string.IsNullOrWhiteSpace(status)
+            ? Draft
+            : status.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            Draft => Draft,
+            Issued => Issued,
+            Closed => Closed,
+            Cancelled => Cancelled,
+            _ => throw new InvalidOperationException("Purchase orders only support draft, issued, closed, or cancelled status in the current phase.")
+        };
+    }
+
+    public static bool CanEdit(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+
+    public static bool CanIssue(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+}
+
+public sealed record PurchaseOrderDocumentLine
+{
+    public PurchaseOrderDocumentLine(
+        int lineNumber,
+        Guid itemId,
+        decimal orderedQuantity,
+        string uomCode,
+        string? description = null,
+        decimal? unitCost = null)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+
+        if (orderedQuantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(orderedQuantity), "PO ordered quantity must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(uomCode))
+        {
+            throw new ArgumentException("UOM code is required.", nameof(uomCode));
+        }
+
+        if (unitCost.HasValue && unitCost.Value < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unitCost), "PO unit cost cannot be negative.");
+        }
+
+        LineNumber = lineNumber;
+        ItemId = itemId;
+        OrderedQuantity = orderedQuantity;
+        UomCode = uomCode.Trim().ToUpperInvariant();
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        UnitCost = unitCost;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid ItemId { get; }
+
+    public decimal OrderedQuantity { get; }
+
+    public string UomCode { get; }
+
+    public string? Description { get; }
+
+    public decimal? UnitCost { get; }
+}
+
+public sealed class PurchaseOrderDocument
+{
+    public PurchaseOrderDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid vendorId,
+        DateOnly orderDate,
+        IEnumerable<PurchaseOrderDocumentLine> lines,
+        DateOnly? expectedDate = null,
+        string? vendorReference = null,
+        string? memo = null,
+        DateTimeOffset? issuedAt = null)
+    {
+        if (vendorId == Guid.Empty)
+        {
+            throw new ArgumentException("Vendor id is required.", nameof(vendorId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = PurchaseOrderDocumentStatuses.Normalize(status);
+        VendorId = vendorId;
+        OrderDate = orderDate;
+        ExpectedDate = expectedDate;
+        VendorReference = string.IsNullOrWhiteSpace(vendorReference) ? null : vendorReference.Trim();
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        IssuedAt = issuedAt;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Purchase order must contain at least one line.");
+        }
+
+        PurchaseOrderLines = Array.AsReadOnly(materializedLines);
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "purchase_order";
+
+    public string Status { get; }
+
+    public Guid VendorId { get; }
+
+    public DateOnly OrderDate { get; }
+
+    public DateOnly? ExpectedDate { get; }
+
+    public string? VendorReference { get; }
+
+    public string? Memo { get; }
+
+    public DateTimeOffset? IssuedAt { get; }
+
+    public IReadOnlyList<PurchaseOrderDocumentLine> PurchaseOrderLines { get; }
 }
 
 public sealed class ReceiptDocument

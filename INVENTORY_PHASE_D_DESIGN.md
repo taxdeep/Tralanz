@@ -1511,3 +1511,53 @@ Still not included:
 Authority note:
 
 H.19 keeps the truth ladder intact. Receipt owns inbound physical quantity, GR/IR owns interim accounting recognition, AP open-item clearing proves the settled subledger slice, and purchase variance is surfaced as unresolved control truth rather than silently posted.
+
+## Phase H.20.0 checkpoint
+
+H.20.0 introduces the first Purchase Order foundation so ordered / received / billed truth can exist explicitly before the full H.20 phase.
+
+Boundary:
+
+- PO is ordered truth only.
+- Receipt remains physical inbound truth.
+- Bill remains supplier charge / AP truth.
+- PO anchors do not replace Bill-Receipt matching.
+- No PPV posting.
+- No PO approval universe.
+- No tracked receipt enablement.
+- No Shell-wide PO workspace.
+
+What changed:
+
+- `PurchaseOrderDocument` and `PurchaseOrderDocumentLine` now represent minimal ordered truth.
+- `purchase_orders` and `purchase_order_lines` persist PO source documents.
+- PO status skeleton is intentionally small:
+  - `draft`
+  - `issued`
+  - `closed`
+  - `cancelled`
+- ReceiptLine and BillLine now carry explicit PO line anchors:
+  - `purchase_order_id`
+  - `purchase_order_line_number`
+- The PO read model now exposes:
+  - `ordered_qty`
+  - `received_qty`
+  - `billed_qty`
+  - `remaining_to_receive`
+  - `remaining_to_bill`
+  - over-received / over-billed control status
+- Draft Receipt and draft Bill anchors are ignored for received / billed truth.
+- Posted Receipt and posted Bill anchors are counted only when the PO line linkage is explicit.
+
+Still not included:
+
+- PO approval, close, cancel, and reopen workflow
+- PO-driven receiving workflow
+- PO-driven billing automation
+- PPV journal recognition
+- tracked receipt
+- Shell-wide PO operations surface
+
+Authority note:
+
+H.20.0 prevents future H.20 from inventing ordered truth ad hoc. The source truth ladder is now explicit: PO owns ordered truth, Receipt owns received truth, Bill owns billed truth.

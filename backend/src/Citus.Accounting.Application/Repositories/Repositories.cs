@@ -107,6 +107,39 @@ public interface IReceiptDocumentRepository
         CancellationToken cancellationToken);
 }
 
+public interface IPurchaseOrderDocumentRepository
+{
+    Task<PurchaseOrderDocument?> GetAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<PurchaseOrderDocumentListItem>> ListAsync(
+        CompanyId companyId,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        PurchaseOrderDraftSaveModel draft,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> IssueAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<PurchaseOrderThreeQuantitySummary?> GetThreeQuantitySummaryAsync(
+        CompanyId companyId,
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<Guid, PurchaseOrderThreeQuantitySummary>> GetThreeQuantitySummariesAsync(
+        CompanyId companyId,
+        IReadOnlyCollection<Guid> purchaseOrderIds,
+        CancellationToken cancellationToken);
+}
+
 public interface IBillReceiptMatchingRepository
 {
     Task<BillReceiptMatchingLaneSummary> GetBillLaneSummaryAsync(
@@ -207,7 +240,9 @@ public sealed record BillDraftLineSaveModel(
     Guid? WarehouseId = null,
     string? UomCode = null,
     decimal? Quantity = null,
-    decimal? UnitCost = null);
+    decimal? UnitCost = null,
+    Guid? PurchaseOrderId = null,
+    int? PurchaseOrderLineNumber = null);
 
 public sealed record VendorCreditDraftSaveModel(
     Guid? DocumentId,
@@ -251,7 +286,28 @@ public sealed record ReceiptDraftLineSaveModel(
     Guid ItemId,
     decimal Quantity,
     string UomCode,
-    string? TrackingCaptureHome);
+    string? TrackingCaptureHome,
+    Guid? PurchaseOrderId = null,
+    int? PurchaseOrderLineNumber = null);
+
+public sealed record PurchaseOrderDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid VendorId,
+    DateOnly OrderDate,
+    DateOnly? ExpectedDate,
+    string? VendorReference,
+    string? Memo,
+    IReadOnlyList<PurchaseOrderDraftLineSaveModel> Lines);
+
+public sealed record PurchaseOrderDraftLineSaveModel(
+    int LineNumber,
+    Guid ItemId,
+    decimal OrderedQuantity,
+    string UomCode,
+    string? Description = null,
+    decimal? UnitCost = null);
 
 public sealed record ReceiptDocumentListItem(
     Guid DocumentId,
@@ -269,6 +325,143 @@ public sealed record ReceiptDocumentListItem(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? PostedAt);
+
+public sealed record PurchaseOrderDocumentListItem(
+    Guid DocumentId,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    Guid VendorId,
+    DateOnly OrderDate,
+    DateOnly? ExpectedDate,
+    int LineCount,
+    decimal TotalOrderedQuantity,
+    string? VendorReference,
+    string? Memo,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? IssuedAt);
+
+public sealed record PurchaseOrderLineThreeQuantitySummary(
+    int LineNumber,
+    Guid ItemId,
+    string UomCode,
+    decimal OrderedQuantity,
+    decimal ReceivedQuantity,
+    decimal BilledQuantity,
+    decimal RemainingToReceiveQuantity,
+    decimal RemainingToBillQuantity,
+    string QuantityStatus);
+
+public sealed record PurchaseOrderThreeQuantitySummary(
+    Guid PurchaseOrderId,
+    int LineCount,
+    decimal OrderedQuantity,
+    decimal ReceivedQuantity,
+    decimal BilledQuantity,
+    decimal RemainingToReceiveQuantity,
+    decimal RemainingToBillQuantity,
+    int OverReceivedLineCount,
+    int OverBilledLineCount,
+    string QuantityStatus,
+    IReadOnlyList<PurchaseOrderLineThreeQuantitySummary> Lines);
+
+public static class PurchaseOrderThreeQuantityStatusPolicy
+{
+    public const string NotApplicable = "not_applicable";
+    public const string OrderedOnly = "ordered_only";
+    public const string PartiallyReceived = "partially_received";
+    public const string FullyReceived = "fully_received";
+    public const string PartiallyBilled = "partially_billed";
+    public const string FullyBilled = "fully_billed";
+    public const string OverReceived = "over_received";
+    public const string OverBilled = "over_billed";
+    public const string Inconsistent = "inconsistent";
+
+    public static string ResolveLineStatus(
+        decimal orderedQuantity,
+        decimal receivedQuantity,
+        decimal billedQuantity)
+    {
+        if (orderedQuantity <= 0m)
+        {
+            return Inconsistent;
+        }
+
+        if (receivedQuantity > orderedQuantity)
+        {
+            return OverReceived;
+        }
+
+        if (billedQuantity > orderedQuantity)
+        {
+            return OverBilled;
+        }
+
+        if (billedQuantity == orderedQuantity)
+        {
+            return FullyBilled;
+        }
+
+        if (billedQuantity > 0m)
+        {
+            return PartiallyBilled;
+        }
+
+        if (receivedQuantity == orderedQuantity)
+        {
+            return FullyReceived;
+        }
+
+        return receivedQuantity > 0m ? PartiallyReceived : OrderedOnly;
+    }
+
+    public static string ResolveSummaryStatus(
+        int lineCount,
+        int overReceivedLineCount,
+        int overBilledLineCount,
+        decimal orderedQuantity,
+        decimal receivedQuantity,
+        decimal billedQuantity)
+    {
+        if (lineCount <= 0)
+        {
+            return NotApplicable;
+        }
+
+        if (overReceivedLineCount > 0)
+        {
+            return OverReceived;
+        }
+
+        if (overBilledLineCount > 0)
+        {
+            return OverBilled;
+        }
+
+        if (orderedQuantity <= 0m)
+        {
+            return Inconsistent;
+        }
+
+        if (billedQuantity == orderedQuantity)
+        {
+            return FullyBilled;
+        }
+
+        if (billedQuantity > 0m)
+        {
+            return PartiallyBilled;
+        }
+
+        if (receivedQuantity == orderedQuantity)
+        {
+            return FullyReceived;
+        }
+
+        return receivedQuantity > 0m ? PartiallyReceived : OrderedOnly;
+    }
+}
 
 public sealed record BillReceiptPostingGateSnapshot(
     Guid BillDocumentId,

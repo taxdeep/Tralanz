@@ -1126,3 +1126,63 @@ Still deferred:
 Authority note:
 
 H.19 makes the price-difference risk visible after GR/IR settlement and AP open-item clearing, but it deliberately stops before recognizing PPV in accounting. Receipt remains physical quantity owner, GR/IR remains interim accounting recognition, Bill remains supplier charge truth, and purchase variance is only a reviewable boundary for the next phase.
+
+## Phase H.20.0 checkpoint
+
+H.20.0 introduces the minimal Purchase Order foundation and three-quantity truth design seam.
+
+Boundary:
+
+- PO owns ordered / commitment truth only.
+- Receipt remains physical received truth.
+- Bill remains AP / billed truth.
+- Bill-Receipt matching, GR/IR, settlement, clearing, and variance lanes are not redesigned.
+- This does not introduce full PO approval / close / cancel workflow.
+- This does not introduce PPV journal posting.
+- This does not enable tracked receipt flows.
+- This does not expand into a Shell-wide PO workspace.
+
+What changed:
+
+- First-class `PurchaseOrderDocument` / `PurchaseOrderDocumentLine` domain foundation exists.
+- A PostgreSQL PO repository persists:
+  - `purchase_orders`
+  - `purchase_order_lines`
+- PO status skeleton exists:
+  - `draft`
+  - `issued`
+  - `closed`
+  - `cancelled`
+- Minimal API endpoints exist for:
+  - list PO
+  - get PO detail
+  - save PO draft
+  - issue PO
+- Receipt lines and Bill lines now support explicit PO line anchors:
+  - `purchase_order_id`
+  - `purchase_order_line_number`
+- Three-quantity read truth is available:
+  - ordered quantity
+  - received quantity
+  - billed quantity
+  - remaining to receive
+  - remaining to bill
+- Received quantity only counts posted Receipt anchors.
+- Billed quantity only counts posted Bill anchors.
+- Draft Receipt / Bill anchors do not affect three-quantity truth.
+- Over-receipt and over-bill are surfaced explicitly as control status, not silently absorbed.
+
+Still deferred:
+
+- full PO workflow universe
+- PO approval and governance permissions
+- formal PO close / cancel lifecycle execution
+- PO-driven receipt creation
+- PO-driven bill matching automation
+- PPV journal posting
+- tracked receipt enablement
+- Shell-wide PO workbench
+
+Authority note:
+
+H.20.0 adds ordered truth without weakening receipt-first. PO line anchors are explicit and persisted; no vendor/item soft matching is treated as authoritative.
