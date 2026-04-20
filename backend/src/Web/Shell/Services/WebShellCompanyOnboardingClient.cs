@@ -1,8 +1,13 @@
+using Citus.Ui.Shared.Business;
 using System.Net.Http.Json;
+using Web.Shell.State;
 
 namespace Web.Shell.Services;
 
-public sealed class WebShellCompanyOnboardingClient(HttpClient httpClient, ILogger<WebShellCompanyOnboardingClient> logger)
+public sealed class WebShellCompanyOnboardingClient(
+    HttpClient httpClient,
+    WebShellState shellState,
+    ILogger<WebShellCompanyOnboardingClient> logger)
 {
     public async Task<WebShellAuthenticatedApiResult<WebShellCompanyOnboardingSummary>> GetAsync(
         CancellationToken cancellationToken = default) =>
@@ -21,6 +26,11 @@ public sealed class WebShellCompanyOnboardingClient(HttpClient httpClient, ILogg
         try
         {
             using var request = new HttpRequestMessage(method, requestUri);
+            if (!string.IsNullOrWhiteSpace(shellState.SessionToken))
+            {
+                request.Headers.Add(BusinessAuthHeaderNames.SessionToken, shellState.SessionToken);
+            }
+
             if (payload is not null)
             {
                 request.Content = JsonContent.Create(payload);
