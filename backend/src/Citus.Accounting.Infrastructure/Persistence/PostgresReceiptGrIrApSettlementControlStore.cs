@@ -49,6 +49,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
@@ -78,6 +79,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await EnsureSchemaAsync(scope, cancellationToken);
         await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
 
         return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
@@ -206,6 +208,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
         await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
         await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
 
         var existing = await TryLoadSettlementExecutionResultAsync(
             scope,
@@ -266,6 +269,223 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             summary);
     }
 
+    public async Task<ReceiptGrIrApOpenItemClearingResult> ClearReceiptSettlementOpenItemsAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        if (settlementBatchId == Guid.Empty)
+        {
+            throw new ArgumentException("Settlement batch id is required.", nameof(settlementBatchId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await CanBuildOpenItemClearingLaneAsync(scope, cancellationToken))
+        {
+            throw new InvalidOperationException("The GR/IR AP open-item clearing lane is not ready. Settlement applications, posted settlement journals, and AP open-item truth are required before clearing.");
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+
+        var existing = await TryLoadExistingOpenItemClearingResultAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var header = await LoadOpenItemClearingBatchHeaderAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+        if (header is null)
+        {
+            throw new InvalidOperationException("GR/IR settlement batch was not found for the receipt.");
+        }
+
+        if (header.BatchStatus != "posted")
+        {
+            throw new InvalidOperationException("Only executed GR/IR settlement batches can clear AP open items.");
+        }
+
+        if (header.JournalStatus != ReceiptGrIrApSettlementJournalStatusPolicy.Posted)
+        {
+            throw new InvalidOperationException(
+                $"GR/IR settlement batch journal status '{header.JournalStatus}' is not eligible for AP open-item clearing.");
+        }
+
+        if (header.OpenItemClearingStatus != ReceiptGrIrApOpenItemClearingStatusPolicy.NotCleared)
+        {
+            throw new InvalidOperationException(
+                $"GR/IR settlement batch AP open-item clearing status '{header.OpenItemClearingStatus}' is not eligible for clearing.");
+        }
+
+        var allocations = await LoadOpenItemClearingAllocationsAsync(
+            scope,
+            companyId.Value,
+            settlementBatchId,
+            cancellationToken);
+        if (allocations.Count == 0)
+        {
+            throw new InvalidOperationException("GR/IR settlement batch has no AP open-item slice to clear.");
+        }
+
+        foreach (var allocation in allocations)
+        {
+            await ApplyOpenItemClearingAllocationAsync(
+                scope,
+                companyId.Value,
+                userId.Value,
+                settlementBatchId,
+                allocation,
+                cancellationToken);
+        }
+
+        await MarkOpenItemClearingBatchClearedAsync(
+            scope,
+            companyId.Value,
+            userId.Value,
+            settlementBatchId,
+            cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+
+        return await LoadOpenItemClearingResultAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+    }
+
+    public async Task<ReceiptGrIrApOpenItemClearingReversalResult> ReverseReceiptSettlementOpenItemClearingAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        if (settlementBatchId == Guid.Empty)
+        {
+            throw new ArgumentException("Settlement batch id is required.", nameof(settlementBatchId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await CanBuildOpenItemClearingLaneAsync(scope, cancellationToken))
+        {
+            throw new InvalidOperationException("The GR/IR AP open-item clearing lane is not ready. Settlement applications, posted settlement journals, and AP open-item truth are required before reversal.");
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+
+        var existing = await TryLoadExistingOpenItemClearingReversalResultAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var header = await LoadOpenItemClearingBatchHeaderAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+        if (header is null)
+        {
+            throw new InvalidOperationException("GR/IR settlement batch was not found for the receipt.");
+        }
+
+        if (header.OpenItemClearingStatus is not (
+            ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingStale or
+            ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingInconsistent))
+        {
+            throw new InvalidOperationException(
+                $"GR/IR settlement batch AP open-item clearing status '{header.OpenItemClearingStatus}' is not eligible for reversal.");
+        }
+
+        if (header.JournalStatus == ReceiptGrIrApSettlementJournalStatusPolicy.Posted)
+        {
+            throw new InvalidOperationException("Posted GR/IR settlement journals must not have AP open-item clearing reversed.");
+        }
+
+        var applications = await LoadOpenItemClearingApplicationsAsync(
+            scope,
+            companyId.Value,
+            settlementBatchId,
+            cancellationToken);
+        if (applications.Count == 0)
+        {
+            throw new InvalidOperationException("GR/IR settlement batch has no AP open-item clearing applications to reverse.");
+        }
+
+        foreach (var application in applications)
+        {
+            await ReverseOpenItemClearingApplicationAsync(
+                scope,
+                companyId.Value,
+                application,
+                cancellationToken);
+        }
+
+        await DeleteOpenItemClearingApplicationsAsync(
+            scope,
+            companyId.Value,
+            settlementBatchId,
+            cancellationToken);
+        await MarkOpenItemClearingBatchReversedAsync(
+            scope,
+            companyId.Value,
+            userId.Value,
+            settlementBatchId,
+            applications.Count,
+            Round6(applications.Sum(static application => application.AppliedAmountTx)),
+            Round6(applications.Sum(static application => application.AppliedAmountBase)),
+            cancellationToken);
+
+        return await LoadOpenItemClearingReversalResultAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+    }
+
     private static async Task<bool> CanBuildSettlementLaneAsync(
         PostgresCommandScope scope,
         CancellationToken cancellationToken) =>
@@ -273,6 +493,12 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         await TableExistsAsync(scope, "bills", cancellationToken) &&
         await TableExistsAsync(scope, "ap_open_items", cancellationToken) &&
         await TableExistsAsync(scope, "journal_entries", cancellationToken);
+
+    private static async Task<bool> CanBuildOpenItemClearingLaneAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken) =>
+        await CanBuildSettlementLaneAsync(scope, cancellationToken) &&
+        await TableExistsAsync(scope, "settlement_applications", cancellationToken);
 
     private static async Task<bool> EnsureSettlementBatchSchemaForReadAsync(
         PostgresCommandScope scope,
@@ -354,6 +580,107 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               and batch.company_id = @company_id
               and batch.receipt_id = @receipt_id
               and batch.status = 'posted';
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RefreshReceiptSettlementOpenItemClearingStatusesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(scope, "settlement_applications", cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = scope.CreateCommand(
+            $"""
+            with batch_truth as (
+              select
+                batch.id as settlement_batch_id,
+                batch.journal_status,
+                batch.settled_amount_base,
+                coalesce(app.applied_amount_base, 0)::numeric(20,6) as applied_amount_base,
+                bool_or(oi.id is null) as missing_ap_open_item,
+                bool_or(oi.id is not null and oi.status not in ('open', 'partially_applied')) as ap_open_item_not_open,
+                bool_or(oi.id is not null and oi.document_currency_code <> oi.base_currency_code) as fx_not_supported,
+                bool_or(oi.id is not null and round(alloc.amount_base, 6) > round(oi.open_amount_base, 6)) as amount_exceeded
+              from {SettlementBatchesTableName} batch
+              left join lateral (
+                select
+                  batch_line.ap_open_item_id,
+                  sum(batch_line.settled_amount_base)::numeric(20,6) as amount_base
+                from {SettlementBatchLinesTableName} batch_line
+                where batch_line.company_id = batch.company_id
+                  and batch_line.settlement_batch_id = batch.id
+                group by batch_line.ap_open_item_id
+              ) alloc on true
+              left join ap_open_items oi
+                on oi.company_id = batch.company_id
+               and oi.id = alloc.ap_open_item_id
+              left join lateral (
+                select sum(sa.applied_amount_base)::numeric(20,6) as applied_amount_base
+                from settlement_applications sa
+                where sa.company_id = batch.company_id
+                  and sa.source_type = 'receipt_grir_ap_settlement'
+                  and sa.source_id = batch.id
+              ) app on true
+              where batch.company_id = @company_id
+                and batch.receipt_id = @receipt_id
+                and batch.status = 'posted'
+              group by batch.id, batch.journal_status, batch.settled_amount_base, app.applied_amount_base
+            )
+            update {SettlementBatchesTableName} batch
+            set open_item_clearing_status = case
+                  when batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}'
+                  when round(batch_truth.applied_amount_base, 6) = round(batch_truth.settled_amount_base, 6)
+                    and batch_truth.applied_amount_base > 0
+                    and batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingStale}'
+                  when round(batch_truth.applied_amount_base, 6) = round(batch_truth.settled_amount_base, 6)
+                    and batch_truth.applied_amount_base > 0
+                    and batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingInconsistent}'
+                  when round(batch_truth.applied_amount_base, 6) = round(batch_truth.settled_amount_base, 6)
+                    and batch_truth.applied_amount_base > 0 then '{ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared}'
+                  when batch_truth.applied_amount_base > 0 then '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingInconsistent}'
+                  when batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.NotPosted}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedJournalNotPosted}'
+                  when batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedJournalStale}'
+                  when batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedJournalInconsistent}'
+                  when batch_truth.journal_status <> '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}' then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedJournalNotPosted}'
+                  when batch_truth.missing_ap_open_item then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedMissingApOpenItem}'
+                  when batch_truth.ap_open_item_not_open then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedOpenItemNotOpen}'
+                  when batch_truth.fx_not_supported then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedFxNotSupported}'
+                  when batch_truth.amount_exceeded then '{ReceiptGrIrApOpenItemClearingStatusPolicy.BlockedAmountExceeded}'
+                  else '{ReceiptGrIrApOpenItemClearingStatusPolicy.NotCleared}'
+                end,
+                open_item_clearing_blocked_reason_code = case
+                  when batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}' then null
+                  when round(batch_truth.applied_amount_base, 6) = round(batch_truth.settled_amount_base, 6)
+                    and batch_truth.applied_amount_base > 0
+                    and batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}' then 'cleared_journal_stale'
+                  when round(batch_truth.applied_amount_base, 6) = round(batch_truth.settled_amount_base, 6)
+                    and batch_truth.applied_amount_base > 0
+                    and batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}' then 'cleared_journal_inconsistent'
+                  when round(batch_truth.applied_amount_base, 6) = round(batch_truth.settled_amount_base, 6)
+                    and batch_truth.applied_amount_base > 0 then null
+                  when batch_truth.applied_amount_base > 0 then 'clearing_amount_mismatch'
+                  when batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.NotPosted}' then 'journal_not_posted'
+                  when batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}' then 'journal_stale'
+                  when batch_truth.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}' then 'journal_inconsistent'
+                  when batch_truth.journal_status <> '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}' then 'journal_not_posted'
+                  when batch_truth.missing_ap_open_item then 'missing_ap_open_item'
+                  when batch_truth.ap_open_item_not_open then 'ap_open_item_not_open'
+                  when batch_truth.fx_not_supported then 'fx_not_supported'
+                  when batch_truth.amount_exceeded then 'ap_open_item_amount_exceeded'
+                  else null
+                end,
+                open_item_clearing_refreshed_at = now()
+            from batch_truth
+            where batch.company_id = @company_id
+              and batch.id = batch_truth.settlement_batch_id;
             """);
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
@@ -799,6 +1126,512 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
     }
 
+    private static async Task<ReceiptGrIrApOpenItemClearingResult?> TryLoadExistingOpenItemClearingResultAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select id
+            from settlement_applications
+            where company_id = @company_id
+              and source_type = 'receipt_grir_ap_settlement'
+              and source_id = @settlement_batch_id
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        var existing = await command.ExecuteScalarAsync(cancellationToken);
+        if (existing is null || existing == DBNull.Value)
+        {
+            return null;
+        }
+
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        return await LoadOpenItemClearingResultAsync(
+            scope,
+            companyId,
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+    }
+
+    private static async Task<OpenItemClearingBatchHeader?> LoadOpenItemClearingBatchHeaderAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              status,
+              journal_status,
+              open_item_clearing_status
+            from {SettlementBatchesTableName}
+            where company_id = @company_id
+              and receipt_id = @receipt_id
+              and id = @settlement_batch_id
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new OpenItemClearingBatchHeader(
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetString(reader.GetOrdinal("journal_status")),
+                reader.GetString(reader.GetOrdinal("open_item_clearing_status")))
+            : null;
+    }
+
+    private static async Task<IReadOnlyList<OpenItemClearingAllocation>> LoadOpenItemClearingAllocationsAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              batch_line.ap_open_item_id,
+              oi.vendor_id,
+              oi.document_currency_code,
+              oi.base_currency_code,
+              oi.open_amount_tx,
+              oi.open_amount_base,
+              oi.status,
+              sum(batch_line.settled_amount_base)::numeric(20,6) as amount_base
+            from {SettlementBatchLinesTableName} batch_line
+            join ap_open_items oi
+              on oi.company_id = batch_line.company_id
+             and oi.id = batch_line.ap_open_item_id
+            where batch_line.company_id = @company_id
+              and batch_line.settlement_batch_id = @settlement_batch_id
+            group by
+              batch_line.ap_open_item_id,
+              oi.vendor_id,
+              oi.document_currency_code,
+              oi.base_currency_code,
+              oi.open_amount_tx,
+              oi.open_amount_base,
+              oi.status
+            order by batch_line.ap_open_item_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        var allocations = new List<OpenItemClearingAllocation>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            allocations.Add(new OpenItemClearingAllocation(
+                reader.GetGuid(reader.GetOrdinal("ap_open_item_id")),
+                reader.GetGuid(reader.GetOrdinal("vendor_id")),
+                reader.GetString(reader.GetOrdinal("document_currency_code")),
+                reader.GetString(reader.GetOrdinal("base_currency_code")),
+                Round6(reader.GetDecimal(reader.GetOrdinal("open_amount_tx"))),
+                Round6(reader.GetDecimal(reader.GetOrdinal("open_amount_base"))),
+                reader.GetString(reader.GetOrdinal("status")),
+                Round6(reader.GetDecimal(reader.GetOrdinal("amount_base")))));
+        }
+
+        return allocations;
+    }
+
+    private static async Task ApplyOpenItemClearingAllocationAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        Guid settlementBatchId,
+        OpenItemClearingAllocation allocation,
+        CancellationToken cancellationToken)
+    {
+        if (allocation.Status is not ("open" or "partially_applied"))
+        {
+            throw new InvalidOperationException("AP open item is not open for GR/IR settlement clearing.");
+        }
+
+        if (!string.Equals(allocation.DocumentCurrencyCode, allocation.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("GR/IR AP open item clearing does not yet support foreign-currency open items.");
+        }
+
+        if (allocation.AmountBase > allocation.OpenAmountBase || allocation.AmountBase > allocation.OpenAmountTx)
+        {
+            throw new InvalidOperationException("GR/IR AP open item clearing amount exceeds the remaining AP open item balance.");
+        }
+
+        var nextOpenAmountTx = Round6(allocation.OpenAmountTx - allocation.AmountBase);
+        var nextOpenAmountBase = Round6(allocation.OpenAmountBase - allocation.AmountBase);
+        var nextStatus = nextOpenAmountTx == 0m && nextOpenAmountBase == 0m
+            ? "closed"
+            : "partially_applied";
+
+        await using (var insertCommand = scope.CreateCommand(
+                         """
+                         insert into settlement_applications (
+                           id,
+                           company_id,
+                           application_type,
+                           source_type,
+                           source_id,
+                           target_open_item_type,
+                           target_open_item_id,
+                           applied_amount_tx,
+                           applied_amount_base,
+                           settlement_fx_rate,
+                           realized_fx_amount,
+                           created_at,
+                           created_by_user_id
+                         )
+                         values (
+                           gen_random_uuid(),
+                           @company_id,
+                           'receipt_grir_ap_settlement',
+                           'receipt_grir_ap_settlement',
+                           @settlement_batch_id,
+                           'ap_open_item',
+                           @ap_open_item_id,
+                           @applied_amount_tx,
+                           @applied_amount_base,
+                           null,
+                           null,
+                           now(),
+                           @created_by_user_id
+                         );
+                         """))
+        {
+            insertCommand.Parameters.AddWithValue("company_id", companyId);
+            insertCommand.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+            insertCommand.Parameters.AddWithValue("ap_open_item_id", allocation.ApOpenItemId);
+            insertCommand.Parameters.AddWithValue("applied_amount_tx", allocation.AmountBase);
+            insertCommand.Parameters.AddWithValue("applied_amount_base", allocation.AmountBase);
+            insertCommand.Parameters.AddWithValue("created_by_user_id", userId);
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var updateCommand = scope.CreateCommand(
+            """
+            update ap_open_items
+            set open_amount_tx = @open_amount_tx,
+                open_amount_base = @open_amount_base,
+                status = @status,
+                updated_at = now()
+            where company_id = @company_id
+              and id = @ap_open_item_id
+              and open_amount_tx >= @applied_amount_tx
+              and open_amount_base >= @applied_amount_base
+              and status in ('open', 'partially_applied');
+            """);
+        updateCommand.Parameters.AddWithValue("open_amount_tx", nextOpenAmountTx);
+        updateCommand.Parameters.AddWithValue("open_amount_base", nextOpenAmountBase);
+        updateCommand.Parameters.AddWithValue("status", nextStatus);
+        updateCommand.Parameters.AddWithValue("company_id", companyId);
+        updateCommand.Parameters.AddWithValue("ap_open_item_id", allocation.ApOpenItemId);
+        updateCommand.Parameters.AddWithValue("applied_amount_tx", allocation.AmountBase);
+        updateCommand.Parameters.AddWithValue("applied_amount_base", allocation.AmountBase);
+        if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("AP open item balance changed before GR/IR settlement clearing could be recorded.");
+        }
+    }
+
+    private static async Task MarkOpenItemClearingBatchClearedAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            update {SettlementBatchesTableName}
+            set open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared}',
+                open_item_clearing_blocked_reason_code = null,
+                open_item_cleared_by_user_id = coalesce(open_item_cleared_by_user_id, @cleared_by_user_id),
+                open_item_cleared_at = coalesce(open_item_cleared_at, now()),
+                open_item_clearing_refreshed_at = now()
+            where company_id = @company_id
+              and id = @settlement_batch_id
+              and open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.NotCleared}';
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+        command.Parameters.AddWithValue("cleared_by_user_id", userId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("GR/IR settlement batch AP open-item clearing state changed before clearing could complete.");
+        }
+    }
+
+    private static async Task<ReceiptGrIrApOpenItemClearingResult> LoadOpenItemClearingResultAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              batch.open_item_clearing_status,
+              count(sa.id)::int as application_count,
+              coalesce(sum(sa.applied_amount_tx), 0)::numeric(20,6) as cleared_amount_tx,
+              coalesce(sum(sa.applied_amount_base), 0)::numeric(20,6) as cleared_amount_base
+            from receipt_grir_ap_settlement_batches batch
+            left join settlement_applications sa
+              on sa.company_id = batch.company_id
+             and sa.source_type = 'receipt_grir_ap_settlement'
+             and sa.source_id = batch.id
+            where batch.company_id = @company_id
+              and batch.receipt_id = @receipt_id
+              and batch.id = @settlement_batch_id
+            group by batch.open_item_clearing_status;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("GR/IR settlement batch was not found for AP open-item clearing result.");
+        }
+
+        var clearingStatus = reader.GetString(reader.GetOrdinal("open_item_clearing_status"));
+        var applicationCount = reader.GetInt32(reader.GetOrdinal("application_count"));
+        var clearedAmountTx = Round6(reader.GetDecimal(reader.GetOrdinal("cleared_amount_tx")));
+        var clearedAmountBase = Round6(reader.GetDecimal(reader.GetOrdinal("cleared_amount_base")));
+        await reader.DisposeAsync();
+
+        var summary = await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+
+        return new ReceiptGrIrApOpenItemClearingResult(
+            receiptDocumentId,
+            settlementBatchId,
+            clearingStatus,
+            applicationCount,
+            clearedAmountTx,
+            clearedAmountBase,
+            summary);
+    }
+
+    private static async Task<ReceiptGrIrApOpenItemClearingReversalResult?> TryLoadExistingOpenItemClearingReversalResultAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select open_item_clearing_status
+            from {SettlementBatchesTableName}
+            where company_id = @company_id
+              and receipt_id = @receipt_id
+              and id = @settlement_batch_id
+              and open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}'
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        var existing = await command.ExecuteScalarAsync(cancellationToken);
+        return existing is null || existing == DBNull.Value
+            ? null
+            : await LoadOpenItemClearingReversalResultAsync(
+                scope,
+                companyId,
+                receiptDocumentId,
+                settlementBatchId,
+                cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<OpenItemClearingApplication>> LoadOpenItemClearingApplicationsAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              target_open_item_id,
+              applied_amount_tx,
+              applied_amount_base
+            from settlement_applications
+            where company_id = @company_id
+              and source_type = 'receipt_grir_ap_settlement'
+              and source_id = @settlement_batch_id
+              and target_open_item_type = 'ap_open_item'
+            order by created_at desc, id desc;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        var applications = new List<OpenItemClearingApplication>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            applications.Add(new OpenItemClearingApplication(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("target_open_item_id")),
+                Round6(reader.GetDecimal(reader.GetOrdinal("applied_amount_tx"))),
+                Round6(reader.GetDecimal(reader.GetOrdinal("applied_amount_base")))));
+        }
+
+        return applications;
+    }
+
+    private static async Task ReverseOpenItemClearingApplicationAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        OpenItemClearingApplication application,
+        CancellationToken cancellationToken)
+    {
+        await using var updateCommand = scope.CreateCommand(
+            """
+            update ap_open_items
+            set open_amount_tx = least(original_amount_tx, open_amount_tx + @applied_amount_tx),
+                open_amount_base = least(original_amount_base, open_amount_base + @applied_amount_base),
+                status = case
+                    when least(original_amount_tx, open_amount_tx + @applied_amount_tx) <= 0 then 'closed'
+                    when least(original_amount_tx, open_amount_tx + @applied_amount_tx) >= original_amount_tx then 'open'
+                    else 'partially_applied'
+                end,
+                updated_at = now()
+            where company_id = @company_id
+              and id = @ap_open_item_id
+              and status <> 'voided';
+            """);
+        updateCommand.Parameters.AddWithValue("company_id", companyId);
+        updateCommand.Parameters.AddWithValue("ap_open_item_id", application.ApOpenItemId);
+        updateCommand.Parameters.AddWithValue("applied_amount_tx", application.AppliedAmountTx);
+        updateCommand.Parameters.AddWithValue("applied_amount_base", application.AppliedAmountBase);
+        if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("AP open item could not be restored for GR/IR settlement clearing reversal.");
+        }
+    }
+
+    private static async Task DeleteOpenItemClearingApplicationsAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            delete from settlement_applications
+            where company_id = @company_id
+              and source_type = 'receipt_grir_ap_settlement'
+              and source_id = @settlement_batch_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task MarkOpenItemClearingBatchReversedAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        Guid settlementBatchId,
+        int applicationCount,
+        decimal restoredAmountTx,
+        decimal restoredAmountBase,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            update {SettlementBatchesTableName}
+            set open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}',
+                open_item_clearing_blocked_reason_code = null,
+                open_item_reversed_by_user_id = @reversed_by_user_id,
+                open_item_reversed_at = now(),
+                open_item_reversed_application_count = @application_count,
+                open_item_reversed_amount_tx = @restored_amount_tx,
+                open_item_reversed_amount_base = @restored_amount_base,
+                open_item_clearing_refreshed_at = now()
+            where company_id = @company_id
+              and id = @settlement_batch_id
+              and open_item_clearing_status in (
+                '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingStale}',
+                '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingInconsistent}'
+              );
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+        command.Parameters.AddWithValue("reversed_by_user_id", userId);
+        command.Parameters.AddWithValue("application_count", applicationCount);
+        command.Parameters.AddWithValue("restored_amount_tx", restoredAmountTx);
+        command.Parameters.AddWithValue("restored_amount_base", restoredAmountBase);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("GR/IR settlement batch AP open-item clearing state changed before reversal could complete.");
+        }
+    }
+
+    private static async Task<ReceiptGrIrApOpenItemClearingReversalResult> LoadOpenItemClearingReversalResultAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              open_item_clearing_status,
+              coalesce(open_item_reversed_application_count, 0)::int as reversed_application_count,
+              coalesce(open_item_reversed_amount_tx, 0)::numeric(20,6) as restored_amount_tx,
+              coalesce(open_item_reversed_amount_base, 0)::numeric(20,6) as restored_amount_base
+            from {SettlementBatchesTableName}
+            where company_id = @company_id
+              and receipt_id = @receipt_id
+              and id = @settlement_batch_id
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("GR/IR settlement batch was not found for AP open-item clearing reversal result.");
+        }
+
+        var clearingStatus = reader.GetString(reader.GetOrdinal("open_item_clearing_status"));
+        var applicationCount = reader.GetInt32(reader.GetOrdinal("reversed_application_count"));
+        var restoredAmountTx = Round6(reader.GetDecimal(reader.GetOrdinal("restored_amount_tx")));
+        var restoredAmountBase = Round6(reader.GetDecimal(reader.GetOrdinal("restored_amount_base")));
+        await reader.DisposeAsync();
+
+        var summary = await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+
+        return new ReceiptGrIrApOpenItemClearingReversalResult(
+            receiptDocumentId,
+            settlementBatchId,
+            clearingStatus,
+            applicationCount,
+            restoredAmountTx,
+            restoredAmountBase,
+            summary);
+    }
+
     private static async Task<ReceiptGrIrApSettlementSummary?> LoadReceiptSettlementSummaryAsync(
         PostgresCommandScope scope,
         Guid companyId,
@@ -843,6 +1676,12 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             var journalPostedBatchCount = reader.GetInt32(reader.GetOrdinal("journal_posted_batch_count"));
             var journalStaleBatchCount = reader.GetInt32(reader.GetOrdinal("journal_stale_batch_count"));
             var journalInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("journal_inconsistent_batch_count"));
+            var openItemNotClearedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_not_cleared_batch_count"));
+            var openItemClearedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_cleared_batch_count"));
+            var openItemReversedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_reversed_batch_count"));
+            var openItemBlockedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_blocked_batch_count"));
+            var openItemStaleBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_stale_batch_count"));
+            var openItemInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_inconsistent_batch_count"));
             summaries[receiptDocumentId] = new ReceiptGrIrApSettlementSummary(
                 receiptDocumentId,
                 ReceiptGrIrApSettlementStatusPolicy.ResolveSummaryStatus(
@@ -879,6 +1718,26 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 reader.IsDBNull(reader.GetOrdinal("last_journal_refreshed_at"))
                     ? null
                     : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_journal_refreshed_at")),
+                openItemNotClearedBatchCount,
+                openItemClearedBatchCount,
+                openItemReversedBatchCount,
+                openItemBlockedBatchCount,
+                openItemStaleBatchCount,
+                openItemInconsistentBatchCount,
+                ReceiptGrIrApOpenItemClearingStatusPolicy.ResolveSummaryStatus(
+                    settlementBatchCount,
+                    openItemNotClearedBatchCount,
+                    openItemClearedBatchCount,
+                    openItemReversedBatchCount,
+                    openItemBlockedBatchCount,
+                    openItemStaleBatchCount,
+                    openItemInconsistentBatchCount),
+                reader.IsDBNull(reader.GetOrdinal("last_open_item_cleared_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_open_item_cleared_at")),
+                reader.IsDBNull(reader.GetOrdinal("last_open_item_reversed_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_open_item_reversed_at")),
                 reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                     ? null
                     : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
@@ -925,6 +1784,12 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         var journalPostedBatchCount = reader.GetInt32(reader.GetOrdinal("journal_posted_batch_count"));
         var journalStaleBatchCount = reader.GetInt32(reader.GetOrdinal("journal_stale_batch_count"));
         var journalInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("journal_inconsistent_batch_count"));
+        var openItemNotClearedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_not_cleared_batch_count"));
+        var openItemClearedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_cleared_batch_count"));
+        var openItemReversedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_reversed_batch_count"));
+        var openItemBlockedBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_blocked_batch_count"));
+        var openItemStaleBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_stale_batch_count"));
+        var openItemInconsistentBatchCount = reader.GetInt32(reader.GetOrdinal("open_item_inconsistent_batch_count"));
 
         return new BillGrIrApSettlementSummary(
             billDocumentId,
@@ -962,6 +1827,26 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             reader.IsDBNull(reader.GetOrdinal("last_journal_refreshed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_journal_refreshed_at")),
+            openItemNotClearedBatchCount,
+            openItemClearedBatchCount,
+            openItemReversedBatchCount,
+            openItemBlockedBatchCount,
+            openItemStaleBatchCount,
+            openItemInconsistentBatchCount,
+            ReceiptGrIrApOpenItemClearingStatusPolicy.ResolveSummaryStatus(
+                settlementBatchCount,
+                openItemNotClearedBatchCount,
+                openItemClearedBatchCount,
+                openItemReversedBatchCount,
+                openItemBlockedBatchCount,
+                openItemStaleBatchCount,
+                openItemInconsistentBatchCount),
+            reader.IsDBNull(reader.GetOrdinal("last_open_item_cleared_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_open_item_cleared_at")),
+            reader.IsDBNull(reader.GetOrdinal("last_open_item_reversed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_open_item_reversed_at")),
             reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
@@ -1013,7 +1898,15 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.Posted}')::int as journal_posted_batch_count,
             count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale}')::int as journal_stale_batch_count,
             count(distinct batch.id) filter (where batch.journal_status = '{ReceiptGrIrApSettlementJournalStatusPolicy.JournalInconsistent}')::int as journal_inconsistent_batch_count,
-            max(batch.journal_refreshed_at) as last_journal_refreshed_at
+            count(distinct batch.id) filter (where batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.NotCleared}')::int as open_item_not_cleared_batch_count,
+            count(distinct batch.id) filter (where batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared}')::int as open_item_cleared_batch_count,
+            count(distinct batch.id) filter (where batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed}')::int as open_item_reversed_batch_count,
+            count(distinct batch.id) filter (where batch.open_item_clearing_status like 'blocked_%')::int as open_item_blocked_batch_count,
+            count(distinct batch.id) filter (where batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingStale}')::int as open_item_stale_batch_count,
+            count(distinct batch.id) filter (where batch.open_item_clearing_status = '{ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingInconsistent}')::int as open_item_inconsistent_batch_count,
+            max(batch.journal_refreshed_at) as last_journal_refreshed_at,
+            max(batch.open_item_cleared_at) as last_open_item_cleared_at,
+            max(batch.open_item_reversed_at) as last_open_item_reversed_at
           from {SettlementLinesTableName} line
           join {SettlementBatchLinesTableName} batch_line
             on batch_line.company_id = line.company_id
@@ -1046,7 +1939,15 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           coalesce(bg.journal_posted_batch_count, 0) as journal_posted_batch_count,
           coalesce(bg.journal_stale_batch_count, 0) as journal_stale_batch_count,
           coalesce(bg.journal_inconsistent_batch_count, 0) as journal_inconsistent_batch_count,
+          coalesce(bg.open_item_not_cleared_batch_count, 0) as open_item_not_cleared_batch_count,
+          coalesce(bg.open_item_cleared_batch_count, 0) as open_item_cleared_batch_count,
+          coalesce(bg.open_item_reversed_batch_count, 0) as open_item_reversed_batch_count,
+          coalesce(bg.open_item_blocked_batch_count, 0) as open_item_blocked_batch_count,
+          coalesce(bg.open_item_stale_batch_count, 0) as open_item_stale_batch_count,
+          coalesce(bg.open_item_inconsistent_batch_count, 0) as open_item_inconsistent_batch_count,
           bg.last_journal_refreshed_at,
+          bg.last_open_item_cleared_at,
+          bg.last_open_item_reversed_at,
           sg.last_refreshed_at,
           sg.last_settled_at
         from requested_documents rd
@@ -1132,6 +2033,36 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             alter table {SettlementBatchesTableName}
               add column if not exists journal_blocked_reason_code text null;
 
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_clearing_status text not null default 'not_cleared';
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_clearing_blocked_reason_code text null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_cleared_by_user_id uuid null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_cleared_at timestamptz null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_clearing_refreshed_at timestamptz null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_reversed_by_user_id uuid null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_reversed_at timestamptz null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_reversed_application_count integer not null default 0;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_reversed_amount_tx numeric(20,6) not null default 0;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists open_item_reversed_amount_base numeric(20,6) not null default 0;
+
             create unique index if not exists ux_receipt_grir_ap_settlement_batches_key
               on {SettlementBatchesTableName} (company_id, idempotency_key);
 
@@ -1195,6 +2126,15 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             0,
             ReceiptGrIrApSettlementJournalStatusPolicy.NotApplicable,
             null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApOpenItemClearingStatusPolicy.NotApplicable,
+            null,
+            null,
             null,
             null);
 
@@ -1223,6 +2163,15 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             0,
             ReceiptGrIrApSettlementJournalStatusPolicy.NotApplicable,
             null,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApOpenItemClearingStatusPolicy.NotApplicable,
+            null,
+            null,
             null,
             null);
 
@@ -1247,4 +2196,25 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         Guid? ApOpenItemId,
         decimal SettledQuantity,
         decimal SettledAmountBase);
+
+    private sealed record OpenItemClearingBatchHeader(
+        string BatchStatus,
+        string JournalStatus,
+        string OpenItemClearingStatus);
+
+    private sealed record OpenItemClearingAllocation(
+        Guid ApOpenItemId,
+        Guid VendorId,
+        string DocumentCurrencyCode,
+        string BaseCurrencyCode,
+        decimal OpenAmountTx,
+        decimal OpenAmountBase,
+        string Status,
+        decimal AmountBase);
+
+    private sealed record OpenItemClearingApplication(
+        Guid ApplicationId,
+        Guid ApOpenItemId,
+        decimal AppliedAmountTx,
+        decimal AppliedAmountBase);
 }

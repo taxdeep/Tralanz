@@ -721,6 +721,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 postingEngine,
                 new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementClearingHandler = new ClearReceiptGrIrSettlementOpenItemCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
 
             var companyId = Guid.NewGuid();
             var userId = Guid.NewGuid();
@@ -849,6 +852,14 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                         settlement.SettlementBatchId,
                         IdempotencyKey: "h16-journal-after-void"),
                     CancellationToken.None));
+            var staleClearing = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                settlementClearingHandler.HandleAsync(
+                    new ClearReceiptGrIrSettlementOpenItemCommand(
+                        new(companyId),
+                        new(userId),
+                        receiptId,
+                        settlement.SettlementBatchId),
+                    CancellationToken.None));
 
             Assert.Equal(firstPost.JournalEntryId, retryPost.JournalEntryId);
             Assert.Equal(50m, journalTotals.TotalDebit);
@@ -862,6 +873,236 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             Assert.Equal(ReceiptGrIrApSettlementJournalStatusPolicy.JournalStale, staleSettlementBatchStatus.JournalStatus);
             Assert.Equal(firstPost.JournalEntryId, staleSettlementBatchStatus.JournalEntryId);
             Assert.Contains("stale", stale.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("journal status 'journal_stale'", staleClearing.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task ClearReceiptGrIrSettlementOpenItemsAsync_ConsumesPostedReconciledJournalAndIsIdempotent()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h18_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var inventoryConnectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
+            var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
+            var executionContextAccessor = new PostgresExecutionContextAccessor();
+            var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
+            var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var postingEngine = new DefaultPostingEngine(
+                new DefaultPostingValidator(),
+                new NullTaxEngine(),
+                new IdentityFxResolutionService(),
+                new AccountingPostingFragmentBuilder(),
+                new DefaultJournalAggregator(),
+                new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor));
+            var grIrPostingHandler = new PostReceiptGrIrCommandHandler(
+                grIrBridgeStore,
+                clearingPolicyRepository,
+                new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                postingEngine,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementPostingHandler = new PostReceiptGrIrSettlementJournalCommandHandler(
+                new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                postingEngine,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementClearingHandler = new ClearReceiptGrIrSettlementOpenItemCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementClearingReversalHandler = new ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var receiptId = Guid.NewGuid();
+            var billId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+            var warehouseId = Guid.NewGuid();
+            var inventoryDocumentId = Guid.NewGuid();
+            var inventoryDocumentLineId = Guid.NewGuid();
+            var ledgerEntryId = Guid.NewGuid();
+            var inventoryAssetAccountId = Guid.NewGuid();
+            var grIrClearingAccountId = Guid.NewGuid();
+            var billOffsetAccountId = Guid.NewGuid();
+
+            await SeedCompanyAsync(schemaConnectionString, companyId);
+            await SeedPostingFoundationAsync(schemaConnectionString);
+            await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
+            await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
+            await SeedAccountAsync(schemaConnectionString, companyId, billOffsetAccountId, "5100", "Bill Goods Offset", "expense");
+            await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
+                new(companyId),
+                new(userId),
+                grIrClearingAccountId,
+                CancellationToken.None);
+            await foundationStore.EnsureCompanyFoundationAsync(
+                new InventoryFoundationEnsureRequest(
+                    companyId,
+                    userId,
+                    InventoryCostingMethod.Fifo,
+                    NegativeStockAllowed: false,
+                    RequireWriteOffApproval: true),
+                CancellationToken.None);
+            await SeedReceiptValuationFixtureAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId,
+                ledgerEntryId);
+            await SeedBillLineAsync(schemaConnectionString, companyId, billId, billOffsetAccountId);
+            await SeedApOpenItemAsync(schemaConnectionString, companyId, billId);
+            await SetDefaultInventoryAssetAccountAsync(
+                schemaConnectionString,
+                companyId,
+                itemId,
+                inventoryAssetAccountId);
+
+            _ = await activationStore.GetReceiptActivationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            _ = await valuationStore.GetReceiptValuationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            await SeedActivationAndValuationRowsAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId);
+            _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrPostingHandler.HandleAsync(
+                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                CancellationToken.None);
+            _ = await settlementStore.RefreshReceiptSettlementControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var settlement = await settlementHandler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    SettlementAmountBase: null,
+                    IdempotencyKey: "h18-settlement"),
+                CancellationToken.None);
+            var settlementPost = await settlementPostingHandler.HandleAsync(
+                new PostReceiptGrIrSettlementJournalCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId,
+                    IdempotencyKey: "h18-journal"),
+                CancellationToken.None);
+
+            var firstClear = await settlementClearingHandler.HandleAsync(
+                new ClearReceiptGrIrSettlementOpenItemCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId),
+                CancellationToken.None);
+            var retryClear = await settlementClearingHandler.HandleAsync(
+                new ClearReceiptGrIrSettlementOpenItemCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId),
+                CancellationToken.None);
+            var apOpenItem = await GetApOpenItemStateByBillAsync(schemaConnectionString, companyId, billId);
+            var applicationCount = await CountRowsAsync(schemaConnectionString, "settlement_applications");
+
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared, firstClear.ClearingStatus);
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared, retryClear.ClearingStatus);
+            Assert.Equal(1, firstClear.ApplicationCount);
+            Assert.Equal(1, retryClear.ApplicationCount);
+            Assert.Equal(50m, firstClear.ClearedAmountBase);
+            Assert.Equal(50m, retryClear.ClearedAmountBase);
+            Assert.Equal(1, applicationCount);
+            Assert.Equal(0m, apOpenItem.OpenAmountTx);
+            Assert.Equal(0m, apOpenItem.OpenAmountBase);
+            Assert.Equal("closed", apOpenItem.Status);
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Cleared, firstClear.Summary.OpenItemClearingStatus);
+            Assert.Equal(1, firstClear.Summary.OpenItemClearedBatchCount);
+
+            await SetJournalStatusAsync(schemaConnectionString, settlementPost.JournalEntryId, "void");
+            var staleSummary = await settlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var staleClear = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                settlementClearingHandler.HandleAsync(
+                    new ClearReceiptGrIrSettlementOpenItemCommand(
+                        new(companyId),
+                        new(userId),
+                        receiptId,
+                        settlement.SettlementBatchId),
+                    CancellationToken.None));
+
+            var firstReverse = await settlementClearingReversalHandler.HandleAsync(
+                new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId),
+                CancellationToken.None);
+            var retryReverse = await settlementClearingReversalHandler.HandleAsync(
+                new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId),
+                CancellationToken.None);
+            var restoredOpenItem = await GetApOpenItemStateByBillAsync(schemaConnectionString, companyId, billId);
+            var applicationCountAfterReverse = await CountRowsAsync(schemaConnectionString, "settlement_applications");
+
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.ClearingStale, staleSummary.OpenItemClearingStatus);
+            Assert.Equal(1, staleSummary.OpenItemStaleBatchCount);
+            Assert.Contains("not eligible for clearing", staleClear.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed, firstReverse.ClearingStatus);
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed, retryReverse.ClearingStatus);
+            Assert.Equal(1, firstReverse.ReversedApplicationCount);
+            Assert.Equal(1, retryReverse.ReversedApplicationCount);
+            Assert.Equal(50m, firstReverse.RestoredAmountBase);
+            Assert.Equal(50m, retryReverse.RestoredAmountBase);
+            Assert.Equal(0, applicationCountAfterReverse);
+            Assert.Equal(50m, restoredOpenItem.OpenAmountTx);
+            Assert.Equal(50m, restoredOpenItem.OpenAmountBase);
+            Assert.Equal("open", restoredOpenItem.Status);
+            Assert.Equal(ReceiptGrIrApOpenItemClearingStatusPolicy.Reversed, firstReverse.Summary.OpenItemClearingStatus);
+            Assert.Equal(1, firstReverse.Summary.OpenItemReversedBatchCount);
         }
         finally
         {
@@ -1046,6 +1287,22 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               due_date date null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now()
+            );
+
+            create table settlement_applications (
+              id uuid primary key,
+              company_id uuid not null references companies(id) on delete cascade,
+              application_type text not null,
+              source_type text not null,
+              source_id uuid not null,
+              target_open_item_type text not null,
+              target_open_item_id uuid not null,
+              applied_amount_tx numeric(20, 6) not null,
+              applied_amount_base numeric(20, 6) not null,
+              settlement_fx_rate numeric(20, 10) null,
+              realized_fx_amount numeric(20, 6) null,
+              created_at timestamptz not null default now(),
+              created_by_user_id uuid null
             );
             """;
         await command.ExecuteNonQueryAsync();
@@ -1623,6 +1880,38 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             reader.IsDBNull(reader.GetOrdinal("journal_entry_id"))
                 ? null
                 : reader.GetGuid(reader.GetOrdinal("journal_entry_id")));
+    }
+
+    private static async Task<(decimal OpenAmountTx, decimal OpenAmountBase, string Status)> GetApOpenItemStateByBillAsync(
+        string connectionString,
+        Guid companyId,
+        Guid billId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select open_amount_tx, open_amount_base, status
+            from ap_open_items
+            where company_id = @company_id
+              and source_type = 'bill'
+              and source_id = @bill_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("bill_id", billId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException("AP open item was not found.");
+        }
+
+        return (
+            reader.GetFieldValue<decimal>(reader.GetOrdinal("open_amount_tx")),
+            reader.GetFieldValue<decimal>(reader.GetOrdinal("open_amount_base")),
+            reader.GetString(reader.GetOrdinal("status")));
     }
 
     private static async Task SetJournalStatusAsync(

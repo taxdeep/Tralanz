@@ -112,6 +112,8 @@ builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
 builder.Services.AddScoped<PostReceiptGrIrSettlementJournalCommandHandler>();
+builder.Services.AddScoped<ClearReceiptGrIrSettlementOpenItemCommandHandler>();
+builder.Services.AddScoped<ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler>();
 builder.Services.AddScoped<PostVendorCreditCommandHandler>();
 builder.Services.AddScoped<PrepareReceivePaymentDraftCommandHandler>();
 builder.Services.AddScoped<PostReceivePaymentCommandHandler>();
@@ -3900,6 +3902,15 @@ accounting.MapGet(
                     grIrSettlementSummary.JournalInconsistentBatchCount,
                     grIrSettlementSummary.JournalReconciliationStatus,
                     grIrSettlementSummary.LastJournalRefreshedAt,
+                    grIrSettlementSummary.OpenItemNotClearedBatchCount,
+                    grIrSettlementSummary.OpenItemClearedBatchCount,
+                    grIrSettlementSummary.OpenItemReversedBatchCount,
+                    grIrSettlementSummary.OpenItemBlockedBatchCount,
+                    grIrSettlementSummary.OpenItemStaleBatchCount,
+                    grIrSettlementSummary.OpenItemInconsistentBatchCount,
+                    grIrSettlementSummary.OpenItemClearingStatus,
+                    grIrSettlementSummary.LastOpenItemClearedAt,
+                    grIrSettlementSummary.LastOpenItemReversedAt,
                     grIrSettlementSummary.LastRefreshedAt,
                     grIrSettlementSummary.LastSettledAt
                 },
@@ -4178,6 +4189,15 @@ accounting.MapGet(
                     grIrSettlementSummary.JournalInconsistentBatchCount,
                     grIrSettlementSummary.JournalReconciliationStatus,
                     grIrSettlementSummary.LastJournalRefreshedAt,
+                    grIrSettlementSummary.OpenItemNotClearedBatchCount,
+                    grIrSettlementSummary.OpenItemClearedBatchCount,
+                    grIrSettlementSummary.OpenItemReversedBatchCount,
+                    grIrSettlementSummary.OpenItemBlockedBatchCount,
+                    grIrSettlementSummary.OpenItemStaleBatchCount,
+                    grIrSettlementSummary.OpenItemInconsistentBatchCount,
+                    grIrSettlementSummary.OpenItemClearingStatus,
+                    grIrSettlementSummary.LastOpenItemClearedAt,
+                    grIrSettlementSummary.LastOpenItemReversedAt,
                     grIrSettlementSummary.LastRefreshedAt,
                     grIrSettlementSummary.LastSettledAt
                 }
@@ -4401,6 +4421,15 @@ accounting.MapGet(
                         grIrSettlementSummary.JournalInconsistentBatchCount,
                         grIrSettlementSummary.JournalReconciliationStatus,
                         grIrSettlementSummary.LastJournalRefreshedAt,
+                        grIrSettlementSummary.OpenItemNotClearedBatchCount,
+                        grIrSettlementSummary.OpenItemClearedBatchCount,
+                        grIrSettlementSummary.OpenItemReversedBatchCount,
+                        grIrSettlementSummary.OpenItemBlockedBatchCount,
+                        grIrSettlementSummary.OpenItemStaleBatchCount,
+                        grIrSettlementSummary.OpenItemInconsistentBatchCount,
+                        grIrSettlementSummary.OpenItemClearingStatus,
+                        grIrSettlementSummary.LastOpenItemClearedAt,
+                        grIrSettlementSummary.LastOpenItemReversedAt,
                         grIrSettlementSummary.LastRefreshedAt,
                         grIrSettlementSummary.LastSettledAt
                     },
@@ -4684,6 +4713,78 @@ accounting.MapPost(
                     documentId,
                     settlementBatchId,
                     request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/{settlementBatchId:guid}/ap-open-item/clear",
+    async (
+        Guid documentId,
+        Guid settlementBatchId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ClearReceiptGrIrSettlementOpenItemCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "clear");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new ClearReceiptGrIrSettlementOpenItemCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    settlementBatchId),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/{settlementBatchId:guid}/ap-open-item/reverse",
+    async (
+        Guid documentId,
+        Guid settlementBatchId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "reverse");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    settlementBatchId),
                 cancellationToken);
 
             return Results.Ok(result);

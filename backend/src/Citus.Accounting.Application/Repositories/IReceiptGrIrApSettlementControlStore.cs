@@ -37,6 +37,20 @@ public interface IReceiptGrIrApSettlementControlStore
         Guid receiptDocumentId,
         ReceiptGrIrApSettlementExecutionRequest request,
         CancellationToken cancellationToken);
+
+    Task<ReceiptGrIrApOpenItemClearingResult> ClearReceiptSettlementOpenItemsAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken);
+
+    Task<ReceiptGrIrApOpenItemClearingReversalResult> ReverseReceiptSettlementOpenItemClearingAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record ReceiptGrIrApSettlementSummary(
@@ -63,6 +77,15 @@ public sealed record ReceiptGrIrApSettlementSummary(
     int JournalInconsistentBatchCount,
     string JournalReconciliationStatus,
     DateTimeOffset? LastJournalRefreshedAt,
+    int OpenItemNotClearedBatchCount,
+    int OpenItemClearedBatchCount,
+    int OpenItemReversedBatchCount,
+    int OpenItemBlockedBatchCount,
+    int OpenItemStaleBatchCount,
+    int OpenItemInconsistentBatchCount,
+    string OpenItemClearingStatus,
+    DateTimeOffset? LastOpenItemClearedAt,
+    DateTimeOffset? LastOpenItemReversedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
 
@@ -90,6 +113,15 @@ public sealed record BillGrIrApSettlementSummary(
     int JournalInconsistentBatchCount,
     string JournalReconciliationStatus,
     DateTimeOffset? LastJournalRefreshedAt,
+    int OpenItemNotClearedBatchCount,
+    int OpenItemClearedBatchCount,
+    int OpenItemReversedBatchCount,
+    int OpenItemBlockedBatchCount,
+    int OpenItemStaleBatchCount,
+    int OpenItemInconsistentBatchCount,
+    string OpenItemClearingStatus,
+    DateTimeOffset? LastOpenItemClearedAt,
+    DateTimeOffset? LastOpenItemReversedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
 
@@ -105,6 +137,24 @@ public sealed record ReceiptGrIrApSettlementExecutionResult(
     decimal SettledQuantity,
     decimal SettledAmountBase,
     int SettlementLineCount,
+    ReceiptGrIrApSettlementSummary Summary);
+
+public sealed record ReceiptGrIrApOpenItemClearingResult(
+    Guid ReceiptDocumentId,
+    Guid SettlementBatchId,
+    string ClearingStatus,
+    int ApplicationCount,
+    decimal ClearedAmountTx,
+    decimal ClearedAmountBase,
+    ReceiptGrIrApSettlementSummary Summary);
+
+public sealed record ReceiptGrIrApOpenItemClearingReversalResult(
+    Guid ReceiptDocumentId,
+    Guid SettlementBatchId,
+    string ClearingStatus,
+    int ReversedApplicationCount,
+    decimal RestoredAmountTx,
+    decimal RestoredAmountBase,
     ReceiptGrIrApSettlementSummary Summary);
 
 public static class ReceiptGrIrApSettlementStatusPolicy
@@ -148,6 +198,78 @@ public static class ReceiptGrIrApSettlementStatusPolicy
         }
 
         return eligibleLineCount > 0 ? EligibleNotSettled : NotEligible;
+    }
+}
+
+public static class ReceiptGrIrApOpenItemClearingStatusPolicy
+{
+    public const string NotApplicable = "not_applicable";
+    public const string NotCleared = "not_cleared";
+    public const string Cleared = "cleared";
+    public const string Reversed = "reversed";
+    public const string PartiallyCleared = "partially_cleared";
+    public const string PartiallyReversed = "partially_reversed";
+    public const string Blocked = "blocked";
+    public const string BlockedJournalNotPosted = "blocked_journal_not_posted";
+    public const string BlockedJournalStale = "blocked_journal_stale";
+    public const string BlockedJournalInconsistent = "blocked_journal_inconsistent";
+    public const string BlockedMissingApOpenItem = "blocked_missing_ap_open_item";
+    public const string BlockedOpenItemNotOpen = "blocked_ap_open_item_not_open";
+    public const string BlockedAmountExceeded = "blocked_ap_open_item_amount_exceeded";
+    public const string BlockedFxNotSupported = "blocked_fx_not_supported";
+    public const string ClearingStale = "clearing_stale";
+    public const string ClearingInconsistent = "clearing_inconsistent";
+
+    public static string ResolveSummaryStatus(
+        int settlementBatchCount,
+        int openItemNotClearedBatchCount,
+        int openItemClearedBatchCount,
+        int openItemReversedBatchCount,
+        int openItemBlockedBatchCount,
+        int openItemStaleBatchCount,
+        int openItemInconsistentBatchCount)
+    {
+        if (settlementBatchCount <= 0)
+        {
+            return NotApplicable;
+        }
+
+        if (openItemInconsistentBatchCount > 0)
+        {
+            return ClearingInconsistent;
+        }
+
+        if (openItemStaleBatchCount > 0)
+        {
+            return ClearingStale;
+        }
+
+        if (openItemBlockedBatchCount > 0)
+        {
+            return Blocked;
+        }
+
+        if (openItemClearedBatchCount == settlementBatchCount)
+        {
+            return Cleared;
+        }
+
+        if (openItemReversedBatchCount == settlementBatchCount)
+        {
+            return Reversed;
+        }
+
+        if (openItemClearedBatchCount > 0)
+        {
+            return PartiallyCleared;
+        }
+
+        if (openItemReversedBatchCount > 0)
+        {
+            return PartiallyReversed;
+        }
+
+        return openItemNotClearedBatchCount > 0 ? NotCleared : NotApplicable;
     }
 }
 

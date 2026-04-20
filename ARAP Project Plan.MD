@@ -1015,3 +1015,70 @@ Still not included:
 Authority note:
 
 H.17 closes the lifecycle gap between H.16 settlement journal posting and future H.18 AP open item clearing. H.18 must consume only reconciled, posted settlement journal truth, not stale or inconsistent settlement batches.
+
+## Phase H.18 checkpoint
+
+H.18 introduces minimal AP open item clearing integration for posted GR/IR settlement batches.
+
+Boundary:
+
+- Clearing only consumes H.15 settlement batches whose H.16 journal is posted and H.17-reconciled.
+- It does not create PPV / variance.
+- It does not introduce PO truth.
+- It does not enable tracked receipt flows.
+- It does not expand into a Shell-wide AP settlement workbench.
+- It does not change receipt quantity, valuation, cost-layer, or GR/IR recognition ownership.
+
+What changed:
+
+- Settlement batches now carry AP open item clearing state:
+  - `not_cleared`
+  - `cleared`
+  - `reversed`
+  - `clearing_stale`
+  - `clearing_inconsistent`
+  - blocked stale / inconsistent / missing-open-item / amount-exceeded states
+- Receipt and Bill GR/IR settlement summaries expose AP open item clearing counts and status.
+- A minimal clearing endpoint exists:
+  - `POST /receipts/{id}/grir-settlement/{batchId}/ap-open-item/clear`
+- A minimal reversal endpoint exists:
+  - `POST /receipts/{id}/grir-settlement/{batchId}/ap-open-item/reverse`
+- Clearing inserts a `settlement_applications` row with source type `receipt_grir_ap_settlement`.
+- Clearing reduces the matched AP open item open amount and closes it when fully consumed.
+- Retry is idempotent because the settlement batch is the application source anchor.
+- `journal_stale` and `journal_inconsistent` batches are hard-blocked before AP open item truth changes.
+- If an already-cleared settlement journal later becomes stale or inconsistent, refresh marks clearing as `clearing_stale` / `clearing_inconsistent` instead of silently mutating AP truth.
+- Reversal is explicit, restores the AP open item from the persisted `settlement_applications` slice, deletes the stale application rows, and records reversed amount/count on the settlement batch.
+
+Still deferred:
+
+- settlement reversal documents beyond the minimal open-item restoration boundary
+- generic unapply logic for all settlement application sources
+- PPV / variance recognition
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- FX-aware GR/IR settlement clearing
+- Shell-wide settlement operations surface
+
+Authority note:
+
+H.18 is the subledger clearing boundary, not the full AP settlement universe. It consumes only posted, reconciled GR/IR settlement journal truth and records AP open item consumption without letting Bill retake physical receipt ownership.
+
+### Phase H.18.1 sidecar hardening
+
+H.18.1 wraps GR/IR AP open-item clearing and clearing reversal execution in explicit application command handlers backed by `IUnitOfWork`.
+
+What changed:
+
+- API endpoints no longer execute clear/reverse by calling the settlement store directly.
+- Clearing now goes through `ClearReceiptGrIrSettlementOpenItemCommandHandler`.
+- Clearing reversal now goes through `ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler`.
+- Integration coverage exercises the command-handler path so the tested execution surface matches the production API seam.
+
+Boundary:
+
+- No PPV / variance.
+- No PO truth.
+- No tracked receipt enablement.
+- No new AP settlement workbench.
+- No change to H.18 clearing/reversal semantics beyond making execution transactional.
