@@ -324,6 +324,17 @@ public sealed record PostReceiptGrIrBridgeHttpRequest(
     Guid? GrIrClearingAccountId,
     string? IdempotencyKey);
 
+public sealed record ExecuteReceiptGrIrSettlementHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    decimal? SettlementAmountBase,
+    string? IdempotencyKey);
+
+public sealed record PostReceiptGrIrSettlementJournalHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    string? IdempotencyKey);
+
 public sealed record SaveReceiptGrIrClearingAccountPolicyHttpRequest(
     Guid CompanyId,
     Guid UserId,

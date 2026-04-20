@@ -487,6 +487,17 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                                and id = @source_id
                                                and status = 'draft';
                                              """,
+            "receipt_grir_ap_settlement_posting" => """
+                                                     update receipt_grir_ap_settlement_batches
+                                                     set journal_status = 'posted',
+                                                         journal_posted_at = coalesce(journal_posted_at, @posted_at),
+                                                         journal_refreshed_at = now(),
+                                                         journal_blocked_reason_code = null
+                                                     where company_id = @company_id
+                                                       and id = @source_id
+                                                       and status = 'posted'
+                                                       and journal_status = 'not_posted';
+                                                     """,
             "ar_open_item_adjustment" or "ap_open_item_adjustment" => """
                                                                       insert into audit_logs (
                                                                         id,

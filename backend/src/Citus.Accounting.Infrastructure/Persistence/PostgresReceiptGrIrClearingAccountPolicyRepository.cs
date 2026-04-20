@@ -34,6 +34,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
               on account.company_id = policy.company_id
              and account.id = policy.grir_clearing_account_id
              and account.is_active = true
+             and account.root_type = 'liability'
             where policy.company_id = @company_id
             limit 1;
             """);
@@ -102,6 +103,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
                 on account.company_id = company.id
                and account.id = @account_id
                and account.is_active = true
+               and account.root_type = 'liability'
               where company.id = @company_id
                 and company.status = 'active'
             );
@@ -112,7 +114,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
         if (await command.ExecuteScalarAsync(cancellationToken) is not true)
         {
             throw new InvalidOperationException(
-                "Default GR/IR clearing account must be an active account in the active company.");
+                "Default GR/IR clearing account must be an active liability account in the active company.");
         }
     }
 

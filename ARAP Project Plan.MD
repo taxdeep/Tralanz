@@ -876,3 +876,101 @@ Still deferred:
 - PO truth
 - tracked receipt enablement
 - Shell-wide GR/IR operations workspace
+
+## Phase H.14 checkpoint
+
+H.14 starts the GR/IR against AP bill settlement control lane as read/control truth only.
+
+What changed:
+
+- A persisted `receipt_grir_ap_settlement_lines` lane now represents receipt-backed GR/IR settlement eligibility.
+- Receipt and bill read models expose settlement status, eligible amount, settled amount, remaining amount, and blocked counts.
+- The lane only considers:
+  - posted GR/IR bridge lines
+  - posted GR/IR journal linkage
+  - posted Bills
+  - AP open item presence for the Bill
+- Partial settlement is represented as persisted control truth through settled quantity/amount columns, but no accounting settlement posting is emitted yet.
+- The GR/IR clearing account policy was hardened so the default account must be an active liability account in the active company.
+- Saving the default GR/IR clearing account policy now requires owner/accounting-governance authority.
+
+Still deferred:
+
+- AP bill settlement journal posting
+- PPV / variance recognition
+- PO truth
+- tracked receipt enablement
+- Shell-wide GR/IR settlement workbench
+
+CI note:
+
+PostgreSQL integration coverage now includes valuation emission, GR/IR bridge refresh, journal linkage, idempotent retry, governance guard, and settlement eligibility. The repository currently has no root `.github` workflow folder, and project rules forbid creating new root folders without an approved path; CI workflow wiring therefore remains a separate approved-path task.
+
+## Phase H.15 checkpoint
+
+H.15 adds the minimal GR/IR settlement execution lane on top of the H.14 read/control truth.
+
+What changed:
+
+- `receipt_grir_ap_settlement_batches` records each execution attempt with an idempotency key, requested amount, settled amount, settled quantity, and line count.
+- `receipt_grir_ap_settlement_batch_lines` records the exact settlement line slices consumed by each execution batch.
+- Settlement execution only consumes settlement lines that remain `eligible_not_settled` or `partially_settled`.
+- Partial execution is allowed, but requested amount cannot exceed the remaining eligible amount.
+- Re-running the same idempotency key returns the existing execution result instead of clearing the slice again.
+- Receipt-level API now has `POST /receipts/{id}/grir-settlement/execute`.
+
+Still deferred:
+
+- settlement journal posting / full AP clearing accounting
+- PPV / variance recognition
+- PO truth
+- tracked receipt enablement
+- reverse / void reconciliation workflow beyond the current non-posted journal block
+- Shell-wide GR/IR settlement workbench
+
+Authority note:
+
+H.15 is settlement execution control truth, not a full AP settlement universe. It clears the persisted GR/IR/AP bridge slice at the control-lane level while preserving Receipt as physical truth owner, Bill as AP charge truth, and GR/IR bridge as accounting recognition truth.
+
+## Inbound receipt/AP closure roadmap after H.15
+
+Remaining work to close the receipt-first AP/inventory loop should stay incremental:
+
+1. H.16 — minimal GR/IR settlement journal boundary: post only H.15 executed settlement batches.
+2. H.17 — settlement journal reversal/stale reconciliation: formalize void/reverse handling and review status.
+3. H.18 — AP open item clearing integration: decide how settlement applications reduce AP open item truth without duplicating pay-bill semantics.
+4. H.19 — PPV / variance boundary: introduce price/quantity variance only after receipt, bill, GR/IR, and settlement slices are stable.
+5. H.20 — PO ordered / received / billed truth: add three-way source truth without weakening receipt-first physical truth.
+6. H.21 — vendor return / debit memo bridge: separate outbound-to-vendor physical truth from AP financial truth.
+7. H.22 — tracked receipt enablement: wire lot/serial capture into receipt activation only after document paths can supply identity truth.
+8. H.23 — Shell review continuity: expose the now-stable receipt/AP/GRIR truth without creating a premature workbench.
+
+## Phase H.16 checkpoint
+
+H.16 introduces the minimal GR/IR settlement journal boundary.
+
+What changed:
+
+- A posted H.15 settlement batch can now be posted through the accounting posting engine.
+- The journal source type is `receipt_grir_ap_settlement_posting`.
+- The posting consumes only an executed settlement batch and its batch-line slices.
+- Journal shape is intentionally minimal:
+  - Dr GR/IR clearing
+  - Cr matched Bill line expense/inventory account
+- Settlement journal posting has its own idempotency key and reuses source-level journal idempotency.
+- `grir.settlement.execute` authority is now represented through the GR/IR settlement execution permission seam.
+- Settlement batch journal state records `not_posted`, `posted`, and `journal_inconsistent`.
+- If a linked settlement journal is later voided/reversed/non-posted, refresh blocks reposting as inconsistent.
+
+Still deferred:
+
+- AP open item balance clearing
+- settlement reversal documents
+- PPV / variance recognition
+- PO truth
+- tracked receipt enablement
+- Shell-wide GR/IR settlement workbench
+
+Authority note:
+
+H.16 is the accounting boundary for settlement execution, not the full AP settlement universe. It does not let Bill retake physical truth, and it does not invent PPV or PO truth.

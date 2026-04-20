@@ -16,6 +16,12 @@ public static class BusinessApprovalAuthority
     public static bool CanManageOpenItemAdjustmentAccountMapping(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
 
+    public static bool CanManageGrIrClearingAccountPolicy(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
+
+    public static bool CanExecuteGrIrSettlement(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
+
     public static Decision EvaluateOpenItemAdjustmentApproval(
         BusinessSessionContext? session,
         string openItemLabel,
@@ -67,6 +73,58 @@ public static class BusinessApprovalAuthority
             true,
             "authority_allowed",
             $"The business session has authority to {transitionCode} open-item adjustment account mappings.");
+    }
+
+    public static Decision EvaluateGrIrClearingAccountPolicyManagement(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} the GR/IR clearing account policy.");
+        }
+
+        if (!CanManageGrIrClearingAccountPolicy(session))
+        {
+            return new Decision(
+                false,
+                "blocked_grir_policy_management_authority",
+                $"Only a company owner or accounting-governance user can {transitionCode} the GR/IR clearing account policy.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} the GR/IR clearing account policy.");
+    }
+
+    public static Decision EvaluateGrIrSettlementExecution(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} GR/IR settlement.");
+        }
+
+        if (!CanExecuteGrIrSettlement(session))
+        {
+            return new Decision(
+                false,
+                "blocked_grir_settlement_execution_authority",
+                $"Only a company owner or accounting-governance user can {transitionCode} GR/IR settlement.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} GR/IR settlement.");
     }
 
     private static bool IsOpenItemAdjustmentApprovalRole(string role) =>

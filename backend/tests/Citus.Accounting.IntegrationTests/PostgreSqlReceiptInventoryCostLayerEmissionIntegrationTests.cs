@@ -1,5 +1,6 @@
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Commands;
+using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Currencies;
 using Citus.Accounting.Domain.Posting;
@@ -321,6 +322,533 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task SaveDefaultGrIrClearingAccountAsync_RejectsNonLiabilityAccount()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h13_guard_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var repository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                new PostgresExecutionContextAccessor());
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var assetAccountId = Guid.NewGuid();
+
+            await SeedCompanyAsync(schemaConnectionString, companyId);
+            await SeedAccountAsync(schemaConnectionString, companyId, assetAccountId, "1200", "Inventory Asset", "asset");
+
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                repository.SaveDefaultGrIrClearingAccountAsync(
+                    new(companyId),
+                    new(userId),
+                    assetAccountId,
+                    CancellationToken.None));
+
+            Assert.Contains("active liability account", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshReceiptGrIrApSettlementControlAsync_CreatesEligibleAndPartialSettlementTruth()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h14_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var inventoryConnectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
+            var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
+            var executionContextAccessor = new PostgresExecutionContextAccessor();
+            var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
+            var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var handler = new PostReceiptGrIrCommandHandler(
+                grIrBridgeStore,
+                clearingPolicyRepository,
+                new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                new DefaultPostingEngine(
+                    new DefaultPostingValidator(),
+                    new NullTaxEngine(),
+                    new IdentityFxResolutionService(),
+                    new AccountingPostingFragmentBuilder(),
+                    new DefaultJournalAggregator(),
+                    new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor)),
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
+                accountingConnectionFactory,
+                executionContextAccessor);
+
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var receiptId = Guid.NewGuid();
+            var billId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+            var warehouseId = Guid.NewGuid();
+            var inventoryDocumentId = Guid.NewGuid();
+            var inventoryDocumentLineId = Guid.NewGuid();
+            var ledgerEntryId = Guid.NewGuid();
+            var inventoryAssetAccountId = Guid.NewGuid();
+            var grIrClearingAccountId = Guid.NewGuid();
+
+            await SeedCompanyAsync(schemaConnectionString, companyId);
+            await SeedPostingFoundationAsync(schemaConnectionString);
+            await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
+            await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
+            await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
+                new(companyId),
+                new(userId),
+                grIrClearingAccountId,
+                CancellationToken.None);
+            await foundationStore.EnsureCompanyFoundationAsync(
+                new InventoryFoundationEnsureRequest(
+                    companyId,
+                    userId,
+                    InventoryCostingMethod.Fifo,
+                    NegativeStockAllowed: false,
+                    RequireWriteOffApproval: true),
+                CancellationToken.None);
+            await SeedReceiptValuationFixtureAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId,
+                ledgerEntryId);
+            await SeedApOpenItemAsync(schemaConnectionString, companyId, billId);
+            await SetDefaultInventoryAssetAccountAsync(
+                schemaConnectionString,
+                companyId,
+                itemId,
+                inventoryAssetAccountId);
+
+            _ = await activationStore.GetReceiptActivationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            _ = await valuationStore.GetReceiptValuationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            await SeedActivationAndValuationRowsAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId);
+            _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await handler.HandleAsync(
+                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                CancellationToken.None);
+
+            var eligible = await settlementStore.RefreshReceiptSettlementControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            await SetSettlementProgressAsync(schemaConnectionString, companyId, receiptId, settledQuantity: 2.5m, settledAmountBase: 25m);
+            var partial = await settlementStore.RefreshReceiptSettlementControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var billSummary = await settlementStore.GetBillSettlementSummaryAsync(
+                new(companyId),
+                billId,
+                CancellationToken.None);
+
+            Assert.Equal(ReceiptGrIrApSettlementStatusPolicy.EligibleNotSettled, eligible.SettlementStatus);
+            Assert.Equal(1, eligible.EligibleLineCount);
+            Assert.Equal(50m, eligible.EligibleAmountBase);
+            Assert.Equal(ReceiptGrIrApSettlementStatusPolicy.PartiallySettled, partial.SettlementStatus);
+            Assert.Equal(1, partial.PartiallySettledLineCount);
+            Assert.Equal(25m, partial.SettledAmountBase);
+            Assert.Equal(25m, partial.EligibleAmountBase);
+            Assert.Equal(25m, partial.RemainingAmountBase);
+            Assert.NotNull(billSummary);
+            Assert.Equal(ReceiptGrIrApSettlementStatusPolicy.PartiallySettled, billSummary.SettlementStatus);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteReceiptGrIrSettlementAsync_ConsumesPartialRemainingSlicesIdempotently()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h15_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var inventoryConnectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
+            var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
+            var executionContextAccessor = new PostgresExecutionContextAccessor();
+            var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
+            var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var postingHandler = new PostReceiptGrIrCommandHandler(
+                grIrBridgeStore,
+                clearingPolicyRepository,
+                new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                new DefaultPostingEngine(
+                    new DefaultPostingValidator(),
+                    new NullTaxEngine(),
+                    new IdentityFxResolutionService(),
+                    new AccountingPostingFragmentBuilder(),
+                    new DefaultJournalAggregator(),
+                    new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor)),
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var receiptId = Guid.NewGuid();
+            var billId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+            var warehouseId = Guid.NewGuid();
+            var inventoryDocumentId = Guid.NewGuid();
+            var inventoryDocumentLineId = Guid.NewGuid();
+            var ledgerEntryId = Guid.NewGuid();
+            var inventoryAssetAccountId = Guid.NewGuid();
+            var grIrClearingAccountId = Guid.NewGuid();
+
+            await SeedCompanyAsync(schemaConnectionString, companyId);
+            await SeedPostingFoundationAsync(schemaConnectionString);
+            await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
+            await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
+            await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
+                new(companyId),
+                new(userId),
+                grIrClearingAccountId,
+                CancellationToken.None);
+            await foundationStore.EnsureCompanyFoundationAsync(
+                new InventoryFoundationEnsureRequest(
+                    companyId,
+                    userId,
+                    InventoryCostingMethod.Fifo,
+                    NegativeStockAllowed: false,
+                    RequireWriteOffApproval: true),
+                CancellationToken.None);
+            await SeedReceiptValuationFixtureAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId,
+                ledgerEntryId);
+            await SeedApOpenItemAsync(schemaConnectionString, companyId, billId);
+            await SetDefaultInventoryAssetAccountAsync(
+                schemaConnectionString,
+                companyId,
+                itemId,
+                inventoryAssetAccountId);
+
+            _ = await activationStore.GetReceiptActivationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            _ = await valuationStore.GetReceiptValuationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            await SeedActivationAndValuationRowsAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId);
+            _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await postingHandler.HandleAsync(
+                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                CancellationToken.None);
+            _ = await settlementStore.RefreshReceiptSettlementControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+
+            var firstPartial = await settlementHandler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    SettlementAmountBase: 25m,
+                    IdempotencyKey: "h15-partial"),
+                CancellationToken.None);
+            var retryPartial = await settlementHandler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    SettlementAmountBase: 25m,
+                    IdempotencyKey: "h15-partial"),
+                CancellationToken.None);
+            var overSettlementError = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                settlementHandler.HandleAsync(
+                    new ExecuteReceiptGrIrSettlementCommand(
+                        new(companyId),
+                        new(userId),
+                        receiptId,
+                        SettlementAmountBase: 30m,
+                        IdempotencyKey: "h15-over"),
+                    CancellationToken.None));
+            var finalSettlement = await settlementHandler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    SettlementAmountBase: null,
+                    IdempotencyKey: "h15-final"),
+                CancellationToken.None);
+            var batchCount = await CountRowsAsync(schemaConnectionString, "receipt_grir_ap_settlement_batches");
+            var batchLineCount = await CountRowsAsync(schemaConnectionString, "receipt_grir_ap_settlement_batch_lines");
+
+            Assert.Equal(firstPartial.SettlementBatchId, retryPartial.SettlementBatchId);
+            Assert.Equal(25m, firstPartial.SettledAmountBase);
+            Assert.Equal(25m, retryPartial.SettledAmountBase);
+            Assert.Equal(ReceiptGrIrApSettlementStatusPolicy.PartiallySettled, firstPartial.Summary.SettlementStatus);
+            Assert.Equal(25m, firstPartial.Summary.RemainingAmountBase);
+            Assert.Equal(25m, firstPartial.Summary.EligibleAmountBase);
+            Assert.Contains("exceeds remaining eligible amount", overSettlementError.Message, StringComparison.Ordinal);
+            Assert.Equal(ReceiptGrIrApSettlementStatusPolicy.Settled, finalSettlement.Summary.SettlementStatus);
+            Assert.Equal(50m, finalSettlement.Summary.SettledAmountBase);
+            Assert.Equal(0m, finalSettlement.Summary.RemainingAmountBase);
+            Assert.Equal(2, batchCount);
+            Assert.Equal(2, batchLineCount);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task PostReceiptGrIrSettlementJournalAsync_PostsExecutedBatchAndDetectsVoidedJournal()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h16_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var inventoryConnectionFactory = new PostgreSqlConnectionFactory(schemaConnectionString);
+            var accountingConnectionFactory = new PostgresConnectionFactory(schemaConnectionString);
+            var executionContextAccessor = new PostgresExecutionContextAccessor();
+            var foundationStore = new PostgreSqlInventoryFoundationStore(inventoryConnectionFactory);
+            var activationStore = new PostgreSqlReceiptInventoryActivationStore(inventoryConnectionFactory, foundationStore);
+            var valuationStore = new PostgreSqlReceiptInventoryValuationStore(inventoryConnectionFactory, foundationStore);
+            var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(inventoryConnectionFactory, foundationStore);
+            var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(inventoryConnectionFactory, foundationStore);
+            var clearingPolicyRepository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var postingEngine = new DefaultPostingEngine(
+                new DefaultPostingValidator(),
+                new NullTaxEngine(),
+                new IdentityFxResolutionService(),
+                new AccountingPostingFragmentBuilder(),
+                new DefaultJournalAggregator(),
+                new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor));
+            var grIrPostingHandler = new PostReceiptGrIrCommandHandler(
+                grIrBridgeStore,
+                clearingPolicyRepository,
+                new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                postingEngine,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementStore = new PostgresReceiptGrIrApSettlementControlStore(
+                accountingConnectionFactory,
+                executionContextAccessor);
+            var settlementHandler = new ExecuteReceiptGrIrSettlementCommandHandler(
+                settlementStore,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+            var settlementPostingHandler = new PostReceiptGrIrSettlementJournalCommandHandler(
+                new PostgresReceiptGrIrSettlementPostingRepository(accountingConnectionFactory, executionContextAccessor),
+                postingEngine,
+                new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
+
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var receiptId = Guid.NewGuid();
+            var billId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+            var warehouseId = Guid.NewGuid();
+            var inventoryDocumentId = Guid.NewGuid();
+            var inventoryDocumentLineId = Guid.NewGuid();
+            var ledgerEntryId = Guid.NewGuid();
+            var inventoryAssetAccountId = Guid.NewGuid();
+            var grIrClearingAccountId = Guid.NewGuid();
+            var billOffsetAccountId = Guid.NewGuid();
+
+            await SeedCompanyAsync(schemaConnectionString, companyId);
+            await SeedPostingFoundationAsync(schemaConnectionString);
+            await SeedAccountAsync(schemaConnectionString, companyId, inventoryAssetAccountId, "1200", "Inventory Asset", "asset");
+            await SeedAccountAsync(schemaConnectionString, companyId, grIrClearingAccountId, "2105", "GR/IR Clearing", "liability");
+            await SeedAccountAsync(schemaConnectionString, companyId, billOffsetAccountId, "5100", "Bill Goods Offset", "expense");
+            await clearingPolicyRepository.SaveDefaultGrIrClearingAccountAsync(
+                new(companyId),
+                new(userId),
+                grIrClearingAccountId,
+                CancellationToken.None);
+            await foundationStore.EnsureCompanyFoundationAsync(
+                new InventoryFoundationEnsureRequest(
+                    companyId,
+                    userId,
+                    InventoryCostingMethod.Fifo,
+                    NegativeStockAllowed: false,
+                    RequireWriteOffApproval: true),
+                CancellationToken.None);
+            await SeedReceiptValuationFixtureAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId,
+                ledgerEntryId);
+            await SeedBillLineAsync(schemaConnectionString, companyId, billId, billOffsetAccountId);
+            await SeedApOpenItemAsync(schemaConnectionString, companyId, billId);
+            await SetDefaultInventoryAssetAccountAsync(
+                schemaConnectionString,
+                companyId,
+                itemId,
+                inventoryAssetAccountId);
+
+            _ = await activationStore.GetReceiptActivationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            _ = await valuationStore.GetReceiptValuationSummaryAsync(companyId, receiptId, CancellationToken.None);
+            await SeedActivationAndValuationRowsAsync(
+                schemaConnectionString,
+                companyId,
+                userId,
+                receiptId,
+                billId,
+                itemId,
+                warehouseId,
+                inventoryDocumentId,
+                inventoryDocumentLineId);
+            _ = await emissionStore.EmitReceiptCostLayersAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(companyId, userId, receiptId, CancellationToken.None);
+            _ = await grIrPostingHandler.HandleAsync(
+                new PostReceiptGrIrCommand(new(companyId), new(userId), receiptId, GrIrClearingAccountId: null, IdempotencyKey: null),
+                CancellationToken.None);
+            _ = await settlementStore.RefreshReceiptSettlementControlAsync(
+                new(companyId),
+                new(userId),
+                receiptId,
+                CancellationToken.None);
+            var settlement = await settlementHandler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    SettlementAmountBase: null,
+                    IdempotencyKey: "h16-settlement"),
+                CancellationToken.None);
+
+            var firstPost = await settlementPostingHandler.HandleAsync(
+                new PostReceiptGrIrSettlementJournalCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId,
+                    IdempotencyKey: "h16-journal"),
+                CancellationToken.None);
+            var retryPost = await settlementPostingHandler.HandleAsync(
+                new PostReceiptGrIrSettlementJournalCommand(
+                    new(companyId),
+                    new(userId),
+                    receiptId,
+                    settlement.SettlementBatchId,
+                    IdempotencyKey: "h16-journal"),
+                CancellationToken.None);
+            var journalTotals = await GetJournalLineTotalsAsync(schemaConnectionString, firstPost.JournalEntryId);
+            var settlementBatchStatus = await GetSettlementBatchJournalStatusAsync(
+                schemaConnectionString,
+                companyId,
+                settlement.SettlementBatchId);
+
+            await SetJournalStatusAsync(schemaConnectionString, firstPost.JournalEntryId, "void");
+            var inconsistent = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                settlementPostingHandler.HandleAsync(
+                    new PostReceiptGrIrSettlementJournalCommand(
+                        new(companyId),
+                        new(userId),
+                        receiptId,
+                        settlement.SettlementBatchId,
+                        IdempotencyKey: "h16-journal-after-void"),
+                    CancellationToken.None));
+
+            Assert.Equal(firstPost.JournalEntryId, retryPost.JournalEntryId);
+            Assert.Equal(50m, journalTotals.TotalDebit);
+            Assert.Equal(50m, journalTotals.TotalCredit);
+            Assert.Equal("posted", settlementBatchStatus.JournalStatus);
+            Assert.Equal(firstPost.JournalEntryId, settlementBatchStatus.JournalEntryId);
+            Assert.Contains("inconsistent", inconsistent.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
     private static string? GetPostgreSqlConnectionString() =>
         Environment.GetEnvironmentVariable("CITUS_POSTGRESQL_INTEGRATION_TEST_DB") ??
         Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB");
@@ -480,6 +1008,25 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               tx_debit numeric(20, 6) not null,
               tx_credit numeric(20, 6) not null
             );
+
+            create table ap_open_items (
+              id uuid primary key,
+              company_id uuid not null references companies(id) on delete cascade,
+              vendor_id uuid not null,
+              source_type text not null,
+              source_id uuid not null,
+              balance_side text not null,
+              document_currency_code char(3) not null,
+              base_currency_code char(3) not null,
+              original_amount_tx numeric(20, 6) not null,
+              original_amount_base numeric(20, 6) not null,
+              open_amount_tx numeric(20, 6) not null,
+              open_amount_base numeric(20, 6) not null,
+              status text not null,
+              due_date date null,
+              created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
             """;
         await command.ExecuteNonQueryAsync();
     }
@@ -524,6 +1071,106 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         command.Parameters.AddWithValue("code", code);
         command.Parameters.AddWithValue("name", name);
         command.Parameters.AddWithValue("root_type", rootType);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedApOpenItemAsync(
+        string connectionString,
+        Guid companyId,
+        Guid billId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            insert into ap_open_items (
+              id,
+              company_id,
+              vendor_id,
+              source_type,
+              source_id,
+              balance_side,
+              document_currency_code,
+              base_currency_code,
+              original_amount_tx,
+              original_amount_base,
+              open_amount_tx,
+              open_amount_base,
+              status,
+              due_date
+            )
+            values (
+              gen_random_uuid(),
+              @company_id,
+              gen_random_uuid(),
+              'bill',
+              @bill_id,
+              'credit',
+              'USD',
+              'USD',
+              50,
+              50,
+              50,
+              50,
+              'open',
+              '2026-04-19'
+            );
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("bill_id", billId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedBillLineAsync(
+        string connectionString,
+        Guid companyId,
+        Guid billId,
+        Guid expenseAccountId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            create table if not exists bill_lines (
+              id uuid primary key default gen_random_uuid(),
+              company_id uuid not null references companies(id) on delete cascade,
+              bill_id uuid not null references bills(id) on delete cascade,
+              line_number integer not null,
+              expense_account_id uuid not null references accounts(id),
+              description text not null,
+              line_amount numeric(20, 6) not null,
+              tax_amount numeric(20, 6) not null default 0,
+              is_tax_recoverable boolean not null default false,
+              created_at timestamptz not null default now(),
+              updated_at timestamptz not null default now()
+            );
+
+            insert into bill_lines (
+              company_id,
+              bill_id,
+              line_number,
+              expense_account_id,
+              description,
+              line_amount,
+              tax_amount,
+              is_tax_recoverable
+            )
+            values (
+              @company_id,
+              @bill_id,
+              1,
+              @expense_account_id,
+              'Receipt matched goods',
+              50,
+              0,
+              false
+            );
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("bill_id", billId);
+        command.Parameters.AddWithValue("expense_account_id", expenseAccountId);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -873,6 +1520,32 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async Task SetSettlementProgressAsync(
+        string connectionString,
+        Guid companyId,
+        Guid receiptId,
+        decimal settledQuantity,
+        decimal settledAmountBase)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            update receipt_grir_ap_settlement_lines
+            set settled_quantity = @settled_quantity,
+                settled_amount_base = @settled_amount_base,
+                last_settled_at = now()
+            where company_id = @company_id
+              and receipt_id = @receipt_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptId);
+        command.Parameters.AddWithValue("settled_quantity", settledQuantity);
+        command.Parameters.AddWithValue("settled_amount_base", settledAmountBase);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task<(decimal TotalDebit, decimal TotalCredit)> GetJournalLineTotalsAsync(
         string connectionString,
         Guid journalEntryId)
@@ -899,6 +1572,56 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         return (
             reader.GetFieldValue<decimal>(reader.GetOrdinal("total_debit")),
             reader.GetFieldValue<decimal>(reader.GetOrdinal("total_credit")));
+    }
+
+    private static async Task<(string JournalStatus, Guid? JournalEntryId)> GetSettlementBatchJournalStatusAsync(
+        string connectionString,
+        Guid companyId,
+        Guid settlementBatchId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select journal_status, journal_entry_id
+            from receipt_grir_ap_settlement_batches
+            where company_id = @company_id
+              and id = @settlement_batch_id;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("settlement_batch_id", settlementBatchId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException("Settlement batch was not found.");
+        }
+
+        return (
+            reader.GetString(reader.GetOrdinal("journal_status")),
+            reader.IsDBNull(reader.GetOrdinal("journal_entry_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("journal_entry_id")));
+    }
+
+    private static async Task SetJournalStatusAsync(
+        string connectionString,
+        Guid journalEntryId,
+        string status)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            update journal_entries
+            set status = @status
+            where id = @journal_entry_id;
+            """;
+        command.Parameters.AddWithValue("journal_entry_id", journalEntryId);
+        command.Parameters.AddWithValue("status", status);
+        await command.ExecuteNonQueryAsync();
     }
 
     private sealed class IdentityFxResolutionService : IFxResolutionService

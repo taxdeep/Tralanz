@@ -1,0 +1,1064 @@
+using Citus.Accounting.Application.Repositories;
+using Citus.Accounting.Domain.Common;
+using System.Globalization;
+using Npgsql;
+using NpgsqlTypes;
+
+namespace Citus.Accounting.Infrastructure.Persistence;
+
+public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrApSettlementControlStore
+{
+    private const string SettlementLinesTableName = "receipt_grir_ap_settlement_lines";
+    private const string SettlementBatchesTableName = "receipt_grir_ap_settlement_batches";
+    private const string SettlementBatchLinesTableName = "receipt_grir_ap_settlement_batch_lines";
+    private const string BridgeLinesTableName = "receipt_grir_bridge_lines";
+
+    private readonly PostgresConnectionFactory _connections;
+    private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+
+    public PostgresReceiptGrIrApSettlementControlStore(
+        PostgresConnectionFactory connections,
+        PostgresExecutionContextAccessor executionContextAccessor)
+    {
+        _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+        _executionContextAccessor = executionContextAccessor ?? throw new ArgumentNullException(nameof(executionContextAccessor));
+    }
+
+    public async Task<ReceiptGrIrApSettlementSummary> RefreshReceiptSettlementControlAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
+        {
+            return BuildEmptyReceiptSummary(receiptDocumentId);
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+    }
+
+    public async Task<ReceiptGrIrApSettlementSummary?> GetReceiptSettlementSummaryAsync(
+        CompanyId companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await TableExistsAsync(scope, SettlementLinesTableName, cancellationToken))
+        {
+            return BuildEmptyReceiptSummary(receiptDocumentId);
+        }
+
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ReceiptGrIrApSettlementSummary>> GetReceiptSettlementSummariesAsync(
+        CompanyId companyId,
+        IReadOnlyCollection<Guid> receiptDocumentIds,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentIds.Count == 0)
+        {
+            return new Dictionary<Guid, ReceiptGrIrApSettlementSummary>();
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var distinctIds = receiptDocumentIds.Distinct().ToArray();
+        if (!await TableExistsAsync(scope, SettlementLinesTableName, cancellationToken))
+        {
+            return distinctIds.ToDictionary(
+                static id => id,
+                static id => BuildEmptyReceiptSummary(id));
+        }
+
+        return await LoadReceiptSettlementSummariesAsync(scope, companyId.Value, distinctIds, cancellationToken);
+    }
+
+    public async Task<BillGrIrApSettlementSummary?> GetBillSettlementSummaryAsync(
+        CompanyId companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await TableExistsAsync(scope, SettlementLinesTableName, cancellationToken))
+        {
+            return BuildEmptyBillSummary(billDocumentId);
+        }
+
+        return await LoadBillSettlementSummaryAsync(scope, companyId.Value, billDocumentId, cancellationToken)
+            ?? BuildEmptyBillSummary(billDocumentId);
+    }
+
+    public async Task<ReceiptGrIrApSettlementExecutionResult> ExecuteReceiptSettlementAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid receiptDocumentId,
+        ReceiptGrIrApSettlementExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        var requestedAmountBase = request.SettlementAmountBase.HasValue
+            ? Round6(request.SettlementAmountBase.Value)
+            : (decimal?)null;
+        if (requestedAmountBase <= 0)
+        {
+            throw new InvalidOperationException("GR/IR settlement amount must be greater than zero.");
+        }
+
+        var idempotencyKey = BuildSettlementIdempotencyKey(
+            companyId.Value,
+            receiptDocumentId,
+            requestedAmountBase,
+            request.IdempotencyKey);
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await CanBuildSettlementLaneAsync(scope, cancellationToken))
+        {
+            throw new InvalidOperationException("The GR/IR settlement lane is not ready. Refresh GR/IR bridge, post GR/IR, and ensure AP open item truth exists before settlement execution.");
+        }
+
+        await EnsureSchemaAsync(scope, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+
+        var existing = await TryLoadSettlementExecutionResultAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            idempotencyKey,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var executableLines = await LoadExecutableSettlementLinesAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            cancellationToken);
+        if (executableLines.Count == 0)
+        {
+            throw new InvalidOperationException("No eligible GR/IR settlement slice remains. Refresh settlement control truth and resolve blocked lines before execution.");
+        }
+
+        var totalRemainingAmountBase = Round6(executableLines.Sum(static line => line.RemainingAmountBase));
+        var amountToSettleBase = requestedAmountBase ?? totalRemainingAmountBase;
+        if (amountToSettleBase > totalRemainingAmountBase)
+        {
+            throw new InvalidOperationException(
+                $"GR/IR settlement amount {amountToSettleBase:N6} exceeds remaining eligible amount {totalRemainingAmountBase:N6}.");
+        }
+
+        var allocations = BuildSettlementAllocations(executableLines, amountToSettleBase);
+        var batchId = Guid.NewGuid();
+        await CreateSettlementBatchAsync(
+            scope,
+            companyId.Value,
+            userId.Value,
+            receiptDocumentId,
+            batchId,
+            idempotencyKey,
+            amountToSettleBase,
+            allocations,
+            cancellationToken);
+        await InsertSettlementBatchLinesAsync(scope, companyId.Value, batchId, allocations, cancellationToken);
+        await ApplySettlementAllocationsAsync(scope, companyId.Value, allocations, cancellationToken);
+        await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+
+        var summary = await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+
+        return new ReceiptGrIrApSettlementExecutionResult(
+            receiptDocumentId,
+            batchId,
+            idempotencyKey,
+            amountToSettleBase,
+            Round6(allocations.Sum(static allocation => allocation.SettledQuantity)),
+            Round6(allocations.Sum(static allocation => allocation.SettledAmountBase)),
+            allocations.Count,
+            summary);
+    }
+
+    private static async Task<bool> CanBuildSettlementLaneAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken) =>
+        await TableExistsAsync(scope, BridgeLinesTableName, cancellationToken) &&
+        await TableExistsAsync(scope, "bills", cancellationToken) &&
+        await TableExistsAsync(scope, "ap_open_items", cancellationToken) &&
+        await TableExistsAsync(scope, "journal_entries", cancellationToken);
+
+    private static string BuildSettlementIdempotencyKey(
+        Guid companyId,
+        Guid receiptDocumentId,
+        decimal? requestedAmountBase,
+        string? explicitKey)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitKey))
+        {
+            return explicitKey.Trim();
+        }
+
+        var amountKey = requestedAmountBase.HasValue
+            ? requestedAmountBase.Value.ToString("0.000000", CultureInfo.InvariantCulture)
+            : "remaining";
+        return $"receipt-grir-ap-settlement:{companyId:N}:{receiptDocumentId:N}:{amountKey}";
+    }
+
+    private static async Task AcquireSettlementLockAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand("select pg_advisory_xact_lock(hashtext(@lock_key));");
+        command.Parameters.AddWithValue("lock_key", $"receipt-grir-ap-settlement:{companyId:N}:{receiptDocumentId:N}");
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task UpsertReceiptSettlementLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            with bridge_truth as (
+              select
+                bridge.id as bridge_line_id,
+                bridge.company_id,
+                bridge.receipt_id,
+                bridge.receipt_line_number,
+                bridge.bill_id,
+                bridge.bill_line_number,
+                bridge.item_id,
+                bridge.warehouse_id,
+                bridge.uom_code,
+                bridge.bridge_quantity,
+                bridge.bridge_amount_base,
+                bridge.bridge_status,
+                bridge.journal_entry_id,
+                bridge.journal_entry_display_number,
+                b.status as bill_status,
+                oi.id as ap_open_item_id,
+                je.status as journal_status,
+                coalesce(existing.settled_quantity, 0)::numeric(20,6) as settled_quantity,
+                coalesce(existing.settled_amount_base, 0)::numeric(20,6) as settled_amount_base,
+                existing.last_settled_at
+              from {BridgeLinesTableName} bridge
+              left join bills b
+                on b.company_id = bridge.company_id
+               and b.id = bridge.bill_id
+              left join lateral (
+                select oi.id
+                from ap_open_items oi
+                where oi.company_id = bridge.company_id
+                  and oi.source_type = 'bill'
+                  and oi.source_id = bridge.bill_id
+                order by oi.created_at desc, oi.id
+                limit 1
+              ) oi on true
+              left join journal_entries je
+                on je.company_id = bridge.company_id
+               and je.id = bridge.journal_entry_id
+              left join {SettlementLinesTableName} existing
+                on existing.company_id = bridge.company_id
+               and existing.bridge_line_id = bridge.id
+              where bridge.company_id = @company_id
+                and bridge.receipt_id = @receipt_id
+            ),
+            classified as (
+              select
+                *,
+                greatest(round(bridge_amount_base - settled_amount_base, 6), 0)::numeric(20,6) as remaining_amount_base,
+                case
+                  when bridge_status <> 'posted' then '{ReceiptGrIrApSettlementStatusPolicy.BlockedGrIrNotPosted}'
+                  when journal_entry_id is null or journal_status <> 'posted' then '{ReceiptGrIrApSettlementStatusPolicy.BlockedJournalNotPosted}'
+                  when bill_status <> 'posted' then '{ReceiptGrIrApSettlementStatusPolicy.BlockedBillNotPosted}'
+                  when ap_open_item_id is null then '{ReceiptGrIrApSettlementStatusPolicy.BlockedMissingApOpenItem}'
+                  when round(settled_amount_base, 6) > round(bridge_amount_base, 6) then '{ReceiptGrIrApSettlementStatusPolicy.BlockedAmountExceeded}'
+                  when round(settled_amount_base, 6) >= round(bridge_amount_base, 6) then '{ReceiptGrIrApSettlementStatusPolicy.Settled}'
+                  when round(settled_amount_base, 6) > 0 then '{ReceiptGrIrApSettlementStatusPolicy.PartiallySettled}'
+                  else '{ReceiptGrIrApSettlementStatusPolicy.EligibleNotSettled}'
+                end as settlement_status,
+                case
+                  when bridge_status <> 'posted' then 'grir_bridge_not_posted'
+                  when journal_entry_id is null or journal_status <> 'posted' then 'journal_not_posted'
+                  when bill_status <> 'posted' then 'bill_not_posted'
+                  when ap_open_item_id is null then 'missing_ap_open_item'
+                  when round(settled_amount_base, 6) > round(bridge_amount_base, 6) then 'settled_amount_exceeds_bridge'
+                  else null
+                end as blocked_reason_code
+              from bridge_truth
+            )
+            insert into {SettlementLinesTableName} (
+              id,
+              company_id,
+              receipt_id,
+              receipt_line_number,
+              bridge_line_id,
+              journal_entry_id,
+              journal_entry_display_number,
+              bill_id,
+              bill_line_number,
+              ap_open_item_id,
+              item_id,
+              warehouse_id,
+              uom_code,
+              settlement_quantity,
+              settlement_amount_base,
+              settled_quantity,
+              settled_amount_base,
+              remaining_amount_base,
+              settlement_status,
+              blocked_reason_code,
+              refreshed_by_user_id,
+              refreshed_at,
+              last_settled_at
+            )
+            select
+              gen_random_uuid(),
+              company_id,
+              receipt_id,
+              receipt_line_number,
+              bridge_line_id,
+              journal_entry_id,
+              journal_entry_display_number,
+              bill_id,
+              bill_line_number,
+              ap_open_item_id,
+              item_id,
+              warehouse_id,
+              uom_code,
+              bridge_quantity,
+              bridge_amount_base,
+              settled_quantity,
+              settled_amount_base,
+              remaining_amount_base,
+              settlement_status,
+              blocked_reason_code,
+              @user_id,
+              now(),
+              last_settled_at
+            from classified
+            on conflict (company_id, bridge_line_id)
+            do update set
+              journal_entry_id = excluded.journal_entry_id,
+              journal_entry_display_number = excluded.journal_entry_display_number,
+              bill_id = excluded.bill_id,
+              bill_line_number = excluded.bill_line_number,
+              ap_open_item_id = excluded.ap_open_item_id,
+              item_id = excluded.item_id,
+              warehouse_id = excluded.warehouse_id,
+              uom_code = excluded.uom_code,
+              settlement_quantity = excluded.settlement_quantity,
+              settlement_amount_base = excluded.settlement_amount_base,
+              settled_quantity = excluded.settled_quantity,
+              settled_amount_base = excluded.settled_amount_base,
+              remaining_amount_base = excluded.remaining_amount_base,
+              settlement_status = excluded.settlement_status,
+              blocked_reason_code = excluded.blocked_reason_code,
+              refreshed_by_user_id = excluded.refreshed_by_user_id,
+              refreshed_at = excluded.refreshed_at,
+              last_settled_at = excluded.last_settled_at;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("user_id", userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<ReceiptGrIrApSettlementExecutionResult?> TryLoadSettlementExecutionResultAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              batch.id,
+              batch.requested_amount_base,
+              batch.settled_quantity,
+              batch.settled_amount_base,
+              batch.line_count
+            from {SettlementBatchesTableName} batch
+            where batch.company_id = @company_id
+              and batch.receipt_id = @receipt_id
+              and batch.idempotency_key = @idempotency_key
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var batchId = reader.GetGuid(reader.GetOrdinal("id"));
+        var requestedAmountBase = reader.GetFieldValue<decimal>(reader.GetOrdinal("requested_amount_base"));
+        var settledQuantity = reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_quantity"));
+        var settledAmountBase = reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"));
+        var lineCount = reader.GetInt32(reader.GetOrdinal("line_count"));
+        await reader.DisposeAsync();
+
+        var summary = await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
+            ?? BuildEmptyReceiptSummary(receiptDocumentId);
+
+        return new ReceiptGrIrApSettlementExecutionResult(
+            receiptDocumentId,
+            batchId,
+            idempotencyKey,
+            Round6(requestedAmountBase),
+            Round6(settledQuantity),
+            Round6(settledAmountBase),
+            lineCount,
+            summary);
+    }
+
+    private static async Task<IReadOnlyList<ExecutableSettlementLine>> LoadExecutableSettlementLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              line.id,
+              line.bridge_line_id,
+              line.bill_id,
+              line.ap_open_item_id,
+              line.settlement_quantity,
+              line.settlement_amount_base,
+              line.settled_quantity,
+              line.settled_amount_base,
+              line.remaining_amount_base
+            from {SettlementLinesTableName} line
+            where line.company_id = @company_id
+              and line.receipt_id = @receipt_id
+              and line.settlement_status in (
+                '{ReceiptGrIrApSettlementStatusPolicy.EligibleNotSettled}',
+                '{ReceiptGrIrApSettlementStatusPolicy.PartiallySettled}'
+              )
+              and round(line.remaining_amount_base, 6) > 0
+            order by line.receipt_line_number, line.bill_line_number, line.id
+            for update;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+
+        var lines = new List<ExecutableSettlementLine>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lines.Add(new ExecutableSettlementLine(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("bridge_line_id")),
+                reader.GetGuid(reader.GetOrdinal("bill_id")),
+                reader.IsDBNull(reader.GetOrdinal("ap_open_item_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("ap_open_item_id")),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settlement_quantity"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settlement_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_quantity"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("remaining_amount_base")))));
+        }
+
+        return lines;
+    }
+
+    private static IReadOnlyList<SettlementAllocation> BuildSettlementAllocations(
+        IReadOnlyList<ExecutableSettlementLine> executableLines,
+        decimal requestedAmountBase)
+    {
+        var remainingRequest = Round6(requestedAmountBase);
+        var allocations = new List<SettlementAllocation>();
+
+        foreach (var line in executableLines)
+        {
+            if (remainingRequest <= 0)
+            {
+                break;
+            }
+
+            var amountBase = remainingRequest >= line.RemainingAmountBase
+                ? line.RemainingAmountBase
+                : remainingRequest;
+            amountBase = Round6(amountBase);
+            var remainingQuantity = Round6(line.SettlementQuantity - line.SettledQuantity);
+            var quantity = amountBase >= line.RemainingAmountBase
+                ? remainingQuantity
+                : Round6(line.SettlementQuantity * amountBase / line.SettlementAmountBase);
+            if (quantity > remainingQuantity)
+            {
+                quantity = remainingQuantity;
+            }
+
+            if (amountBase <= 0 || quantity <= 0)
+            {
+                throw new InvalidOperationException("GR/IR settlement allocation produced a non-positive slice. Refresh settlement control truth and retry.");
+            }
+
+            allocations.Add(new SettlementAllocation(
+                line.SettlementLineId,
+                line.BridgeLineId,
+                line.BillId,
+                line.ApOpenItemId,
+                Round6(quantity),
+                amountBase));
+            remainingRequest = Round6(remainingRequest - amountBase);
+        }
+
+        if (remainingRequest > 0)
+        {
+            throw new InvalidOperationException("GR/IR settlement allocation could not consume the requested amount.");
+        }
+
+        return allocations;
+    }
+
+    private static async Task CreateSettlementBatchAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        Guid batchId,
+        string idempotencyKey,
+        decimal requestedAmountBase,
+        IReadOnlyList<SettlementAllocation> allocations,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            insert into {SettlementBatchesTableName} (
+              id,
+              company_id,
+              receipt_id,
+              idempotency_key,
+              status,
+              requested_amount_base,
+              settled_quantity,
+              settled_amount_base,
+              line_count,
+              created_by_user_id
+            )
+            values (
+              @batch_id,
+              @company_id,
+              @receipt_id,
+              @idempotency_key,
+              'posted',
+              @requested_amount_base,
+              @settled_quantity,
+              @settled_amount_base,
+              @line_count,
+              @created_by_user_id
+            );
+            """);
+        command.Parameters.AddWithValue("batch_id", batchId);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+        command.Parameters.AddWithValue("idempotency_key", idempotencyKey);
+        command.Parameters.AddWithValue("requested_amount_base", requestedAmountBase);
+        command.Parameters.AddWithValue("settled_quantity", Round6(allocations.Sum(static allocation => allocation.SettledQuantity)));
+        command.Parameters.AddWithValue("settled_amount_base", Round6(allocations.Sum(static allocation => allocation.SettledAmountBase)));
+        command.Parameters.AddWithValue("line_count", allocations.Count);
+        command.Parameters.AddWithValue("created_by_user_id", userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertSettlementBatchLinesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid batchId,
+        IReadOnlyList<SettlementAllocation> allocations,
+        CancellationToken cancellationToken)
+    {
+        foreach (var allocation in allocations)
+        {
+            await using var command = scope.CreateCommand(
+                $"""
+                insert into {SettlementBatchLinesTableName} (
+                  company_id,
+                  settlement_batch_id,
+                  settlement_line_id,
+                  bridge_line_id,
+                  bill_id,
+                  ap_open_item_id,
+                  settled_quantity,
+                  settled_amount_base
+                )
+                values (
+                  @company_id,
+                  @settlement_batch_id,
+                  @settlement_line_id,
+                  @bridge_line_id,
+                  @bill_id,
+                  @ap_open_item_id,
+                  @settled_quantity,
+                  @settled_amount_base
+                );
+                """);
+            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("settlement_batch_id", batchId);
+            command.Parameters.AddWithValue("settlement_line_id", allocation.SettlementLineId);
+            command.Parameters.AddWithValue("bridge_line_id", allocation.BridgeLineId);
+            command.Parameters.AddWithValue("bill_id", allocation.BillId);
+            command.Parameters.AddWithValue(
+                "ap_open_item_id",
+                allocation.ApOpenItemId.HasValue ? allocation.ApOpenItemId.Value : DBNull.Value);
+            command.Parameters.AddWithValue("settled_quantity", allocation.SettledQuantity);
+            command.Parameters.AddWithValue("settled_amount_base", allocation.SettledAmountBase);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static async Task ApplySettlementAllocationsAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        IReadOnlyList<SettlementAllocation> allocations,
+        CancellationToken cancellationToken)
+    {
+        foreach (var allocation in allocations)
+        {
+            await using var command = scope.CreateCommand(
+                $"""
+                update {SettlementLinesTableName}
+                set settled_quantity = round(settled_quantity + @settled_quantity, 6),
+                    settled_amount_base = round(settled_amount_base + @settled_amount_base, 6),
+                    remaining_amount_base = greatest(round(remaining_amount_base - @settled_amount_base, 6), 0),
+                    last_settled_at = now()
+                where company_id = @company_id
+                  and id = @settlement_line_id
+                  and settlement_status in (
+                    '{ReceiptGrIrApSettlementStatusPolicy.EligibleNotSettled}',
+                    '{ReceiptGrIrApSettlementStatusPolicy.PartiallySettled}'
+                  )
+                  and round(remaining_amount_base, 6) >= @settled_amount_base;
+                """);
+            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("settlement_line_id", allocation.SettlementLineId);
+            command.Parameters.AddWithValue("settled_quantity", allocation.SettledQuantity);
+            command.Parameters.AddWithValue("settled_amount_base", allocation.SettledAmountBase);
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException("GR/IR settlement slice was already consumed or is no longer eligible. Refresh settlement control truth and retry.");
+            }
+        }
+    }
+
+    private static async Task<ReceiptGrIrApSettlementSummary?> LoadReceiptSettlementSummaryAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        var summaries = await LoadReceiptSettlementSummariesAsync(
+            scope,
+            companyId,
+            [receiptDocumentId],
+            cancellationToken);
+
+        return summaries.TryGetValue(receiptDocumentId, out var summary) ? summary : null;
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, ReceiptGrIrApSettlementSummary>> LoadReceiptSettlementSummariesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid[] receiptDocumentIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            BuildSummarySql("receipt_id", "receipt_document_ids"));
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.Add(new NpgsqlParameter<Guid[]>("receipt_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            TypedValue = receiptDocumentIds
+        });
+
+        var summaries = new Dictionary<Guid, ReceiptGrIrApSettlementSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var receiptDocumentId = reader.GetGuid(reader.GetOrdinal("document_id"));
+            var settlementLineCount = reader.GetInt32(reader.GetOrdinal("settlement_line_count"));
+            var eligibleLineCount = reader.GetInt32(reader.GetOrdinal("eligible_line_count"));
+            var blockedLineCount = reader.GetInt32(reader.GetOrdinal("blocked_line_count"));
+            var partiallySettledLineCount = reader.GetInt32(reader.GetOrdinal("partially_settled_line_count"));
+            var settledLineCount = reader.GetInt32(reader.GetOrdinal("settled_line_count"));
+            summaries[receiptDocumentId] = new ReceiptGrIrApSettlementSummary(
+                receiptDocumentId,
+                ReceiptGrIrApSettlementStatusPolicy.ResolveSummaryStatus(
+                    settlementLineCount,
+                    eligibleLineCount,
+                    blockedLineCount,
+                    partiallySettledLineCount,
+                    settledLineCount),
+                settlementLineCount,
+                eligibleLineCount,
+                blockedLineCount,
+                reader.GetInt32(reader.GetOrdinal("blocked_grir_not_posted_line_count")),
+                reader.GetInt32(reader.GetOrdinal("blocked_bill_not_posted_line_count")),
+                reader.GetInt32(reader.GetOrdinal("blocked_missing_ap_open_item_line_count")),
+                reader.GetInt32(reader.GetOrdinal("blocked_journal_not_posted_line_count")),
+                reader.GetInt32(reader.GetOrdinal("blocked_amount_exceeded_line_count")),
+                partiallySettledLineCount,
+                settledLineCount,
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settlement_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("eligible_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("remaining_amount_base"))),
+                reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
+                reader.IsDBNull(reader.GetOrdinal("last_settled_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_settled_at")));
+        }
+
+        foreach (var receiptDocumentId in receiptDocumentIds)
+        {
+            summaries.TryAdd(receiptDocumentId, BuildEmptyReceiptSummary(receiptDocumentId));
+        }
+
+        return summaries;
+    }
+
+    private static async Task<BillGrIrApSettlementSummary?> LoadBillSettlementSummaryAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            BuildSummarySql("bill_id", "bill_document_ids"));
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.Add(new NpgsqlParameter<Guid[]>("bill_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            TypedValue = [billDocumentId]
+        });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var settlementLineCount = reader.GetInt32(reader.GetOrdinal("settlement_line_count"));
+        var eligibleLineCount = reader.GetInt32(reader.GetOrdinal("eligible_line_count"));
+        var blockedLineCount = reader.GetInt32(reader.GetOrdinal("blocked_line_count"));
+        var partiallySettledLineCount = reader.GetInt32(reader.GetOrdinal("partially_settled_line_count"));
+        var settledLineCount = reader.GetInt32(reader.GetOrdinal("settled_line_count"));
+
+        return new BillGrIrApSettlementSummary(
+            billDocumentId,
+            ReceiptGrIrApSettlementStatusPolicy.ResolveSummaryStatus(
+                settlementLineCount,
+                eligibleLineCount,
+                blockedLineCount,
+                partiallySettledLineCount,
+                settledLineCount),
+            settlementLineCount,
+            eligibleLineCount,
+            blockedLineCount,
+            reader.GetInt32(reader.GetOrdinal("blocked_grir_not_posted_line_count")),
+            reader.GetInt32(reader.GetOrdinal("blocked_bill_not_posted_line_count")),
+            reader.GetInt32(reader.GetOrdinal("blocked_missing_ap_open_item_line_count")),
+            reader.GetInt32(reader.GetOrdinal("blocked_journal_not_posted_line_count")),
+            reader.GetInt32(reader.GetOrdinal("blocked_amount_exceeded_line_count")),
+            partiallySettledLineCount,
+            settledLineCount,
+            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settlement_amount_base"))),
+            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("eligible_amount_base"))),
+            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"))),
+            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("remaining_amount_base"))),
+            reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")),
+            reader.IsDBNull(reader.GetOrdinal("last_settled_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_settled_at")));
+    }
+
+    private static string BuildSummarySql(string documentColumn, string parameterName) =>
+        $"""
+        with requested_documents as (
+          select unnest(@{parameterName}::uuid[]) as document_id
+        ),
+        settlement_groups as (
+          select
+            line.{documentColumn} as document_id,
+            count(*)::int as settlement_line_count,
+            count(*) filter (where line.settlement_status in (
+              '{ReceiptGrIrApSettlementStatusPolicy.EligibleNotSettled}',
+              '{ReceiptGrIrApSettlementStatusPolicy.PartiallySettled}'
+            ))::int as eligible_line_count,
+            count(*) filter (where line.settlement_status like 'blocked_%')::int as blocked_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.BlockedGrIrNotPosted}')::int as blocked_grir_not_posted_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.BlockedBillNotPosted}')::int as blocked_bill_not_posted_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.BlockedMissingApOpenItem}')::int as blocked_missing_ap_open_item_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.BlockedJournalNotPosted}')::int as blocked_journal_not_posted_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.BlockedAmountExceeded}')::int as blocked_amount_exceeded_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.PartiallySettled}')::int as partially_settled_line_count,
+            count(*) filter (where line.settlement_status = '{ReceiptGrIrApSettlementStatusPolicy.Settled}')::int as settled_line_count,
+            coalesce(sum(line.settlement_amount_base), 0)::numeric(20,6) as settlement_amount_base,
+            coalesce(sum(line.remaining_amount_base) filter (where line.settlement_status in (
+              '{ReceiptGrIrApSettlementStatusPolicy.EligibleNotSettled}',
+              '{ReceiptGrIrApSettlementStatusPolicy.PartiallySettled}'
+            )), 0)::numeric(20,6) as eligible_amount_base,
+            coalesce(sum(line.settled_amount_base), 0)::numeric(20,6) as settled_amount_base,
+            coalesce(sum(line.remaining_amount_base), 0)::numeric(20,6) as remaining_amount_base,
+            max(line.refreshed_at) as last_refreshed_at,
+            max(line.last_settled_at) as last_settled_at
+          from {SettlementLinesTableName} line
+          where line.company_id = @company_id
+            and line.{documentColumn} = any(@{parameterName})
+          group by line.{documentColumn}
+        )
+        select
+          rd.document_id,
+          coalesce(sg.settlement_line_count, 0) as settlement_line_count,
+          coalesce(sg.eligible_line_count, 0) as eligible_line_count,
+          coalesce(sg.blocked_line_count, 0) as blocked_line_count,
+          coalesce(sg.blocked_grir_not_posted_line_count, 0) as blocked_grir_not_posted_line_count,
+          coalesce(sg.blocked_bill_not_posted_line_count, 0) as blocked_bill_not_posted_line_count,
+          coalesce(sg.blocked_missing_ap_open_item_line_count, 0) as blocked_missing_ap_open_item_line_count,
+          coalesce(sg.blocked_journal_not_posted_line_count, 0) as blocked_journal_not_posted_line_count,
+          coalesce(sg.blocked_amount_exceeded_line_count, 0) as blocked_amount_exceeded_line_count,
+          coalesce(sg.partially_settled_line_count, 0) as partially_settled_line_count,
+          coalesce(sg.settled_line_count, 0) as settled_line_count,
+          coalesce(sg.settlement_amount_base, 0)::numeric(20,6) as settlement_amount_base,
+          coalesce(sg.eligible_amount_base, 0)::numeric(20,6) as eligible_amount_base,
+          coalesce(sg.settled_amount_base, 0)::numeric(20,6) as settled_amount_base,
+          coalesce(sg.remaining_amount_base, 0)::numeric(20,6) as remaining_amount_base,
+          sg.last_refreshed_at,
+          sg.last_settled_at
+        from requested_documents rd
+        left join settlement_groups sg
+          on sg.document_id = rd.document_id;
+        """;
+
+    private static async Task EnsureSchemaAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            create table if not exists {SettlementLinesTableName} (
+              id uuid primary key default gen_random_uuid(),
+              company_id uuid not null references companies(id) on delete cascade,
+              receipt_id uuid not null,
+              receipt_line_number integer not null,
+              bridge_line_id uuid not null references {BridgeLinesTableName}(id) on delete cascade,
+              journal_entry_id uuid null references journal_entries(id) on delete set null,
+              journal_entry_display_number text null,
+              bill_id uuid not null,
+              bill_line_number integer not null,
+              ap_open_item_id uuid null references ap_open_items(id) on delete set null,
+              item_id uuid not null,
+              warehouse_id uuid not null,
+              uom_code text not null,
+              settlement_quantity numeric(20,6) not null,
+              settlement_amount_base numeric(20,6) not null,
+              settled_quantity numeric(20,6) not null default 0,
+              settled_amount_base numeric(20,6) not null default 0,
+              remaining_amount_base numeric(20,6) not null,
+              settlement_status text not null,
+              blocked_reason_code text null,
+              refreshed_by_user_id uuid not null,
+              refreshed_at timestamptz not null default now(),
+              last_settled_at timestamptz null
+            );
+
+            create unique index if not exists ux_receipt_grir_ap_settlement_lines_bridge
+              on {SettlementLinesTableName} (company_id, bridge_line_id);
+
+            create index if not exists ix_receipt_grir_ap_settlement_lines_receipt
+              on {SettlementLinesTableName} (company_id, receipt_id, settlement_status);
+
+            create index if not exists ix_receipt_grir_ap_settlement_lines_bill
+              on {SettlementLinesTableName} (company_id, bill_id, bill_line_number, settlement_status);
+
+            create table if not exists {SettlementBatchesTableName} (
+              id uuid primary key,
+              company_id uuid not null references companies(id) on delete cascade,
+              receipt_id uuid not null,
+              idempotency_key text not null,
+              status text not null,
+              requested_amount_base numeric(20,6) not null,
+              settled_quantity numeric(20,6) not null,
+              settled_amount_base numeric(20,6) not null,
+              line_count integer not null,
+              created_by_user_id uuid not null,
+              created_at timestamptz not null default now()
+            );
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_status text not null default 'not_posted';
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_entry_id uuid null references journal_entries(id) on delete set null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_entry_display_number text null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_posted_by_user_id uuid null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_posted_at timestamptz null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_refreshed_at timestamptz null;
+
+            alter table {SettlementBatchesTableName}
+              add column if not exists journal_blocked_reason_code text null;
+
+            create unique index if not exists ux_receipt_grir_ap_settlement_batches_key
+              on {SettlementBatchesTableName} (company_id, idempotency_key);
+
+            create index if not exists ix_receipt_grir_ap_settlement_batches_receipt
+              on {SettlementBatchesTableName} (company_id, receipt_id, created_at desc);
+
+            create table if not exists {SettlementBatchLinesTableName} (
+              id uuid primary key default gen_random_uuid(),
+              company_id uuid not null references companies(id) on delete cascade,
+              settlement_batch_id uuid not null references {SettlementBatchesTableName}(id) on delete cascade,
+              settlement_line_id uuid not null references {SettlementLinesTableName}(id) on delete restrict,
+              bridge_line_id uuid not null references {BridgeLinesTableName}(id) on delete restrict,
+              bill_id uuid not null,
+              ap_open_item_id uuid null references ap_open_items(id) on delete set null,
+              settled_quantity numeric(20,6) not null,
+              settled_amount_base numeric(20,6) not null,
+              created_at timestamptz not null default now()
+            );
+
+            create unique index if not exists ux_receipt_grir_ap_settlement_batch_lines_line
+              on {SettlementBatchLinesTableName} (company_id, settlement_batch_id, settlement_line_id);
+
+            create index if not exists ix_receipt_grir_ap_settlement_batch_lines_bridge
+              on {SettlementBatchLinesTableName} (company_id, bridge_line_id);
+            """);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        PostgresCommandScope scope,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand("select to_regclass(@table_name) is not null;");
+        command.Parameters.AddWithValue("table_name", tableName);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    private static ReceiptGrIrApSettlementSummary BuildEmptyReceiptSummary(Guid receiptDocumentId) =>
+        new(
+            receiptDocumentId,
+            ReceiptGrIrApSettlementStatusPolicy.NotEligible,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0m,
+            0m,
+            0m,
+            0m,
+            null,
+            null);
+
+    private static BillGrIrApSettlementSummary BuildEmptyBillSummary(Guid billDocumentId) =>
+        new(
+            billDocumentId,
+            ReceiptGrIrApSettlementStatusPolicy.NotEligible,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0m,
+            0m,
+            0m,
+            0m,
+            null,
+            null);
+
+    private static decimal Round6(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private sealed record ExecutableSettlementLine(
+        Guid SettlementLineId,
+        Guid BridgeLineId,
+        Guid BillId,
+        Guid? ApOpenItemId,
+        decimal SettlementQuantity,
+        decimal SettlementAmountBase,
+        decimal SettledQuantity,
+        decimal SettledAmountBase,
+        decimal RemainingAmountBase);
+
+    private sealed record SettlementAllocation(
+        Guid SettlementLineId,
+        Guid BridgeLineId,
+        Guid BillId,
+        Guid? ApOpenItemId,
+        decimal SettledQuantity,
+        decimal SettledAmountBase);
+}

@@ -72,6 +72,60 @@ public sealed class BusinessApprovalAuthorityTests
         Assert.Equal("authority_allowed", decision.OutcomeCode);
     }
 
+    [Fact]
+    public void CanManageGrIrClearingAccountPolicy_AllowsAccountingSettingsRole()
+    {
+        var session = CreateSession("company_accounting_settings");
+
+        var decision = BusinessApprovalAuthority.EvaluateGrIrClearingAccountPolicyManagement(
+            session,
+            "save");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void CanManageGrIrClearingAccountPolicy_BlocksOrdinaryUserRole()
+    {
+        var session = CreateSession("user", "ap");
+
+        var decision = BusinessApprovalAuthority.EvaluateGrIrClearingAccountPolicyManagement(
+            session,
+            "save");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_grir_policy_management_authority", decision.OutcomeCode);
+        Assert.Contains("accounting-governance", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanExecuteGrIrSettlement_AllowsAccountingSettingsRole()
+    {
+        var session = CreateSession("company_accounting_settings");
+
+        var decision = BusinessApprovalAuthority.EvaluateGrIrSettlementExecution(
+            session,
+            "execute");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void CanExecuteGrIrSettlement_BlocksOrdinaryUserRole()
+    {
+        var session = CreateSession("user", "ap");
+
+        var decision = BusinessApprovalAuthority.EvaluateGrIrSettlementExecution(
+            session,
+            "post");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_grir_settlement_execution_authority", decision.OutcomeCode);
+        Assert.Contains("accounting-governance", decision.Message, StringComparison.Ordinal);
+    }
+
     private static BusinessSessionContext CreateSession(params string[] roles) =>
         new()
         {

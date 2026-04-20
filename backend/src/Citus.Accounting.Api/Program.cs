@@ -83,6 +83,8 @@ builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccounti
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
+builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
+builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
 builder.Services.AddSingleton<JournalEntryNumberLookup, PostgreSqlJournalEntryNumberLookup>();
 builder.Services.AddSingleton<GlIJournalEntryLifecycleStore, PostgreSqlJournalEntryLifecycleStore>();
 builder.Services.AddSingleton<GlIJournalEntryLifecycleWorkflow, GlJournalEntryLifecycleWorkflow>();
@@ -108,6 +110,8 @@ builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
+builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
+builder.Services.AddScoped<PostReceiptGrIrSettlementJournalCommandHandler>();
 builder.Services.AddScoped<PostVendorCreditCommandHandler>();
 builder.Services.AddScoped<PrepareReceivePaymentDraftCommandHandler>();
 builder.Services.AddScoped<PostReceivePaymentCommandHandler>();
@@ -3828,7 +3832,12 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/bills/{documentId:guid}",
-    async (Guid documentId, [AsParameters] BillLookupQuery query, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        [AsParameters] BillLookupQuery query,
+        IBillDocumentRepository repository,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
     {
         var document = await repository.GetForPostingAsync(
             new(query.CompanyId),
@@ -3842,6 +3851,11 @@ accounting.MapGet(
                 message = "Bill document was not found in the active company context."
             });
         }
+
+        var grIrSettlementSummary = await grIrSettlementStore.GetBillSettlementSummaryAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
 
         return Results.Ok(new
         {
@@ -3860,6 +3874,28 @@ accounting.MapGet(
             document.TaxAmount,
             document.TotalAmount,
             document.Memo,
+            GrIrSettlement = grIrSettlementSummary is null
+                ? null
+                : new
+                {
+                    grIrSettlementSummary.SettlementStatus,
+                    grIrSettlementSummary.SettlementLineCount,
+                    grIrSettlementSummary.EligibleLineCount,
+                    grIrSettlementSummary.BlockedLineCount,
+                    grIrSettlementSummary.BlockedGrIrNotPostedLineCount,
+                    grIrSettlementSummary.BlockedBillNotPostedLineCount,
+                    grIrSettlementSummary.BlockedMissingApOpenItemLineCount,
+                    grIrSettlementSummary.BlockedJournalNotPostedLineCount,
+                    grIrSettlementSummary.BlockedAmountExceededLineCount,
+                    grIrSettlementSummary.PartiallySettledLineCount,
+                    grIrSettlementSummary.SettledLineCount,
+                    grIrSettlementSummary.SettlementAmountBase,
+                    grIrSettlementSummary.EligibleAmountBase,
+                    grIrSettlementSummary.SettledAmountBase,
+                    grIrSettlementSummary.RemainingAmountBase,
+                    grIrSettlementSummary.LastRefreshedAt,
+                    grIrSettlementSummary.LastSettledAt
+                },
             Lines = document.BillLines.Select(line => new
             {
                 line.LineNumber,
@@ -3984,6 +4020,7 @@ accounting.MapGet(
         IReceiptInventoryValuationStore valuationStore,
         IReceiptInventoryCostLayerEmissionStore emissionStore,
         IReceiptGrIrBridgeStore grIrBridgeStore,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
         var documents = await repository.ListAsync(
@@ -4008,6 +4045,10 @@ accounting.MapGet(
             cancellationToken);
         var grIrBridgeSummaries = await grIrBridgeStore.GetReceiptGrIrBridgeSummariesAsync(
             query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var grIrSettlementSummaries = await grIrSettlementStore.GetReceiptSettlementSummariesAsync(
+            new(query.CompanyId),
             documents.Select(static document => document.DocumentId).ToArray(),
             cancellationToken);
 
@@ -4104,6 +4145,28 @@ accounting.MapGet(
                     grIrBridgeSummary.LastPostedAt,
                     grIrBridgeSummary.LastRefreshedAt
                 }
+                : null,
+            GrIrSettlement = grIrSettlementSummaries.TryGetValue(document.DocumentId, out var grIrSettlementSummary)
+                ? new
+                {
+                    grIrSettlementSummary.SettlementStatus,
+                    grIrSettlementSummary.SettlementLineCount,
+                    grIrSettlementSummary.EligibleLineCount,
+                    grIrSettlementSummary.BlockedLineCount,
+                    grIrSettlementSummary.BlockedGrIrNotPostedLineCount,
+                    grIrSettlementSummary.BlockedBillNotPostedLineCount,
+                    grIrSettlementSummary.BlockedMissingApOpenItemLineCount,
+                    grIrSettlementSummary.BlockedJournalNotPostedLineCount,
+                    grIrSettlementSummary.BlockedAmountExceededLineCount,
+                    grIrSettlementSummary.PartiallySettledLineCount,
+                    grIrSettlementSummary.SettledLineCount,
+                    grIrSettlementSummary.SettlementAmountBase,
+                    grIrSettlementSummary.EligibleAmountBase,
+                    grIrSettlementSummary.SettledAmountBase,
+                    grIrSettlementSummary.RemainingAmountBase,
+                    grIrSettlementSummary.LastRefreshedAt,
+                    grIrSettlementSummary.LastSettledAt
+                }
                 : null
         }));
     });
@@ -4130,9 +4193,18 @@ accounting.MapPost(
     "/receipts/grir-clearing-account-policy",
     async (
         SaveReceiptGrIrClearingAccountPolicyHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
         IReceiptGrIrClearingAccountPolicyRepository repository,
         CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequireGrIrClearingAccountPolicyManagementAuthority(
+            sessionAccessor.Current,
+            "save");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
         try
         {
             await repository.SaveDefaultGrIrClearingAccountAsync(
@@ -4163,6 +4235,7 @@ accounting.MapGet(
         IReceiptInventoryValuationStore valuationStore,
         IReceiptInventoryCostLayerEmissionStore emissionStore,
         IReceiptGrIrBridgeStore grIrBridgeStore,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
         CancellationToken cancellationToken) =>
     {
         var document = await repository.GetAsync(
@@ -4187,6 +4260,10 @@ accounting.MapGet(
             cancellationToken);
         var grIrBridgeSummary = await grIrBridgeStore.GetReceiptGrIrBridgeSummaryAsync(
             query.CompanyId,
+            documentId,
+            cancellationToken);
+        var grIrSettlementSummary = await grIrSettlementStore.GetReceiptSettlementSummaryAsync(
+            new(query.CompanyId),
             documentId,
             cancellationToken);
 
@@ -4283,6 +4360,28 @@ accounting.MapGet(
                         grIrBridgeSummary.JournalEntryDisplayNumber,
                         grIrBridgeSummary.LastPostedAt,
                         grIrBridgeSummary.LastRefreshedAt
+                    },
+                GrIrSettlement = grIrSettlementSummary is null
+                    ? null
+                    : new
+                    {
+                        grIrSettlementSummary.SettlementStatus,
+                        grIrSettlementSummary.SettlementLineCount,
+                        grIrSettlementSummary.EligibleLineCount,
+                        grIrSettlementSummary.BlockedLineCount,
+                        grIrSettlementSummary.BlockedGrIrNotPostedLineCount,
+                        grIrSettlementSummary.BlockedBillNotPostedLineCount,
+                        grIrSettlementSummary.BlockedMissingApOpenItemLineCount,
+                        grIrSettlementSummary.BlockedJournalNotPostedLineCount,
+                        grIrSettlementSummary.BlockedAmountExceededLineCount,
+                        grIrSettlementSummary.PartiallySettledLineCount,
+                        grIrSettlementSummary.SettledLineCount,
+                        grIrSettlementSummary.SettlementAmountBase,
+                        grIrSettlementSummary.EligibleAmountBase,
+                        grIrSettlementSummary.SettledAmountBase,
+                        grIrSettlementSummary.RemainingAmountBase,
+                        grIrSettlementSummary.LastRefreshedAt,
+                        grIrSettlementSummary.LastSettledAt
                     },
                 Lines = document.ReceiptLines.Select(line => new
                 {
@@ -4451,6 +4550,99 @@ accounting.MapPost(
                 request.CompanyId,
                 request.UserId,
                 documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrSettlementStore.RefreshReceiptSettlementControlAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/execute",
+    async (
+        Guid documentId,
+        ExecuteReceiptGrIrSettlementHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ExecuteReceiptGrIrSettlementCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "execute");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    request.SettlementAmountBase,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/{settlementBatchId:guid}/journal/post",
+    async (
+        Guid documentId,
+        Guid settlementBatchId,
+        PostReceiptGrIrSettlementJournalHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostReceiptGrIrSettlementJournalCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "post");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostReceiptGrIrSettlementJournalCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    settlementBatchId,
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -5101,6 +5293,46 @@ static IResult? RequireOpenItemAdjustmentAccountMappingManagementAuthority(
     string transitionCode)
 {
     var decision = BusinessApprovalAuthority.EvaluateOpenItemAdjustmentAccountMappingManagement(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequireGrIrClearingAccountPolicyManagementAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateGrIrClearingAccountPolicyManagement(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequireGrIrSettlementExecutionAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateGrIrSettlementExecution(
         session,
         transitionCode);
 

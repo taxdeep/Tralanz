@@ -258,6 +258,19 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
         }
 
+        if (document is ReceiptGrIrSettlementPostingDocument grIrSettlement)
+        {
+            if (grIrSettlement.TotalAmountBase <= 0m)
+            {
+                throw new InvalidOperationException("Receipt GR/IR settlement posting must carry a positive base amount.");
+            }
+
+            if (grIrSettlement.SettlementLines.Any(static line => line.AmountBase <= 0m))
+            {
+                throw new InvalidOperationException("Receipt GR/IR settlement posting lines must carry positive base amounts.");
+            }
+        }
+
         return Task.CompletedTask;
     }
 }
@@ -306,6 +319,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildOpenItemAdjustmentFragments(adjustment).AsReadOnly()),
             ReceiptGrIrPostingDocument grIrPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildReceiptGrIrPostingFragments(grIrPosting).AsReadOnly()),
+            ReceiptGrIrSettlementPostingDocument grIrSettlement => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -785,6 +800,53 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             creditAmount,
             $"GR/IR clearing for receipt {document.ReceiptDocumentId}",
             ControlRole: "grir_clearing"));
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    private static List<PostingFragment> BuildReceiptGrIrSettlementPostingFragments(
+        ReceiptGrIrSettlementPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.GrIrClearingAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"GR/IR settlement clearing for {document.DisplayNumber.Value}",
+                ControlRole: "grir_clearing"));
+        }
+
+        foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.BillOffsetAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                0m,
+                amount,
+                0m,
+                amount,
+                $"Bill-side GR/IR settlement offset for {document.DisplayNumber.Value}",
+                ControlRole: "grir_bill_offset"));
+        }
 
         EnsureBalancedBaseCurrency(fragments);
         return fragments;

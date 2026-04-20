@@ -1251,3 +1251,109 @@ Still not included:
 Authority note:
 
 This is hardening, not a new valuation universe. GR/IR posting still consumes only eligible bridge truth and does not allow Bill to re-own inbound physical quantity.
+
+## Phase H.14 checkpoint
+
+H.14 introduces the first persisted GR/IR against AP Bill settlement control lane.
+
+Boundary:
+
+- This is read/control truth only.
+- It does not create AP settlement journal entries.
+- It does not recognize PPV / variance.
+- It does not introduce PO truth.
+- It does not enable tracked receipt settlement flows.
+
+What changed:
+
+- `receipt_grir_ap_settlement_lines` tracks which posted GR/IR bridge slices can be settled against posted AP Bills.
+- Settlement eligibility requires:
+  - posted GR/IR bridge line
+  - posted journal entry linkage
+  - posted Bill
+  - AP open item anchor for the Bill
+- Partial clearing can be represented through persisted settled quantity/amount and remaining amount.
+- Receipt list/detail and Bill detail can expose settlement status and blocked reason counts.
+- GR/IR clearing account governance was hardened to require an active liability account in the active company.
+
+Still not included:
+
+- posting settlement entries
+- clearing GR/IR against AP open item balances
+- PPV / variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- Shell-wide settlement workbench
+
+Authority note:
+
+H.14 keeps the truth ladder intact. Receipt owns physical inbound quantity, GR/IR bridge owns posted accounting recognition, and settlement control only determines whether posted GR/IR value is eligible to be cleared against AP Bill truth.
+
+## Phase H.15 checkpoint
+
+H.15 introduces minimal execution for the GR/IR against AP Bill settlement lane.
+
+Boundary:
+
+- Execution consumes only previously eligible settlement control slices.
+- It does not create PPV / variance.
+- It does not introduce PO truth.
+- It does not enable tracked receipt flows.
+- It does not expand into a Shell-wide workbench.
+- It does not yet perform full AP settlement journal posting.
+
+What changed:
+
+- `receipt_grir_ap_settlement_batches` stores execution attempts with idempotency keys.
+- `receipt_grir_ap_settlement_batch_lines` stores consumed settlement-line slices.
+- Execution can partially settle a remaining slice and preserve remaining amount truth.
+- Duplicate retry with the same idempotency key returns the original batch result.
+- Over-settlement is blocked before any slice is consumed.
+- Receipt settlement summary now treats partially settled remaining amount as still eligible for later execution.
+
+Still not included:
+
+- AP clearing journal universe
+- PPV / variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- reverse / void settlement reversal
+- Shell-wide settlement operations surface
+
+Authority note:
+
+H.15 moves from "reviewable settlement eligibility" to "reviewable settlement execution" without letting Bill retake physical truth or turning this phase into a full AP settlement accounting universe.
+
+## Phase H.16 checkpoint
+
+H.16 adds the minimal journal boundary for H.15 GR/IR settlement execution.
+
+Boundary:
+
+- Only executed H.15 settlement batches can be journal-posted.
+- It does not clear AP open item balances.
+- It does not create PPV / variance.
+- It does not introduce PO truth.
+- It does not enable tracked receipt flows.
+
+What changed:
+
+- `receipt_grir_ap_settlement_batches` now carries settlement journal status and journal linkage.
+- `ReceiptGrIrSettlementPostingDocument` posts through the standard posting engine.
+- Journal fragments debit GR/IR clearing and credit the matched Bill line expense/inventory account.
+- The settlement journal source type is `receipt_grir_ap_settlement_posting`.
+- A dedicated GR/IR settlement authority seam protects execute/post endpoints.
+- Journal refresh detects non-posted linked settlement journals and marks the batch `journal_inconsistent`.
+
+Still not included:
+
+- AP open item balance clearing
+- settlement reversal documents
+- PPV / variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- Shell-wide settlement operations surface
+
+Authority note:
+
+H.16 gives the settlement execution lane an accounting boundary while preserving the truth ladder: Receipt owns physical quantity, Bill owns supplier charge, GR/IR owns interim recognition, and this journal only clears the matched GR/IR/Bill-side recognition slice.
