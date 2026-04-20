@@ -156,6 +156,7 @@ load_env_file() {
   : "${CITUS_FRONTEND_PORT:?Missing CITUS_FRONTEND_PORT}"
   : "${CITUS_ACCOUNTING_API_PORT:?Missing CITUS_ACCOUNTING_API_PORT}"
   : "${CITUS_SYSADMIN_API_PORT:?Missing CITUS_SYSADMIN_API_PORT}"
+  CITUS_SYSADMIN_WEB_PORT="${CITUS_SYSADMIN_WEB_PORT:-3010}"
   : "${CITUS_FRONTEND_HOST:?Missing CITUS_FRONTEND_HOST}"
   : "${CITUS_API_HOST:?Missing CITUS_API_HOST}"
   : "${CITUS_DB_HOST:?Missing CITUS_DB_HOST}"
@@ -168,10 +169,13 @@ load_env_file() {
 
   AppHost__PublicBaseUrl="${AppHost__PublicBaseUrl:-http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/}"
   AppHost__AccountingApiBaseUrl="${AppHost__AccountingApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/}"
+  AppHost__SysAdminApiBaseUrl="${AppHost__SysAdminApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/}"
+  AppHost__BusinessAppBaseUrl="${AppHost__BusinessAppBaseUrl:-http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/}"
+  AppHost__PathBase="${AppHost__PathBase:-/sysadmin}"
   DOTNET_ROOT="${DOTNET_ROOT:-${DOTNET_INSTALL_DIR}}"
   DOTNET_CLI_TELEMETRY_OPTOUT="${DOTNET_CLI_TELEMETRY_OPTOUT:-1}"
   DOTNET_PRINT_TELEMETRY_MESSAGE="${DOTNET_PRINT_TELEMETRY_MESSAGE:-false}"
-  export AppHost__PublicBaseUrl AppHost__AccountingApiBaseUrl DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
+  export AppHost__PublicBaseUrl AppHost__AccountingApiBaseUrl AppHost__SysAdminApiBaseUrl AppHost__BusinessAppBaseUrl AppHost__PathBase DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
 
   validate_identifier "${CITUS_DB_NAME}" "CITUS_DB_NAME"
   validate_identifier "${CITUS_DB_USER}" "CITUS_DB_USER"
@@ -220,6 +224,10 @@ ensure_env_defaults() {
   append_env_if_missing "CITUS_HTTPS_REDIRECT" "1"
   append_env_if_missing "CITUS_CERTBOT_EMAIL" ""
   append_env_if_missing "CITUS_AUTO_START" "1"
+  append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "3010"
+  append_env_if_missing "AppHost__SysAdminApiBaseUrl" "http://127.0.0.1:5089/"
+  append_env_if_missing "AppHost__BusinessAppBaseUrl" "http://127.0.0.1:3000/"
+  append_env_if_missing "AppHost__PathBase" "/sysadmin"
   append_env_if_missing "ASPNETCORE_FORWARDEDHEADERS_ENABLED" "true"
   append_env_if_missing "DOTNET_CLI_TELEMETRY_OPTOUT" "1"
   append_env_if_missing "DOTNET_PRINT_TELEMETRY_MESSAGE" "false"
@@ -245,6 +253,7 @@ ensure_env_file() {
   local frontend_port="${CITUS_FRONTEND_PORT:-3000}"
   local accounting_port="${CITUS_ACCOUNTING_API_PORT:-5088}"
   local sysadmin_port="${CITUS_SYSADMIN_API_PORT:-5089}"
+  local sysadmin_web_port="${CITUS_SYSADMIN_WEB_PORT:-3010}"
   local server_name="${CITUS_SERVER_NAME:-_}"
 
   cat > "${ENV_FILE}" <<EOF
@@ -260,6 +269,7 @@ CITUS_FRONTEND_PORT=${frontend_port}
 CITUS_API_HOST=${api_host}
 CITUS_ACCOUNTING_API_PORT=${accounting_port}
 CITUS_SYSADMIN_API_PORT=${sysadmin_port}
+CITUS_SYSADMIN_WEB_PORT=${sysadmin_web_port}
 CITUS_DB_HOST=${db_host}
 CITUS_DB_PORT=${db_port}
 CITUS_DB_NAME=${db_name}
@@ -268,6 +278,9 @@ CITUS_DB_PASSWORD=${db_password}
 CITUS_ACCOUNTING_DB=Host=${db_host};Port=${db_port};Database=${db_name};Username=${db_user};Password=${db_password};Pooling=true
 AppHost__PublicBaseUrl=http://${frontend_host}:${frontend_port}/
 AppHost__AccountingApiBaseUrl=http://${api_host}:${accounting_port}/
+AppHost__SysAdminApiBaseUrl=http://${api_host}:${sysadmin_port}/
+AppHost__BusinessAppBaseUrl=http://${frontend_host}:${frontend_port}/
+AppHost__PathBase=/sysadmin
 EOF
 
   chmod 640 "${ENV_FILE}"
@@ -446,6 +459,10 @@ configure_runtime_preferences() {
 
   set_env_value "AppHost__PublicBaseUrl" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
   set_env_value "AppHost__AccountingApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/"
+  append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "${CITUS_SYSADMIN_WEB_PORT:-3010}"
+  set_env_value "AppHost__SysAdminApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/"
+  set_env_value "AppHost__BusinessAppBaseUrl" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
+  set_env_value "AppHost__PathBase" "/sysadmin"
   validate_https_configuration
 }
 
@@ -800,17 +817,20 @@ publish_backends() {
     "${PUBLISH_DIR}/web-shell" \
     "${PUBLISH_DIR}/accounting-api" \
     "${PUBLISH_DIR}/sysadmin-api" \
+    "${PUBLISH_DIR}/sysadmin-web" \
     "${PUBLISH_DIR}/consoleapp"
 
   mkdir -p \
     "${PUBLISH_DIR}/web-shell" \
     "${PUBLISH_DIR}/accounting-api" \
     "${PUBLISH_DIR}/sysadmin-api" \
+    "${PUBLISH_DIR}/sysadmin-web" \
     "${PUBLISH_DIR}/consoleapp"
 
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Web/Shell/Web.Shell.csproj" -c Release -o "${PUBLISH_DIR}/web-shell"
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.Accounting.Api/Citus.Accounting.Api.csproj" -c Release -o "${PUBLISH_DIR}/accounting-api"
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Api/Citus.SysAdmin.Api.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-api"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Blazor/Citus.SysAdmin.Blazor.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-web"
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.ConsoleApp/Citus.ConsoleApp.csproj" -c Release -o "${PUBLISH_DIR}/consoleapp"
 
   chown -R "${APP_USER}:${APP_GROUP}" "${PUBLISH_DIR}"
@@ -851,6 +871,34 @@ ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/web-shell/Web.Shell.dll --urls ht
 Restart=always
 RestartSec=5
 SyslogIdentifier=citus-web
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat > "${SYSTEMD_DIR}/citus-sysadmin-web.service" <<EOF
+[Unit]
+Description=Citus SysAdmin Blazor frontend
+After=network.target citus-sysadmin-api.service
+Wants=network.target
+Wants=citus-sysadmin-api.service
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_GROUP}
+WorkingDirectory=${PUBLISH_DIR}/sysadmin-web
+EnvironmentFile=${ENV_FILE}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
+Environment=AppHost__PathBase=/sysadmin
+Environment=AppHost__SysAdminApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/
+Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
+Environment=AppHost__BusinessAppBaseUrl=http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/
+ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/sysadmin-web/Citus.SysAdmin.Blazor.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}
+Restart=always
+RestartSec=5
+SyslogIdentifier=citus-sysadmin-web
 
 [Install]
 WantedBy=multi-user.target
@@ -952,6 +1000,18 @@ write_proxy_locations() {
 
   location = /health/sysadmin {
     proxy_pass http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/health;
+  }
+
+  location = /health/sysadmin-web {
+    proxy_pass http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin/system/health;
+  }
+
+  location = /sysadmin {
+    return 302 /sysadmin/;
+  }
+
+  location /sysadmin/ {
+    proxy_pass http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT};
   }
 
   location = /core {
@@ -1070,7 +1130,7 @@ EOF
 reload_systemd_units() {
   log "Reloading systemd service definitions."
   systemctl daemon-reload
-  systemctl enable citus-web.service citus-accounting-api.service citus-sysadmin-api.service
+  systemctl enable citus-web.service citus-accounting-api.service citus-sysadmin-api.service citus-sysadmin-web.service
 }
 
 restart_nginx_service() {
@@ -1082,12 +1142,14 @@ restart_application_services() {
   log "Restarting application services."
   systemctl restart citus-accounting-api.service
   systemctl restart citus-sysadmin-api.service
+  systemctl restart citus-sysadmin-web.service
   systemctl restart citus-web.service
 }
 
 stop_application_services() {
   log "Stopping current application services."
   systemctl stop citus-web.service 2>/dev/null || true
+  systemctl stop citus-sysadmin-web.service 2>/dev/null || true
   systemctl stop citus-accounting-api.service 2>/dev/null || true
   systemctl stop citus-sysadmin-api.service 2>/dev/null || true
 }
@@ -1113,6 +1175,7 @@ verify_runtime_health() {
   load_env_file
   wait_for_http "citus-accounting-api" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/health"
   wait_for_http "citus-sysadmin-api" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/health"
+  wait_for_http "citus-sysadmin-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin/system/health"
   wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/health"
 }
 
@@ -1179,14 +1242,20 @@ Deployment complete.
 Web.Shell:
   ${frontend_url}
 
+SysAdmin:
+  ${frontend_url%/}/sysadmin/
+
 Reverse-proxied endpoints:
   /accounting -> accounting API
   /core       -> sysadmin API
+  /sysadmin   -> sysadmin setup/admin UI
   /health/accounting
   /health/sysadmin
+  /health/sysadmin-web
 
 Local service ports:
   Frontend:      http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
+  SysAdmin UI:   http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin
   Accounting:    http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}
   SysAdmin:      http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}
 

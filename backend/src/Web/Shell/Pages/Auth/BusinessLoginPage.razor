@@ -25,18 +25,26 @@
                           Label="Email or username"
                           Variant="Variant.Outlined"
                           Required="true"
-                          Immediate="true" />
+                          Immediate="true"
+                          ShrinkLabel="true" />
             <MudTextField @bind-Value="_password"
                           Label="Password"
                           Variant="Variant.Outlined"
                           InputType="InputType.Password"
-                          Required="true" />
+                          Required="true"
+                          ShrinkLabel="true" />
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        Disabled="_isSubmitting"
                        OnClick="SignInAsync">
                 @(_isSubmitting ? "Signing in..." : "Sign in")
             </MudButton>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                First-time platform setup is handled in SysAdmin.
+                <MudLink Href="/sysadmin/login" Color="Color.Info">Create or sign in to SysAdmin</MudLink>
+                before creating the first business company.
+            </MudAlert>
 
             @if (_mfaChallengeId.HasValue)
             {
@@ -51,7 +59,8 @@
                 <MudTextField @bind-Value="_mfaVerificationCode"
                               Label="@GetSecondFactorFieldLabel()"
                               Variant="Variant.Outlined"
-                              Immediate="true" />
+                              Immediate="true"
+                              ShrinkLabel="true" />
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Secondary"
                            Disabled="_isSubmitting"
