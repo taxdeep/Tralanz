@@ -40,6 +40,10 @@ public sealed record class ShellAccountingSourceDocumentBrowserItem
 
     public bool? BillReceiptAllowsPost { get; init; }
 
+    public int? BillReceiptOpenDiscrepancyCount { get; init; }
+
+    public string? BillReceiptInvestigationSummary { get; init; }
+
     public string? InvoiceIssueMatchStatus { get; init; }
 
     public string? InvoiceIssuePostingGateLabel { get; init; }

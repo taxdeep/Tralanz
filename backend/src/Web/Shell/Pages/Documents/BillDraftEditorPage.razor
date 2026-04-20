@@ -303,6 +303,32 @@
                         </RowTemplate>
                     </MudTable>
                 }
+                @if (_receiptHandoffSummary.Discrepancies.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
+                        @_receiptHandoffSummary.Discrepancies.Count open inbound discrepancy lane(s) still need receipt-first investigation.
+                    </MudAlert>
+                    <MudTable Items="_receiptHandoffSummary.Discrepancies" Dense="true" Hover="true" Bordered="true" Style="margin-bottom:.75rem;">
+                        <HeaderContent>
+                            <MudTh>Line</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Item</MudTh>
+                            <MudTh>Warehouse</MudTh>
+                            <MudTh>UOM</MudTh>
+                            <MudTh>Remaining</MudTh>
+                            <MudTh>Status</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.BillLineNumber</MudTd>
+                            <MudTd>@FormatReceiptDiscrepancyType(context.DiscrepancyType)</MudTd>
+                            <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                            <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                            <MudTd>@context.UomCode</MudTd>
+                            <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatReceiptInvestigationStatus(context.InvestigationStatus)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
             }
             <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
                 <HeaderContent>
@@ -561,6 +587,17 @@
         "no_receipt" => "No receipt yet",
         "partially_covered" => "Partial",
         "fully_covered" => "Full",
+        _ => "Review"
+    };
+    private static string FormatReceiptDiscrepancyType(string? discrepancyType) => discrepancyType switch
+    {
+        "missing_receipt_coverage" => "Missing coverage",
+        "partial_receipt_coverage" => "Partial coverage",
+        _ => "Review"
+    };
+    private static string FormatReceiptInvestigationStatus(string? investigationStatus) => investigationStatus switch
+    {
+        "open" => "Open",
         _ => "Review"
     };
     private string BillPostingPathLabel => _postedResult is not null ? "Ready for settlement" : IsPosted ? "Posted" : IsCancelled ? "Cancelled" : IsSubmitted ? (ReceiptHandoffAllowsBillPost ? "Submitted, awaiting post" : "Submitted, held by receipt review") : _saved is not null ? "Draft saved, awaiting submit" : "Draft -> Submit -> Post -> Pay Bill";

@@ -28,7 +28,8 @@ public sealed class BillReceiptPostingGateTests
             "partially_covered",
             null,
             Array.Empty<BillReceiptMatchingReceiptSummary>(),
-            Array.Empty<BillReceiptMatchingLineSummary>());
+            Array.Empty<BillReceiptMatchingLineSummary>(),
+            Array.Empty<BillReceiptMatchingDiscrepancySummary>());
 
         var message = BillReceiptPostingGate.GetBlockedPostMessage(summary);
 
@@ -59,5 +60,6 @@ public sealed class BillReceiptPostingGateTests
             matchStatus,
             null,
             Array.Empty<BillReceiptMatchingReceiptSummary>(),
-            Array.Empty<BillReceiptMatchingLineSummary>());
+            Array.Empty<BillReceiptMatchingLineSummary>(),
+            Array.Empty<BillReceiptMatchingDiscrepancySummary>());
 }

@@ -278,7 +278,8 @@ public sealed record BillReceiptPostingGateSnapshot(
     decimal CoveredQuantity,
     decimal RemainingQuantity,
     string MatchStatus,
-    DateTimeOffset? LatestReceiptPostedAt);
+    DateTimeOffset? LatestReceiptPostedAt,
+    int OpenDiscrepancyCount);
 
 public sealed record BillReceiptMatchingReceiptSummary(
     Guid ReceiptDocumentId,
@@ -306,6 +307,25 @@ public sealed record BillReceiptMatchingLineSummary(
     int ReceiptCount,
     string MatchStatus);
 
+public sealed record BillReceiptMatchingDiscrepancySummary(
+    Guid BillDocumentId,
+    int BillLineNumber,
+    string DiscrepancyType,
+    string InvestigationStatus,
+    Guid ItemId,
+    string ItemCode,
+    string ItemName,
+    Guid WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    string UomCode,
+    decimal BillQuantity,
+    decimal CoveredQuantity,
+    decimal RemainingQuantity,
+    string Summary,
+    DateTimeOffset FirstDetectedAt,
+    DateTimeOffset LastDetectedAt);
+
 public sealed record BillReceiptMatchingLaneSummary(
     Guid BillDocumentId,
     int BillInboundLineCount,
@@ -316,7 +336,8 @@ public sealed record BillReceiptMatchingLaneSummary(
     string MatchStatus,
     DateTimeOffset? LatestReceiptPostedAt,
     IReadOnlyList<BillReceiptMatchingReceiptSummary> RecentReceipts,
-    IReadOnlyList<BillReceiptMatchingLineSummary> LineSummaries);
+    IReadOnlyList<BillReceiptMatchingLineSummary> LineSummaries,
+    IReadOnlyList<BillReceiptMatchingDiscrepancySummary> Discrepancies);
 
 public interface IReceivePaymentDocumentRepository
 {

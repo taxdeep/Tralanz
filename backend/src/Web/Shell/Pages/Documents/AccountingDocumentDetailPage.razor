@@ -247,6 +247,34 @@
                         </RowTemplate>
                     </MudTable>
                 }
+                @if (_billReceiptHandoffSummary.Discrepancies.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-top:1rem;">
+                        @_billReceiptHandoffSummary.Discrepancies.Count open inbound discrepancy lane(s) still need receipt-first investigation.
+                    </MudAlert>
+                    <MudTable Items="_billReceiptHandoffSummary.Discrepancies" Dense="true" Hover="true" Bordered="true" Style="margin-top:1rem;">
+                        <HeaderContent>
+                            <MudTh>Line</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Item</MudTh>
+                            <MudTh>Warehouse</MudTh>
+                            <MudTh>UOM</MudTh>
+                            <MudTh>Remaining</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Summary</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.BillLineNumber</MudTd>
+                            <MudTd>@FormatBillReceiptDiscrepancyType(context.DiscrepancyType)</MudTd>
+                            <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                            <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                            <MudTd>@context.UomCode</MudTd>
+                            <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatBillReceiptInvestigationStatus(context.InvestigationStatus)</MudTd>
+                            <MudTd>@context.Summary</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
             </MudPaper>
         }
 
@@ -1876,6 +1904,21 @@
         {
             "fully_covered" => Severity.Success,
             _ => Severity.Info
+        };
+
+    private static string FormatBillReceiptDiscrepancyType(string? discrepancyType) =>
+        discrepancyType switch
+        {
+            "missing_receipt_coverage" => "Missing receipt coverage",
+            "partial_receipt_coverage" => "Partial receipt coverage",
+            _ => "Inbound discrepancy"
+        };
+
+    private static string FormatBillReceiptInvestigationStatus(string? investigationStatus) =>
+        investigationStatus switch
+        {
+            "open" => "Open",
+            _ => "Review"
         };
 
     private static string BuildBillReceiptMatchingNotice(ShellBillReceiptMatchingSummary summary) =>

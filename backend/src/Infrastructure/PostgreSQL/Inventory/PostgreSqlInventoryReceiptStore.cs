@@ -102,6 +102,52 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             lineSummaries);
     }
 
+    public async Task<LegacyInboundReceiptPathSnapshot?> GetLegacyInboundReceiptPathSnapshotAsync(
+        Guid companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken)
+    {
+        var handoff = await GetBillHandoffSummaryAsync(companyId, billDocumentId, cancellationToken);
+        var firstClassCoverage = await LoadFirstClassReceiptCoverageAsync(
+            companyId,
+            billDocumentId,
+            cancellationToken);
+        var coverageByAnchor = firstClassCoverage.ToDictionary(
+            static row => new LegacyInboundReceiptCoverageKey(row.ItemId, row.WarehouseId, row.UomCode),
+            static row => row);
+
+        var lines = handoff.LineSummaries
+            .Select(line =>
+            {
+                var key = new LegacyInboundReceiptCoverageKey(
+                    line.ItemId,
+                    line.WarehouseId,
+                    line.UomCode.Trim().ToUpperInvariant());
+                coverageByAnchor.TryGetValue(key, out var coverage);
+
+                return new LegacyInboundReceiptPathLineSnapshot(
+                    line.ItemId,
+                    line.ItemCode,
+                    line.WarehouseId,
+                    line.WarehouseCode,
+                    line.UomCode,
+                    line.BillQuantity,
+                    line.ReceivedQuantity,
+                    coverage?.CoveredQuantity ?? 0m);
+            })
+            .ToArray();
+
+        return new LegacyInboundReceiptPathSnapshot(
+            billDocumentId,
+            handoff.BillInboundLineCount,
+            handoff.BillInboundQuantity,
+            handoff.ReceiptCount,
+            handoff.ReceivedQuantity,
+            firstClassCoverage.Sum(static row => row.AllocationCount),
+            decimal.Round(firstClassCoverage.Sum(static row => row.CoveredQuantity), 6, MidpointRounding.AwayFromZero),
+            lines);
+    }
+
     public async Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(
         Guid companyId,
         IReadOnlyCollection<Guid> billDocumentIds,
@@ -1120,6 +1166,96 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         return receipts;
     }
 
+    private async Task<IReadOnlyList<LegacyInboundReceiptCoverageRow>> LoadFirstClassReceiptCoverageAsync(
+        Guid companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        if (!await TableExistsAsync(connection, "receipts", cancellationToken) ||
+            !await TableExistsAsync(connection, "receipt_lines", cancellationToken))
+        {
+            return Array.Empty<LegacyInboundReceiptCoverageRow>();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            with bill_groups as (
+              select
+                b.vendor_id,
+                l.item_id,
+                l.warehouse_id,
+                upper(trim(l.uom_code)) as uom_code
+              from bills b
+              join bill_lines l
+                on l.company_id = b.company_id
+               and l.bill_id = b.id
+              where b.company_id = @company_id
+                and b.id = @bill_document_id
+                and l.item_id is not null
+                and l.warehouse_id is not null
+                and l.uom_code is not null
+                and l.quantity is not null
+                and l.unit_cost is not null
+              group by
+                b.vendor_id,
+                l.item_id,
+                l.warehouse_id,
+                upper(trim(l.uom_code))
+            )
+            select
+              bg.item_id,
+              bg.warehouse_id,
+              bg.uom_code,
+              count(rl.id)::int as coverage_count,
+              coalesce(sum(rl.quantity), 0) as covered_quantity
+            from bill_groups bg
+            join receipts r
+              on r.company_id = @company_id
+             and r.vendor_id = bg.vendor_id
+             and r.warehouse_id = bg.warehouse_id
+             and r.status = 'posted'
+            join receipt_lines rl
+              on rl.company_id = r.company_id
+             and rl.receipt_id = r.id
+             and rl.item_id = bg.item_id
+             and upper(trim(rl.uom_code)) = bg.uom_code
+            group by
+              bg.item_id,
+              bg.warehouse_id,
+              bg.uom_code;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("bill_document_id", billDocumentId);
+
+        var rows = new List<LegacyInboundReceiptCoverageRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new LegacyInboundReceiptCoverageRow(
+                reader.GetGuid(reader.GetOrdinal("item_id")),
+                reader.GetGuid(reader.GetOrdinal("warehouse_id")),
+                reader.GetString(reader.GetOrdinal("uom_code")),
+                reader.GetInt32(reader.GetOrdinal("coverage_count")),
+                decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("covered_quantity")), 6, MidpointRounding.AwayFromZero)));
+        }
+
+        return rows;
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select to_regclass(@table_name) is not null;";
+        command.Parameters.AddWithValue("table_name", tableName);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is true;
+    }
+
     private static async Task<(int LineCount, decimal Quantity)> LoadBillInboundSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -1369,6 +1505,18 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
 
         return receipts;
     }
+
+    private readonly record struct LegacyInboundReceiptCoverageKey(
+        Guid ItemId,
+        Guid WarehouseId,
+        string UomCode);
+
+    private sealed record LegacyInboundReceiptCoverageRow(
+        Guid ItemId,
+        Guid WarehouseId,
+        string UomCode,
+        int AllocationCount,
+        decimal CoveredQuantity);
 
     private static string BuildReceiptNumber(DateOnly postingDate) =>
         $"PR-{postingDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";

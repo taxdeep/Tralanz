@@ -16,6 +16,11 @@ public interface IInventoryReceiptStore
         IReadOnlyCollection<Guid> billDocumentIds,
         CancellationToken cancellationToken);
 
+    Task<LegacyInboundReceiptPathSnapshot?> GetLegacyInboundReceiptPathSnapshotAsync(
+        Guid companyId,
+        Guid billDocumentId,
+        CancellationToken cancellationToken);
+
     Task<InventoryPurchaseReceiptSummary> PostAsync(
         InventoryPurchaseReceiptPostRequest request,
         CancellationToken cancellationToken);

@@ -139,6 +139,12 @@
                                 <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
                                     @context.BillReceiptPostingGateSummary
                                 </MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.BillReceiptInvestigationSummary))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.15rem;">
+                                        @context.BillReceiptInvestigationSummary
+                                    </MudText>
+                                }
                             }
                             @if (HasInvoiceShipmentPostingGate(context))
                             {

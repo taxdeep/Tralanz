@@ -869,12 +869,115 @@ This slice stands up `Receipt / ReceiptLine` as first-class document foundation 
   - no shell-wide receipt expansion
 - after H.3, receipt is now a real participant in inbound control truth, but bill is still the transitional inbound AP path and receipt still does not own inbound inventory or accounting truth
 
+## Phase H.4 checkpoint
+
+The next inbound hardening slice now persists discrepancy / investigation truth without turning receipt into an operational inventory document.
+
+- current inbound mismatch state now persists in `bill_receipt_matching_discrepancy_lanes`, so unresolved bill-side receipt gaps survive reloads and no longer depend only on live match recomputation
+- the first discrepancy vocabulary remains intentionally small:
+  - `missing_receipt_coverage`
+  - `partial_receipt_coverage`
+- discrepancy rows remain anchored to authoritative bill-line inbound truth (`vendor + item + warehouse + stock UOM`) and are refreshed from posted receipt coverage, not from draft receipt guesses
+- browser/detail/editor continuity now shows both:
+  - receipt-first posting gate truth
+  - persisted inbound discrepancy lane truth
+- this slice deliberately stops before a full investigation workflow entity:
+  - there is no manual `resolve / close` transition yet
+  - there is still no receipt-driven inventory posting
+  - no inventory ledger or cost-layer mutation from receipt
+  - no GR/IR
+  - no PPV / variance
+  - no PO truth
+  - no tracked operational enablement
+  - no vendor return lane
+- after H.4, the project can explicitly distinguish:
+  - `bill/receipt matching is incomplete`
+  - `bill posting is on hold`
+  - `an inbound discrepancy lane exists and is reviewable`
+  without overclaiming that receipt has already taken over inbound inventory truth
+
+## Phase H.5 checkpoint
+
+The next inbound bridge slice now introduces the smallest coherent `receipt-driven inventory activation` path, while still refusing to overclaim valuation or GL truth.
+
+- only `posted` first-class `ReceiptDocument` truth may activate inbound inventory quantity
+- the bridge is anchored at receipt-line granularity through `receipt_inventory_activation_lines`
+- activation is intentionally one-time and idempotent:
+  - each `(company, receipt, receipt_line_number)` may activate only once
+  - retrying activation against an already-posted receipt reuses the existing activation summary instead of creating a second inbound mutation
+  - any partial activation state is treated as an investigation-grade inconsistency
+- H.5 now lets first-class receipt truth create inbound inventory quantity truth:
+  - `inventory_documents`
+  - `inventory_document_lines`
+  - `inventory_ledger_entries`
+  - `item_warehouse_balances`
+- H.5 still stops before valuation truth:
+  - no receipt-driven cost layers
+  - no GR/IR
+  - no PPV / variance
+  - no PO truth
+  - no tracked operational enablement
+- the system therefore now has a deliberate split:
+  - receipt owns inbound quantity truth
+  - receipt does **not** yet own inbound valuation / AP settlement truth
+
+## Phase H.6 checkpoint
+
+Receipt activation is now hardened for review and retry, while the project still avoids jumping into valuation or GL truth.
+
+- activation state is now a stable read-model truth:
+  - `not_posted`
+  - `posted_not_activated`
+  - `activated`
+  - `activation_failed_retryable`
+  - `activation_inconsistent`
+- failed activation attempts are persisted as retryable operational truth in `receipt_inventory_activation_failures`
+- retry stays on the same authority path as receipt posting through `PostReceiptWorkflow`; there is no separate "force activate" side door
+- first-class receipt sources are explicitly blocked from the legacy purchase receipt workflow:
+  - `receipt_document`
+  - `first_class_receipt`
+- the legacy `ap_bill` source path is still a transitional fallback, not a permanent authority model
+- H.6 still does not introduce:
+  - receipt valuation / cost layers
+  - GR/IR
+  - PPV / variance
+  - tracked receipt enablement
+  - full retirement of the legacy bill-origin inbound path
+
+The next hardening decision is when to make the `ap_bill` legacy path conditional on first-class receipt coverage, so that transitional usability does not become a long-term dual-path quantity risk.
+
+## Phase H.7 checkpoint
+
+The legacy AP bill inbound path is now governed by explicit retirement policy instead of relying on operators to avoid dual-path quantity creation.
+
+- `LegacyInboundReceiptPathPolicy` defines the first formal retirement rules for the old `ap_bill` fallback
+- first-class receipt sources are still not allowed to use the legacy purchase receipt workflow
+- `ap_bill` fallback now requires source bill policy truth and is blocked when:
+  - first-class receipt matching coverage already exists
+  - the requested line anchor is not present on the source bill
+  - the request exceeds the source bill's remaining legacy quantity ceiling
+  - the source bill has no inventory-grade inbound quantity
+- `ap_bill` fallback is still temporarily allowed when:
+  - the bill has inventory-grade inbound quantity
+  - no first-class receipt coverage exists
+  - the request stays within remaining bill quantity after prior legacy receipts
+- non-bill manual inventory receipts remain outside this retirement policy
+- H.7 still avoids:
+  - fully deleting legacy AP bill fallback
+  - receipt valuation / cost-layer replacement
+  - GR/IR
+  - PPV / variance
+  - tracked receipt enablement
+
+This materially reduces dual-path risk while preserving a narrow transitional lane for existing AP bill-origin purchase receipt usage.
+
 ## Immediate Recommendation
 
 The next formal planning step should be:
 
-- confirm the open questions above
-- then start D1 with explicit schema and workflow definitions
+- decide whether to fully remove the remaining `ap_bill` fallback now, or wait until first-class receipt authoring/review is more comfortable
+- plan the valuation boundary separately before introducing receipt cost layers, GR/IR, or PPV
+- keep tracked receipt enablement behind a later tracking-aware document integration gate
 
 The implementation should continue to protect the existing authority rule:
 

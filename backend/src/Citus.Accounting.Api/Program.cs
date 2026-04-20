@@ -52,6 +52,7 @@ builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySess
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
 builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
 builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
+builder.Services.AddSingleton<IReceiptInventoryActivationStore, PostgreSqlReceiptInventoryActivationStore>();
 builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
 builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
 builder.Services.AddSingleton(
@@ -100,6 +101,7 @@ builder.Services.AddScoped<PostManualJournalCommandHandler>();
 builder.Services.AddScoped<PostInvoiceCommandHandler>();
 builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
+builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostVendorCreditCommandHandler>();
 builder.Services.AddScoped<PrepareReceivePaymentDraftCommandHandler>();
 builder.Services.AddScoped<PostReceivePaymentCommandHandler>();
@@ -2001,6 +2003,8 @@ accounting.MapGet(
                 BillReceiptPostingGateLabel = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateLabel(receiptSummary),
                 BillReceiptPostingGateSummary = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateSummary(receiptSummary),
                 BillReceiptAllowsPost = receiptSummary is null ? (bool?)null : BillReceiptPostingGate.AllowsBillPost(receiptSummary.MatchStatus),
+                BillReceiptOpenDiscrepancyCount = receiptSummary?.OpenDiscrepancyCount,
+                BillReceiptInvestigationSummary = receiptSummary is null ? null : BillReceiptDiscrepancyPolicy.BuildBrowserSummary(receiptSummary.OpenDiscrepancyCount),
                 InvoiceShipmentMatchStatus = shipmentSummary?.MatchStatus,
                 InvoiceShipmentPostingGateLabel = shipmentSummary is null ? null : ShipmentPostingGatePolicy.GetPostingGateLabel(shipmentSummary),
                 InvoiceShipmentPostingGateSummary = shipmentSummary is null ? null : ShipmentPostingGatePolicy.GetPostingGateSummary(shipmentSummary),
@@ -3887,6 +3891,7 @@ accounting.MapGet(
             summary.RemainingQuantity,
             summary.MatchStatus,
             summary.LatestReceiptPostedAt,
+            OpenDiscrepancyCount = summary.Discrepancies.Count,
             RecentReceipts = summary.RecentReceipts.Select(receipt => new
             {
                 receipt.ReceiptDocumentId,
@@ -3914,6 +3919,26 @@ accounting.MapGet(
                 line.RemainingQuantity,
                 line.ReceiptCount,
                 line.MatchStatus
+            }),
+            Discrepancies = summary.Discrepancies.Select(discrepancy => new
+            {
+                discrepancy.BillDocumentId,
+                discrepancy.BillLineNumber,
+                discrepancy.DiscrepancyType,
+                discrepancy.InvestigationStatus,
+                discrepancy.ItemId,
+                discrepancy.ItemCode,
+                discrepancy.ItemName,
+                discrepancy.WarehouseId,
+                discrepancy.WarehouseCode,
+                discrepancy.WarehouseName,
+                discrepancy.UomCode,
+                discrepancy.BillQuantity,
+                discrepancy.CoveredQuantity,
+                discrepancy.RemainingQuantity,
+                discrepancy.Summary,
+                discrepancy.FirstDetectedAt,
+                discrepancy.LastDetectedAt
             })
         });
     });
@@ -3946,11 +3971,19 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/receipts",
-    async ([AsParameters] ReceiptListQuery query, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        [AsParameters] ReceiptListQuery query,
+        IReceiptDocumentRepository repository,
+        IReceiptInventoryActivationStore activationStore,
+        CancellationToken cancellationToken) =>
     {
         var documents = await repository.ListAsync(
             new(query.CompanyId),
             query.Take ?? 50,
+            cancellationToken);
+        var activationSummaries = await activationStore.GetReceiptActivationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
             cancellationToken);
 
         return Results.Ok(documents.Select(document => new
@@ -3969,16 +4002,40 @@ accounting.MapGet(
             document.Memo,
             document.CreatedAt,
             document.UpdatedAt,
-            document.PostedAt
+            document.PostedAt,
+            InventoryActivation = activationSummaries.TryGetValue(document.DocumentId, out var summary)
+                ? new
+                {
+                    summary.ReceiptStatus,
+                    summary.ActivationStatus,
+                    summary.InventoryDocumentId,
+                    summary.ReceiptLineCount,
+                    summary.ActivatedLineCount,
+                    summary.TotalQuantity,
+                    summary.ActivatedQuantity,
+                    summary.ActivatedAt,
+                    summary.LastFailureMessage,
+                    summary.LastFailureAt
+                }
+                : null
         }));
     });
 
 accounting.MapGet(
     "/receipts/{documentId:guid}",
-    async (Guid documentId, [AsParameters] ReceiptLookupQuery query, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (
+        Guid documentId,
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptDocumentRepository repository,
+        IReceiptInventoryActivationStore activationStore,
+        CancellationToken cancellationToken) =>
     {
         var document = await repository.GetAsync(
             new(query.CompanyId),
+            documentId,
+            cancellationToken);
+        var activationSummary = await activationStore.GetReceiptActivationSummaryAsync(
+            query.CompanyId,
             documentId,
             cancellationToken);
 
@@ -3999,6 +4056,21 @@ accounting.MapGet(
                 document.SourceReference,
                 document.Memo,
                 document.PostedAt,
+                InventoryActivation = activationSummary is null
+                    ? null
+                    : new
+                    {
+                        activationSummary.ReceiptStatus,
+                        activationSummary.ActivationStatus,
+                        activationSummary.InventoryDocumentId,
+                        activationSummary.ReceiptLineCount,
+                        activationSummary.ActivatedLineCount,
+                        activationSummary.TotalQuantity,
+                        activationSummary.ActivatedQuantity,
+                        activationSummary.ActivatedAt,
+                        activationSummary.LastFailureMessage,
+                        activationSummary.LastFailureAt
+                    },
                 Lines = document.ReceiptLines.Select(line => new
                 {
                     line.LineNumber,
@@ -4078,11 +4150,31 @@ accounting.MapPut(
 
 accounting.MapPost(
     "/receipts/{documentId:guid}/post",
-    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, PostReceiptDraftHttpRequest request, PostReceiptWorkflow workflow, CancellationToken cancellationToken) =>
     {
         try
         {
-            var result = await repository.PostAsync(
+            var result = await workflow.PostAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/inventory-activation/retry",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, PostReceiptWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.PostAsync(
                 new(request.CompanyId),
                 new(request.UserId),
                 documentId,

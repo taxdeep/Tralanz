@@ -493,3 +493,104 @@ This slice activates `Receipt-first inbound matching / posting-gate` on top of t
   - vendor return lane
   - shell-wide receipt workspace expansion
 - after H.3, bill remains the transitional inbound AP path, but posted `ReceiptDocument` truth now participates as a formal control input in whether bill posting is allowed
+
+## Phase H.4 checkpoint
+
+This slice adds a persisted inbound discrepancy / investigation lane on top of H.3 matching truth, but it still stops before receipt-driven inventory activation.
+
+- inbound discrepancy truth now persists in `bill_receipt_matching_discrepancy_lanes` instead of being implied only by current match status at review time
+- the first discrepancy families are intentionally narrow:
+  - `missing_receipt_coverage`
+  - `partial_receipt_coverage`
+- discrepancy rows are keyed to the same authoritative bill-line anchors already used by receipt-first matching:
+  - `company`
+  - `vendor`
+  - `item`
+  - `warehouse`
+  - `stock UOM`
+  - posted receipt only
+- browser, bill detail, and bill editor now expose the persisted discrepancy lane as review truth, so operators can see which inbound lines still require receipt-first investigation instead of only seeing a generic post hold
+- bill posting gate itself still remains `persisted matching truth + computed policy`; H.4 does not replace the gate, it makes the unresolved inbound risk explicit and reviewable
+- this is still **not** a full investigation workflow entity:
+  - no manual resolve/close transition
+  - no receipt-driven inventory posting
+  - no GR/IR
+  - no PPV / variance
+  - no PO truth
+  - no tracked operational enablement
+  - no vendor return lane
+
+## Phase H.5 checkpoint
+
+This slice introduces the minimal `receipt-driven inventory activation` path, but it still stops before valuation or GL truth.
+
+- only `posted` first-class `ReceiptDocument` truth may activate inbound inventory quantity
+- activation is now guarded by a dedicated persisted line-level anchor in `receipt_inventory_activation_lines`
+- activation is explicitly idempotent at the receipt-line level:
+  - retrying `POST /receipts/{id}/post` on an already-posted receipt reuses the same activation lane
+  - the same receipt line cannot activate inbound quantity twice
+  - partial activation state is treated as an inconsistency, not silently replayed
+- a posted receipt now creates quantity-only inbound inventory truth:
+  - one inventory document
+  - one inventory ledger movement per receipt line
+  - item/warehouse on-hand balance mutation
+- this slice still deliberately refuses to invent valuation or GL truth:
+  - no cost-layer creation from receipt activation
+  - no GR/IR
+  - no PPV / variance
+  - no PO truth
+  - no tracked operational enablement
+- after H.5, receipt becomes the authoritative inbound quantity owner for this minimal path, while bill remains a transitional AP document and does not gain a second way to activate the same posted receipt line
+
+## Phase H.6 checkpoint
+
+This slice hardens receipt activation review and retry without entering valuation, GR/IR, PPV, or tracked receipt enablement.
+
+- receipt activation now exposes stable read truth instead of forcing reviewers to infer state from raw line counts:
+  - `not_posted`
+  - `posted_not_activated`
+  - `activated`
+  - `activation_failed_retryable`
+  - `activation_inconsistent`
+- activation failures are persisted in `receipt_inventory_activation_failures`, giving posted receipts a reviewable retry lane instead of becoming silent operational dead ends
+- `POST /accounting/receipts/{id}/inventory-activation/retry` reuses the same `PostReceiptWorkflow` authority path and does not create a second activation mechanism
+- successful activation clears the retryable failure record, while existing receipt-line activation guards continue to prevent duplicate inbound quantity
+- the legacy purchase receipt path now has an explicit first-class receipt guard:
+  - `receipt_document` and `first_class_receipt` sources must activate through the receipt activation workflow
+  - `ap_bill` remains a transitional fallback for legacy inbound quantity until bill-side retirement rules are tightened in a later slice
+- this slice still deliberately does **not** introduce:
+  - GR/IR
+  - PPV / variance
+  - receipt valuation universe
+  - tracked receipt operational enablement
+  - full AP bill legacy-path retirement
+
+Project bookkeeping:
+
+- the checkpoint before H.4 was pushed to GitHub at commit `04a42d4`
+- H.4, H.5, and H.6 are currently local working-tree changes until the next explicit push
+
+## Phase H.7 checkpoint
+
+This slice turns the remaining legacy AP bill inbound fallback from a human convention into an explicit retirement policy.
+
+- legacy inbound policy now lives in the inventory application-contract seam through `LegacyInboundReceiptPathPolicy`
+- `receipt_document` and `first_class_receipt` sources remain blocked from the legacy purchase receipt workflow
+- `ap_bill` fallback is no longer an unconditional escape hatch:
+  - it must include a source bill document id
+  - it must load bill-side policy truth before posting
+  - it is blocked when first-class receipt matching coverage already exists for the bill
+  - it is blocked when the requested item / warehouse / UOM anchor does not exist on the source bill
+  - it is blocked when the requested quantity exceeds the remaining legacy bill quantity after prior legacy receipts
+- transitional behavior is intentionally narrow:
+  - `ap_bill` fallback may still be used only when there is no first-class receipt coverage and the request remains within the bill's remaining legacy quantity ceiling
+  - non-bill manual inventory receipts remain outside the AP bill retirement policy
+- this slice still deliberately does **not** introduce:
+  - full removal of legacy AP bill fallback
+  - receipt valuation / cost-layer replacement
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - tracked receipt enablement
+
+The next decision is whether to fully retire the `ap_bill` fallback once first-class receipt authoring/review is operationally comfortable, or to first introduce receipt valuation boundaries so the old cost-layer-creating path can be replaced safely.

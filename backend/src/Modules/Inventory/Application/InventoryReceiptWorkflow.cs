@@ -41,7 +41,7 @@ public sealed class InventoryReceiptWorkflow
         return _store.GetBillHandoffSummaryAsync(companyId, billDocumentId, cancellationToken);
     }
 
-    public Task<InventoryPurchaseReceiptSummary> PostAsync(
+    public async Task<InventoryPurchaseReceiptSummary> PostAsync(
         InventoryPurchaseReceiptPostRequest request,
         CancellationToken cancellationToken)
     {
@@ -56,6 +56,8 @@ public sealed class InventoryReceiptWorkflow
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
+
+        await GuardLegacyReceiptPathAsync(request, cancellationToken);
 
         if (request.VendorId == Guid.Empty)
         {
@@ -116,6 +118,26 @@ public sealed class InventoryReceiptWorkflow
             throw new InvalidOperationException("FX rate to base must be greater than zero.");
         }
 
-        return _store.PostAsync(request, cancellationToken);
+        return await _store.PostAsync(request, cancellationToken);
+    }
+
+    private async Task GuardLegacyReceiptPathAsync(
+        InventoryPurchaseReceiptPostRequest request,
+        CancellationToken cancellationToken)
+    {
+        LegacyInboundReceiptPathSnapshot? snapshot = null;
+        if (LegacyInboundReceiptPathPolicy.RequiresBillSnapshot(request))
+        {
+            snapshot = await _store.GetLegacyInboundReceiptPathSnapshotAsync(
+                request.CompanyId,
+                request.SourceDocumentId!.Value,
+                cancellationToken);
+        }
+
+        var decision = LegacyInboundReceiptPathPolicy.Evaluate(request, snapshot);
+        if (!decision.IsAllowed)
+        {
+            throw new InvalidOperationException(decision.Message);
+        }
     }
 }

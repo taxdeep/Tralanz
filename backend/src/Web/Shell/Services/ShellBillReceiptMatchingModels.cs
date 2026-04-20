@@ -18,9 +18,13 @@ public sealed record class ShellBillReceiptMatchingSummary
 
     public DateTimeOffset? LatestReceiptPostedAt { get; init; }
 
+    public int OpenDiscrepancyCount { get; init; }
+
     public IReadOnlyList<ShellBillReceiptMatchingReceiptSummary> RecentReceipts { get; init; } = Array.Empty<ShellBillReceiptMatchingReceiptSummary>();
 
     public IReadOnlyList<ShellBillReceiptMatchingLineSummary> LineSummaries { get; init; } = Array.Empty<ShellBillReceiptMatchingLineSummary>();
+
+    public IReadOnlyList<ShellBillReceiptMatchingDiscrepancySummary> Discrepancies { get; init; } = Array.Empty<ShellBillReceiptMatchingDiscrepancySummary>();
 }
 
 public sealed record class ShellBillReceiptMatchingReceiptSummary
@@ -71,4 +75,41 @@ public sealed record class ShellBillReceiptMatchingLineSummary
     public int ReceiptCount { get; init; }
 
     public string MatchStatus { get; init; } = string.Empty;
+}
+
+public sealed record class ShellBillReceiptMatchingDiscrepancySummary
+{
+    public Guid BillDocumentId { get; init; }
+
+    public int BillLineNumber { get; init; }
+
+    public string DiscrepancyType { get; init; } = string.Empty;
+
+    public string InvestigationStatus { get; init; } = string.Empty;
+
+    public Guid ItemId { get; init; }
+
+    public string ItemCode { get; init; } = string.Empty;
+
+    public string ItemName { get; init; } = string.Empty;
+
+    public Guid WarehouseId { get; init; }
+
+    public string WarehouseCode { get; init; } = string.Empty;
+
+    public string WarehouseName { get; init; } = string.Empty;
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public decimal BillQuantity { get; init; }
+
+    public decimal CoveredQuantity { get; init; }
+
+    public decimal RemainingQuantity { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
+
+    public DateTimeOffset FirstDetectedAt { get; init; }
+
+    public DateTimeOffset LastDetectedAt { get; init; }
 }
