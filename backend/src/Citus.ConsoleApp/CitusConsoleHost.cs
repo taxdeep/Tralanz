@@ -48,8 +48,8 @@ internal static class CitusConsoleHost
         Func<CitusConsoleRuntime, Task<int>> command)
     {
         var connectionString =
-            configuration.GetConnectionString("AccountingCore") ??
-            configuration["CITUS_ACCOUNTING_DB"];
+            configuration["CITUS_ACCOUNTING_DB"] ??
+            configuration.GetConnectionString("AccountingCore");
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
