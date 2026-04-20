@@ -43,6 +43,7 @@
                           AdornmentIcon="@Icons.Material.Filled.Person"
                           Required="true"
                           Immediate="true"
+                          autocomplete="username"
                           ShrinkLabel="true" />
             <MudTextField @bind-Value="_password"
                           Label="Password"
@@ -51,6 +52,7 @@
                           AdornmentIcon="@Icons.Material.Filled.Lock"
                           InputType="InputType.Password"
                           Required="true"
+                          autocomplete="current-password"
                           ShrinkLabel="true" />
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
@@ -74,6 +76,7 @@
                               Label="@GetSecondFactorFieldLabel()"
                               Variant="Variant.Outlined"
                               Immediate="true"
+                              autocomplete="one-time-code"
                               ShrinkLabel="true" />
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Secondary"
