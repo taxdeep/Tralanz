@@ -7,6 +7,9 @@
     <ProjectReference Include="..\..\src\Citus.Accounting.Domain\Citus.Accounting.Domain.csproj" />
     <ProjectReference Include="..\..\src\Citus.Accounting.Application\Citus.Accounting.Application.csproj" />
     <ProjectReference Include="..\..\src\Citus.Accounting.Infrastructure\Citus.Accounting.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Inventory\Domain.Shared\Citus.Modules.Inventory.Domain.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

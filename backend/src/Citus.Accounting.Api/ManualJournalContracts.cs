@@ -318,6 +318,17 @@ public sealed record PostReceiptDraftHttpRequest(
     Guid CompanyId,
     Guid UserId);
 
+public sealed record PostReceiptGrIrBridgeHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid? GrIrClearingAccountId,
+    string? IdempotencyKey);
+
+public sealed record SaveReceiptGrIrClearingAccountPolicyHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    Guid GrIrClearingAccountId);
+
 public sealed record PostVendorCreditHttpRequest(
     Guid CompanyId,
     Guid UserId,

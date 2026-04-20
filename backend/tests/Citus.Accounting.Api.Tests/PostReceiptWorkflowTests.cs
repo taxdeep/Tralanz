@@ -221,5 +221,11 @@ public sealed class PostReceiptWorkflowTests
 
         public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>> GetReceiptCostLayerEmissionSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>>(new Dictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>());
+
+        public Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> GetReceiptCostLayerEmissionReconciliationSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+            Task.FromResult<ReceiptInventoryCostLayerEmissionReconciliationSummary?>(null);
+
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>>(new Dictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>());
     }
 }

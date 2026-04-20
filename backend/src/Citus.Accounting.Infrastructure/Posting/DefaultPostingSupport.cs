@@ -245,6 +245,19 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
         }
 
+        if (document is ReceiptGrIrPostingDocument grIrPosting)
+        {
+            if (grIrPosting.TotalAmountBase <= 0m)
+            {
+                throw new InvalidOperationException("Receipt GR/IR posting must carry a positive base amount.");
+            }
+
+            if (grIrPosting.GrIrLines.Any(static line => line.AmountBase <= 0m))
+            {
+                throw new InvalidOperationException("Receipt GR/IR posting lines must carry positive base amounts.");
+            }
+        }
+
         return Task.CompletedTask;
     }
 }
@@ -291,6 +304,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildFxRevaluationFragments(fxRevaluation).AsReadOnly()),
             OpenItemAdjustmentDocument adjustment => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildOpenItemAdjustmentFragments(adjustment).AsReadOnly()),
+            ReceiptGrIrPostingDocument grIrPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildReceiptGrIrPostingFragments(grIrPosting).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -736,6 +751,45 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         return fragments;
     }
 
+    private static List<PostingFragment> BuildReceiptGrIrPostingFragments(
+        ReceiptGrIrPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var accountGroup in document.GrIrLines.GroupBy(static line => line.InventoryAssetAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"Inventory asset recognition for {document.DisplayNumber.Value}",
+                ControlRole: "inventory_asset"));
+        }
+
+        var creditAmount = Round6(document.GrIrLines.Sum(static line => line.AmountBase));
+        fragments.Add(new PostingFragment(
+            document.GrIrClearingAccountId,
+            document.BaseCurrencyCode,
+            0m,
+            creditAmount,
+            0m,
+            creditAmount,
+            $"GR/IR clearing for receipt {document.ReceiptDocumentId}",
+            ControlRole: "grir_clearing"));
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
     private static void AppendReceivePaymentRealizedFxFragment(
         ReceivePaymentDocument receivePayment,
         List<PostingFragment> fragments,
@@ -996,6 +1050,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 $"Posting fragments are not balanced in base currency after FX conversion. Delta: {delta:0.00####}.");
         }
     }
+
+    private static decimal Round6(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
 }
 
 public sealed class DefaultJournalAggregator : IJournalAggregator

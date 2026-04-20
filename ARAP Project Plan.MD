@@ -669,3 +669,210 @@ This slice introduces the explicit receipt valuation -> cost-layer emission seam
   - shell-wide receipt workspace expansion
 
 This phase makes first-class receipt valuation usable by outbound costing through cost layers, while keeping the transitional truth boundary honest: receipt owns quantity, bill-backed matching provides valuation evidence, and accounting settlement remains a later bridge.
+
+## Phase H.10 checkpoint
+
+This slice hardens receipt valuation emission before moving toward any accounting valuation universe.
+
+- receipt emission now has a reconciliation read model instead of only an emission status:
+  - emitted quantity / cost
+  - cost-layer quantity / original cost
+  - missing cost-layer count
+  - orphan cost-layer count
+  - reconciliation status
+- the first reconciliation status model is intentionally narrow:
+  - `no_emission`
+  - `reconciled`
+  - `cost_layer_missing`
+  - `orphan_cost_layer`
+  - `quantity_mismatch`
+  - `amount_mismatch`
+- receipt list/detail read models now expose both:
+  - emission state
+  - emission/cost-layer reconciliation state
+- outbound sales issue now has an explicit guard for the dangerous state:
+  - physical quantity is available
+  - emitted cost-layer coverage is missing or insufficient
+  - outbound costing is blocked until receipt valuation emission is reviewed
+- an opt-in PostgreSQL integration test now exercises:
+  - first-class receipt valuation emission
+  - idempotent retry
+  - cost-layer count stability
+  - reconciliation status
+- H.10 still deliberately avoids:
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - GL posting
+  - tracked receipt enablement
+
+H.10 closes the immediate operational gap between quantity truth and cost-layer truth enough for outbound costing to fail loudly and reviewably, rather than silently discovering missing valuation too late.
+
+## Phase H.11 checkpoint
+
+This planning slice defines the GR/IR boundary for receipt-backed inventory value without implementing PPV, PO truth, or full GL posting yet.
+
+Authority decision:
+
+- Receipt remains the physical quantity owner.
+- `receipt_inventory_valuation_lines` remains the valuation evidence lane.
+- `receipt_inventory_cost_layer_emission_lines` remains the inventory cost-layer emission lane.
+- GR/IR is the accounting bridge that should consume reconciled receipt-backed inventory value.
+- Bill remains supplier charge / AP truth and may clear or match GR/IR later, but it must not recreate physical quantity or cost-layer ownership.
+
+Minimum future GR/IR bridge shape:
+
+- a persisted GR/IR bridge lane should be keyed to the same receipt valuation/emission anchors:
+  - company
+  - receipt id
+  - receipt line number
+  - valuation line id
+  - cost layer emission line id
+  - bill id / bill line number as transitional valuation evidence
+- GR/IR eligibility should require:
+  - receipt inventory quantity activated
+  - valuation evidence exists
+  - cost-layer emission is complete for the relevant slice
+  - emission reconciliation is `reconciled`
+  - linked bill-backed valuation evidence is posted-backed in the current transitional architecture
+- the initial bridge should support partial slices rather than forcing whole-receipt all-or-nothing behavior.
+
+Minimum accounting semantics:
+
+- On eligible receipt-backed value:
+  - Dr Inventory Asset
+  - Cr GR/IR Clearing
+- On AP bill settlement against the same receipt-backed value:
+  - Dr GR/IR Clearing
+  - Cr AP
+- PPV / variance is explicitly not part of H.11:
+  - price differences should remain held or unresolved until a later variance lane exists
+  - H.11 should not invent automatic variance postings
+
+Required future state truth:
+
+- `not_eligible`
+- `eligible_not_posted`
+- `partially_posted`
+- `posted`
+- `blocked_reconciliation_required`
+- `blocked_variance_required`
+
+This phase explicitly does **not** authorize:
+
+- direct GR/IR posting from receipt quantity alone
+- GR/IR posting from valuation evidence that has not emitted reconciled cost layers
+- PPV / purchase price variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- GL implementation in this planning slice
+
+The next implementation slice should be a minimal persisted GR/IR bridge lane and read model before any journal-writing behavior is added.
+
+## Phase H.12 checkpoint
+
+H.12 implements the minimal persisted GR/IR bridge read/control lane authorized by H.11.
+
+Implemented boundary:
+
+- `receipt_grir_bridge_lines` is the persisted control lane for receipt-backed value that is eligible for future GR/IR posting.
+- The bridge is anchored to inventory-side truth:
+  - receipt id
+  - receipt line number
+  - valuation line id
+  - cost-layer emission line id
+  - cost layer id
+  - bill id / bill line number as transitional valuation evidence
+- The bridge can be refreshed explicitly through the receipt API.
+- Receipt list/detail now exposes GR/IR bridge status alongside activation, valuation, emission, and reconciliation truth.
+
+Eligibility rule:
+
+- The bridge only considers cost-layer emission lines.
+- Emitted cost layers must reconcile back to actual `inventory_cost_layers`.
+- Reconciled lines become `eligible_not_posted`.
+- Missing, orphaned, quantity-mismatched, or amount-mismatched cost-layer truth blocks the bridge as `blocked_reconciliation_required`.
+
+H.12 deliberately does not write journals.
+
+Deferred:
+
+- GR/IR journal posting
+- AP bill settlement against GR/IR
+- PPV / purchase price variance
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- Shell-wide receipt workspace expansion
+
+Decision:
+
+Phase H now has the full inbound truth ladder from receipt foundation through activation, valuation, cost-layer emission, reconciliation, and GR/IR bridge eligibility. The next safe step is journal-writing GR/IR posting only after this bridge lane has been reviewed and hardened.
+
+## Phase H.13 checkpoint
+
+H.13 introduces the first minimal GR/IR journal posting path.
+
+Boundary:
+
+- The posting path only consumes `eligible_not_posted` GR/IR bridge lines.
+- It does not create valuation, cost layers, or receipt quantity.
+- It does not perform AP bill clearing.
+- It does not create PPV / purchase price variance.
+- It does not introduce PO truth.
+- It does not enable tracked receipt operations.
+
+Implemented shape:
+
+- A receipt GR/IR posting source document enters the existing Posting Engine.
+- The posting engine creates the journal entry.
+- The bridge posting source is persisted as a posting batch.
+- Posted bridge lines are marked `posted` and linked to the generated journal entry.
+
+Accounting semantics:
+
+- Dr Inventory Asset
+- Cr GR/IR Clearing
+
+Control rules:
+
+- A GR/IR clearing account must be supplied explicitly.
+- Each bridge line must resolve an inventory asset account from the item master.
+- Bridge lines can only be posted once.
+- Existing posted batches are idempotently reusable for retry.
+
+Still deferred:
+
+- clearing GR/IR against AP bill settlement
+- PPV / variance recognition
+- PO ordered / received / billed truth
+- tracked receipt enablement
+- Shell-wide GR/IR workbench
+
+## Phase H.13 hardening checkpoint
+
+This slice hardens the minimal GR/IR posting path without expanding into PPV, PO truth, tracked receipt, or AP settlement.
+
+What changed:
+
+- Company-level GR/IR clearing account policy now exists as a persisted control seam.
+- GR/IR posting may use either an explicit clearing account or the company default policy.
+- Receipt list/detail GR/IR bridge summaries now expose posted journal linkage:
+  - journal entry id
+  - journal entry display number
+  - posted amount
+  - last posted timestamp
+- PostgreSQL integration coverage now exercises the full bridge-to-journal path:
+  - receipt-backed emission
+  - GR/IR bridge eligibility
+  - company default clearing policy
+  - posting engine journal creation
+  - bridge line posted linkage
+  - idempotent retry
+
+Still deferred:
+
+- AP bill settlement against GR/IR
+- PPV / variance recognition
+- PO truth
+- tracked receipt enablement
+- Shell-wide GR/IR operations workspace

@@ -1044,3 +1044,210 @@ Receipt valuation evidence now has a formal emission path into inventory cost-la
   - vendor return
 
 The deliberate remaining gap is accounting settlement, not inventory valuation usability: first-class receipts can now feed cost layers for outbound costing, while AP/GL reconciliation remains a later bridge.
+
+## Phase H.10 checkpoint
+
+Receipt valuation emission is now hardened with reconciliation truth and an outbound costing guard.
+
+- cost-layer emission review no longer stops at "was emission attempted?"
+- the receipt read model can now compare emission rows against actual `inventory_cost_layers`:
+  - emitted quantity
+  - cost-layer quantity
+  - emitted base cost
+  - cost-layer original base cost
+  - missing cost-layer count
+  - orphan cost-layer count
+- the reconciliation status vocabulary is deliberately small:
+  - no emission
+  - reconciled
+  - cost layer missing
+  - orphan cost layer
+  - quantity mismatch
+  - amount mismatch
+- outbound costing now refuses the risky split-brain state where quantity exists but cost-layer coverage does not:
+  - this prevents physical receipt quantity from silently becoming zero-cost or under-costed outbound truth
+  - the operator-facing error explicitly points back to receipt valuation emission review
+- H.10 adds an opt-in PostgreSQL integration test path for the emission store:
+  - creates an isolated test schema
+  - seeds activated receipt quantity and posted bill-backed valuation evidence
+  - emits cost layers twice
+  - verifies idempotency and reconciliation
+- this phase still does not introduce:
+  - GR/IR
+  - PPV / variance
+  - PO truth
+  - GL posting
+  - tracked receipt enablement
+
+The next unresolved accounting boundary is not whether inventory can value outbound stock; it is how AP/GL should formally settle receipt-backed value through GR/IR and later variance handling.
+
+## Phase H.11 checkpoint
+
+GR/IR is now defined as the next accounting boundary, but only as design authority in this slice.
+
+Core boundary:
+
+- Receipt-backed inventory value may enter accounting only after the inventory side is complete and reconciled.
+- Quantity activation alone is not enough.
+- Valuation evidence alone is not enough.
+- Cost-layer emission alone is not enough unless the emission reconciles back to actual cost layers.
+- Bill can provide valuation evidence in the transitional architecture, but Bill cannot retake physical truth ownership.
+
+Authoritative flow:
+
+1. Receipt posts physical inbound truth.
+2. Receipt activation creates inventory quantity truth.
+3. Bill/Receipt matching creates valuation evidence.
+4. Receipt valuation emission creates cost-layer truth.
+5. Emission reconciliation proves cost-layer truth is intact.
+6. GR/IR bridge may then recognize receipt-backed inventory value into accounting.
+
+Minimum GR/IR bridge design:
+
+- The future bridge should be persisted and reviewable, not hidden inside journal-writing side effects.
+- It should anchor to receipt valuation/emission truth:
+  - `receipt_id`
+  - `receipt_line_number`
+  - `valuation_line_id`
+  - `cost_layer_emission_line_id`
+  - linked `bill_id` / `bill_line_number` while bill remains transitional valuation evidence
+- It should track slice-level quantity and amount, so partial receipt valuation can be bridged without waiting for unrelated lines.
+- It should expose bridge state before writing journals.
+
+Recommended state model:
+
+- `not_eligible`
+- `eligible_not_posted`
+- `partially_posted`
+- `posted`
+- `blocked_reconciliation_required`
+- `blocked_variance_required`
+
+Accounting semantics for the later implementation:
+
+- Receipt-backed inventory value recognition:
+  - Dr Inventory Asset
+  - Cr GR/IR Clearing
+- AP bill settlement against the same bridge:
+  - Dr GR/IR Clearing
+  - Cr AP
+
+Explicitly deferred:
+
+- PPV / purchase price variance
+- PO ordered / received / billed truth
+- GL posting implementation in H.11
+- automatic variance recognition
+- tracked receipt enablement
+- rewriting H.5 quantity activation
+- rewriting H.9 cost-layer emission
+- rewriting H.10 reconciliation truth
+
+Decision:
+
+The next implementation step should not jump straight to journal writing. It should first introduce a persisted GR/IR bridge read/control lane that proves which receipt-backed cost-layer slices are accounting-eligible and which are blocked.
+
+## Phase H.12 checkpoint
+
+H.12 adds the persisted GR/IR bridge read/control lane without starting journal writing.
+
+New persisted lane:
+
+- `receipt_grir_bridge_lines`
+- one row per receipt-backed cost-layer emission slice
+- anchored to receipt, receipt line, valuation line, cost-layer emission line, cost layer, bill, and bill line
+
+Status truth:
+
+- `not_eligible`
+- `eligible_not_posted`
+- `partially_posted`
+- `posted`
+- `blocked_reconciliation_required`
+- `blocked_variance_required`
+
+Current H.12 behavior:
+
+- refreshes bridge rows from existing cost-layer emission truth
+- treats reconciled emission/cost-layer slices as `eligible_not_posted`
+- treats missing/orphaned/mismatched cost-layer truth as `blocked_reconciliation_required`
+- preserves future `posted` / `partially_posted` states if later journal work has already touched a line
+- exposes receipt-level summary through receipt list/detail read models
+
+Still explicitly out of scope:
+
+- GR/IR journal posting
+- AP bill clearing against GR/IR
+- PPV / variance
+- PO truth
+- tracked receipt enablement
+- changing H.5 receipt quantity activation
+- changing H.9 cost-layer emission
+- changing H.10 reconciliation truth
+
+Authority note:
+
+H.12 makes accounting eligibility reviewable before accounting writes happen. This keeps the source/inventory/accounting truth boundary intact: Receipt owns physical quantity, valuation/emission/reconciliation prove inventory value, and GR/IR remains a later accounting bridge rather than a hidden side effect.
+
+## Phase H.13 checkpoint
+
+H.13 adds minimal GR/IR journal posting while keeping the bridge boundary narrow.
+
+What changed:
+
+- `eligible_not_posted` GR/IR bridge lines can be posted through the existing Posting Engine.
+- A persisted posting batch represents the accounting source document.
+- Posted bridge lines are linked to the generated journal entry and move to `posted`.
+- The receipt list/detail GR/IR summary can now progress beyond eligibility into posted truth.
+
+Accounting entry:
+
+- Debit: item-level inventory asset account
+- Credit: operator-supplied GR/IR clearing account
+
+Hard guards:
+
+- blocked bridge lines cannot post
+- unrefreshed or non-eligible bridge lines cannot post
+- bridge lines already attached to a posting batch cannot be posted again
+- item master must provide an inventory asset account
+- GR/IR clearing account must be an active company account
+
+Still not included:
+
+- AP bill settlement / GR/IR clearing against AP
+- PPV / variance
+- PO truth
+- tracked receipt enablement
+- automatic GR/IR account governance
+
+Authority note:
+
+This is the first accounting write after the receipt-backed valuation ladder. It deliberately consumes only reconciled, eligible bridge truth and does not let Bill retake quantity ownership.
+
+## Phase H.13 hardening checkpoint
+
+H.13 hardening keeps the same posting boundary but makes the control seam safer and more reviewable.
+
+What changed:
+
+- A persisted company-level GR/IR clearing account policy was added.
+- GR/IR posting can use the company default clearing account when the request does not pass an explicit account.
+- The receipt GR/IR bridge read model now shows posted accounting linkage:
+  - `JournalEntryId`
+  - `JournalEntryDisplayNumber`
+  - `PostedAmountBase`
+  - `LastPostedAt`
+- PostgreSQL integration coverage now proves the full path from eligible bridge truth to journal entry and linked posted bridge lines.
+
+Still not included:
+
+- PPV / variance
+- PO truth
+- AP settlement against GR/IR
+- tracked receipt enablement
+- automatic UI workbench expansion
+
+Authority note:
+
+This is hardening, not a new valuation universe. GR/IR posting still consumes only eligible bridge truth and does not allow Bill to re-own inbound physical quantity.

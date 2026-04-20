@@ -55,6 +55,7 @@ builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceipt
 builder.Services.AddSingleton<IReceiptInventoryActivationStore, PostgreSqlReceiptInventoryActivationStore>();
 builder.Services.AddSingleton<IReceiptInventoryValuationStore, PostgreSqlReceiptInventoryValuationStore>();
 builder.Services.AddSingleton<IReceiptInventoryCostLayerEmissionStore, PostgreSqlReceiptInventoryCostLayerEmissionStore>();
+builder.Services.AddSingleton<IReceiptGrIrBridgeStore, PostgreSqlReceiptGrIrBridgeStore>();
 builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
 builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
 builder.Services.AddSingleton(
@@ -80,6 +81,8 @@ builder.Services.AddScoped<IFxRevaluationDocumentRepository, PostgresFxRevaluati
 builder.Services.AddScoped<IAccountingReportRepository, PostgresAccountingReportRepository>();
 builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccountingDocumentReviewRepository>();
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
+builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
+builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
 builder.Services.AddSingleton<JournalEntryNumberLookup, PostgreSqlJournalEntryNumberLookup>();
 builder.Services.AddSingleton<GlIJournalEntryLifecycleStore, PostgreSqlJournalEntryLifecycleStore>();
 builder.Services.AddSingleton<GlIJournalEntryLifecycleWorkflow, GlJournalEntryLifecycleWorkflow>();
@@ -104,6 +107,7 @@ builder.Services.AddScoped<PostInvoiceCommandHandler>();
 builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
+builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostVendorCreditCommandHandler>();
 builder.Services.AddScoped<PrepareReceivePaymentDraftCommandHandler>();
 builder.Services.AddScoped<PostReceivePaymentCommandHandler>();
@@ -3979,6 +3983,7 @@ accounting.MapGet(
         IReceiptInventoryActivationStore activationStore,
         IReceiptInventoryValuationStore valuationStore,
         IReceiptInventoryCostLayerEmissionStore emissionStore,
+        IReceiptGrIrBridgeStore grIrBridgeStore,
         CancellationToken cancellationToken) =>
     {
         var documents = await repository.ListAsync(
@@ -3994,6 +3999,14 @@ accounting.MapGet(
             documents.Select(static document => document.DocumentId).ToArray(),
             cancellationToken);
         var emissionSummaries = await emissionStore.GetReceiptCostLayerEmissionSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var emissionReconciliationSummaries = await emissionStore.GetReceiptCostLayerEmissionReconciliationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var grIrBridgeSummaries = await grIrBridgeStore.GetReceiptGrIrBridgeSummariesAsync(
             query.CompanyId,
             documents.Select(static document => document.DocumentId).ToArray(),
             cancellationToken);
@@ -4056,8 +4069,88 @@ accounting.MapGet(
                     emissionSummary.EmittedCostBase,
                     emissionSummary.LastEmittedAt
                 }
+                : null,
+            InventoryCostLayerEmissionReconciliation = emissionReconciliationSummaries.TryGetValue(document.DocumentId, out var reconciliationSummary)
+                ? new
+                {
+                    reconciliationSummary.ReconciliationStatus,
+                    reconciliationSummary.EmissionLineCount,
+                    reconciliationSummary.CostLayerCount,
+                    reconciliationSummary.MissingCostLayerCount,
+                    reconciliationSummary.OrphanCostLayerCount,
+                    reconciliationSummary.EmittedQuantity,
+                    reconciliationSummary.CostLayerQuantity,
+                    reconciliationSummary.EmittedCostBase,
+                    reconciliationSummary.CostLayerOriginalCostBase,
+                    reconciliationSummary.LastEmittedAt
+                }
+                : null,
+            GrIrBridge = grIrBridgeSummaries.TryGetValue(document.DocumentId, out var grIrBridgeSummary)
+                ? new
+                {
+                    grIrBridgeSummary.BridgeStatus,
+                    grIrBridgeSummary.BridgeLineCount,
+                    grIrBridgeSummary.EligibleLineCount,
+                    grIrBridgeSummary.BlockedReconciliationLineCount,
+                    grIrBridgeSummary.BlockedVarianceLineCount,
+                    grIrBridgeSummary.PostedLineCount,
+                    grIrBridgeSummary.BridgeQuantity,
+                    grIrBridgeSummary.BridgeAmountBase,
+                    grIrBridgeSummary.EligibleAmountBase,
+                    grIrBridgeSummary.BlockedAmountBase,
+                    grIrBridgeSummary.PostedAmountBase,
+                    grIrBridgeSummary.JournalEntryId,
+                    grIrBridgeSummary.JournalEntryDisplayNumber,
+                    grIrBridgeSummary.LastPostedAt,
+                    grIrBridgeSummary.LastRefreshedAt
+                }
                 : null
         }));
+    });
+
+accounting.MapGet(
+    "/receipts/grir-clearing-account-policy",
+    async (
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptGrIrClearingAccountPolicyRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var accountId = await repository.GetDefaultGrIrClearingAccountIdAsync(
+            new(query.CompanyId),
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            query.CompanyId,
+            GrIrClearingAccountId = accountId
+        });
+    });
+
+accounting.MapPost(
+    "/receipts/grir-clearing-account-policy",
+    async (
+        SaveReceiptGrIrClearingAccountPolicyHttpRequest request,
+        IReceiptGrIrClearingAccountPolicyRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            await repository.SaveDefaultGrIrClearingAccountAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                request.GrIrClearingAccountId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                request.CompanyId,
+                request.GrIrClearingAccountId
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
     });
 
 accounting.MapGet(
@@ -4069,6 +4162,7 @@ accounting.MapGet(
         IReceiptInventoryActivationStore activationStore,
         IReceiptInventoryValuationStore valuationStore,
         IReceiptInventoryCostLayerEmissionStore emissionStore,
+        IReceiptGrIrBridgeStore grIrBridgeStore,
         CancellationToken cancellationToken) =>
     {
         var document = await repository.GetAsync(
@@ -4084,6 +4178,14 @@ accounting.MapGet(
             documentId,
             cancellationToken);
         var emissionSummary = await emissionStore.GetReceiptCostLayerEmissionSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var emissionReconciliationSummary = await emissionStore.GetReceiptCostLayerEmissionReconciliationSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var grIrBridgeSummary = await grIrBridgeStore.GetReceiptGrIrBridgeSummaryAsync(
             query.CompanyId,
             documentId,
             cancellationToken);
@@ -4146,6 +4248,41 @@ accounting.MapGet(
                         emissionSummary.EmissionLineCount,
                         emissionSummary.EmittedCostBase,
                         emissionSummary.LastEmittedAt
+                    },
+                InventoryCostLayerEmissionReconciliation = emissionReconciliationSummary is null
+                    ? null
+                    : new
+                    {
+                        emissionReconciliationSummary.ReconciliationStatus,
+                        emissionReconciliationSummary.EmissionLineCount,
+                        emissionReconciliationSummary.CostLayerCount,
+                        emissionReconciliationSummary.MissingCostLayerCount,
+                        emissionReconciliationSummary.OrphanCostLayerCount,
+                        emissionReconciliationSummary.EmittedQuantity,
+                        emissionReconciliationSummary.CostLayerQuantity,
+                        emissionReconciliationSummary.EmittedCostBase,
+                        emissionReconciliationSummary.CostLayerOriginalCostBase,
+                        emissionReconciliationSummary.LastEmittedAt
+                    },
+                GrIrBridge = grIrBridgeSummary is null
+                    ? null
+                    : new
+                    {
+                        grIrBridgeSummary.BridgeStatus,
+                        grIrBridgeSummary.BridgeLineCount,
+                        grIrBridgeSummary.EligibleLineCount,
+                        grIrBridgeSummary.BlockedReconciliationLineCount,
+                        grIrBridgeSummary.BlockedVarianceLineCount,
+                        grIrBridgeSummary.PostedLineCount,
+                        grIrBridgeSummary.BridgeQuantity,
+                        grIrBridgeSummary.BridgeAmountBase,
+                        grIrBridgeSummary.EligibleAmountBase,
+                        grIrBridgeSummary.BlockedAmountBase,
+                        grIrBridgeSummary.PostedAmountBase,
+                        grIrBridgeSummary.JournalEntryId,
+                        grIrBridgeSummary.JournalEntryDisplayNumber,
+                        grIrBridgeSummary.LastPostedAt,
+                        grIrBridgeSummary.LastRefreshedAt
                     },
                 Lines = document.ReceiptLines.Select(line => new
                 {
@@ -4294,6 +4431,49 @@ accounting.MapPost(
                 request.CompanyId,
                 request.UserId,
                 documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-bridge/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrBridgeStore grIrBridgeStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-bridge/post",
+    async (Guid documentId, PostReceiptGrIrBridgeHttpRequest request, PostReceiptGrIrCommandHandler handler, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostReceiptGrIrCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    request.GrIrClearingAccountId,
+                    request.IdempotencyKey),
                 cancellationToken);
 
             return Results.Ok(result);

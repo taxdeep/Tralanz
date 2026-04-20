@@ -367,6 +367,15 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
                     line.ItemId,
                     line.WarehouseId,
                     cancellationToken);
+                var openCostLayerQuantity = decimal.Round(
+                    costLayers.Sum(static layer => layer.RemainingQty),
+                    6,
+                    MidpointRounding.AwayFromZero);
+                if (availableQuantity >= baseQuantity && openCostLayerQuantity < baseQuantity)
+                {
+                    throw new InvalidOperationException(
+                        $"Sales issue cannot post for '{item.Name}' because physical quantity is available but only {openCostLayerQuantity} has emitted cost-layer coverage. Review receipt valuation emission before outbound costing.");
+                }
 
                 var lineCostResult = item.DefaultCostingMethod switch
                 {
@@ -969,7 +978,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 
         if (remainingQuantity > 0)
         {
-            throw new InvalidOperationException($"Sales issue cannot post for '{itemName}' because the current receipt layers do not cover the outbound quantity yet.");
+            throw new InvalidOperationException($"Sales issue cannot post for '{itemName}' because open cost layers do not cover the outbound quantity. If physical quantity exists, receipt valuation cost-layer emission is incomplete and must be reviewed before outbound costing.");
         }
 
         return new IssueCostComputation(totalCostBase, consumptions);
@@ -985,7 +994,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 
         if (totalRemainingQty < issueQuantity || totalRemainingQty <= 0)
         {
-            throw new InvalidOperationException($"Sales issue cannot post for '{itemName}' because the current receipt layers do not cover the outbound quantity yet.");
+            throw new InvalidOperationException($"Sales issue cannot post for '{itemName}' because open cost layers do not cover the outbound quantity. If physical quantity exists, receipt valuation cost-layer emission is incomplete and must be reviewed before outbound costing.");
         }
 
         var issueCostBase = totalRemainingQty == 0
@@ -1040,7 +1049,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
 
         if (remainingIssueQty > 0)
         {
-            throw new InvalidOperationException($"Sales issue cannot post for '{itemName}' because the current receipt layers do not cover the outbound quantity yet.");
+            throw new InvalidOperationException($"Sales issue cannot post for '{itemName}' because open cost layers do not cover the outbound quantity. If physical quantity exists, receipt valuation cost-layer emission is incomplete and must be reviewed before outbound costing.");
         }
 
         return new IssueCostComputation(issueCostBase, consumptions);

@@ -17,4 +17,14 @@ public interface IReceiptInventoryCostLayerEmissionStore
         Guid companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken);
+
+    Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> GetReceiptCostLayerEmissionReconciliationSummaryAsync(
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(
+        Guid companyId,
+        IReadOnlyCollection<Guid> receiptDocumentIds,
+        CancellationToken cancellationToken);
 }

@@ -129,6 +129,53 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
             cancellationToken);
     }
 
+    public async Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> GetReceiptCostLayerEmissionReconciliationSummaryAsync(
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+        var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
+
+        return await LoadReceiptCostLayerEmissionReconciliationSummaryAsync(
+            connection,
+            null,
+            companyId,
+            receiptDocumentId,
+            hasActivationLines,
+            hasEmissionLines: true,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(
+        Guid companyId,
+        IReadOnlyCollection<Guid> receiptDocumentIds,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentIds.Count == 0)
+        {
+            return new Dictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>();
+        }
+
+        _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+        var hasActivationLines = await TableExistsAsync(connection, ActivationLinesTableName, cancellationToken);
+
+        return await LoadReceiptCostLayerEmissionReconciliationSummariesAsync(
+            connection,
+            null,
+            companyId,
+            receiptDocumentIds.Distinct().ToArray(),
+            hasActivationLines,
+            hasEmissionLines: true,
+            cancellationToken);
+    }
+
     private static async Task AcquireReceiptEmissionLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -436,6 +483,192 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
                 Round6(Math.Max(0m, emissionEligibleQuantity - emittedQuantity)),
                 reader.GetInt32(reader.GetOrdinal("emission_line_count")),
                 Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("emitted_cost_base"))),
+                reader.IsDBNull(reader.GetOrdinal("last_emitted_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_emitted_at")));
+        }
+
+        return summaries;
+    }
+
+    private static async Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> LoadReceiptCostLayerEmissionReconciliationSummaryAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        Guid receiptDocumentId,
+        bool hasActivationLines,
+        bool hasEmissionLines,
+        CancellationToken cancellationToken)
+    {
+        var summaries = await LoadReceiptCostLayerEmissionReconciliationSummariesAsync(
+            connection,
+            transaction,
+            companyId,
+            [receiptDocumentId],
+            hasActivationLines,
+            hasEmissionLines,
+            cancellationToken);
+        return summaries.TryGetValue(receiptDocumentId, out var summary) ? summary : null;
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> LoadReceiptCostLayerEmissionReconciliationSummariesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        Guid[] receiptDocumentIds,
+        bool hasActivationLines,
+        bool hasEmissionLines,
+        CancellationToken cancellationToken)
+    {
+        var activationLinesSql = hasActivationLines
+            ? $"""
+               select
+                 a.receipt_id as receipt_document_id,
+                 a.inventory_document_id,
+                 a.inventory_document_line_id
+               from {ActivationLinesTableName} a
+               where a.company_id = @company_id
+                 and a.receipt_id = any(@receipt_document_ids)
+               """
+            : """
+              select
+                null::uuid as receipt_document_id,
+                null::uuid as inventory_document_id,
+                null::uuid as inventory_document_line_id
+              where false
+              """;
+        var emissionGroupsSql = hasEmissionLines
+            ? $"""
+               select
+                 e.receipt_id as receipt_document_id,
+                 count(*)::int as emission_line_count,
+                 coalesce(sum(e.emitted_quantity), 0)::numeric(20,6) as emitted_quantity,
+                 coalesce(sum(e.emitted_cost_base), 0)::numeric(20,6) as emitted_cost_base,
+                 count(*) filter (where cl.id is null)::int as missing_cost_layer_count,
+                 coalesce(sum(cl.original_qty), 0)::numeric(20,6) as emitted_layer_quantity,
+                 coalesce(sum(round(cl.original_qty * cl.unit_cost_base, 6)), 0)::numeric(20,6) as emitted_layer_original_cost_base,
+                 max(e.emitted_at) as last_emitted_at
+               from {EmissionLinesTableName} e
+               left join inventory_cost_layers cl
+                 on cl.company_id = e.company_id
+                and cl.id = e.cost_layer_id
+               where e.company_id = @company_id
+                 and e.receipt_id = any(@receipt_document_ids)
+               group by e.receipt_id
+               """
+            : """
+              select
+                null::uuid as receipt_document_id,
+                0 as emission_line_count,
+                0::numeric(20,6) as emitted_quantity,
+                0::numeric(20,6) as emitted_cost_base,
+                0 as missing_cost_layer_count,
+                0::numeric(20,6) as emitted_layer_quantity,
+                0::numeric(20,6) as emitted_layer_original_cost_base,
+                null::timestamptz as last_emitted_at
+              where false
+              """;
+        var costLayerGroupsSql = hasActivationLines
+            ? $"""
+               select
+                 al.receipt_document_id,
+                 count(cl.id)::int as cost_layer_count,
+                 coalesce(sum(cl.original_qty), 0)::numeric(20,6) as cost_layer_quantity,
+                 coalesce(sum(round(cl.original_qty * cl.unit_cost_base, 6)), 0)::numeric(20,6) as cost_layer_original_cost_base,
+                 count(cl.id) filter (where e.id is null)::int as orphan_cost_layer_count
+               from activation_lines al
+               join inventory_cost_layers cl
+                 on cl.company_id = @company_id
+                and cl.source_document_id = al.inventory_document_id
+                and cl.source_document_line_id = al.inventory_document_line_id
+               left join {EmissionLinesTableName} e
+                 on e.company_id = @company_id
+                and e.cost_layer_id = cl.id
+               group by al.receipt_document_id
+               """
+            : """
+              select
+                null::uuid as receipt_document_id,
+                0 as cost_layer_count,
+                0::numeric(20,6) as cost_layer_quantity,
+                0::numeric(20,6) as cost_layer_original_cost_base,
+                0 as orphan_cost_layer_count
+              where false
+              """;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"""
+            with requested_receipts as (
+              select unnest(@receipt_document_ids::uuid[]) as receipt_document_id
+            ),
+            activation_lines as (
+              {activationLinesSql}
+            ),
+            emission_groups as (
+              {emissionGroupsSql}
+            ),
+            cost_layer_groups as (
+              {costLayerGroupsSql}
+            )
+            select
+              rr.receipt_document_id,
+              coalesce(eg.emission_line_count, 0) as emission_line_count,
+              coalesce(clg.cost_layer_count, 0) as cost_layer_count,
+              coalesce(eg.missing_cost_layer_count, 0) as missing_cost_layer_count,
+              coalesce(clg.orphan_cost_layer_count, 0) as orphan_cost_layer_count,
+              coalesce(eg.emitted_quantity, 0)::numeric(20,6) as emitted_quantity,
+              coalesce(clg.cost_layer_quantity, 0)::numeric(20,6) as cost_layer_quantity,
+              coalesce(eg.emitted_cost_base, 0)::numeric(20,6) as emitted_cost_base,
+              coalesce(clg.cost_layer_original_cost_base, 0)::numeric(20,6) as cost_layer_original_cost_base,
+              eg.last_emitted_at
+            from requested_receipts rr
+            left join emission_groups eg
+              on eg.receipt_document_id = rr.receipt_document_id
+            left join cost_layer_groups clg
+              on clg.receipt_document_id = rr.receipt_document_id;
+            """;
+        command.Parameters.Add(new NpgsqlParameter<Guid[]>("receipt_document_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            TypedValue = receiptDocumentIds
+        });
+        command.Parameters.AddWithValue("company_id", companyId);
+
+        var summaries = new Dictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var receiptDocumentId = reader.GetGuid(reader.GetOrdinal("receipt_document_id"));
+            var emissionLineCount = reader.GetInt32(reader.GetOrdinal("emission_line_count"));
+            var costLayerCount = reader.GetInt32(reader.GetOrdinal("cost_layer_count"));
+            var missingCostLayerCount = reader.GetInt32(reader.GetOrdinal("missing_cost_layer_count"));
+            var orphanCostLayerCount = reader.GetInt32(reader.GetOrdinal("orphan_cost_layer_count"));
+            var emittedQuantity = Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("emitted_quantity")));
+            var costLayerQuantity = Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("cost_layer_quantity")));
+            var emittedCostBase = Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("emitted_cost_base")));
+            var costLayerOriginalCostBase = Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("cost_layer_original_cost_base")));
+            var reconciliationStatus = ReceiptInventoryCostLayerEmissionReconciliationStatusPolicy.Resolve(
+                emissionLineCount,
+                costLayerCount,
+                missingCostLayerCount,
+                orphanCostLayerCount,
+                emittedQuantity,
+                costLayerQuantity,
+                emittedCostBase,
+                costLayerOriginalCostBase);
+
+            summaries[receiptDocumentId] = new ReceiptInventoryCostLayerEmissionReconciliationSummary(
+                receiptDocumentId,
+                reconciliationStatus,
+                emissionLineCount,
+                costLayerCount,
+                missingCostLayerCount,
+                orphanCostLayerCount,
+                emittedQuantity,
+                costLayerQuantity,
+                emittedCostBase,
+                costLayerOriginalCostBase,
                 reader.IsDBNull(reader.GetOrdinal("last_emitted_at"))
                     ? null
                     : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_emitted_at")));

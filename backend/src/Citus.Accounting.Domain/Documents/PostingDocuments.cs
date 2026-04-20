@@ -870,6 +870,141 @@ public sealed class ReceiptDocument
     public IReadOnlyList<ReceiptDocumentLine> ReceiptLines { get; }
 }
 
+public sealed record ReceiptGrIrPostingDocumentLine : IPostingDocumentLine
+{
+    public ReceiptGrIrPostingDocumentLine(
+        int lineNumber,
+        Guid bridgeLineId,
+        Guid inventoryAssetAccountId,
+        Guid grIrClearingAccountId,
+        string description,
+        decimal amountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (bridgeLineId == Guid.Empty)
+        {
+            throw new ArgumentException("Bridge line id is required.", nameof(bridgeLineId));
+        }
+
+        if (inventoryAssetAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Inventory asset account id is required.", nameof(inventoryAssetAccountId));
+        }
+
+        if (grIrClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("GR/IR clearing account id is required.", nameof(grIrClearingAccountId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (amountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amountBase), "GR/IR line amount must be positive.");
+        }
+
+        LineNumber = lineNumber;
+        BridgeLineId = bridgeLineId;
+        InventoryAssetAccountId = inventoryAssetAccountId;
+        GrIrClearingAccountId = grIrClearingAccountId;
+        Description = description.Trim();
+        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+    }
+
+    public int LineNumber { get; }
+
+    public Guid BridgeLineId { get; }
+
+    public Guid InventoryAssetAccountId { get; }
+
+    public Guid GrIrClearingAccountId { get; }
+
+    public string Description { get; }
+
+    public decimal AmountBase { get; }
+}
+
+public sealed class ReceiptGrIrPostingDocument : IPostingDocument
+{
+    public ReceiptGrIrPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid receiptDocumentId,
+        DateOnly documentDate,
+        CurrencyCode baseCurrencyCode,
+        Guid grIrClearingAccountId,
+        IEnumerable<ReceiptGrIrPostingDocumentLine> lines)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        if (grIrClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("GR/IR clearing account id is required.", nameof(grIrClearingAccountId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        ReceiptDocumentId = receiptDocumentId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+        GrIrClearingAccountId = grIrClearingAccountId;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Receipt GR/IR posting document must contain at least one line.");
+        }
+
+        GrIrLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "receipt_grir_bridge_posting";
+
+    public string Status { get; }
+
+    public Guid ReceiptDocumentId { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public Guid GrIrClearingAccountId { get; }
+
+    public IReadOnlyList<ReceiptGrIrPostingDocumentLine> GrIrLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    public decimal TotalAmountBase => GrIrLines.Sum(static line => line.AmountBase);
+}
+
 public sealed record VendorCreditDocumentLine : IPostingDocumentLine
 {
     public VendorCreditDocumentLine(
