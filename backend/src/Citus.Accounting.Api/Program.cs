@@ -4481,8 +4481,14 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/close",
-    async (Guid documentId, ClosePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, ClosePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequirePurchaseOrderCloseAuthority(sessionAccessor.Current, "close");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
         try
         {
             var result = await repository.CloseAsync(
@@ -4501,8 +4507,14 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/cancel",
-    async (Guid documentId, CancelPurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, CancelPurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequirePurchaseOrderCancelAuthority(sessionAccessor.Current, "cancel");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
         try
         {
             var result = await repository.CancelAsync(
@@ -6141,6 +6153,46 @@ static IResult? RequirePurchaseOrderApprovalReversalAuthority(
     string transitionCode)
 {
     var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApprovalReversal(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderCloseAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderClose(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderCancelAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderCancel(
         session,
         transitionCode);
 

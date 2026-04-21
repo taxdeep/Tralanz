@@ -59,6 +59,12 @@ public static class BusinessApprovalAuthority
     public static bool CanReversePurchaseOrderApproval(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderAmendmentRole) == true;
 
+    public static bool CanClosePurchaseOrder(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderAmendmentRole) == true;
+
+    public static bool CanCancelPurchaseOrder(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderAmendmentRole) == true;
+
     public static Decision EvaluateOpenItemAdjustmentApproval(
         BusinessSessionContext? session,
         string openItemLabel,
@@ -279,6 +285,58 @@ public static class BusinessApprovalAuthority
             true,
             "authority_allowed",
             $"The business session has authority to {transitionCode} purchase order approval.");
+    }
+
+    public static Decision EvaluatePurchaseOrderClose(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} a purchase order.");
+        }
+
+        if (!CanClosePurchaseOrder(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_close_authority",
+                $"Only a company owner or book-governance user can {transitionCode} a purchase order.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} the purchase order.");
+    }
+
+    public static Decision EvaluatePurchaseOrderCancel(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} a purchase order.");
+        }
+
+        if (!CanCancelPurchaseOrder(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_cancel_authority",
+                $"Only a company owner or book-governance user can {transitionCode} a purchase order.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} the purchase order.");
     }
 
     private static bool IsOpenItemAdjustmentApprovalRole(string role) =>

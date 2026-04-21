@@ -1941,3 +1941,39 @@ Still deferred:
 Authority note:
 
 H.20.17 keeps amendment reopening backend-owned. The Shell only requests the transition at approved/issued lifecycle points; the API checks amendment authority and the repository refuses reopening when downstream anchor truth already depends on the PO.
+
+## Phase H.20.18 checkpoint
+
+H.20.18 adds session authority gates to purchase order close and cancel API commands.
+
+Boundary:
+
+- This does not expose PO close or cancel buttons in the Shell.
+- Close and cancel now require an active business session before repository mutation is attempted.
+- Close and cancel use governance/owner-style PO lifecycle authority, not generic posting access.
+- Repository state checks remain decisive for issued-only close and draft/approved/untouched-issued cancel.
+- Quantity-discrepancy, receipt, and bill anchor checks remain repository-owned.
+- It does not introduce formal workflow tables or persisted company approval limits.
+- It does not introduce PO close accounting effects, PPV posting, or tracked receipt.
+
+What changed:
+
+- Business approval authority now evaluates PO close and PO cancel transitions.
+- API close endpoint blocks unauthorized business sessions before calling the repository.
+- API cancel endpoint blocks unauthorized business sessions before calling the repository.
+- Forbidden responses return the same transition/outcome/message shape used by other PO lifecycle gates.
+
+Still deferred:
+
+- PO close / cancel lifecycle buttons in Shell
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.18 closes the backend authority gap before any UI exposure. The API now owns the session/role gate for close and cancel, while the repository continues to own lifecycle legality and downstream-anchor protection.
