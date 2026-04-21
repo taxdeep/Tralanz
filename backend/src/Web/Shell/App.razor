@@ -10,10 +10,6 @@
 </head>
 
 <body>
-    <MudThemeProvider Theme="_theme" IsDarkMode="true" />
-    <MudPopoverProvider />
-    <MudDialogProvider />
-    <MudSnackbarProvider />
     <Routes @rendermode="InteractiveServer" />
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="js/business-auth.js"></script>
@@ -21,25 +17,3 @@
 </body>
 
 </html>
-
-@code
-{
-    private readonly MudTheme _theme = new()
-    {
-        PaletteDark = new PaletteDark
-        {
-            Primary = "#7ab6d9",
-            Secondary = "#6fcf97",
-            Background = "#0d131a",
-            Surface = "#121a22",
-            AppbarBackground = "#101821",
-            DrawerBackground = "#0f151d",
-            DrawerText = "#d9e2ea",
-            TextPrimary = "#d9e2ea",
-            TextSecondary = "#97a8b7",
-            Info = "#7ab6d9",
-            Success = "#6fcf97",
-            Warning = "#d8b56a"
-        }
-    };
-}

@@ -77,8 +77,8 @@ public sealed class WebShellCompanyOnboardingStore(PlatformPostgresConnectionFac
             """
             select
               c.id,
-              c.company_name,
-              c.company_code,
+              c.legal_name as company_name,
+              c.entity_number as company_code,
               c.entity_type,
               c.industry,
               c.base_currency_code,
