@@ -176,6 +176,60 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         return await LoadReceiptSettlementSummariesAsync(scope, companyId.Value, distinctIds, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ReceiptGrIrApSettlementBatchSummary>> ListReceiptSettlementBatchesAsync(
+        CompanyId companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        {
+            return Array.Empty<ReceiptGrIrApSettlementBatchSummary>();
+        }
+
+        return await LoadReceiptSettlementBatchSummariesAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ReceiptGrIrApPurchaseVarianceLineSummary>> ListReceiptPurchaseVarianceLinesAsync(
+        CompanyId companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        if (!await EnsureSettlementBatchSchemaForReadAsync(scope, cancellationToken))
+        {
+            return Array.Empty<ReceiptGrIrApPurchaseVarianceLineSummary>();
+        }
+
+        return await LoadReceiptPurchaseVarianceLineSummariesAsync(
+            scope,
+            companyId.Value,
+            receiptDocumentId,
+            cancellationToken);
+    }
+
     public async Task<BillGrIrApSettlementSummary?> GetBillSettlementSummaryAsync(
         CompanyId companyId,
         Guid billDocumentId,
@@ -1970,6 +2024,148 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         foreach (var receiptDocumentId in receiptDocumentIds)
         {
             summaries.TryAdd(receiptDocumentId, BuildEmptyReceiptSummary(receiptDocumentId));
+        }
+
+        return summaries;
+    }
+
+    private static async Task<IReadOnlyList<ReceiptGrIrApSettlementBatchSummary>> LoadReceiptSettlementBatchSummariesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              batch.receipt_id,
+              batch.id as settlement_batch_id,
+              batch.status,
+              batch.requested_amount_base,
+              batch.settled_quantity,
+              batch.settled_amount_base,
+              batch.line_count,
+              batch.journal_status,
+              batch.journal_entry_id,
+              batch.journal_entry_display_number,
+              batch.journal_posted_at,
+              batch.journal_blocked_reason_code,
+              batch.open_item_clearing_status,
+              batch.open_item_clearing_blocked_reason_code,
+              batch.open_item_cleared_at,
+              batch.open_item_reversed_at,
+              batch.open_item_reversed_application_count,
+              batch.open_item_reversed_amount_tx,
+              batch.open_item_reversed_amount_base,
+              batch.created_at
+            from {SettlementBatchesTableName} batch
+            where batch.company_id = @company_id
+              and batch.receipt_id = @receipt_id
+            order by batch.created_at desc, batch.id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+
+        var summaries = new List<ReceiptGrIrApSettlementBatchSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            summaries.Add(new ReceiptGrIrApSettlementBatchSummary(
+                reader.GetGuid(reader.GetOrdinal("receipt_id")),
+                reader.GetGuid(reader.GetOrdinal("settlement_batch_id")),
+                reader.GetString(reader.GetOrdinal("status")),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("requested_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_quantity"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"))),
+                reader.GetInt32(reader.GetOrdinal("line_count")),
+                reader.GetString(reader.GetOrdinal("journal_status")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("journal_entry_id")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_display_number"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("journal_entry_display_number")),
+                reader.IsDBNull(reader.GetOrdinal("journal_posted_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("journal_posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("journal_blocked_reason_code"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("journal_blocked_reason_code")),
+                reader.GetString(reader.GetOrdinal("open_item_clearing_status")),
+                reader.IsDBNull(reader.GetOrdinal("open_item_clearing_blocked_reason_code"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("open_item_clearing_blocked_reason_code")),
+                reader.IsDBNull(reader.GetOrdinal("open_item_cleared_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("open_item_cleared_at")),
+                reader.IsDBNull(reader.GetOrdinal("open_item_reversed_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("open_item_reversed_at")),
+                reader.GetInt32(reader.GetOrdinal("open_item_reversed_application_count")),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("open_item_reversed_amount_tx"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("open_item_reversed_amount_base"))),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"))));
+        }
+
+        return summaries;
+    }
+
+    private static async Task<IReadOnlyList<ReceiptGrIrApPurchaseVarianceLineSummary>> LoadReceiptPurchaseVarianceLineSummariesAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              variance.receipt_id,
+              variance.receipt_line_number,
+              variance.settlement_batch_id,
+              variance.settlement_batch_line_id,
+              variance.bill_id,
+              variance.bill_line_number,
+              variance.item_id,
+              variance.warehouse_id,
+              variance.uom_code,
+              variance.settled_quantity,
+              variance.grir_amount_base,
+              variance.bill_amount_base,
+              variance.variance_amount_base,
+              variance.variance_status,
+              variance.blocked_reason_code,
+              variance.refreshed_at
+            from {PurchaseVarianceLinesTableName} variance
+            where variance.company_id = @company_id
+              and variance.receipt_id = @receipt_id
+            order by variance.receipt_line_number, variance.bill_line_number, variance.settlement_batch_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("receipt_id", receiptDocumentId);
+
+        var summaries = new List<ReceiptGrIrApPurchaseVarianceLineSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            summaries.Add(new ReceiptGrIrApPurchaseVarianceLineSummary(
+                reader.GetGuid(reader.GetOrdinal("receipt_id")),
+                reader.GetInt32(reader.GetOrdinal("receipt_line_number")),
+                reader.GetGuid(reader.GetOrdinal("settlement_batch_id")),
+                reader.GetGuid(reader.GetOrdinal("settlement_batch_line_id")),
+                reader.GetGuid(reader.GetOrdinal("bill_id")),
+                reader.GetInt32(reader.GetOrdinal("bill_line_number")),
+                reader.GetGuid(reader.GetOrdinal("item_id")),
+                reader.GetGuid(reader.GetOrdinal("warehouse_id")),
+                reader.GetString(reader.GetOrdinal("uom_code")),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_quantity"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("grir_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("bill_amount_base"))),
+                Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("variance_amount_base"))),
+                reader.GetString(reader.GetOrdinal("variance_status")),
+                reader.IsDBNull(reader.GetOrdinal("blocked_reason_code"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("blocked_reason_code")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("refreshed_at"))));
         }
 
         return summaries;

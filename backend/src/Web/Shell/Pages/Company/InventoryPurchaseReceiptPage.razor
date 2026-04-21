@@ -1,6 +1,7 @@
 @page "/company/inventory-purchase-receipt"
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.Inventory.Domain.Shared
+@using Modules.GL.JournalEntry
 @using Web.Shell.Services
 @rendermode InteractiveServer
 @inject WebShellState ShellState
@@ -9,6 +10,7 @@
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellCounterpartyOnboardingClient CounterpartyClient
 @inject ShellInventoryReceiptClient InventoryReceipt
+@inject IJournalEntryAccountCatalog AccountCatalog
 @inject ShellAccountingDocumentReviewClient ReviewClient
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
@@ -218,6 +220,73 @@
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
             Operational guardrail: tracked lot/serial flows are still closed here. Purchase Receipt currently exposes only warehouse-managed stock items until tracked inbound document input is ready.
         </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <div>
+                        <MudText Typo="Typo.overline" Class="text-secondary">GR/IR control</MudText>
+                        <MudText Typo="Typo.h6">Clearing Account Policy</MudText>
+                    </div>
+                    @if (_savedGrIrClearingAccountId.HasValue)
+                    {
+                        <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">
+                            Policy configured
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Warning" Variant="Variant.Outlined" Size="Size.Small">
+                            Policy pending
+                        </MudChip>
+                    }
+                </MudStack>
+
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    Select the default liability account used when receipt GR/IR bridge batches are posted.
+                </MudText>
+
+                @if (!string.IsNullOrWhiteSpace(_grIrClearingPolicyMessage))
+                {
+                    <MudAlert Severity="_grIrClearingPolicySeverity" Variant="Variant.Outlined" Dense="true">
+                        @_grIrClearingPolicyMessage
+                    </MudAlert>
+                }
+
+                @if (_grIrClearingAccountOptions.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                        No active liability manual-posting account is available yet. Create or activate one before posting receipt GR/IR bridge batches.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudGrid>
+                        <MudItem xs="12" md="8">
+                            <MudSelect T="string"
+                                       Label="Default GR/IR clearing account"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isGrIrClearingPolicySaving || WritesBlocked)"
+                                       @bind-Value="_selectedGrIrClearingAccountIdText">
+                                @foreach (var account in _grIrClearingAccountOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@account.AccountId.ToString("D")">@FormatGrIrClearingAccountOption(account)</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="4" Style="display:flex;align-items:center;">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       Disabled="@(_isGrIrClearingPolicySaving || WritesBlocked || string.IsNullOrWhiteSpace(_selectedGrIrClearingAccountIdText))"
+                                       OnClick="SaveGrIrClearingAccountPolicyAsync">
+                                @(_isGrIrClearingPolicySaving ? "Saving..." : "Save Policy")
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+                }
+            </MudStack>
+        </MudPaper>
 
         <MudPaper Elevation="0" Class="pa-5">
             <MudStack Spacing="2">
@@ -483,6 +552,13 @@
                                     <MudButton Variant="Variant.Outlined"
                                                Color="Color.Primary"
                                                Size="Size.Small"
+                                               Disabled="@_isReceiptControlCommandRunning"
+                                               OnClick="@(() => LoadReceiptGrIrSettlementBatchesAsync(context))">
+                                        Load Batches
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
                                                Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
                                                OnClick="@(() => RefreshReceiptGrIrSettlementAsync(context))">
                                         Refresh Settlement
@@ -508,7 +584,96 @@
                                                OnClick="@(() => RefreshReceiptPurchaseVarianceAsync(context))">
                                         Refresh PPV
                                     </MudButton>
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Warning"
+                                               Size="Size.Small"
+                                               Disabled="@_isReceiptControlCommandRunning"
+                                               OnClick="@(() => LoadReceiptPurchaseVarianceLinesAsync(context))">
+                                        Load PPV Lines
+                                    </MudButton>
                                 </MudStack>
+                                @if (GetReceiptGrIrSettlementBatches(context.Id).Count > 0)
+                                {
+                                    <MudTable Items="@GetReceiptGrIrSettlementBatches(context.Id)"
+                                              Dense="true"
+                                              Hover="true"
+                                              Elevation="0"
+                                              Class="mt-2">
+                                        <HeaderContent>
+                                            <MudTh>Batch</MudTh>
+                                            <MudTh>Amount</MudTh>
+                                            <MudTh>Journal</MudTh>
+                                            <MudTh>AP Clearing</MudTh>
+                                            <MudTh>Actions</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate Context="batch">
+                                            <MudTd>@batch.SettlementBatchId.ToString("N")[..8]</MudTd>
+                                            <MudTd>@batch.SettledAmountBase.ToString("N2")</MudTd>
+                                            <MudTd>@FormatReceiptGrIrJournalStatus(batch.JournalStatus)</MudTd>
+                                            <MudTd>@FormatReceiptGrIrOpenItemClearingStatus(batch.OpenItemClearingStatus)</MudTd>
+                                            <MudTd>
+                                                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                                                    <MudButton Variant="Variant.Text"
+                                                               Color="Color.Secondary"
+                                                               Size="Size.Small"
+                                                               Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
+                                                               OnClick="@(() => PostReceiptGrIrSettlementJournalAsync(batch))">
+                                                        Post Journal
+                                                    </MudButton>
+                                                    <MudButton Variant="Variant.Text"
+                                                               Color="Color.Success"
+                                                               Size="Size.Small"
+                                                               Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
+                                                               OnClick="@(() => ClearReceiptGrIrSettlementOpenItemAsync(batch))">
+                                                        Clear AP
+                                                    </MudButton>
+                                                    <MudButton Variant="Variant.Text"
+                                                               Color="Color.Warning"
+                                                               Size="Size.Small"
+                                                               Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
+                                                               OnClick="@(() => ReverseReceiptGrIrSettlementOpenItemAsync(batch))">
+                                                        Reverse AP
+                                                    </MudButton>
+                                                </MudStack>
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
+                                @if (GetReceiptPurchaseVarianceLines(context.Id).Count > 0)
+                                {
+                                    <MudTable Items="@GetReceiptPurchaseVarianceLines(context.Id)"
+                                              Dense="true"
+                                              Hover="true"
+                                              Elevation="0"
+                                              Class="mt-2">
+                                        <HeaderContent>
+                                            <MudTh>Receipt Line</MudTh>
+                                            <MudTh>Bill Line</MudTh>
+                                            <MudTh>Qty</MudTh>
+                                            <MudTh>GR/IR</MudTh>
+                                            <MudTh>Bill</MudTh>
+                                            <MudTh>Variance</MudTh>
+                                            <MudTh>Status</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate Context="variance">
+                                            <MudTd>@variance.ReceiptLineNumber</MudTd>
+                                            <MudTd>@variance.BillLineNumber</MudTd>
+                                            <MudTd>@variance.SettledQuantity.ToString("N2") @variance.UomCode</MudTd>
+                                            <MudTd>@variance.GrIrAmountBase.ToString("N2")</MudTd>
+                                            <MudTd>@variance.BillAmountBase.ToString("N2")</MudTd>
+                                            <MudTd>@variance.VarianceAmountBase.ToString("N2")</MudTd>
+                                            <MudTd>
+                                                <MudStack Spacing="0">
+                                                    <MudText Typo="Typo.body2">@FormatReceiptPurchaseVarianceStatus(variance.VarianceStatus)</MudText>
+                                                    @if (!string.IsNullOrWhiteSpace(variance.BlockedReasonCode))
+                                                    {
+                                                        <MudText Typo="Typo.caption" Class="text-secondary">@variance.BlockedReasonCode</MudText>
+                                                    }
+                                                </MudStack>
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
                             </MudStack>
                         </MudTd>
                     </RowTemplate>
@@ -568,6 +733,16 @@
         new Dictionary<Guid, ShellReceiptGrIrBridgeSummary>();
     private IReadOnlyDictionary<Guid, ShellReceiptGrIrApSettlementSummary> _receiptSettlementSummaries =
         new Dictionary<Guid, ShellReceiptGrIrApSettlementSummary>();
+    private IReadOnlyDictionary<Guid, IReadOnlyList<ShellReceiptGrIrApSettlementBatchSummary>> _receiptSettlementBatchSummaries =
+        new Dictionary<Guid, IReadOnlyList<ShellReceiptGrIrApSettlementBatchSummary>>();
+    private IReadOnlyDictionary<Guid, IReadOnlyList<ShellReceiptGrIrApPurchaseVarianceLineSummary>> _receiptPurchaseVarianceLineSummaries =
+        new Dictionary<Guid, IReadOnlyList<ShellReceiptGrIrApPurchaseVarianceLineSummary>>();
+    private IReadOnlyList<JournalEntryAccountOption> _grIrClearingAccountOptions = Array.Empty<JournalEntryAccountOption>();
+    private string? _selectedGrIrClearingAccountIdText;
+    private Guid? _savedGrIrClearingAccountId;
+    private bool _isGrIrClearingPolicySaving;
+    private string? _grIrClearingPolicyMessage;
+    private Severity _grIrClearingPolicySeverity = Severity.Info;
 
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool IsBillHandoff => BillId.HasValue;
@@ -630,6 +805,7 @@
 
             _dashboard = await InventoryReceipt.GetDashboardAsync(ShellState.ActiveCompany.Id);
             _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            await LoadGrIrClearingAccountPolicyAsync();
             if (BillId.HasValue && BillId != _loadedBillSourceId)
             {
                 await LoadBillHandoffAsync(BillId.Value);
@@ -641,6 +817,92 @@
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+    }
+
+    private async Task LoadGrIrClearingAccountPolicyAsync()
+    {
+        _grIrClearingPolicyMessage = null;
+        _grIrClearingPolicySeverity = Severity.Info;
+
+        var accounts = await AccountCatalog.ListManualPostingAccountsAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+        _grIrClearingAccountOptions = accounts
+            .Where(IsGrIrClearingAccountCandidate)
+            .OrderByDescending(IsPreferredGrIrClearingAccountCandidate)
+            .ThenBy(static account => account.Code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var policyResult = await ReviewClient.GetReceiptGrIrClearingAccountPolicyAsync(
+            ShellState.ActiveCompany.Id,
+            CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(policyResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(policyResult.ErrorMessage))
+        {
+            _grIrClearingPolicySeverity = Severity.Warning;
+            _grIrClearingPolicyMessage = policyResult.ErrorMessage;
+        }
+
+        _savedGrIrClearingAccountId = policyResult.Value?.GrIrClearingAccountId;
+        _selectedGrIrClearingAccountIdText =
+            _savedGrIrClearingAccountId?.ToString("D")
+            ?? ResolveDefaultGrIrClearingAccount(_grIrClearingAccountOptions)?.AccountId.ToString("D");
+    }
+
+    private async Task SaveGrIrClearingAccountPolicyAsync()
+    {
+        if (TryBlockWrites())
+        {
+            _grIrClearingPolicySeverity = Severity.Warning;
+            _grIrClearingPolicyMessage = ShellState.WriteBlockMessage;
+            return;
+        }
+
+        if (!Guid.TryParse(_selectedGrIrClearingAccountIdText, out var accountId) || accountId == Guid.Empty)
+        {
+            _grIrClearingPolicySeverity = Severity.Warning;
+            _grIrClearingPolicyMessage = "Select a valid liability account before saving the GR/IR clearing policy.";
+            return;
+        }
+
+        try
+        {
+            _isGrIrClearingPolicySaving = true;
+            _grIrClearingPolicyMessage = null;
+
+            var result = await ReviewClient.SaveReceiptGrIrClearingAccountPolicyAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                accountId,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _grIrClearingPolicySeverity = Severity.Warning;
+                _grIrClearingPolicyMessage = result.ErrorMessage ?? "GR/IR clearing policy save returned no policy payload.";
+                return;
+            }
+
+            _savedGrIrClearingAccountId = result.Value.GrIrClearingAccountId;
+            _selectedGrIrClearingAccountIdText = result.Value.GrIrClearingAccountId?.ToString("D");
+            _grIrClearingPolicySeverity = Severity.Success;
+            _grIrClearingPolicyMessage = "GR/IR clearing account policy saved.";
+        }
+        catch (Exception ex)
+        {
+            _grIrClearingPolicySeverity = Severity.Error;
+            _grIrClearingPolicyMessage = ex.Message;
+        }
+        finally
+        {
+            _isGrIrClearingPolicySaving = false;
         }
     }
 
@@ -1111,10 +1373,203 @@
             var summaries = _receiptSettlementSummaries.ToDictionary(static item => item.Key, static item => item.Value);
             summaries[receipt.Id] = result.Value.Summary;
             _receiptSettlementSummaries = summaries;
+            await ReloadReceiptGrIrSettlementBatchesAsync(receipt.Id);
 
             _receiptControlCommandSeverity = GetReceiptGrIrSettlementSeverity(result.Value.Summary.SettlementStatus);
             _receiptControlCommandMessage =
                 $"{receipt.DocumentNumber} GR/IR settlement executed: {result.Value.SettlementLineCount} line(s), {result.Value.SettledAmountBase:N2} base settled.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
+    }
+
+    private async Task LoadReceiptGrIrSettlementBatchesAsync(InventoryPurchaseReceiptSummary receipt)
+    {
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var loaded = await ReloadReceiptGrIrSettlementBatchesAsync(receipt.Id);
+            _receiptControlCommandSeverity = loaded > 0 ? Severity.Success : Severity.Info;
+            _receiptControlCommandMessage = loaded > 0
+                ? $"{receipt.DocumentNumber} loaded {loaded} GR/IR settlement batch(es)."
+                : $"{receipt.DocumentNumber} has no GR/IR settlement batches yet.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
+    }
+
+    private async Task LoadReceiptPurchaseVarianceLinesAsync(InventoryPurchaseReceiptSummary receipt)
+    {
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var loaded = await ReloadReceiptPurchaseVarianceLinesAsync(receipt.Id);
+            _receiptControlCommandSeverity = loaded > 0 ? Severity.Success : Severity.Info;
+            _receiptControlCommandMessage = loaded > 0
+                ? $"{receipt.DocumentNumber} loaded {loaded} purchase variance line(s)."
+                : $"{receipt.DocumentNumber} has no purchase variance lines yet.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
+    }
+
+    private async Task PostReceiptGrIrSettlementJournalAsync(ShellReceiptGrIrApSettlementBatchSummary batch)
+    {
+        if (TryBlockReceiptControlWrites())
+        {
+            return;
+        }
+
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var result = await ReviewClient.PostReceiptGrIrSettlementJournalAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                batch.ReceiptDocumentId,
+                batch.SettlementBatchId,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _receiptControlCommandSeverity = Severity.Warning;
+                _receiptControlCommandMessage = result.ErrorMessage ?? "Settlement journal post did not return a response.";
+                return;
+            }
+
+            await RefreshReceiptSettlementJournalAfterBatchCommandAsync(batch.ReceiptDocumentId);
+            await ReloadReceiptGrIrSettlementBatchesAsync(batch.ReceiptDocumentId);
+
+            _receiptControlCommandSeverity = Severity.Success;
+            _receiptControlCommandMessage =
+                $"Settlement batch {batch.SettlementBatchId:N} posted journal {result.Value.JournalEntryDisplayNumber}.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
+    }
+
+    private async Task ClearReceiptGrIrSettlementOpenItemAsync(ShellReceiptGrIrApSettlementBatchSummary batch)
+    {
+        if (TryBlockReceiptControlWrites())
+        {
+            return;
+        }
+
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var result = await ReviewClient.ClearReceiptGrIrSettlementOpenItemAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                batch.ReceiptDocumentId,
+                batch.SettlementBatchId,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _receiptControlCommandSeverity = Severity.Warning;
+                _receiptControlCommandMessage = result.ErrorMessage ?? "Settlement AP open-item clearing did not return a response.";
+                return;
+            }
+
+            UpdateReceiptSettlementSummary(result.Value.ReceiptDocumentId, result.Value.Summary);
+            await ReloadReceiptGrIrSettlementBatchesAsync(result.Value.ReceiptDocumentId);
+            await ReloadReceiptPurchaseVarianceLinesAsync(result.Value.ReceiptDocumentId);
+
+            _receiptControlCommandSeverity = Severity.Success;
+            _receiptControlCommandMessage =
+                $"Settlement batch {batch.SettlementBatchId:N} cleared {result.Value.ApplicationCount} AP application(s) totaling {result.Value.ClearedAmountBase:N2} base.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
+    }
+
+    private async Task ReverseReceiptGrIrSettlementOpenItemAsync(ShellReceiptGrIrApSettlementBatchSummary batch)
+    {
+        if (TryBlockReceiptControlWrites())
+        {
+            return;
+        }
+
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var result = await ReviewClient.ReverseReceiptGrIrSettlementOpenItemAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                batch.ReceiptDocumentId,
+                batch.SettlementBatchId,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _receiptControlCommandSeverity = Severity.Warning;
+                _receiptControlCommandMessage = result.ErrorMessage ?? "Settlement AP open-item clearing reversal did not return a response.";
+                return;
+            }
+
+            UpdateReceiptSettlementSummary(result.Value.ReceiptDocumentId, result.Value.Summary);
+            await ReloadReceiptGrIrSettlementBatchesAsync(result.Value.ReceiptDocumentId);
+            await ReloadReceiptPurchaseVarianceLinesAsync(result.Value.ReceiptDocumentId);
+
+            _receiptControlCommandSeverity = Severity.Warning;
+            _receiptControlCommandMessage =
+                $"Settlement batch {batch.SettlementBatchId:N} reversed {result.Value.ReversedApplicationCount} AP application(s), restoring {result.Value.RestoredAmountBase:N2} base.";
         }
         catch (Exception ex)
         {
@@ -1152,7 +1607,8 @@
                 CancellationToken.None),
             "PPV control",
             static summary => GetReceiptPurchaseVarianceSeverity(summary.PurchaseVarianceStatus),
-            static summary => BuildReceiptPurchaseVarianceSummary(summary));
+            static summary => BuildReceiptPurchaseVarianceSummary(summary),
+            ReloadReceiptPurchaseVarianceLinesAsync);
     }
 
     private async Task RefreshReceiptSettlementControlAsync(
@@ -1160,7 +1616,8 @@
         Func<Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>>> command,
         string controlLabel,
         Func<ShellReceiptGrIrApSettlementSummary, Severity> severity,
-        Func<ShellReceiptGrIrApSettlementSummary, string> summaryText)
+        Func<ShellReceiptGrIrApSettlementSummary, string> summaryText,
+        Func<Guid, Task<int>>? reloadDetails = null)
     {
         if (TryBlockReceiptControlWrites())
         {
@@ -1187,6 +1644,10 @@
             var summaries = _receiptSettlementSummaries.ToDictionary(static item => item.Key, static item => item.Value);
             summaries[receipt.Id] = result.Value;
             _receiptSettlementSummaries = summaries;
+            if (reloadDetails is not null)
+            {
+                await reloadDetails(receipt.Id);
+            }
 
             _receiptControlCommandSeverity = severity(result.Value);
             _receiptControlCommandMessage =
@@ -1220,6 +1681,83 @@
         summaries[receiptDocumentId] = refreshResult.Value;
         _receiptBridgeSummaries = summaries;
     }
+
+    private async Task RefreshReceiptSettlementJournalAfterBatchCommandAsync(Guid receiptDocumentId)
+    {
+        var result = await ReviewClient.RefreshReceiptGrIrJournalReconciliationAsync(
+            ShellState.ActiveCompany.Id,
+            ShellState.CurrentUserId,
+            receiptDocumentId,
+            CancellationToken.None);
+
+        if (result.Value is not null)
+        {
+            UpdateReceiptSettlementSummary(receiptDocumentId, result.Value);
+        }
+    }
+
+    private async Task<int> ReloadReceiptGrIrSettlementBatchesAsync(Guid receiptDocumentId)
+    {
+        var result = await ReviewClient.ListReceiptGrIrSettlementBatchesAsync(
+            ShellState.ActiveCompany.Id,
+            receiptDocumentId,
+            CancellationToken.None);
+
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            return 0;
+        }
+
+        if (result.Value is null)
+        {
+            return 0;
+        }
+
+        var batches = _receiptSettlementBatchSummaries.ToDictionary(static item => item.Key, static item => item.Value);
+        batches[receiptDocumentId] = result.Value;
+        _receiptSettlementBatchSummaries = batches;
+        return result.Value.Count;
+    }
+
+    private async Task<int> ReloadReceiptPurchaseVarianceLinesAsync(Guid receiptDocumentId)
+    {
+        var result = await ReviewClient.ListReceiptPurchaseVarianceLinesAsync(
+            ShellState.ActiveCompany.Id,
+            receiptDocumentId,
+            CancellationToken.None);
+
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            return 0;
+        }
+
+        if (result.Value is null)
+        {
+            return 0;
+        }
+
+        var lines = _receiptPurchaseVarianceLineSummaries.ToDictionary(static item => item.Key, static item => item.Value);
+        lines[receiptDocumentId] = result.Value;
+        _receiptPurchaseVarianceLineSummaries = lines;
+        return result.Value.Count;
+    }
+
+    private void UpdateReceiptSettlementSummary(Guid receiptDocumentId, ShellReceiptGrIrApSettlementSummary summary)
+    {
+        var summaries = _receiptSettlementSummaries.ToDictionary(static item => item.Key, static item => item.Value);
+        summaries[receiptDocumentId] = summary;
+        _receiptSettlementSummaries = summaries;
+    }
+
+    private IReadOnlyList<ShellReceiptGrIrApSettlementBatchSummary> GetReceiptGrIrSettlementBatches(Guid receiptDocumentId) =>
+        _receiptSettlementBatchSummaries.TryGetValue(receiptDocumentId, out var summaries)
+            ? summaries
+            : Array.Empty<ShellReceiptGrIrApSettlementBatchSummary>();
+
+    private IReadOnlyList<ShellReceiptGrIrApPurchaseVarianceLineSummary> GetReceiptPurchaseVarianceLines(Guid receiptDocumentId) =>
+        _receiptPurchaseVarianceLineSummaries.TryGetValue(receiptDocumentId, out var summaries)
+            ? summaries
+            : Array.Empty<ShellReceiptGrIrApPurchaseVarianceLineSummary>();
 
     private void BeginReceiptControlCommand()
     {
@@ -1329,6 +1867,43 @@
 
         return ("Would over-receipt", "Posting the current receipt would push total receipted quantity above the bill hand-off quantity and should be reviewed carefully.");
     }
+
+    private static bool IsGrIrClearingAccountCandidate(JournalEntryAccountOption account) =>
+        account.AllowManualPosting &&
+        string.Equals(account.RootType, "liability", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPreferredGrIrClearingAccountCandidate(JournalEntryAccountOption account)
+    {
+        var text = $"{account.Code} {account.Name} {account.DetailType} {account.TypeLabel}".ToLowerInvariant();
+        return text.Contains("gr/ir", StringComparison.Ordinal) ||
+               text.Contains("grir", StringComparison.Ordinal) ||
+               text.Contains("clearing", StringComparison.Ordinal) ||
+               text.Contains("receiving", StringComparison.Ordinal) ||
+               text.Contains("accrual", StringComparison.Ordinal) ||
+               text.Contains("payable", StringComparison.Ordinal);
+    }
+
+    private static JournalEntryAccountOption? ResolveDefaultGrIrClearingAccount(IReadOnlyList<JournalEntryAccountOption> accounts) =>
+        accounts.FirstOrDefault(IsPreferredGrIrClearingAccountCandidate) ?? accounts.FirstOrDefault();
+
+    private static string FormatGrIrClearingAccountOption(JournalEntryAccountOption account)
+    {
+        var rootLabel = FormatAccountRootType(account.RootType);
+        return $"{account.DisplayText} | {rootLabel} / {account.TypeLabel}";
+    }
+
+    private static string FormatAccountRootType(string? rootType) =>
+        rootType?.Trim().ToLowerInvariant() switch
+        {
+            "asset" => "Asset",
+            "liability" => "Liability",
+            "equity" => "Equity",
+            "revenue" => "Revenue",
+            "income" => "Income",
+            "cost_of_sales" => "Cost Of Sales",
+            "expense" => "Expense",
+            _ => string.IsNullOrWhiteSpace(rootType) ? "Unknown" : rootType
+        };
 
     private string GetReceiptPurchaseVarianceTitle(Guid receiptDocumentId) =>
         _receiptSettlementSummaries.TryGetValue(receiptDocumentId, out var summary)
@@ -1471,6 +2046,40 @@
             "blocked_journal_not_posted" => "Journal Not Posted",
             "blocked_amount_exceeded" => "Amount Exceeded",
             _ => string.IsNullOrWhiteSpace(status) ? "Settlement Unknown" : status
+        };
+
+    private static string FormatReceiptGrIrJournalStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "not_applicable" => "Not Applicable",
+            "not_posted" => "Not Posted",
+            "posted" => "Posted",
+            "partially_posted" => "Partially Posted",
+            "journal_stale" => "Stale",
+            "journal_inconsistent" => "Inconsistent",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static string FormatReceiptGrIrOpenItemClearingStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "not_applicable" => "Not Applicable",
+            "not_cleared" => "Not Cleared",
+            "cleared" => "Cleared",
+            "reversed" => "Reversed",
+            "partially_cleared" => "Partially Cleared",
+            "partially_reversed" => "Partially Reversed",
+            "blocked" => "Blocked",
+            "blocked_journal_not_posted" => "Journal Not Posted",
+            "blocked_journal_stale" => "Journal Stale",
+            "blocked_journal_inconsistent" => "Journal Inconsistent",
+            "blocked_missing_ap_open_item" => "Missing AP Open Item",
+            "blocked_ap_open_item_not_open" => "AP Open Item Not Open",
+            "blocked_ap_open_item_amount_exceeded" => "Amount Exceeded",
+            "blocked_fx_not_supported" => "FX Not Supported",
+            "clearing_stale" => "Clearing Stale",
+            "clearing_inconsistent" => "Clearing Inconsistent",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
         };
 
     private static string FormatReceiptPurchaseVarianceStatus(string? status) =>

@@ -420,6 +420,91 @@ public sealed record class ShellReceiptGrIrApSettlementSummary
     public DateTimeOffset? LastSettledAt { get; init; }
 }
 
+public sealed record class ShellReceiptGrIrApSettlementBatchSummary
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public Guid SettlementBatchId { get; init; }
+
+    public string Status { get; init; } = string.Empty;
+
+    public decimal RequestedAmountBase { get; init; }
+
+    public decimal SettledQuantity { get; init; }
+
+    public decimal SettledAmountBase { get; init; }
+
+    public int LineCount { get; init; }
+
+    public string JournalStatus { get; init; } = string.Empty;
+
+    public Guid? JournalEntryId { get; init; }
+
+    public string? JournalEntryDisplayNumber { get; init; }
+
+    public DateTimeOffset? JournalPostedAt { get; init; }
+
+    public string? JournalBlockedReasonCode { get; init; }
+
+    public string OpenItemClearingStatus { get; init; } = string.Empty;
+
+    public string? OpenItemClearingBlockedReasonCode { get; init; }
+
+    public DateTimeOffset? OpenItemClearedAt { get; init; }
+
+    public DateTimeOffset? OpenItemReversedAt { get; init; }
+
+    public int OpenItemReversedApplicationCount { get; init; }
+
+    public decimal OpenItemReversedAmountTx { get; init; }
+
+    public decimal OpenItemReversedAmountBase { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+}
+
+public sealed record class ShellReceiptGrIrClearingAccountPolicySummary
+{
+    public Guid CompanyId { get; init; }
+
+    public Guid? GrIrClearingAccountId { get; init; }
+}
+
+public sealed record class ShellReceiptGrIrApPurchaseVarianceLineSummary
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public int ReceiptLineNumber { get; init; }
+
+    public Guid SettlementBatchId { get; init; }
+
+    public Guid SettlementBatchLineId { get; init; }
+
+    public Guid BillDocumentId { get; init; }
+
+    public int BillLineNumber { get; init; }
+
+    public Guid ItemId { get; init; }
+
+    public Guid WarehouseId { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public decimal SettledQuantity { get; init; }
+
+    public decimal GrIrAmountBase { get; init; }
+
+    public decimal BillAmountBase { get; init; }
+
+    public decimal VarianceAmountBase { get; init; }
+
+    public string VarianceStatus { get; init; } = string.Empty;
+
+    public string? BlockedReasonCode { get; init; }
+
+    public DateTimeOffset RefreshedAt { get; init; }
+}
+
 public sealed record class ShellPostReceiptGrIrCommandResult
 {
     public Guid ReceiptDocumentId { get; init; }
@@ -450,6 +535,55 @@ public sealed record class ShellReceiptGrIrApSettlementExecutionResult
     public decimal SettledAmountBase { get; init; }
 
     public int SettlementLineCount { get; init; }
+
+    public ShellReceiptGrIrApSettlementSummary Summary { get; init; } = new();
+}
+
+public sealed record class ShellPostReceiptGrIrSettlementJournalCommandResult
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public Guid SettlementBatchId { get; init; }
+
+    public Guid JournalEntryId { get; init; }
+
+    public string JournalEntryDisplayNumber { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public DateTimeOffset PostedAt { get; init; }
+}
+
+public sealed record class ShellReceiptGrIrApOpenItemClearingResult
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public Guid SettlementBatchId { get; init; }
+
+    public string ClearingStatus { get; init; } = string.Empty;
+
+    public int ApplicationCount { get; init; }
+
+    public decimal ClearedAmountTx { get; init; }
+
+    public decimal ClearedAmountBase { get; init; }
+
+    public ShellReceiptGrIrApSettlementSummary Summary { get; init; } = new();
+}
+
+public sealed record class ShellReceiptGrIrApOpenItemClearingReversalResult
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public Guid SettlementBatchId { get; init; }
+
+    public string ClearingStatus { get; init; } = string.Empty;
+
+    public int ReversedApplicationCount { get; init; }
+
+    public decimal RestoredAmountTx { get; init; }
+
+    public decimal RestoredAmountBase { get; init; }
 
     public ShellReceiptGrIrApSettlementSummary Summary { get; init; } = new();
 }

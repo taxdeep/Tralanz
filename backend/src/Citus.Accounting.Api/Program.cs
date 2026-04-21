@@ -5246,6 +5246,38 @@ accounting.MapPost(
         }
     });
 
+accounting.MapGet(
+    "/receipts/{documentId:guid}/grir-settlement/purchase-variance/lines",
+    async (
+        Guid documentId,
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await grIrSettlementStore.ListReceiptPurchaseVarianceLinesAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(result);
+    });
+
+accounting.MapGet(
+    "/receipts/{documentId:guid}/grir-settlement/batches",
+    async (
+        Guid documentId,
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await grIrSettlementStore.ListReceiptSettlementBatchesAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(result);
+    });
+
 accounting.MapPost(
     "/receipts/{documentId:guid}/grir-settlement/execute",
     async (

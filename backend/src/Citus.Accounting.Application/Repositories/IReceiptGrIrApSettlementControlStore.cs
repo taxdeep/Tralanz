@@ -32,6 +32,16 @@ public interface IReceiptGrIrApSettlementControlStore
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ReceiptGrIrApSettlementBatchSummary>> ListReceiptSettlementBatchesAsync(
+        CompanyId companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ReceiptGrIrApPurchaseVarianceLineSummary>> ListReceiptPurchaseVarianceLinesAsync(
+        CompanyId companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken);
+
     Task<BillGrIrApSettlementSummary?> GetBillSettlementSummaryAsync(
         CompanyId companyId,
         Guid billDocumentId,
@@ -101,6 +111,46 @@ public sealed record ReceiptGrIrApSettlementSummary(
     DateTimeOffset? LastPurchaseVarianceRefreshedAt,
     DateTimeOffset? LastRefreshedAt,
     DateTimeOffset? LastSettledAt);
+
+public sealed record ReceiptGrIrApSettlementBatchSummary(
+    Guid ReceiptDocumentId,
+    Guid SettlementBatchId,
+    string Status,
+    decimal RequestedAmountBase,
+    decimal SettledQuantity,
+    decimal SettledAmountBase,
+    int LineCount,
+    string JournalStatus,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    DateTimeOffset? JournalPostedAt,
+    string? JournalBlockedReasonCode,
+    string OpenItemClearingStatus,
+    string? OpenItemClearingBlockedReasonCode,
+    DateTimeOffset? OpenItemClearedAt,
+    DateTimeOffset? OpenItemReversedAt,
+    int OpenItemReversedApplicationCount,
+    decimal OpenItemReversedAmountTx,
+    decimal OpenItemReversedAmountBase,
+    DateTimeOffset CreatedAt);
+
+public sealed record ReceiptGrIrApPurchaseVarianceLineSummary(
+    Guid ReceiptDocumentId,
+    int ReceiptLineNumber,
+    Guid SettlementBatchId,
+    Guid SettlementBatchLineId,
+    Guid BillDocumentId,
+    int BillLineNumber,
+    Guid ItemId,
+    Guid WarehouseId,
+    string UomCode,
+    decimal SettledQuantity,
+    decimal GrIrAmountBase,
+    decimal BillAmountBase,
+    decimal VarianceAmountBase,
+    string VarianceStatus,
+    string? BlockedReasonCode,
+    DateTimeOffset RefreshedAt);
 
 public sealed record BillGrIrApSettlementSummary(
     Guid BillDocumentId,

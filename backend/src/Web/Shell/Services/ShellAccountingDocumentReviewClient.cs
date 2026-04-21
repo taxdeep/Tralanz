@@ -255,6 +255,37 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             receiptDocumentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellReceiptGrIrApSettlementBatchSummary>>> ListReceiptGrIrSettlementBatchesAsync(
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await GetListAsync<ShellReceiptGrIrApSettlementBatchSummary>(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/batches?companyId={companyId:D}",
+            "receipt GR/IR settlement batches",
+            "receipt",
+            receiptDocumentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>> GetReceiptGrIrClearingAccountPolicyAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default) =>
+        await GetOptionalAsync<ShellReceiptGrIrClearingAccountPolicySummary>(
+            $"accounting/receipts/grir-clearing-account-policy?companyId={companyId:D}",
+            "receipt GR/IR clearing account policy",
+            "receipt",
+            Guid.Empty,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>> SaveReceiptGrIrClearingAccountPolicyAsync(
+        Guid companyId,
+        Guid userId,
+        Guid grIrClearingAccountId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrClearingAccountPolicyCommandAsync(
+            "accounting/receipts/grir-clearing-account-policy",
+            new ReceiptGrIrClearingAccountPolicySaveCommand(companyId, userId, grIrClearingAccountId),
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> RefreshReceiptGrIrJournalReconciliationAsync(
         Guid companyId,
         Guid userId,
@@ -279,6 +310,17 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             receiptDocumentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellReceiptGrIrApPurchaseVarianceLineSummary>>> ListReceiptPurchaseVarianceLinesAsync(
+        Guid companyId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await GetListAsync<ShellReceiptGrIrApPurchaseVarianceLineSummary>(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/purchase-variance/lines?companyId={companyId:D}",
+            "receipt purchase variance lines",
+            "receipt",
+            receiptDocumentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementExecutionResult>> ExecuteReceiptGrIrSettlementAsync(
         Guid companyId,
         Guid userId,
@@ -290,6 +332,48 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             new ReceiptGrIrSettlementExecuteCommand(companyId, userId, settlementAmountBase, null),
             "execute receipt GR/IR settlement",
             receiptDocumentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellPostReceiptGrIrSettlementJournalCommandResult>> PostReceiptGrIrSettlementJournalAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrSettlementBatchCommandAsync<ShellPostReceiptGrIrSettlementJournalCommandResult, ReceiptGrIrSettlementJournalPostCommand>(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/{settlementBatchId:D}/journal/post",
+            new ReceiptGrIrSettlementJournalPostCommand(companyId, userId, null),
+            "post receipt GR/IR settlement journal",
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApOpenItemClearingResult>> ClearReceiptGrIrSettlementOpenItemAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrSettlementBatchCommandAsync<ShellReceiptGrIrApOpenItemClearingResult, ReceiptGrIrSettlementRefreshCommand>(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/{settlementBatchId:D}/ap-open-item/clear",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "clear receipt GR/IR settlement AP open item",
+            receiptDocumentId,
+            settlementBatchId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApOpenItemClearingReversalResult>> ReverseReceiptGrIrSettlementOpenItemAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrSettlementBatchCommandAsync<ShellReceiptGrIrApOpenItemClearingReversalResult, ReceiptGrIrSettlementRefreshCommand>(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/{settlementBatchId:D}/ap-open-item/reverse",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "reverse receipt GR/IR settlement AP open-item clearing",
+            receiptDocumentId,
+            settlementBatchId,
             cancellationToken);
 
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
@@ -756,6 +840,80 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         }
     }
 
+    private async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>> PostReceiptGrIrClearingAccountPolicyCommandAsync<TRequest>(
+        string requestUri,
+        TRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrClearingAccountPolicySummary>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.Failure(
+                    "Save receipt GR/IR clearing account policy succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to save receipt GR/IR clearing account policy.");
+            return WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.Failure(
+                "Unable to save receipt GR/IR clearing account policy. Check API availability and business-session headers.");
+        }
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<TResponse>> PostReceiptGrIrSettlementBatchCommandAsync<TResponse, TRequest>(
+        string requestUri,
+        TRequest request,
+        string operationLabel,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<TResponse>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<TResponse>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<TResponse>.Failure(
+                    $"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<TResponse>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Unable to {OperationLabel} for receipt {ReceiptDocumentId}, settlement batch {SettlementBatchId}.",
+                operationLabel,
+                receiptDocumentId,
+                settlementBatchId);
+            return WebShellAuthenticatedApiResult<TResponse>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
     private async Task<WebShellAuthenticatedApiResult<T>> GetOptionalAsync<T>(
         string requestUri,
         string operationLabel,
@@ -970,6 +1128,16 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
     private sealed record ReceiptGrIrSettlementRefreshCommand(
         Guid CompanyId,
         Guid UserId);
+
+    private sealed record ReceiptGrIrClearingAccountPolicySaveCommand(
+        Guid CompanyId,
+        Guid UserId,
+        Guid GrIrClearingAccountId);
+
+    private sealed record ReceiptGrIrSettlementJournalPostCommand(
+        Guid CompanyId,
+        Guid UserId,
+        string? IdempotencyKey);
 
     private sealed record ReceiptGrIrBridgePostCommand(
         Guid CompanyId,
