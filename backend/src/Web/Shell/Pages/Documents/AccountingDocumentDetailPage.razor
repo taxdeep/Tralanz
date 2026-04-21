@@ -2334,14 +2334,16 @@
     }
 
     private bool ShouldShowPurchaseOrderPurchaseVarianceBoundary() =>
-        _purchaseOrder?.PurchaseVariance.VarianceLineCount > 0;
+        _purchaseOrder is not null;
 
     private static Severity GetPurchaseOrderPurchaseVarianceSeverity(string? status) =>
         status?.Trim().ToLowerInvariant() switch
         {
             "candidate_not_reviewed" => Severity.Warning,
+            "ready_for_posting" => Severity.Success,
             "blocked" => Severity.Error,
             "no_variance" => Severity.Success,
+            "not_applicable" => Severity.Info,
             _ => Severity.Info
         };
 
@@ -2351,6 +2353,7 @@
             "ready_for_posting" => Severity.Success,
             "blocked" => Severity.Error,
             "no_variance" => Severity.Info,
+            "not_applicable" => Severity.Info,
             _ => Severity.Info
         };
 
@@ -2387,8 +2390,10 @@
         summary.VarianceStatus.Trim().ToLowerInvariant() switch
         {
             "candidate_not_reviewed" => $"{summary.CandidateLineCount} purchase variance candidate line(s) total {summary.CandidateVarianceAmountBase:N2} base. This is review/control truth only and is not posted by PO close.",
+            "ready_for_posting" => $"{summary.CandidateLineCount} purchase variance candidate line(s) total {summary.CandidateVarianceAmountBase:N2} base are ready for a future explicit PPV posting command. This page still does not post PPV.",
             "blocked" => $"{summary.BlockedLineCount} purchase variance line(s) are blocked because GR/IR settlement, settlement journal, AP clearing, Bill posting, or quantity basis is incomplete.",
             "no_variance" => $"{summary.NoVarianceLineCount} settled purchase variance line(s) currently show no variance.",
+            "not_applicable" => "No downstream purchase variance control lines are attached to this purchase order yet.",
             _ => "No purchase variance candidate is currently surfaced for this purchase order."
         };
 
@@ -2396,8 +2401,10 @@
         summary.VarianceStatus.Trim().ToLowerInvariant() switch
         {
             "candidate_not_reviewed" => $"There are {summary.CandidateLineCount} downstream PPV candidate line(s) totaling {summary.CandidateVarianceAmountBase:N2} base for later review.",
+            "ready_for_posting" => $"There are {summary.CandidateLineCount} downstream PPV candidate line(s) totaling {summary.CandidateVarianceAmountBase:N2} base ready for a future explicit PPV posting command.",
             "blocked" => $"There are {summary.BlockedLineCount} downstream PPV line(s) still blocked by settlement prerequisites.",
             "no_variance" => "Downstream PPV control currently reports no variance.",
+            "not_applicable" => "No downstream PPV control lines are currently attached to this PO.",
             _ => "No downstream PPV control lines are currently attached to this PO."
         };
 
