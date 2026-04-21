@@ -4,6 +4,7 @@ using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
 using Npgsql;
 using NpgsqlTypes;
+using System.Text.Json;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
 
@@ -12,6 +13,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     private const string PurchaseOrdersTableName = "purchase_orders";
     private const string PurchaseOrderLinesTableName = "purchase_order_lines";
     private const string QuantityDiscrepanciesTableName = "purchase_order_quantity_discrepancy_lanes";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
@@ -451,6 +453,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             throw new InvalidOperationException("Only draft purchase orders can be approved.");
         }
 
+        await InsertLifecycleAuditLogIfAvailableAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            userId.Value,
+            "purchase_order_approved",
+            currentStatus,
+            PurchaseOrderDocumentStatuses.Approved,
+            entityNumber,
+            displayNumber,
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Approved);
     }
@@ -502,6 +517,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         {
             throw new InvalidOperationException("Only approved purchase orders can be issued.");
         }
+
+        await InsertLifecycleAuditLogIfAvailableAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            userId.Value,
+            "purchase_order_released",
+            currentStatus,
+            PurchaseOrderDocumentStatuses.Issued,
+            entityNumber,
+            displayNumber,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Issued);
@@ -562,6 +590,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             throw new InvalidOperationException("Only approved or issued purchase orders can be reopened for amendment.");
         }
 
+        await InsertLifecycleAuditLogIfAvailableAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            userId.Value,
+            "purchase_order_reopened_for_amendment",
+            currentStatus,
+            PurchaseOrderDocumentStatuses.Draft,
+            entityNumber,
+            displayNumber,
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Draft);
     }
@@ -616,6 +657,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         {
             throw new InvalidOperationException("Only issued purchase orders can be closed.");
         }
+
+        await InsertLifecycleAuditLogIfAvailableAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            userId.Value,
+            "purchase_order_closed",
+            currentStatus,
+            PurchaseOrderDocumentStatuses.Closed,
+            entityNumber,
+            displayNumber,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Closed);
@@ -673,6 +727,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         {
             throw new InvalidOperationException("Only draft, approved, or untouched issued purchase orders can be cancelled.");
         }
+
+        await InsertLifecycleAuditLogIfAvailableAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            userId.Value,
+            "purchase_order_cancelled",
+            currentStatus,
+            PurchaseOrderDocumentStatuses.Cancelled,
+            entityNumber,
+            displayNumber,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Cancelled);
@@ -1436,6 +1503,69 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         command.Parameters.AddWithValue("document_id", documentId);
 
         return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    private static async Task InsertLifecycleAuditLogIfAvailableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid documentId,
+        Guid actorId,
+        string action,
+        string fromStatus,
+        string toStatus,
+        string entityNumber,
+        string displayNumber,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "audit_logs", cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            insert into audit_logs (
+              id,
+              company_id,
+              actor_type,
+              actor_id,
+              entity_type,
+              entity_id,
+              action,
+              payload
+            )
+            values (
+              @id,
+              @company_id,
+              'user',
+              @actor_id,
+              'purchase_order',
+              @entity_id,
+              @action,
+              @payload::jsonb
+            );
+            """;
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("actor_id", actorId);
+        command.Parameters.AddWithValue("entity_id", documentId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(
+            new
+            {
+                DocumentId = documentId,
+                EntityNumber = entityNumber,
+                DisplayNumber = displayNumber,
+                FromStatus = PurchaseOrderDocumentStatuses.Normalize(fromStatus),
+                ToStatus = PurchaseOrderDocumentStatuses.Normalize(toStatus),
+                Action = action
+            },
+            JsonOptions));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary>> LoadQuantityDiscrepanciesAsync(

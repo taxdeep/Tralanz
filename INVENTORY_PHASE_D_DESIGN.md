@@ -1831,3 +1831,46 @@ Still not included:
 Authority note:
 
 H.20.6 connects PO lifecycle transitions to CompanyAccess session authority without changing the truth ladder: PO still owns ordered truth, Receipt owns received truth, and Bill owns billed truth.
+
+## Phase H.20.7 checkpoint
+
+H.20.7 adds append-only audit continuity for PO lifecycle transitions.
+
+Boundary:
+
+- Audit is traceability, not operational truth.
+- No approval queue, rejection path, reversal path, or approval threshold.
+- No lifecycle legality changes.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+- No Shell-wide PO workbench.
+
+What changed:
+
+- PO lifecycle mutations now append `audit_logs` rows when the audit table is present.
+- Covered actions:
+  - `purchase_order_approved`
+  - `purchase_order_released`
+  - `purchase_order_reopened_for_amendment`
+  - `purchase_order_closed`
+  - `purchase_order_cancelled`
+- Audit payloads include document identity and from/to lifecycle status.
+- Audit rows are written in the same transaction as the lifecycle mutation.
+- Environments without `audit_logs` keep the lifecycle path usable.
+
+Still not included:
+
+- PO lifecycle audit read model
+- Shell timeline / review panel
+- approval limit policies
+- approval request queues
+- approval rejection / reversal
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.7 preserves the PO lifecycle trail without creating another source of truth. Operators and later review surfaces can inspect the audit trail, while lifecycle legality remains governed by the PO document state machine.

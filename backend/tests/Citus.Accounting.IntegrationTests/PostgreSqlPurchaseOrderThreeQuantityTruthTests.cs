@@ -500,6 +500,63 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
         }
     }
 
+    [Fact]
+    public async Task PurchaseOrderLifecycleAudit_AppendsGovernedTransitionRowsWhenAuditLogExists()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h207_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            await CreateAuditLogTableAsync(schemaConnectionString);
+
+            var repository = new PostgresPurchaseOrderDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                new PostgresExecutionContextAccessor());
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var vendorId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+
+            var saved = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 25),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
+                CancellationToken.None);
+
+            _ = await repository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            _ = await repository.ReopenForAmendmentAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+
+            var actions = await ReadPurchaseOrderAuditActionsAsync(schemaConnectionString, companyId, saved.DocumentId);
+            Assert.Equal(
+                [
+                    "purchase_order_approved",
+                    "purchase_order_released",
+                    "purchase_order_reopened_for_amendment"
+                ],
+                actions);
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
     private static async Task SeedReceiptAnchorAsync(
         string connectionString,
         Guid companyId,
@@ -641,6 +698,58 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
         command.Parameters.AddWithValue("purchase_order_line_number", lineNumber);
         await command.ExecuteNonQueryAsync();
         return billId;
+    }
+
+    private static async Task CreateAuditLogTableAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            create table audit_logs (
+              id uuid primary key,
+              company_id uuid not null,
+              actor_type text not null,
+              actor_id uuid null,
+              entity_type text not null,
+              entity_id uuid not null,
+              action text not null,
+              payload jsonb not null,
+              created_at timestamptz not null default now()
+            );
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<IReadOnlyList<string>> ReadPurchaseOrderAuditActionsAsync(
+        string connectionString,
+        Guid companyId,
+        Guid purchaseOrderId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select action
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'purchase_order'
+              and entity_id = @purchase_order_id
+            order by created_at asc, action asc;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
+
+        var actions = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            actions.Add(reader.GetString(reader.GetOrdinal("action")));
+        }
+
+        return actions;
     }
 
     private static string? GetPostgreSqlConnectionString() =>

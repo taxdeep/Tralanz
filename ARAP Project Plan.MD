@@ -1486,3 +1486,51 @@ Still deferred:
 Authority note:
 
 H.20.6 keeps lifecycle authority separate from lifecycle state. The existing PO state machine remains the source of lifecycle legality, while CompanyAccess session roles now decide who may invoke approval, release, and amendment transitions through the API.
+
+## Phase H.20.7 checkpoint
+
+H.20.7 adds append-only PO lifecycle audit continuity.
+
+Boundary:
+
+- This is lifecycle traceability only.
+- It does not introduce approval thresholds, approval queues, rejection, or reversal.
+- It does not change PO lifecycle legality.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting, tracked receipt, or a Shell-wide PO workbench.
+
+What changed:
+
+- When `audit_logs` is available, PO lifecycle transitions now append audit rows for:
+  - `purchase_order_approved`
+  - `purchase_order_released`
+  - `purchase_order_reopened_for_amendment`
+  - `purchase_order_closed`
+  - `purchase_order_cancelled`
+- Audit payloads preserve:
+  - purchase order document id
+  - entity number
+  - display number
+  - from status
+  - to status
+  - action code
+- Audit writing is transactional with the lifecycle mutation.
+- Lightweight schemas without `audit_logs` continue to run without blocking PO lifecycle operations.
+
+Still deferred:
+
+- formal PO approval request queue
+- approval rejection / reversal
+- approval limit thresholds
+- PO lifecycle audit read model / Shell panel
+- amendment approval history beyond the transition audit row
+- repository-level authority policy
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.7 makes lifecycle changes reviewable without making audit history operational truth. The PO tables still own lifecycle state; audit rows provide append-only continuity for who changed the lifecycle and how state moved.
