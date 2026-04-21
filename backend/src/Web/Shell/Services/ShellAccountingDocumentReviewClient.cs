@@ -184,6 +184,40 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>> RefreshPurchaseOrderQuantityDiscrepanciesAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderThreeQuantityCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/quantity-discrepancies/refresh",
+            new PurchaseOrderApprovalRequestTransitionCommand(companyId, userId),
+            "refresh purchase order quantity discrepancies",
+            documentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>> ReviewPurchaseOrderQuantityDiscrepancyAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        int purchaseOrderLineNumber,
+        string discrepancyType,
+        string investigationStatus,
+        string? reviewNote,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderThreeQuantityCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/quantity-discrepancies/review",
+            new PurchaseOrderQuantityDiscrepancyReviewCommand(
+                companyId,
+                userId,
+                purchaseOrderLineNumber,
+                discrepancyType,
+                investigationStatus,
+                reviewNote),
+            "review purchase order quantity discrepancy",
+            documentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,
@@ -473,6 +507,41 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         }
     }
 
+    private async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>> PostPurchaseOrderThreeQuantityCommandAsync<TRequest>(
+        string requestUri,
+        TRequest request,
+        string operationLabel,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<ShellPurchaseOrderThreeQuantitySummary>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.Failure(
+                    $"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to {OperationLabel} for purchase order {DocumentId}.", operationLabel, documentId);
+            return WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
     private async Task<WebShellAuthenticatedApiResult<T>> GetOptionalAsync<T>(
         string requestUri,
         string operationLabel,
@@ -675,4 +744,12 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
     private sealed record PurchaseOrderApprovalRequestTransitionCommand(
         Guid CompanyId,
         Guid UserId);
+
+    private sealed record PurchaseOrderQuantityDiscrepancyReviewCommand(
+        Guid CompanyId,
+        Guid UserId,
+        int PurchaseOrderLineNumber,
+        string DiscrepancyType,
+        string InvestigationStatus,
+        string? ReviewNote);
 }

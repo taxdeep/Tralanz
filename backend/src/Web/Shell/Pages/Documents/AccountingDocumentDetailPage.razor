@@ -254,7 +254,16 @@
         @if (_purchaseOrder.ThreeQuantity is not null)
         {
             <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
-                <MudText Typo="Typo.h6" Class="mb-3">Three-Quantity Control</MudText>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+                    <MudText Typo="Typo.h6">Three-Quantity Control</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               Disabled="@(WritesBlocked || _isPurchaseOrderQuantityCommandRunning)"
+                               OnClick="RefreshPurchaseOrderQuantityDiscrepanciesAsync">
+                        @(_isPurchaseOrderQuantityCommandRunning ? "Refreshing..." : "Refresh Discrepancies")
+                    </MudButton>
+                </div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
                     <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
                         <MudText Typo="Typo.caption">Ordered</MudText>
@@ -277,6 +286,94 @@
                         <MudText Typo="Typo.body2" Class="text-secondary">Backend review truth</MudText>
                     </MudPaper>
                 </div>
+
+                @if (_purchaseOrder.ThreeQuantity.Lines.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Line Quantity Truth</MudText>
+                    <MudTable Items="_purchaseOrder.ThreeQuantity.Lines" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh>Line</MudTh>
+                            <MudTh>Item</MudTh>
+                            <MudTh>Ordered</MudTh>
+                            <MudTh>Received</MudTh>
+                            <MudTh>Billed</MudTh>
+                            <MudTh>Remaining</MudTh>
+                            <MudTh>Status</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.LineNumber</MudTd>
+                            <MudTd>@context.ItemId.ToString("D")</MudTd>
+                            <MudTd>@($"{context.OrderedQuantity:N2} {context.UomCode}")</MudTd>
+                            <MudTd>@context.ReceivedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@context.BilledQuantity.ToString("N2")</MudTd>
+                            <MudTd>@($"{context.RemainingToReceiveQuantity:N2} receive / {context.RemainingToBillQuantity:N2} bill")</MudTd>
+                            <MudTd>@FormatPurchaseOrderQuantityStatus(context.QuantityStatus)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Discrepancy Review</MudText>
+                @if (_purchaseOrder.ThreeQuantity.Discrepancies.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+                        No visible quantity discrepancy lanes are currently attached to this purchase order.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTextField T="string"
+                                  Label="Review note"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Lines="2"
+                                  @bind-Value="_purchaseOrderQuantityReviewNote"
+                                  Disabled="@(WritesBlocked || _isPurchaseOrderQuantityCommandRunning)"
+                                  Style="margin-bottom:0.75rem;" />
+                    <MudTable Items="_purchaseOrder.ThreeQuantity.Discrepancies" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh>Line</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Quantities</MudTh>
+                            <MudTh>Summary</MudTh>
+                            <MudTh>Review</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.PurchaseOrderLineNumber</MudTd>
+                            <MudTd>@FormatPurchaseOrderDiscrepancyType(context.DiscrepancyType)</MudTd>
+                            <MudTd>@FormatPurchaseOrderQuantityStatus(context.InvestigationStatus)</MudTd>
+                            <MudTd>@($"{context.OrderedQuantity:N2} ordered / {context.ReceivedQuantity:N2} received / {context.BilledQuantity:N2} billed")</MudTd>
+                            <MudTd>
+                                <MudText Typo="Typo.body2">@context.Summary</MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.ReviewNote))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">@context.ReviewNote</MudText>
+                                }
+                            </MudTd>
+                            <MudTd>
+                                <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Success"
+                                               Size="Size.Small"
+                                               Disabled="@(WritesBlocked || _isPurchaseOrderQuantityCommandRunning)"
+                                               OnClick="@(() => ReviewPurchaseOrderQuantityDiscrepancyAsync(context, "resolved"))">
+                                        Resolve
+                                    </MudButton>
+                                    @if (!string.Equals(context.InvestigationStatus, "override_authorized", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Warning"
+                                                   Size="Size.Small"
+                                                   Disabled="@(WritesBlocked || _isPurchaseOrderQuantityCommandRunning)"
+                                                   OnClick="@(() => ReviewPurchaseOrderQuantityDiscrepancyAsync(context, "override_authorized"))">
+                                            Authorize
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
             </MudPaper>
         }
 
@@ -1154,12 +1251,14 @@
     private bool _isLoading;
     private bool _isReverseCommandRunning;
     private bool _isPurchaseOrderApprovalCommandRunning;
+    private bool _isPurchaseOrderQuantityCommandRunning;
     private string? _errorText;
     private string? _reverseCommandMessage;
     private Severity _reverseCommandSeverity = Severity.Info;
     private string? _purchaseOrderApprovalCommandMessage;
     private Severity _purchaseOrderApprovalCommandSeverity = Severity.Info;
     private string? _purchaseOrderApprovalReason;
+    private string? _purchaseOrderQuantityReviewNote;
     private ShellAccountingDocumentReviewSummary? _document;
     private ShellPurchaseOrderReviewSummary? _purchaseOrder;
     private IReadOnlyList<ShellPurchaseOrderLifecycleAuditEntry> _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
@@ -1608,6 +1707,51 @@
             "Purchase order cancelled.");
     }
 
+    private async Task RefreshPurchaseOrderQuantityDiscrepanciesAsync()
+    {
+        if (_purchaseOrder is null || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderThreeQuantityCommandAsync(
+            () => ReviewClient.RefreshPurchaseOrderQuantityDiscrepanciesAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                CancellationToken.None),
+            "Purchase order quantity discrepancy lanes refreshed.");
+    }
+
+    private async Task ReviewPurchaseOrderQuantityDiscrepancyAsync(
+        ShellPurchaseOrderQuantityDiscrepancySummary discrepancy,
+        string investigationStatus)
+    {
+        if (_purchaseOrder is null || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        var statusLabel = FormatPurchaseOrderQuantityStatus(investigationStatus);
+        var typeLabel = FormatPurchaseOrderDiscrepancyType(discrepancy.DiscrepancyType);
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync($"Mark line {discrepancy.PurchaseOrderLineNumber} {typeLabel} as {statusLabel}? This records review truth only; it does not mutate receipt, bill, or accounting truth."))
+        {
+            return;
+        }
+
+        await RunPurchaseOrderThreeQuantityCommandAsync(
+            () => ReviewClient.ReviewPurchaseOrderQuantityDiscrepancyAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                discrepancy.PurchaseOrderLineNumber,
+                discrepancy.DiscrepancyType,
+                investigationStatus,
+                _purchaseOrderQuantityReviewNote,
+                CancellationToken.None),
+            $"Purchase order quantity discrepancy marked {statusLabel}.");
+    }
+
     private async Task SubmitReverseRequestAsync()
     {
         if (_document is null || _latestReverseRequest is null || TryBlockWrites())
@@ -1809,6 +1953,50 @@
         }
     }
 
+    private async Task RunPurchaseOrderThreeQuantityCommandAsync(
+        Func<Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>>> command,
+        string fallbackSuccessMessage)
+    {
+        _isPurchaseOrderQuantityCommandRunning = true;
+        _purchaseOrderApprovalCommandMessage = null;
+        _purchaseOrderApprovalCommandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await command();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _purchaseOrderApprovalCommandSeverity = Severity.Warning;
+                _purchaseOrderApprovalCommandMessage = result.ErrorMessage ?? "The purchase order quantity command did not return a response.";
+            }
+            else
+            {
+                _purchaseOrderApprovalCommandSeverity = Severity.Success;
+                _purchaseOrderApprovalCommandMessage = fallbackSuccessMessage;
+                if (_purchaseOrder is not null)
+                {
+                    _purchaseOrder = _purchaseOrder with { ThreeQuantity = result.Value };
+                }
+
+                _purchaseOrderQuantityReviewNote = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _purchaseOrderApprovalCommandSeverity = Severity.Error;
+            _purchaseOrderApprovalCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isPurchaseOrderQuantityCommandRunning = false;
+        }
+    }
+
     private async Task<bool> EnsureWriteGateStateAsync()
     {
         await ShellState.EnsureHydratedAsync();
@@ -1953,8 +2141,19 @@
             "partially_billed" => "Partially Billed",
             "fully_billed" => "Fully Billed",
             "open" => "Open",
+            "resolved" => "Resolved",
+            "override_authorized" => "Override Authorized",
             "complete" => "Complete",
             _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static string FormatPurchaseOrderDiscrepancyType(string? discrepancyType) =>
+        discrepancyType?.Trim().ToLowerInvariant() switch
+        {
+            "over_received" => "Over Received",
+            "over_billed" => "Over Billed",
+            "billed_ahead_of_received" => "Billed Ahead Of Received",
+            _ => string.IsNullOrWhiteSpace(discrepancyType) ? "Unknown" : discrepancyType
         };
 
     private static string GetPurchaseOrderApprovalRequestTitle(ShellPurchaseOrderApprovalRequestSummary? request) =>

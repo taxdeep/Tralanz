@@ -194,6 +194,8 @@ public sealed record class ShellPurchaseOrderThreeQuantitySummary
 {
     public Guid PurchaseOrderId { get; init; }
 
+    public int LineCount { get; init; }
+
     public decimal OrderedQuantity { get; init; }
 
     public decimal ReceivedQuantity { get; init; }
@@ -211,6 +213,68 @@ public sealed record class ShellPurchaseOrderThreeQuantitySummary
     public string QuantityStatus { get; init; } = string.Empty;
 
     public int OpenDiscrepancyCount { get; init; }
+
+    public IReadOnlyList<ShellPurchaseOrderLineThreeQuantitySummary> Lines { get; init; } = Array.Empty<ShellPurchaseOrderLineThreeQuantitySummary>();
+
+    public IReadOnlyList<ShellPurchaseOrderQuantityDiscrepancySummary> Discrepancies { get; init; } = Array.Empty<ShellPurchaseOrderQuantityDiscrepancySummary>();
+}
+
+public sealed record class ShellPurchaseOrderLineThreeQuantitySummary
+{
+    public int LineNumber { get; init; }
+
+    public Guid ItemId { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public decimal OrderedQuantity { get; init; }
+
+    public decimal ReceivedQuantity { get; init; }
+
+    public decimal BilledQuantity { get; init; }
+
+    public decimal RemainingToReceiveQuantity { get; init; }
+
+    public decimal RemainingToBillQuantity { get; init; }
+
+    public string QuantityStatus { get; init; } = string.Empty;
+}
+
+public sealed record class ShellPurchaseOrderQuantityDiscrepancySummary
+{
+    public Guid PurchaseOrderId { get; init; }
+
+    public int PurchaseOrderLineNumber { get; init; }
+
+    public string DiscrepancyType { get; init; } = string.Empty;
+
+    public string InvestigationStatus { get; init; } = string.Empty;
+
+    public Guid ItemId { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public decimal OrderedQuantity { get; init; }
+
+    public decimal ReceivedQuantity { get; init; }
+
+    public decimal BilledQuantity { get; init; }
+
+    public decimal RemainingToReceiveQuantity { get; init; }
+
+    public decimal RemainingToBillQuantity { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
+
+    public DateTimeOffset FirstDetectedAt { get; init; }
+
+    public DateTimeOffset LastDetectedAt { get; init; }
+
+    public string? ReviewNote { get; init; }
+
+    public Guid? ReviewedByUserId { get; init; }
+
+    public DateTimeOffset? ReviewedAt { get; init; }
 }
 
 public sealed record class ShellPurchaseOrderPurchaseVarianceSummary
