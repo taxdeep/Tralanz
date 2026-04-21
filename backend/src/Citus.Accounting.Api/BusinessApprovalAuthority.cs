@@ -10,6 +10,23 @@ public static class BusinessApprovalAuthority
         "company_accounting_settings"
     ];
 
+    public static readonly IReadOnlyList<string> PurchaseOrderApprovalRoles =
+    [
+        "owner",
+        "approve",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
+    public static readonly IReadOnlyList<string> PurchaseOrderAmendmentRoles =
+    [
+        "owner",
+        "book_governance",
+        "company_book_governance",
+        "company_accounting_settings"
+    ];
+
     public static bool CanApproveOpenItemAdjustment(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
 
@@ -21,6 +38,15 @@ public static class BusinessApprovalAuthority
 
     public static bool CanExecuteGrIrSettlement(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
+
+    public static bool CanApprovePurchaseOrder(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
+
+    public static bool CanReleasePurchaseOrder(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
+
+    public static bool CanReopenPurchaseOrderForAmendment(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderAmendmentRole) == true;
 
     public static Decision EvaluateOpenItemAdjustmentApproval(
         BusinessSessionContext? session,
@@ -127,8 +153,96 @@ public static class BusinessApprovalAuthority
             $"The business session has authority to {transitionCode} GR/IR settlement.");
     }
 
+    public static Decision EvaluatePurchaseOrderApproval(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} a purchase order.");
+        }
+
+        if (!CanApprovePurchaseOrder(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_approval_authority",
+                $"Only a company owner, approval user, or book-governance user can {transitionCode} a purchase order.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} the purchase order.");
+    }
+
+    public static Decision EvaluatePurchaseOrderRelease(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} a purchase order.");
+        }
+
+        if (!CanReleasePurchaseOrder(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_release_authority",
+                $"Only a company owner, approval user, or book-governance user can {transitionCode} a purchase order.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} the purchase order.");
+    }
+
+    public static Decision EvaluatePurchaseOrderAmendment(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} a purchase order for amendment.");
+        }
+
+        if (!CanReopenPurchaseOrderForAmendment(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_amendment_authority",
+                $"Only a company owner or book-governance user can {transitionCode} a purchase order for amendment.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} the purchase order for amendment.");
+    }
+
     private static bool IsOpenItemAdjustmentApprovalRole(string role) =>
         OpenItemAdjustmentApprovalRoles.Contains(
+            role.Trim().ToLowerInvariant(),
+            StringComparer.Ordinal);
+
+    private static bool IsPurchaseOrderApprovalRole(string role) =>
+        PurchaseOrderApprovalRoles.Contains(
+            role.Trim().ToLowerInvariant(),
+            StringComparer.Ordinal);
+
+    private static bool IsPurchaseOrderAmendmentRole(string role) =>
+        PurchaseOrderAmendmentRoles.Contains(
             role.Trim().ToLowerInvariant(),
             StringComparer.Ordinal);
 

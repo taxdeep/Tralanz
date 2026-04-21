@@ -4201,8 +4201,14 @@ accounting.MapPut(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/approve",
-    async (Guid documentId, ApprovePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, ApprovePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequirePurchaseOrderApprovalAuthority(sessionAccessor.Current, "approve");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
         try
         {
             var result = await repository.ApproveAsync(
@@ -4221,8 +4227,14 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/issue",
-    async (Guid documentId, IssuePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, IssuePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequirePurchaseOrderReleaseAuthority(sessionAccessor.Current, "release");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
         try
         {
             var result = await repository.IssueAsync(
@@ -4241,8 +4253,14 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/purchase-orders/{documentId:guid}/reopen-for-amendment",
-    async (Guid documentId, ReopenPurchaseOrderForAmendmentHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (Guid documentId, ReopenPurchaseOrderForAmendmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
+        var authorityBlock = RequirePurchaseOrderAmendmentAuthority(sessionAccessor.Current, "reopen_for_amendment");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
         try
         {
             var result = await repository.ReopenForAmendmentAsync(
@@ -5837,6 +5855,66 @@ static IResult? RequireGrIrSettlementExecutionAuthority(
     string transitionCode)
 {
     var decision = BusinessApprovalAuthority.EvaluateGrIrSettlementExecution(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderApprovalAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderReleaseAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderRelease(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderAmendmentAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderAmendment(
         session,
         transitionCode);
 

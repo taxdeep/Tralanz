@@ -126,6 +126,73 @@ public sealed class BusinessApprovalAuthorityTests
         Assert.Contains("accounting-governance", decision.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CanApprovePurchaseOrder_AllowsApprovePermissionToken()
+    {
+        var session = CreateSession("user", "approve");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
+            session,
+            "approve");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void CanApprovePurchaseOrder_BlocksOrdinaryApRole()
+    {
+        var session = CreateSession("user", "ap");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
+            session,
+            "approve");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_purchase_order_approval_authority", decision.OutcomeCode);
+        Assert.Contains("approval user", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanReleasePurchaseOrder_AllowsBookGovernanceRole()
+    {
+        var session = CreateSession("company_book_governance");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderRelease(
+            session,
+            "release");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void CanReopenPurchaseOrderForAmendment_BlocksApproveOnlyRole()
+    {
+        var session = CreateSession("approve");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderAmendment(
+            session,
+            "reopen_for_amendment");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_purchase_order_amendment_authority", decision.OutcomeCode);
+        Assert.Contains("book-governance", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanReopenPurchaseOrderForAmendment_AllowsOwnerRole()
+    {
+        var session = CreateSession("owner");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderAmendment(
+            session,
+            "reopen_for_amendment");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
     private static BusinessSessionContext CreateSession(params string[] roles) =>
         new()
         {

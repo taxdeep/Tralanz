@@ -1441,3 +1441,48 @@ Still deferred:
 Authority note:
 
 H.20.5 keeps amendment before downstream truth. A PO can return to editable draft only while it has not become part of any Receipt or Bill working document, so amendment cannot rewrite physical or AP truth after operations have started.
+
+## Phase H.20.6 checkpoint
+
+H.20.6 adds the first CompanyAccess-aligned PO lifecycle authority guard.
+
+Boundary:
+
+- This is API authority gating only.
+- It does not introduce approval thresholds.
+- It does not introduce approval queues, rejection, reversal, or history.
+- It does not move lifecycle authority into the repository contract yet.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting, tracked receipt, or a Shell-wide PO workbench.
+
+What changed:
+
+- PO approval now requires a business session with one of:
+  - owner
+  - approve
+  - book governance
+  - accounting settings governance
+- PO release now uses the same authority guard as approval.
+- PO reopen-for-amendment now requires stronger governance authority:
+  - owner
+  - book governance
+  - accounting settings governance
+- Ordinary AP access is no longer enough for PO approve / release / amendment lifecycle transitions.
+- Unauthorized lifecycle commands return a 403 authority outcome before touching PO state.
+
+Still deferred:
+
+- formal PO approval request queue
+- approval rejection / reversal
+- approval limit thresholds
+- repository-level authority policy
+- amendment approval history / audit trail
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.6 keeps lifecycle authority separate from lifecycle state. The existing PO state machine remains the source of lifecycle legality, while CompanyAccess session roles now decide who may invoke approval, release, and amendment transitions through the API.

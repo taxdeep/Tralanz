@@ -1791,3 +1791,43 @@ Still not included:
 Authority note:
 
 H.20.5 prevents amendment from becoming a hidden rewrite path. Once any Receipt or Bill document has started referencing the PO, amendment is blocked and later correction must move through future governed adjustment, return, variance, or close paths.
+
+## Phase H.20.6 checkpoint
+
+H.20.6 introduces the first PO lifecycle authority guard.
+
+Boundary:
+
+- Authority gating is API-side only in this slice.
+- No approval queue, rejection path, reversal path, or approval history.
+- No approval thresholds.
+- No repository-level permission model yet.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+- No Shell-wide PO workbench.
+
+What changed:
+
+- PO approve and release actions now require a governed business session role:
+  - owner
+  - approve
+  - book governance
+  - accounting settings governance
+- PO reopen-for-amendment requires owner or governance-level authority; the generic `approve` token is not enough.
+- Ordinary AP access can still participate in payable workflows but cannot approve, release, or reopen PO lifecycle authority.
+- Unauthorized PO lifecycle attempts stop with a 403 authority outcome before mutating PO state.
+
+Still not included:
+
+- approval limit policies
+- approval request queues
+- approval rejection / reversal
+- amendment history
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.6 connects PO lifecycle transitions to CompanyAccess session authority without changing the truth ladder: PO still owns ordered truth, Receipt owns received truth, and Bill owns billed truth.
