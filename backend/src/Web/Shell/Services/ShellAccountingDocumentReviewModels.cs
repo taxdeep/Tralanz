@@ -302,6 +302,41 @@ public sealed record class ShellPurchaseOrderPurchaseVarianceSummary
     public DateTimeOffset? LastRefreshedAt { get; init; }
 }
 
+public sealed record class ShellReceiptGrIrBridgeSummary
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public string BridgeStatus { get; init; } = string.Empty;
+
+    public int BridgeLineCount { get; init; }
+
+    public int EligibleLineCount { get; init; }
+
+    public int BlockedReconciliationLineCount { get; init; }
+
+    public int BlockedVarianceLineCount { get; init; }
+
+    public int PostedLineCount { get; init; }
+
+    public decimal BridgeQuantity { get; init; }
+
+    public decimal BridgeAmountBase { get; init; }
+
+    public decimal EligibleAmountBase { get; init; }
+
+    public decimal BlockedAmountBase { get; init; }
+
+    public decimal PostedAmountBase { get; init; }
+
+    public Guid? JournalEntryId { get; init; }
+
+    public string? JournalEntryDisplayNumber { get; init; }
+
+    public DateTimeOffset? LastPostedAt { get; init; }
+
+    public DateTimeOffset? LastRefreshedAt { get; init; }
+}
+
 public sealed record class ShellReceiptGrIrApSettlementSummary
 {
     public string SettlementStatus { get; init; } = string.Empty;

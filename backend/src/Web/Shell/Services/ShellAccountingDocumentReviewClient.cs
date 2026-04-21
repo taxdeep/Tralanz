@@ -218,6 +218,42 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>> RefreshReceiptGrIrBridgeAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrBridgeCommandAsync(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-bridge/refresh",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "refresh receipt GR/IR bridge control",
+            receiptDocumentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> RefreshReceiptGrIrSettlementAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrSettlementCommandAsync(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/refresh",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "refresh receipt GR/IR settlement control",
+            receiptDocumentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> RefreshReceiptGrIrJournalReconciliationAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrSettlementCommandAsync(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/journal-reconciliation/refresh",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "refresh receipt GR/IR journal reconciliation",
+            receiptDocumentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> RefreshReceiptPurchaseVarianceAsync(
         Guid companyId,
         Guid userId,
@@ -550,6 +586,41 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         {
             logger.LogWarning(ex, "Unable to {OperationLabel} for purchase order {DocumentId}.", operationLabel, documentId);
             return WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>> PostReceiptGrIrBridgeCommandAsync<TRequest>(
+        string requestUri,
+        TRequest request,
+        string operationLabel,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrBridgeSummary>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>.Failure(
+                    $"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to {OperationLabel} for receipt {ReceiptDocumentId}.", operationLabel, receiptDocumentId);
+            return WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>.Failure(
                 $"Unable to {operationLabel}. Check API availability and business-session headers.");
         }
     }

@@ -521,7 +521,7 @@
             @if (_latestReverseRequest is null && CanRequestReverse(_document))
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="RequestReverseAsync" Disabled="@(_isReverseCommandRunning || WritesBlocked)">
-                    Request Reverse
+                    Record Governed Reverse Request
                 </MudButton>
             }
             @if (CanSubmitReverseRequest(_latestReverseRequest))
@@ -1544,7 +1544,7 @@
 
         await RunReverseCommandAsync(
             () => ReviewClient.RequestReverseAsync(ShellState.ActiveCompany.Id, _document.SourceType, _document.Id),
-            "Reverse request recorded.");
+            "Governed reverse request recorded.");
     }
 
     private async Task RequestPurchaseOrderApprovalAsync()
@@ -2409,9 +2409,7 @@
     private static bool CanRequestReverse(ShellAccountingDocumentReviewSummary? document)
     {
         var action = FindLifecycleAction(document, "reverse_document");
-        return action is not null &&
-               (action.IsAvailable ||
-                string.Equals(action.AvailabilityMode, "not_implemented", StringComparison.OrdinalIgnoreCase));
+        return action?.IsAvailable == true;
     }
 
     private static bool CanSubmitReverseRequest(ShellAccountingDocumentReverseRequestSummary? request) =>
