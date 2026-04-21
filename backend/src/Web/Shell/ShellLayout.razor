@@ -36,16 +36,27 @@ else
 {
     <MudLayout>
         <MudAppBar Elevation="1" Class="ws-appbar">
-            <MudText Typo="Typo.h6">Citus Web Shell</MudText>
+            <div class="ws-appbar__brand">
+                <span class="ws-appbar__mark">C</span>
+                <span>Citus Web Shell</span>
+            </div>
             <MudSpacer />
             <WebShellTopBar />
         </MudAppBar>
 
-        <MudDrawer Open="true" Elevation="1" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md" Class="ws-drawer">
+        <MudDrawer Open="true"
+                   Width="316px"
+                   Elevation="1"
+                   Variant="DrawerVariant.Responsive"
+                   Breakpoint="Breakpoint.Md"
+                   Class="ws-drawer">
             <div class="ws-brand">
-                <div class="ws-brand__eyebrow">Citus</div>
-                <div class="ws-brand__title">Web Shell</div>
-                <div class="ws-brand__subtitle">CompanyAccess-backed business workspace</div>
+                <div class="ws-brand__badge">C</div>
+                <div>
+                    <div class="ws-brand__eyebrow">Citus</div>
+                    <div class="ws-brand__title">Web Shell</div>
+                    <div class="ws-brand__subtitle">Business workspace</div>
+                </div>
             </div>
             <ErrorBoundary>
                 <ChildContent>
