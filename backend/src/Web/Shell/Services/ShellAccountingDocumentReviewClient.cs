@@ -27,6 +27,29 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             cancellationToken);
     }
 
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderReviewSummary>> GetPurchaseOrderAsync(
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        await GetOptionalAsync<ShellPurchaseOrderReviewSummary>(
+            $"accounting/purchase-orders/{documentId:D}?companyId={companyId:D}",
+            "purchase order review",
+            "purchase_order",
+            documentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellPurchaseOrderLifecycleAuditEntry>>> ListPurchaseOrderLifecycleAuditAsync(
+        Guid companyId,
+        Guid documentId,
+        int take = 50,
+        CancellationToken cancellationToken = default) =>
+        await GetListAsync<ShellPurchaseOrderLifecycleAuditEntry>(
+            $"accounting/purchase-orders/{documentId:D}/lifecycle-audit?companyId={companyId:D}&take={Math.Clamp(take, 1, 200)}",
+            "purchase order lifecycle audit",
+            "purchase_order",
+            documentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,

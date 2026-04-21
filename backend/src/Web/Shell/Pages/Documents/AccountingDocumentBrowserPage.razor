@@ -25,7 +25,7 @@
 
     <h1 style="margin:0 0 0.75rem 0;">AR/AP Source Documents</h1>
     <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
-        This browser gives `Invoice`, `Bill`, `Credit Note`, and `Vendor Credit` a formal company-scoped read surface. It stays read-only and drills into the existing backend-owned document detail page.
+        This browser gives source documents and purchase orders a formal company-scoped read surface. It stays read-only and drills into the existing backend-owned detail pages.
     </p>
 
     @if (!string.IsNullOrWhiteSpace(QueryOrigin))
@@ -165,6 +165,19 @@
                                     </MudText>
                                 }
                             }
+                            @if (HasPurchaseOrderAnchorGate(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="Color.Info"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    Anchor Governance
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @context.AnchorGovernanceSummary
+                                </MudText>
+                            }
                         </MudStack>
                     </MudTd>
                     <MudTd>
@@ -184,8 +197,16 @@
                     </MudTd>
                     <MudTd>
                         <MudStack Spacing="0">
-                            <MudText Typo="Typo.body2">@context.TotalAmount.ToString("N2")</MudText>
-                            <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.TransactionCurrencyCode} | base {context.BaseCurrencyCode}")</MudText>
+                            @if (IsPurchaseOrder(context))
+                            {
+                                <MudText Typo="Typo.body2">@((context.TotalOrderedQuantity ?? 0m).ToString("N2"))</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.LineCount ?? 0} line(s) | ordered qty")</MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@context.TotalAmount.ToString("N2")</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.TransactionCurrencyCode} | base {context.BaseCurrencyCode}")</MudText>
+                            }
                         </MudStack>
                     </MudTd>
                     <MudTd>
@@ -239,7 +260,8 @@
         new("invoice", "Invoices"),
         new("credit_note", "Credit Notes"),
         new("bill", "Bills"),
-        new("vendor_credit", "Vendor Credits")
+        new("vendor_credit", "Vendor Credits"),
+        new("purchase_order", "Purchase Orders")
     ];
 
     private readonly IReadOnlyList<SourceTypeOption> _counterpartyRoleOptions =
@@ -516,6 +538,13 @@
     private static bool HasInvoiceShipmentPostingGate(ShellAccountingSourceDocumentBrowserItem item) =>
         string.Equals(item.SourceType, "invoice", StringComparison.OrdinalIgnoreCase) &&
         !string.IsNullOrWhiteSpace(item.InvoiceShipmentPostingGateLabel);
+
+    private static bool IsPurchaseOrder(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "purchase_order", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasPurchaseOrderAnchorGate(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsPurchaseOrder(item) &&
+        !string.IsNullOrWhiteSpace(item.AnchorGovernanceSummary);
 
     private static Color GetInvoiceShipmentPostingGateColor(ShellAccountingSourceDocumentBrowserItem item) =>
         item.InvoiceShipmentAllowsPost switch

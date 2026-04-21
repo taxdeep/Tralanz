@@ -32,6 +32,14 @@ public sealed record class ShellAccountingSourceDocumentBrowserItem
 
     public decimal TotalAmount { get; init; }
 
+    public decimal? TotalOrderedQuantity { get; init; }
+
+    public int? LineCount { get; init; }
+
+    public string? VendorReference { get; init; }
+
+    public string? AnchorGovernanceSummary { get; init; }
+
     public string? BillReceiptMatchStatus { get; init; }
 
     public string? BillReceiptPostingGateLabel { get; init; }

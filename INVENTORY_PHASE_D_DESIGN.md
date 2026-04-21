@@ -1917,3 +1917,44 @@ Still not included:
 Authority note:
 
 H.20.8 makes the lifecycle audit trail consumable without shifting truth ownership. PO document state still decides lifecycle legality; audit history explains how that state moved.
+
+## Phase H.20.9 checkpoint
+
+H.20.9 surfaces purchase order lifecycle audit in the Web Shell.
+
+Boundary:
+
+- Web Shell review surface only.
+- No Shell lifecycle commands.
+- No approval queue, rejection path, reversal path, or approval threshold.
+- No lifecycle legality or authority changes.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Source document browser can now list purchase orders through the existing PO list API.
+- Web Shell dashboard and payables navigation include Purchase Orders.
+- Purchase orders can open through `/documents/purchase_order/{id}`.
+- The read-only purchase order detail page displays:
+  - anchor governance
+  - order and vendor identifiers
+  - three-quantity status summary
+  - lifecycle audit timeline
+  - PO lines
+
+Still not included:
+
+- approval limit policies
+- approval request queues
+- approval rejection / reversal
+- lifecycle command buttons in Shell
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.9 is a visibility step. The Shell consumes PO and lifecycle audit read models, but lifecycle authority still stays in backend state and command policy.

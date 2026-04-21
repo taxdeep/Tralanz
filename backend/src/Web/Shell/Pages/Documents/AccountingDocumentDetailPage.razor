@@ -16,7 +16,7 @@
         <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only detail</MudChip>
     </div>
 
-    <h1 style="margin:0 0 0.75rem 0;">@(_document?.DisplayNumber ?? GetSourceLabel(SourceType))</h1>
+    <h1 style="margin:0 0 0.75rem 0;">@(_purchaseOrder?.DisplayNumber ?? _document?.DisplayNumber ?? GetSourceLabel(SourceType))</h1>
     <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
         Source document review stays backend-owned and company-scoped. This page is read-only and is intended for drill-down from settlement and control flows.
     </p>
@@ -47,7 +47,127 @@
         </MudAlert>
     }
 
-    @if (_document is not null)
+    @if (_purchaseOrder is not null)
+    {
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildPurchaseOrderBrowserHref(_purchaseOrder)">
+                Browse Purchase Orders
+            </MudButton>
+        </div>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_purchaseOrder.AnchorGovernance.Summary
+        </MudAlert>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Purchase Order</MudText>
+                <MudText Typo="Typo.h6">@_purchaseOrder.DisplayNumber</MudText>
+                <MudText Typo="Typo.body2">@($"{_purchaseOrder.EntityNumber} | {_purchaseOrder.Status}")</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Vendor</MudText>
+                <MudText Typo="Typo.h6">@_purchaseOrder.VendorId.ToString("D")</MudText>
+                <MudText Typo="Typo.body2">Reference @(_purchaseOrder.VendorReference ?? "n/a")</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Order Date</MudText>
+                <MudText Typo="Typo.h6">@_purchaseOrder.OrderDate.ToString("yyyy-MM-dd")</MudText>
+                <MudText Typo="Typo.body2">@($"Expected {_purchaseOrder.ExpectedDate?.ToString("yyyy-MM-dd") ?? "n/a"}")</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Lines</MudText>
+                <MudText Typo="Typo.h6">@_purchaseOrder.Lines.Count</MudText>
+                <MudText Typo="Typo.body2">@($"{_purchaseOrder.Lines.Sum(static line => line.OrderedQuantity):N2} ordered quantity")</MudText>
+            </MudPaper>
+        </div>
+
+        @if (_purchaseOrder.ThreeQuantity is not null)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Three-Quantity Control</MudText>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Ordered</MudText>
+                        <MudText Typo="Typo.h6">@_purchaseOrder.ThreeQuantity.OrderedQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@FormatPurchaseOrderQuantityStatus(_purchaseOrder.ThreeQuantity.QuantityStatus)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Received</MudText>
+                        <MudText Typo="Typo.h6">@_purchaseOrder.ThreeQuantity.ReceivedQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@FormatPurchaseOrderQuantityStatus(_purchaseOrder.ThreeQuantity.ReceiptStatus)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Billed</MudText>
+                        <MudText Typo="Typo.h6">@_purchaseOrder.ThreeQuantity.BilledQuantity.ToString("N2")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@FormatPurchaseOrderQuantityStatus(_purchaseOrder.ThreeQuantity.BillStatus)</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Open Discrepancies</MudText>
+                        <MudText Typo="Typo.h6">@_purchaseOrder.ThreeQuantity.OpenDiscrepancyCount</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">Backend review truth</MudText>
+                    </MudPaper>
+                </div>
+            </MudPaper>
+        }
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6" Class="mb-3">Lifecycle Audit Timeline</MudText>
+            @if (_purchaseOrderLifecycleAudit.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    No lifecycle audit rows were returned for this purchase order yet.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_purchaseOrderLifecycleAudit" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Time</MudTh>
+                        <MudTh>Action</MudTh>
+                        <MudTh>Status Movement</MudTh>
+                        <MudTh>Actor</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss zzz")</MudTd>
+                        <MudTd>@FormatPurchaseOrderAuditAction(context.Action)</MudTd>
+                        <MudTd>@FormatStatusMovement(context.FromStatus, context.ToStatus)</MudTd>
+                        <MudTd>@FormatActor(context.ActorType, context.ActorId)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.h6" Class="mb-3">Lines</MudText>
+            @if (_purchaseOrder.Lines.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    No purchase order lines were returned for this document.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_purchaseOrder.Lines" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Line</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Item</MudTh>
+                        <MudTh>Quantity</MudTh>
+                        <MudTh>Unit Cost</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.LineNumber</MudTd>
+                        <MudTd>@(string.IsNullOrWhiteSpace(context.Description) ? "No description" : context.Description)</MudTd>
+                        <MudTd>@context.ItemId.ToString("D")</MudTd>
+                        <MudTd>@($"{context.OrderedQuantity:N2} {context.UomCode}")</MudTd>
+                        <MudTd>@(context.UnitCost?.ToString("N2") ?? "n/a")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+    else if (_document is not null)
     {
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
             @if (CanOpenDraftWorkbench(_document) && TryBuildDraftEditorHref(_document.SourceType, _document.Status, _document.Id, out var draftEditorHref))
@@ -828,6 +948,8 @@
     private string? _reverseCommandMessage;
     private Severity _reverseCommandSeverity = Severity.Info;
     private ShellAccountingDocumentReviewSummary? _document;
+    private ShellPurchaseOrderReviewSummary? _purchaseOrder;
+    private IReadOnlyList<ShellPurchaseOrderLifecycleAuditEntry> _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
     private ShellAccountingDocumentReverseRequestSummary? _latestReverseRequest;
     private ShellAccountingDocumentReverseApplyReadinessSummary? _reverseApplyReadiness;
     private ShellAccountingDocumentReverseExecutionPlanSummary? _reverseExecutionPlan;
@@ -853,6 +975,8 @@
         }
 
         _document = null;
+        _purchaseOrder = null;
+        _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
         _latestReverseRequest = null;
         _reverseApplyReadiness = null;
         _reverseExecutionPlan = null;
@@ -865,6 +989,13 @@
 
         if (!await EnsureWriteGateStateAsync())
         {
+            _isLoading = false;
+            return;
+        }
+
+        if (IsPurchaseOrderSourceType(SourceType))
+        {
+            await LoadPurchaseOrderStateAsync();
             _isLoading = false;
             return;
         }
@@ -992,6 +1123,38 @@
         _settlementApplicationReversals = reversalsResult.Value ?? Array.Empty<ShellSettlementApplicationReversalSummary>();
         CapturePageError(reversalsResult.ErrorMessage);
         _isLoading = false;
+    }
+
+    private async Task LoadPurchaseOrderStateAsync()
+    {
+        var documentResult = await ReviewClient.GetPurchaseOrderAsync(ShellState.ActiveCompany.Id, DocumentId, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(documentResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var purchaseOrder = documentResult.Value;
+        if (purchaseOrder is null)
+        {
+            _errorText = documentResult.IsNotFound
+                ? $"The purchase order could not be found in company {ShellState.ActiveCompany.CompanyCode}."
+                : documentResult.ErrorMessage ?? "Unable to load the purchase order detail.";
+            return;
+        }
+
+        _purchaseOrder = purchaseOrder;
+        var auditResult = await ReviewClient.ListPurchaseOrderLifecycleAuditAsync(
+            ShellState.ActiveCompany.Id,
+            DocumentId,
+            50,
+            CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(auditResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        _purchaseOrderLifecycleAudit = auditResult.Value ?? Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
+        CapturePageError(auditResult.ErrorMessage);
     }
 
     private async Task<IReadOnlyDictionary<Guid, BlockerReverseDetail>?> LoadBlockerReverseDetailsAsync(
@@ -1220,7 +1383,56 @@
             "credit_application_reversal" => "Credit Application Reversal",
             "pay_bill_reversal" => "Pay Bill Reversal",
             "vendor_credit_application_reversal" => "Vendor Credit Application Reversal",
+            "purchase_order" => "Purchase Order",
             _ => "Document"
+        };
+
+    private static bool IsPurchaseOrderSourceType(string? sourceType) =>
+        string.Equals(sourceType?.Trim(), "purchase_order", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildPurchaseOrderBrowserHref(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        $"/documents/source-browser?sourceType=purchase_order&counterpartyRole=vendor&counterpartyId={purchaseOrder.VendorId:D}" +
+        $"&origin={Uri.EscapeDataString("Current source detail")}" +
+        $"&returnHref={Uri.EscapeDataString($"/documents/purchase_order/{purchaseOrder.Id:D}")}" +
+        $"&returnLabel={Uri.EscapeDataString("Back to purchase order")}";
+
+    private static string FormatStatusMovement(string? fromStatus, string? toStatus)
+    {
+        var from = string.IsNullOrWhiteSpace(fromStatus) ? "n/a" : FormatPurchaseOrderQuantityStatus(fromStatus);
+        var to = string.IsNullOrWhiteSpace(toStatus) ? "n/a" : FormatPurchaseOrderQuantityStatus(toStatus);
+        return $"{from} -> {to}";
+    }
+
+    private static string FormatPurchaseOrderAuditAction(string? action) =>
+        action?.Trim().ToLowerInvariant() switch
+        {
+            "purchase_order_created" => "Created",
+            "purchase_order_draft_updated" => "Draft Updated",
+            "purchase_order_approved" => "Approved",
+            "purchase_order_issued" => "Issued",
+            "purchase_order_reopened_for_amendment" => "Reopened For Amendment",
+            "purchase_order_closed" => "Closed",
+            "purchase_order_cancelled" => "Cancelled",
+            _ => string.IsNullOrWhiteSpace(action) ? "Unknown" : action
+        };
+
+    private static string FormatPurchaseOrderQuantityStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Draft",
+            "approved" => "Approved",
+            "issued" => "Issued",
+            "closed" => "Closed",
+            "cancelled" => "Cancelled",
+            "not_received" => "Not Received",
+            "partially_received" => "Partially Received",
+            "fully_received" => "Fully Received",
+            "not_billed" => "Not Billed",
+            "partially_billed" => "Partially Billed",
+            "fully_billed" => "Fully Billed",
+            "open" => "Open",
+            "complete" => "Complete",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
         };
 
     private static bool IsSettlementDocument(ShellAccountingDocumentReviewSummary? document) =>
@@ -1781,6 +1993,7 @@
             "credit_application" => $"/documents/credit_application/{documentId.Value:D}",
             "pay_bill" => $"/documents/pay_bill/{documentId.Value:D}",
             "vendor_credit_application" => $"/documents/vendor_credit_application/{documentId.Value:D}",
+            "purchase_order" => $"/documents/purchase_order/{documentId.Value:D}",
             _ => string.Empty
         };
 
@@ -1871,7 +2084,7 @@
     {
         href = string.Empty;
         var normalizedSourceType = sourceType?.Trim().ToLowerInvariant();
-        if (normalizedSourceType is not ("invoice" or "credit_note" or "bill" or "vendor_credit"))
+        if (normalizedSourceType is not ("invoice" or "credit_note" or "bill" or "vendor_credit" or "purchase_order"))
         {
             return false;
         }

@@ -1582,3 +1582,46 @@ Still deferred:
 Authority note:
 
 H.20.8 closes the write/read loop for lifecycle audit without making audit rows authoritative. PO state remains the lifecycle truth, while the audit timeline gives operators and later Shell surfaces a stable review trail.
+
+## Phase H.20.9 checkpoint
+
+H.20.9 adds the first Web Shell purchase order review surface for the lifecycle audit read model.
+
+Boundary:
+
+- Shell read surface only.
+- It does not add PO lifecycle commands to the Shell.
+- It does not introduce approval thresholds, approval queues, rejection, or reversal.
+- It does not change PO lifecycle legality, authority gates, or repository write policy.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Source document browser now includes a `Purchase Orders` filter backed by the PO list API.
+- Shell navigation and dashboard expose a Purchase Orders entry point.
+- `/documents/purchase_order/{id}` now renders a read-only PO detail path.
+- The PO detail path shows:
+  - anchor governance summary
+  - order/vendor/date summary
+  - three-quantity control summary when available
+  - lifecycle audit timeline from `GET /purchase-orders/{id}/lifecycle-audit`
+  - purchase order lines
+- PO lifecycle audit remains explanatory only; the PO document state remains authoritative.
+
+Still deferred:
+
+- formal PO approval request queue
+- approval rejection / reversal
+- approval limit thresholds
+- lifecycle action buttons in Shell
+- repository-level authority policy
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.9 makes the lifecycle trail visible to operators without moving any PO authority into the UI. The Shell can review and explain lifecycle history, while backend PO state and command endpoints continue to own lifecycle legality.

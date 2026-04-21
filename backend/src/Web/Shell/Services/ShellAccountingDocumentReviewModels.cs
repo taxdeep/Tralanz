@@ -112,6 +112,113 @@ public sealed record class ShellAccountingDocumentReviewLineSummary
     public string? TargetDocumentDisplayNumber { get; init; }
 }
 
+public sealed record class ShellPurchaseOrderReviewSummary
+{
+    public Guid Id { get; init; }
+
+    public Guid CompanyId { get; init; }
+
+    public string EntityNumber { get; init; } = string.Empty;
+
+    public string DisplayNumber { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public Guid VendorId { get; init; }
+
+    public DateOnly OrderDate { get; init; }
+
+    public DateOnly? ExpectedDate { get; init; }
+
+    public string? VendorReference { get; init; }
+
+    public string? Memo { get; init; }
+
+    public DateTimeOffset? ApprovedAt { get; init; }
+
+    public DateTimeOffset? IssuedAt { get; init; }
+
+    public DateTimeOffset? ClosedAt { get; init; }
+
+    public DateTimeOffset? CancelledAt { get; init; }
+
+    public DateTimeOffset? AmendmentStartedAt { get; init; }
+
+    public ShellPurchaseOrderAnchorGovernanceSummary AnchorGovernance { get; init; } = new();
+
+    public ShellPurchaseOrderThreeQuantitySummary? ThreeQuantity { get; init; }
+
+    public IReadOnlyList<ShellPurchaseOrderLineSummary> Lines { get; init; } = Array.Empty<ShellPurchaseOrderLineSummary>();
+}
+
+public sealed record class ShellPurchaseOrderLineSummary
+{
+    public int LineNumber { get; init; }
+
+    public Guid ItemId { get; init; }
+
+    public decimal OrderedQuantity { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public string? Description { get; init; }
+
+    public decimal? UnitCost { get; init; }
+}
+
+public sealed record class ShellPurchaseOrderAnchorGovernanceSummary
+{
+    public bool AllowsNewAnchors { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
+}
+
+public sealed record class ShellPurchaseOrderThreeQuantitySummary
+{
+    public Guid PurchaseOrderId { get; init; }
+
+    public decimal OrderedQuantity { get; init; }
+
+    public decimal ReceivedQuantity { get; init; }
+
+    public decimal BilledQuantity { get; init; }
+
+    public decimal RemainingToReceiveQuantity { get; init; }
+
+    public decimal RemainingToBillQuantity { get; init; }
+
+    public string ReceiptStatus { get; init; } = string.Empty;
+
+    public string BillStatus { get; init; } = string.Empty;
+
+    public string QuantityStatus { get; init; } = string.Empty;
+
+    public int OpenDiscrepancyCount { get; init; }
+}
+
+public sealed record class ShellPurchaseOrderLifecycleAuditEntry
+{
+    public Guid AuditId { get; init; }
+
+    public Guid PurchaseOrderId { get; init; }
+
+    public string Action { get; init; } = string.Empty;
+
+    public string ActorType { get; init; } = string.Empty;
+
+    public Guid? ActorId { get; init; }
+
+    public string? FromStatus { get; init; }
+
+    public string? ToStatus { get; init; }
+
+    public string? EntityNumber { get; init; }
+
+    public string? DisplayNumber { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+}
+
 public sealed record class ShellAccountingDocumentLifecycleActionSummary
 {
     public string ActionCode { get; init; } = string.Empty;
