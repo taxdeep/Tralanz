@@ -2412,3 +2412,41 @@ Still not included:
 Authority note:
 
 H.20.20 protects the truth ladder: PO close freezes order lifecycle, while accounting effects stay outside close until a future explicit accounting command is introduced.
+
+## Phase H.20.21 checkpoint
+
+H.20.21 surfaces existing purchase variance control truth on purchase order review.
+
+Boundary:
+
+- PO review reads purchase variance lines already produced by the GR/IR/AP settlement lane.
+- PO review does not create PPV truth.
+- PO close does not post PPV.
+- PO close does not settle GR/IR.
+- Receipt remains physical truth, GR/IR remains interim accounting truth, Bill remains AP charge truth, and AP open-item clearing remains subledger settlement truth.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No repository-level permission checks.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Purchase-order repository can summarize purchase variance lines connected through receipt PO anchors.
+- Purchase-order review API returns purchase variance control summary.
+- Shell PO detail shows downstream purchase variance status, candidate amount, blocked line count, and refresh time.
+- Shell close guidance includes downstream PPV control context while keeping close non-posting.
+
+Still not included:
+
+- PPV journal posting
+- PPV approval / disposition workflow
+- PO close journal effects
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- tracked receipt enablement
+
+Authority note:
+
+H.20.21 is the cross-layer visibility checkpoint for PO and PPV: the Shell reads the same persisted variance control truth that the accounting lane owns, rather than inventing a separate UI-only status.

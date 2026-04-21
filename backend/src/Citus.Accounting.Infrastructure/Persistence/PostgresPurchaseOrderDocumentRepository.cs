@@ -14,6 +14,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     private const string PurchaseOrdersTableName = "purchase_orders";
     private const string PurchaseOrderLinesTableName = "purchase_order_lines";
     private const string QuantityDiscrepanciesTableName = "purchase_order_quantity_discrepancy_lanes";
+    private const string PurchaseVarianceLinesTableName = "receipt_grir_ap_purchase_variance_lines";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly PostgresConnectionFactory _connections;
@@ -1364,6 +1365,72 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return summaries.TryGetValue(purchaseOrderId, out var summary) ? summary : null;
     }
 
+    public async Task<PurchaseOrderPurchaseVarianceSummary> GetPurchaseVarianceSummaryAsync(
+        CompanyId companyId,
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+
+        if (!await TableExistsAsync(scope, "receipt_lines", cancellationToken) ||
+            !await TableExistsAsync(scope, PurchaseVarianceLinesTableName, cancellationToken))
+        {
+            return BuildEmptyPurchaseVarianceSummary(purchaseOrderId);
+        }
+
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              count(*)::int as variance_line_count,
+              count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}')::int as candidate_line_count,
+              count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance}')::int as no_variance_line_count,
+              count(*) filter (where variance.variance_status like 'blocked_%' or variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.VarianceInconsistent}')::int as blocked_line_count,
+              coalesce(sum(variance.variance_amount_base) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}'), 0)::numeric(20,6) as candidate_variance_amount_base,
+              max(variance.refreshed_at) as last_refreshed_at
+            from {PurchaseVarianceLinesTableName} variance
+            join receipt_lines receipt_line
+              on receipt_line.company_id = variance.company_id
+             and receipt_line.receipt_id = variance.receipt_id
+             and receipt_line.line_number = variance.receipt_line_number
+            where variance.company_id = @company_id
+              and receipt_line.purchase_order_id = @purchase_order_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("purchase_order_id", purchaseOrderId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return BuildEmptyPurchaseVarianceSummary(purchaseOrderId);
+        }
+
+        var lineCount = reader.GetInt32(reader.GetOrdinal("variance_line_count"));
+        var candidateLineCount = reader.GetInt32(reader.GetOrdinal("candidate_line_count"));
+        var noVarianceLineCount = reader.GetInt32(reader.GetOrdinal("no_variance_line_count"));
+        var blockedLineCount = reader.GetInt32(reader.GetOrdinal("blocked_line_count"));
+
+        return new PurchaseOrderPurchaseVarianceSummary(
+            purchaseOrderId,
+            lineCount,
+            candidateLineCount,
+            noVarianceLineCount,
+            blockedLineCount,
+            ReceiptGrIrApPurchaseVarianceStatusPolicy.ResolveSummaryStatus(
+                lineCount,
+                candidateLineCount,
+                noVarianceLineCount,
+                blockedLineCount),
+            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("candidate_variance_amount_base"))),
+            reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")));
+    }
+
     public async Task<IReadOnlyDictionary<Guid, PurchaseOrderThreeQuantitySummary>> GetThreeQuantitySummariesAsync(
         CompanyId companyId,
         IReadOnlyCollection<Guid> purchaseOrderIds,
@@ -2503,6 +2570,17 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         return rows;
     }
+
+    private static PurchaseOrderPurchaseVarianceSummary BuildEmptyPurchaseVarianceSummary(Guid purchaseOrderId) =>
+        new(
+            purchaseOrderId,
+            0,
+            0,
+            0,
+            0,
+            ReceiptGrIrApPurchaseVarianceStatusPolicy.NotApplicable,
+            0m,
+            null);
 
     private static void ValidateDraft(PurchaseOrderDraftSaveModel draft)
     {

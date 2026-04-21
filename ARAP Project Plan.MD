@@ -2047,3 +2047,37 @@ Still deferred:
 Authority note:
 
 H.20.20 keeps close from becoming hidden accounting behavior. The PO can be frozen as operational lifecycle truth, but accounting recognition remains in explicit later commands.
+
+## Phase H.20.21 checkpoint
+
+H.20.21 connects purchase-order review to the existing purchase variance read/control lane.
+
+Boundary:
+
+- This is PO-level visibility over H.19 purchase variance control truth.
+- It does not create, approve, or post PPV journals.
+- It does not make PO close recognize PPV.
+- It does not change Receipt physical truth, GR/IR interim accounting truth, Bill AP truth, or AP open-item clearing truth.
+- It does not block PO close by itself; backend close legality remains three-quantity and lifecycle based.
+- It does not introduce formal workflow tables or persisted company approval limits.
+
+What changed:
+
+- Purchase-order repository can summarize downstream purchase variance lines linked through receipt lines.
+- Purchase-order review API includes purchase variance line counts, candidate counts, blocked counts, status, amount, and refresh time.
+- Web Shell PO detail shows a Purchase Variance Boundary panel when downstream variance control truth exists.
+- Shell close guidance now references downstream PPV control truth without treating Close as a posting action.
+
+Still deferred:
+
+- PPV recognition / posting command
+- PPV approval or disposition workflow
+- PO close accounting effects
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- tracked receipt
+
+Authority note:
+
+H.20.21 stitches UI and logic together at the read/control layer: PO review can see downstream variance control truth, while accounting recognition remains an explicit later boundary.

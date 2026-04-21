@@ -4121,6 +4121,7 @@ accounting.MapGet(
         }
 
         var summary = await repository.GetThreeQuantitySummaryAsync(new(query.CompanyId), documentId, cancellationToken);
+        var purchaseVarianceSummary = await repository.GetPurchaseVarianceSummaryAsync(new(query.CompanyId), documentId, cancellationToken);
         var estimatedAmount = CalculatePurchaseOrderDocumentEstimatedAmount(document);
         return Results.Ok(new
         {
@@ -4147,6 +4148,7 @@ accounting.MapGet(
             },
             ApprovalAuthority = BuildPurchaseOrderApprovalAuthoritySummary(estimatedAmount),
             ThreeQuantity = summary,
+            PurchaseVariance = purchaseVarianceSummary,
             Lines = document.PurchaseOrderLines.Select(line => new
             {
                 line.LineNumber,

@@ -207,6 +207,11 @@ public interface IPurchaseOrderDocumentRepository
         Guid purchaseOrderId,
         CancellationToken cancellationToken);
 
+    Task<PurchaseOrderPurchaseVarianceSummary> GetPurchaseVarianceSummaryAsync(
+        CompanyId companyId,
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyDictionary<Guid, PurchaseOrderThreeQuantitySummary>> GetThreeQuantitySummariesAsync(
         CompanyId companyId,
         IReadOnlyCollection<Guid> purchaseOrderIds,
@@ -530,6 +535,16 @@ public sealed record PurchaseOrderThreeQuantitySummary(
     string QuantityStatus,
     IReadOnlyList<PurchaseOrderLineThreeQuantitySummary> Lines,
     IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary> Discrepancies);
+
+public sealed record PurchaseOrderPurchaseVarianceSummary(
+    Guid PurchaseOrderId,
+    int VarianceLineCount,
+    int CandidateLineCount,
+    int NoVarianceLineCount,
+    int BlockedLineCount,
+    string VarianceStatus,
+    decimal CandidateVarianceAmountBase,
+    DateTimeOffset? LastRefreshedAt);
 
 public static class PurchaseOrderThreeQuantityStatusPolicy
 {

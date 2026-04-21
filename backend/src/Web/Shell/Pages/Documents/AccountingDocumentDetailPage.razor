@@ -270,6 +270,38 @@
             </MudPaper>
         }
 
+        @if (ShouldShowPurchaseOrderPurchaseVarianceBoundary())
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Purchase Variance Boundary</MudText>
+                <MudAlert Severity="@GetPurchaseOrderPurchaseVarianceSeverity(_purchaseOrder.PurchaseVariance.VarianceStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @BuildPurchaseOrderPurchaseVarianceSummary(_purchaseOrder.PurchaseVariance)
+                </MudAlert>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Status</MudText>
+                        <MudText Typo="Typo.h6">@FormatPurchaseOrderPurchaseVarianceStatus(_purchaseOrder.PurchaseVariance.VarianceStatus)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">Read/control truth only</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Candidate Lines</MudText>
+                        <MudText Typo="Typo.h6">@_purchaseOrder.PurchaseVariance.CandidateLineCount</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_purchaseOrder.PurchaseVariance.CandidateVarianceAmountBase.ToString("N2") base</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Blocked Lines</MudText>
+                        <MudText Typo="Typo.h6">@_purchaseOrder.PurchaseVariance.BlockedLineCount</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">Settlement preconditions</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Last Refresh</MudText>
+                        <MudText Typo="Typo.h6">@FormatPurchaseOrderPurchaseVarianceRefresh(_purchaseOrder.PurchaseVariance.LastRefreshedAt)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_purchaseOrder.PurchaseVariance.VarianceLineCount total line(s)</MudText>
+                    </MudPaper>
+                </div>
+            </MudPaper>
+        }
+
         <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
             <MudText Typo="Typo.h6" Class="mb-3">Lifecycle Audit Timeline</MudText>
             @if (_purchaseOrderLifecycleAudit.Count == 0)
@@ -1960,7 +1992,7 @@
 
         if (CanClosePurchaseOrder())
         {
-            return "Ordered, received, and billed quantities are aligned with no active discrepancy lanes. Close freezes this PO lifecycle only; it does not post a journal entry, settle GR/IR, or recognize PPV.";
+            return $"Ordered, received, and billed quantities are aligned with no active discrepancy lanes. Close freezes this PO lifecycle only; it does not post a journal entry, settle GR/IR, or recognize PPV. {BuildPurchaseOrderPurchaseVarianceCloseNote(_purchaseOrder.PurchaseVariance)}";
         }
 
         if (CanCancelPurchaseOrder())
@@ -1992,6 +2024,55 @@
 
         return "Review the latest approval request before taking another PO approval action.";
     }
+
+    private bool ShouldShowPurchaseOrderPurchaseVarianceBoundary() =>
+        _purchaseOrder?.PurchaseVariance.VarianceLineCount > 0;
+
+    private static Severity GetPurchaseOrderPurchaseVarianceSeverity(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "candidate_not_reviewed" => Severity.Warning,
+            "blocked" => Severity.Error,
+            "no_variance" => Severity.Success,
+            _ => Severity.Info
+        };
+
+    private static string FormatPurchaseOrderPurchaseVarianceStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "not_applicable" => "Not Applicable",
+            "no_variance" => "No Variance",
+            "candidate_not_reviewed" => "Candidate Not Reviewed",
+            "blocked" => "Blocked",
+            "blocked_settlement_not_posted" => "Settlement Not Posted",
+            "blocked_journal_not_posted" => "Settlement Journal Not Posted",
+            "blocked_open_item_not_cleared" => "Open Item Not Cleared",
+            "blocked_bill_not_posted" => "Bill Not Posted",
+            "blocked_quantity_basis_missing" => "Quantity Basis Missing",
+            "variance_inconsistent" => "Variance Inconsistent",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static string FormatPurchaseOrderPurchaseVarianceRefresh(DateTimeOffset? refreshedAt) =>
+        refreshedAt?.ToString("yyyy-MM-dd HH:mm") ?? "n/a";
+
+    private static string BuildPurchaseOrderPurchaseVarianceSummary(ShellPurchaseOrderPurchaseVarianceSummary summary) =>
+        summary.VarianceStatus.Trim().ToLowerInvariant() switch
+        {
+            "candidate_not_reviewed" => $"{summary.CandidateLineCount} purchase variance candidate line(s) total {summary.CandidateVarianceAmountBase:N2} base. This is review/control truth only and is not posted by PO close.",
+            "blocked" => $"{summary.BlockedLineCount} purchase variance line(s) are blocked because GR/IR settlement, settlement journal, AP clearing, Bill posting, or quantity basis is incomplete.",
+            "no_variance" => $"{summary.NoVarianceLineCount} settled purchase variance line(s) currently show no variance.",
+            _ => "No purchase variance candidate is currently surfaced for this purchase order."
+        };
+
+    private static string BuildPurchaseOrderPurchaseVarianceCloseNote(ShellPurchaseOrderPurchaseVarianceSummary summary) =>
+        summary.VarianceStatus.Trim().ToLowerInvariant() switch
+        {
+            "candidate_not_reviewed" => $"There are {summary.CandidateLineCount} downstream PPV candidate line(s) totaling {summary.CandidateVarianceAmountBase:N2} base for later review.",
+            "blocked" => $"There are {summary.BlockedLineCount} downstream PPV line(s) still blocked by settlement prerequisites.",
+            "no_variance" => "Downstream PPV control currently reports no variance.",
+            _ => "No downstream PPV control lines are currently attached to this PO."
+        };
 
     private static bool IsPurchaseOrderApprovalCommandSuccess(ShellPurchaseOrderApprovalRequestCommandResultSummary result) =>
         result.OutcomeCode.Trim().ToLowerInvariant() is

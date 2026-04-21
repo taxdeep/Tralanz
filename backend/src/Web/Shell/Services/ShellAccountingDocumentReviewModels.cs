@@ -152,6 +152,8 @@ public sealed record class ShellPurchaseOrderReviewSummary
 
     public ShellPurchaseOrderThreeQuantitySummary? ThreeQuantity { get; init; }
 
+    public ShellPurchaseOrderPurchaseVarianceSummary PurchaseVariance { get; init; } = new();
+
     public IReadOnlyList<ShellPurchaseOrderLineSummary> Lines { get; init; } = Array.Empty<ShellPurchaseOrderLineSummary>();
 }
 
@@ -209,6 +211,25 @@ public sealed record class ShellPurchaseOrderThreeQuantitySummary
     public string QuantityStatus { get; init; } = string.Empty;
 
     public int OpenDiscrepancyCount { get; init; }
+}
+
+public sealed record class ShellPurchaseOrderPurchaseVarianceSummary
+{
+    public Guid PurchaseOrderId { get; init; }
+
+    public int VarianceLineCount { get; init; }
+
+    public int CandidateLineCount { get; init; }
+
+    public int NoVarianceLineCount { get; init; }
+
+    public int BlockedLineCount { get; init; }
+
+    public string VarianceStatus { get; init; } = string.Empty;
+
+    public decimal CandidateVarianceAmountBase { get; init; }
+
+    public DateTimeOffset? LastRefreshedAt { get; init; }
 }
 
 public sealed record class ShellPurchaseOrderLifecycleAuditEntry
