@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-if [ "${CITUS_ENABLE_DEMO_SEED:-true}" != "true" ]; then
+if [ "${CITUS_ENABLE_DEMO_SEED:-false}" != "true" ]; then
   echo "Citus demo seed is disabled."
   exit 0
 fi

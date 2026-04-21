@@ -36,7 +36,7 @@ Important values:
 - `CITUS_TOTP_PROTECTION_KEY`
 - optional SMTP values if you want email delivery / verification flows
 - if any host port is already occupied, change the published port values in `deploy/docker/.env`
-- `CITUS_ENABLE_DEMO_SEED=true` will create a usable demo business/company dataset on first database initialization
+- `CITUS_ENABLE_DEMO_SEED=true` is an explicit opt-in for local/demo business seed data on first database initialization
 
 ### 2. Build and start the stack
 
@@ -57,13 +57,13 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/compose.yml up -d 
 On the first run with an empty PostgreSQL volume:
 
 - PostgreSQL executes [CITUS_POSTGRESQL_MIGRATION_DRAFT.sql](./CITUS_POSTGRESQL_MIGRATION_DRAFT.sql)
-- if `CITUS_ENABLE_DEMO_SEED=true`, PostgreSQL also executes [deploy/docker/010-demo-seed.sh](./deploy/docker/010-demo-seed.sh)
+- if `CITUS_ENABLE_DEMO_SEED=true` is explicitly set, PostgreSQL also executes [deploy/docker/010-demo-seed.sh](./deploy/docker/010-demo-seed.sh)
 - `SysAdmin.Api` can provision the first sysadmin account from the setup flow
 - if you explicitly enable bootstrap sysadmin in `deploy/docker/.env`, Docker can also provision that account at startup
 
-### 5. Demo business sign-in
+### 5. Optional demo business sign-in
 
-When `CITUS_ENABLE_DEMO_SEED=true`, the first PostgreSQL initialization also seeds these business demo accounts:
+Fresh installs do not seed demo business accounts by default. When `CITUS_ENABLE_DEMO_SEED=true` is explicitly set, the first PostgreSQL initialization also seeds these business demo accounts:
 
 - `alice.rowan@northwind.example` / `DemoPass123!`
   - company: `Northwind Studio Ltd.`

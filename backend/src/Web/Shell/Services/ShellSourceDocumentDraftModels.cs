@@ -202,3 +202,37 @@ public sealed record class ShellPurchaseSourceDocumentDraftLineSaveRequest
 
     public decimal? UnitCost { get; init; }
 }
+
+public sealed record class ShellPurchaseOrderDraftSaveRequest
+{
+    public Guid CompanyId { get; init; }
+
+    public Guid UserId { get; init; }
+
+    public Guid VendorId { get; init; }
+
+    public DateOnly OrderDate { get; init; }
+
+    public DateOnly? ExpectedDate { get; init; }
+
+    public string? VendorReference { get; init; }
+
+    public string? Memo { get; init; }
+
+    public IReadOnlyList<ShellPurchaseOrderDraftLineSaveRequest> Lines { get; init; } = Array.Empty<ShellPurchaseOrderDraftLineSaveRequest>();
+}
+
+public sealed record class ShellPurchaseOrderDraftLineSaveRequest
+{
+    public int LineNumber { get; init; }
+
+    public Guid ItemId { get; init; }
+
+    public decimal OrderedQuantity { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public string? Description { get; init; }
+
+    public decimal? UnitCost { get; init; }
+}

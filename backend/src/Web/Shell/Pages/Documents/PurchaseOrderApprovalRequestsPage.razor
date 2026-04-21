@@ -4,6 +4,7 @@
 @inject WebShellBusinessSessionClient SessionClient
 @inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellAccountingDocumentReviewClient ReviewClient
+@inject IJSRuntime JS
 
 <PageTitle>PO Approval Requests | Citus Web Shell</PageTitle>
 
@@ -144,20 +145,26 @@
                         <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildPurchaseOrderHref(context.PurchaseOrderId)">
                             Open
                         </MudButton>
-                        <MudButton Variant="Variant.Filled"
-                                   Color="Color.Success"
-                                   Size="Size.Small"
-                                   Disabled="@(_isCommandRunning || WritesBlocked || !CanApprove(context))"
-                                   OnClick="@(() => ApproveAsync(context))">
-                            Approve
-                        </MudButton>
-                        <MudButton Variant="Variant.Outlined"
-                                   Color="Color.Error"
-                                   Size="Size.Small"
-                                   Disabled="@(_isCommandRunning || WritesBlocked || !CanReject(context))"
-                                   OnClick="@(() => RejectAsync(context))">
-                            Reject
-                        </MudButton>
+                        @if (CanApprove(context))
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       Size="Size.Small"
+                                       Disabled="@(_isCommandRunning || WritesBlocked)"
+                                       OnClick="@(() => ApproveAsync(context))">
+                                Approve
+                            </MudButton>
+                        }
+                        @if (CanReject(context))
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       Disabled="@(_isCommandRunning || WritesBlocked)"
+                                       OnClick="@(() => RejectAsync(context))">
+                                Reject
+                            </MudButton>
+                        }
                     </MudTd>
                 </RowTemplate>
             </MudTable>
@@ -219,6 +226,16 @@
             return;
         }
 
+        if (!CanReject(request))
+        {
+            return;
+        }
+
+        if (!await ConfirmApprovalQueueCommandAsync("Reject this purchase order approval request? Rejection closes the request trail but does not mutate ordered truth."))
+        {
+            return;
+        }
+
         _isCommandRunning = true;
         _commandMessage = null;
         _commandSeverity = Severity.Info;
@@ -267,6 +284,16 @@
     private async Task ApproveAsync(ShellPurchaseOrderApprovalRequestSummary request)
     {
         if (TryBlockWrites())
+        {
+            return;
+        }
+
+        if (!CanApprove(request))
+        {
+            return;
+        }
+
+        if (!await ConfirmApprovalQueueCommandAsync("Approve this purchase order from the submitted request queue? Backend threshold and authority gates still apply."))
         {
             return;
         }
@@ -352,14 +379,28 @@
             _ => Color.Default
         };
 
-    private static bool CanReject(ShellPurchaseOrderApprovalRequestSummary request) =>
+    private bool CanReject(ShellPurchaseOrderApprovalRequestSummary request) =>
+        HasPurchaseOrderApprovalAuthority(request) &&
         string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
 
-    private static bool CanApprove(ShellPurchaseOrderApprovalRequestSummary request) =>
+    private bool CanApprove(ShellPurchaseOrderApprovalRequestSummary request) =>
+        HasPurchaseOrderApprovalAuthority(request) &&
         string.Equals(request.PurchaseOrderStatus, "draft", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<bool> ConfirmApprovalQueueCommandAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+
+    private bool HasPurchaseOrderApprovalAuthority(ShellPurchaseOrderApprovalRequestSummary request) =>
+        HasAnyRole("owner", "approve", "book_governance", "company_book_governance", "company_accounting_settings") &&
+        (!request.RequiresGovernanceApproval || HasAnyRole("owner", "book_governance", "company_book_governance", "company_accounting_settings"));
+
+    private bool HasAnyRole(params string[] roles) =>
+        ShellState.User.Roles.Any(userRole =>
+            !string.IsNullOrWhiteSpace(userRole) &&
+            roles.Contains(userRole.Trim().ToLowerInvariant(), StringComparer.Ordinal));
 
     private bool TryBlockWrites()
     {

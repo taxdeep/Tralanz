@@ -68,6 +68,20 @@
             <MudIcon Icon="@Icons.Material.Filled.Approval" Size="Size.Small" />
             <span class="ws-nav__label">PO Approvals</span>
         </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <MudIcon Icon="@Icons.Material.Filled.AddBusiness" Size="Size.Small" />
+            <span class="ws-nav__label">PO Draft</span>
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/purchase-order/draft-editor" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.AddBusiness" Size="Size.Small" />
+            <span class="ws-nav__label">PO Draft</span>
+        </NavLink>
+    }
         <NavLink href="/ap/vendor-credit-application" class="ws-nav__link">
             <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
             <span class="ws-nav__label">Vendor Credit</span>

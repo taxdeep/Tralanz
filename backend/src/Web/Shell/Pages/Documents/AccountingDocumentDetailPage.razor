@@ -7,6 +7,7 @@
 @inject ShellAccountingDocumentReviewClient ReviewClient
 @inject ShellBillReceiptMatchingClient BillReceiptMatchingClient
 @inject ShellInventoryShipmentClient InventoryShipmentClient
+@inject IJSRuntime JS
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
     <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
@@ -50,6 +51,12 @@
     @if (_purchaseOrder is not null)
     {
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            @if (CanEditPurchaseOrderDraft(_purchaseOrder))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPurchaseOrderDraftEditorHref(_purchaseOrder)" Disabled="WritesBlocked">
+                    Edit Draft
+                </MudButton>
+            }
             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildPurchaseOrderBrowserHref(_purchaseOrder)">
                 Browse Purchase Orders
             </MudButton>
@@ -122,7 +129,7 @@
                 else if (CanReleasePurchaseOrder())
                 {
                     <MudText Typo="Typo.body2">
-                        Approval is complete. Release moves the purchase order into issued anchor truth; reverse approval returns it to draft while it is still unissued.
+                        @GetPurchaseOrderReleaseControlSummary()
                     </MudText>
                     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
                         <MudButton Variant="Variant.Filled"
@@ -132,13 +139,16 @@
                                    Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
                             Release
                         </MudButton>
-                        <MudButton Variant="Variant.Outlined"
-                                   Color="Color.Warning"
-                                   StartIcon="@Icons.Material.Filled.Undo"
-                                   OnClick="ReversePurchaseOrderApprovalAsync"
-                                   Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
-                            Reverse Approval
-                        </MudButton>
+                        @if (CanReversePurchaseOrderApproval())
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Warning"
+                                       StartIcon="@Icons.Material.Filled.Undo"
+                                       OnClick="ReversePurchaseOrderApprovalAsync"
+                                       Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                                Reverse Approval
+                            </MudButton>
+                        }
                     </div>
                 }
                 else
@@ -1479,6 +1489,11 @@
             return;
         }
 
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync("Approve this purchase order? Backend threshold and authority gates still apply."))
+        {
+            return;
+        }
+
         await RunPurchaseOrderLifecycleCommandAsync(
             () => ReviewClient.ApprovePurchaseOrderAsync(
                 ShellState.ActiveCompany.Id,
@@ -1491,6 +1506,11 @@
     private async Task ReleasePurchaseOrderAsync()
     {
         if (_purchaseOrder is null || !CanReleasePurchaseOrder() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync("Release this purchase order into issued anchor truth? New receipt and bill anchors can depend on it after release."))
         {
             return;
         }
@@ -1511,6 +1531,11 @@
             return;
         }
 
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync("Reverse approval and return this purchase order to draft? This is allowed only before issue."))
+        {
+            return;
+        }
+
         await RunPurchaseOrderLifecycleCommandAsync(
             () => ReviewClient.ReversePurchaseOrderApprovalAsync(
                 ShellState.ActiveCompany.Id,
@@ -1523,6 +1548,11 @@
     private async Task ReopenPurchaseOrderForAmendmentAsync()
     {
         if (_purchaseOrder is null || !CanReopenPurchaseOrderForAmendment() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync("Reopen this purchase order for amendment? Backend checks will block it if downstream receipt, bill, or discrepancy truth already depends on it."))
         {
             return;
         }
@@ -1543,6 +1573,11 @@
             return;
         }
 
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync("Close this purchase order lifecycle? Close freezes the PO only; it does not post a journal entry, settle GR/IR, or recognize PPV."))
+        {
+            return;
+        }
+
         await RunPurchaseOrderLifecycleCommandAsync(
             () => ReviewClient.ClosePurchaseOrderAsync(
                 ShellState.ActiveCompany.Id,
@@ -1555,6 +1590,11 @@
     private async Task CancelPurchaseOrderAsync()
     {
         if (_purchaseOrder is null || !CanCancelPurchaseOrder() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        if (!await ConfirmPurchaseOrderLifecycleCommandAsync("Cancel this purchase order? This withdraws the PO lifecycle when no downstream receipt or bill truth has started."))
         {
             return;
         }
@@ -1818,6 +1858,9 @@
         return true;
     }
 
+    private async Task<bool> ConfirmPurchaseOrderLifecycleCommandAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+
     private static string GetSourceLabel(string? sourceType) =>
         sourceType?.Trim().ToLowerInvariant() switch
         {
@@ -1849,6 +1892,12 @@
         $"&origin={Uri.EscapeDataString("Current source detail")}" +
         $"&returnHref={Uri.EscapeDataString($"/documents/purchase_order/{purchaseOrder.Id:D}")}" +
         $"&returnLabel={Uri.EscapeDataString("Back to purchase order")}";
+
+    private static bool CanEditPurchaseOrderDraft(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        string.Equals(purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildPurchaseOrderDraftEditorHref(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        $"/documents/purchase-order/draft-editor?draftId={purchaseOrder.Id:D}";
 
     private static string GetPurchaseOrderApprovalThresholdTitle(ShellPurchaseOrderReviewSummary purchaseOrder)
     {
@@ -1944,20 +1993,25 @@
     private bool CanApprovePurchaseOrderFromApprovalRequest() =>
         _purchaseOrder is not null &&
         _latestPurchaseOrderApprovalRequest is not null &&
+        HasPurchaseOrderApprovalAuthority() &&
+        (!RequiresPurchaseOrderGovernanceApproval(_purchaseOrder) || HasPurchaseOrderGovernanceAuthority()) &&
         string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
 
     private bool CanReleasePurchaseOrder() =>
         _purchaseOrder is not null &&
+        HasPurchaseOrderApprovalAuthority() &&
         string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase);
 
     private bool CanReversePurchaseOrderApproval() =>
         _purchaseOrder is not null &&
+        HasPurchaseOrderGovernanceAuthority() &&
         string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase);
 
     private bool CanReopenPurchaseOrderForAmendment() =>
         _purchaseOrder is not null &&
+        HasPurchaseOrderGovernanceAuthority() &&
         (string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
          string.Equals(_purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase));
 
@@ -1966,6 +2020,7 @@
 
     private bool CanClosePurchaseOrder() =>
         _purchaseOrder is not null &&
+        HasPurchaseOrderGovernanceAuthority() &&
         string.Equals(_purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase) &&
         _purchaseOrder.ThreeQuantity is not null &&
         string.Equals(_purchaseOrder.ThreeQuantity.QuantityStatus, "fully_billed", StringComparison.OrdinalIgnoreCase) &&
@@ -1975,9 +2030,24 @@
 
     private bool CanCancelPurchaseOrder() =>
         _purchaseOrder is not null &&
+        HasPurchaseOrderGovernanceAuthority() &&
         (string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) ||
          string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
          IsUntouchedIssuedPurchaseOrder(_purchaseOrder));
+
+    private bool RequiresPurchaseOrderGovernanceApproval(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        purchaseOrder.ApprovalAuthority.RequiresGovernanceApproval;
+
+    private bool HasPurchaseOrderApprovalAuthority() =>
+        HasAnyRole("owner", "approve", "book_governance", "company_book_governance", "company_accounting_settings");
+
+    private bool HasPurchaseOrderGovernanceAuthority() =>
+        HasAnyRole("owner", "book_governance", "company_book_governance", "company_accounting_settings");
+
+    private bool HasAnyRole(params string[] roles) =>
+        ShellState.User.Roles.Any(userRole =>
+            !string.IsNullOrWhiteSpace(userRole) &&
+            roles.Contains(userRole.Trim().ToLowerInvariant(), StringComparer.Ordinal));
 
     private static bool IsUntouchedIssuedPurchaseOrder(ShellPurchaseOrderReviewSummary purchaseOrder) =>
         string.Equals(purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase) &&
@@ -2011,11 +2081,30 @@
         return "No close or cancel action is currently exposed for this PO lifecycle state.";
     }
 
+    private string GetPurchaseOrderReleaseControlSummary() =>
+        HasPurchaseOrderGovernanceAuthority()
+            ? "Approval is complete. Release moves the purchase order into issued anchor truth; reverse approval returns it to draft while it is still unissued."
+            : "Approval is complete. Release moves the purchase order into issued anchor truth; approval reversal requires owner or book-governance authority.";
+
     private string GetPurchaseOrderApprovalControlSummary()
     {
         if (_purchaseOrder is null)
         {
             return "Purchase order approval state is unavailable.";
+        }
+
+        if (_latestPurchaseOrderApprovalRequest is not null &&
+            string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase) &&
+            !HasPurchaseOrderApprovalAuthority())
+        {
+            return "The latest approval request is waiting in the queue. The current user does not have purchase-order approval authority.";
+        }
+
+        if (string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase) &&
+            !HasPurchaseOrderApprovalAuthority())
+        {
+            return "This purchase order is approved. The current user does not have release authority.";
         }
 
         if (!string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase))
@@ -3010,6 +3099,7 @@
             "credit_note" => $"/documents/credit-note/draft-editor?draftId={documentId:D}",
             "bill" => $"/documents/bill/draft-editor?draftId={documentId:D}",
             "vendor_credit" => $"/documents/vendor-credit/draft-editor?draftId={documentId:D}",
+            "purchase_order" => $"/documents/purchase-order/draft-editor?draftId={documentId:D}",
             _ => string.Empty
         };
 

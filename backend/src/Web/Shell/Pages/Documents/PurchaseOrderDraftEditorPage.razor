@@ -1,0 +1,463 @@
+@page "/documents/purchase-order/draft-editor"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Business.AP.SettlementLookup
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject IApSettlementLookupService Vendors
+@inject ShellInventoryReceiptClient InventoryReceipt
+@inject ShellSourceDocumentDraftClient Drafts
+@inject ShellAccountingDocumentReviewClient ReviewClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Purchase Order Draft | Citus Web Shell</PageTitle>
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Href="/documents/source-browser?sourceType=purchase_order">Back</MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">Purchase order draft</MudChip>
+    </div>
+
+    <h1 style="margin:0 0 .75rem 0;">Purchase Order Draft Editor</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:58rem;">
+        Create or amend ordered truth before approval, release, receipt, and bill anchors depend on the purchase order.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_error</MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">@ShellState.WriteBlockMessage</MudAlert>
+    }
+    else if (!CanEditDraft)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            This purchase order is no longer editable here. Use lifecycle review for approval, release, close, cancel, or governed amendment.
+        </MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_vendorIdText" Disabled="@DraftMutationBlocked">
+            @foreach (var vendor in _vendorOptions)
+            {
+                <MudSelectItem T="string" Value="@vendor.Id.ToString("D")">@vendor.DisplayLabel</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="Order Date" Variant="Variant.Outlined" Date="@_orderDatePicker" DateChanged="OnOrderDateChanged" Disabled="@DraftMutationBlocked" />
+        <MudDatePicker Label="Expected Date" Variant="Variant.Outlined" Date="@_expectedDatePicker" DateChanged="OnExpectedDateChanged" Disabled="@DraftMutationBlocked" />
+        <MudTextField T="string" Label="Vendor Reference" Variant="Variant.Outlined" @bind-Value="_vendorReference" Disabled="@DraftMutationBlocked" />
+        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" Disabled="@DraftMutationBlocked" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Vendor Truth</MudText>
+            <MudText Typo="Typo.h6">@(_vendorOptions.Count > 0 ? $"{_vendorOptions.Count} vendor option(s)" : "Missing")</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">PO drafts require a real vendor in the active company.</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Item Truth</MudText>
+            <MudText Typo="Typo.h6">@OperationalItems.Count</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">Active inventory-managed items available for PO lines.</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Draft Status</MudText>
+            <MudText Typo="Typo.h6">@(_saved?.Status ?? "New draft")</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@(_saved?.DisplayNumber ?? "Not saved yet")</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Estimated Amount</MudText>
+            <MudText Typo="Typo.h6">@EstimatedAmount.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@($"{_lines.Count} line(s)")</MudText>
+        </MudPaper>
+    </div>
+
+    @if (OperationalItems.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            No active inventory-managed items are available. Open Inventory Foundation first, create an active stock or non-stock item, then return to the PO draft.
+        </MudAlert>
+    }
+
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
+            <MudText Typo="Typo.h6">Lines</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@DraftMutationBlocked" OnClick="AddLine">Add line</MudButton>
+        </div>
+
+        <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>#</MudTh>
+                <MudTh>Item</MudTh>
+                <MudTh>Description</MudTh>
+                <MudTh>Qty</MudTh>
+                <MudTh>UOM</MudTh>
+                <MudTh>Unit Cost</MudTh>
+                <MudTh>Total</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.LineNumber</MudTd>
+                <MudTd>
+                    <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@DraftMutationBlocked" Value="context.ItemId" ValueChanged="@(value => ApplyItem(context, value))">
+                        <MudSelectItem T="Guid?" Value="@((Guid?)null)">-- Select --</MudSelectItem>
+                        @foreach (var item in OperationalItems)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)item.Id)">@($"{item.ItemCode} {item.Name}")</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.Description" Disabled="@DraftMutationBlocked" /></MudTd>
+                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Immediate="true" @bind-Value="context.OrderedQuantity" Disabled="@DraftMutationBlocked" /></MudTd>
+                <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.UomCode" Disabled="@DraftMutationBlocked" /></MudTd>
+                <MudTd><MudNumericField T="decimal?" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0m" Immediate="true" @bind-Value="context.UnitCost" Disabled="@DraftMutationBlocked" /></MudTd>
+                <MudTd>@context.LineTotal.ToString("N2")</MudTd>
+                <MudTd>
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Disabled="@(_lines.Count == 1 || DraftMutationBlocked)" OnClick="@(() => RemoveLine(context))">X</MudButton>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="0">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_saving || DraftMutationBlocked)" OnClick="SaveAsync">
+                @(_saving ? "Saving..." : "Save Purchase Order")
+            </MudButton>
+            @if (_saved is not null)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildDetailHref()">
+                    Open Detail
+                </MudButton>
+            }
+            <MudButton Variant="Variant.Text" Color="Color.Default" Href="/documents/source-browser?sourceType=purchase_order">
+                Browse Purchase Orders
+            </MudButton>
+        </div>
+    </MudPaper>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "draftId")]
+    public Guid? DraftId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "vendorId")]
+    public Guid? VendorId { get; set; }
+
+    private readonly List<PurchaseOrderLineEditor> _lines = [PurchaseOrderLineEditor.Blank(1)];
+    private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _vendorOptions = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
+    private InventoryPurchaseReceiptDashboard? _receiptDashboard;
+    private Guid? _documentId;
+    private Guid? _loadedDraftId;
+    private string? _vendorIdText;
+    private string? _vendorReference;
+    private string? _memo;
+    private string? _error;
+    private bool _saving;
+    private ShellSourceDocumentDraftSaveResult? _saved;
+    private DateOnly _orderDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? _expectedDate;
+    private DateTime? _orderDatePicker = DateTime.Today;
+    private DateTime? _expectedDatePicker;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool CanEditDraft => _saved is null || string.Equals(_saved.Status, "draft", StringComparison.OrdinalIgnoreCase);
+    private bool DraftMutationBlocked => WritesBlocked || !CanEditDraft || OperationalItems.Count == 0;
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems =>
+        _receiptDashboard?.ActiveItems
+            .Where(static item => item.IsActive && item.ManageInventoryMethod == ManageInventoryMethod.ManageStock)
+            .OrderBy(static item => item.ItemCode)
+            .ToArray() ?? [];
+    private decimal EstimatedAmount => _lines.Sum(static line => line.LineTotal);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await EnsureLookupLoadedAsync())
+        {
+            return;
+        }
+
+        if (DraftId.HasValue && DraftId != _loadedDraftId)
+        {
+            await LoadDraftAsync(DraftId.Value);
+        }
+    }
+
+    private async Task<bool> EnsureLookupLoadedAsync()
+    {
+        if (_vendorOptions.Count > 0 && _receiptDashboard is not null)
+        {
+            return true;
+        }
+
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _error = probe.ErrorMessage;
+        }
+
+        _vendorOptions = await Vendors.ListVendorsAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+        _receiptDashboard = await InventoryReceipt.GetDashboardAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+
+        if (VendorId.HasValue && _vendorOptions.Any(item => item.Id == VendorId.Value))
+        {
+            _vendorIdText = VendorId.Value.ToString("D");
+        }
+        else if (_vendorOptions.Count == 1 && string.IsNullOrWhiteSpace(_vendorIdText))
+        {
+            _vendorIdText = _vendorOptions[0].Id.ToString("D");
+        }
+
+        return true;
+    }
+
+    private async Task LoadDraftAsync(Guid documentId)
+    {
+        var result = await ReviewClient.GetPurchaseOrderAsync(ShellState.ActiveCompany.Id, documentId, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            return;
+        }
+
+        var draft = result.Value;
+        if (draft is null)
+        {
+            _error = result.IsNotFound ? "The purchase order draft could not be found in the active company context." : result.ErrorMessage ?? "Unable to load the purchase order draft.";
+            return;
+        }
+
+        _documentId = draft.Id;
+        _loadedDraftId = draft.Id;
+        _saved = new ShellSourceDocumentDraftSaveResult
+        {
+            DocumentId = draft.Id,
+            EntityNumber = draft.EntityNumber,
+            DisplayNumber = draft.DisplayNumber,
+            Status = draft.Status
+        };
+        _vendorIdText = draft.VendorId.ToString("D");
+        _orderDate = draft.OrderDate;
+        _expectedDate = draft.ExpectedDate;
+        _orderDatePicker = draft.OrderDate.ToDateTime(TimeOnly.MinValue);
+        _expectedDatePicker = draft.ExpectedDate?.ToDateTime(TimeOnly.MinValue);
+        _vendorReference = draft.VendorReference;
+        _memo = draft.Memo;
+        _lines.Clear();
+        _lines.AddRange(draft.Lines.Select(line => new PurchaseOrderLineEditor
+        {
+            LineNumber = line.LineNumber,
+            ItemId = line.ItemId,
+            OrderedQuantity = line.OrderedQuantity,
+            UomCode = line.UomCode,
+            Description = line.Description ?? string.Empty,
+            UnitCost = line.UnitCost
+        }));
+        if (_lines.Count == 0)
+        {
+            _lines.Add(PurchaseOrderLineEditor.Blank(1));
+        }
+    }
+
+    private void AddLine()
+    {
+        if (TryBlockDraftEdits()) return;
+        _lines.Add(PurchaseOrderLineEditor.Blank(_lines.Count + 1));
+    }
+
+    private void RemoveLine(PurchaseOrderLineEditor line)
+    {
+        if (TryBlockDraftEdits()) return;
+        _lines.Remove(line);
+        for (var index = 0; index < _lines.Count; index++)
+        {
+            _lines[index].LineNumber = index + 1;
+        }
+    }
+
+    private void ApplyItem(PurchaseOrderLineEditor line, Guid? itemId)
+    {
+        if (TryBlockDraftEdits()) return;
+        line.ItemId = itemId;
+        if (!itemId.HasValue)
+        {
+            return;
+        }
+
+        var item = OperationalItems.FirstOrDefault(current => current.Id == itemId.Value);
+        if (item is null)
+        {
+            return;
+        }
+
+        line.Description = string.IsNullOrWhiteSpace(item.Description) ? item.Name : item.Description;
+        line.UomCode = item.StockUomCode ?? line.UomCode;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (TryBlockDraftEdits()) return;
+        _error = null;
+
+        if (!Guid.TryParse(_vendorIdText, out var vendorId))
+        {
+            _error = "Vendor must be selected.";
+            return;
+        }
+
+        if (!TryBuildLines(out var lines))
+        {
+            return;
+        }
+
+        try
+        {
+            _saving = true;
+            var saveResult = await Drafts.SavePurchaseOrderDraftAsync(
+                _documentId,
+                new ShellPurchaseOrderDraftSaveRequest
+                {
+                    CompanyId = ShellState.ActiveCompany.Id,
+                    UserId = ShellState.CurrentUserId,
+                    VendorId = vendorId,
+                    OrderDate = _orderDate,
+                    ExpectedDate = _expectedDate,
+                    VendorReference = _vendorReference,
+                    Memo = _memo,
+                    Lines = lines
+                },
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(saveResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (saveResult.Value is null)
+            {
+                _error = saveResult.ErrorMessage ?? "Unable to save the purchase order draft.";
+                return;
+            }
+
+            _saved = saveResult.Value;
+            _documentId = _saved.DocumentId;
+            Snackbar.Add($"Purchase order {_saved.DisplayNumber} saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private bool TryBuildLines(out IReadOnlyList<ShellPurchaseOrderDraftLineSaveRequest> lines)
+    {
+        var built = new List<ShellPurchaseOrderDraftLineSaveRequest>();
+        foreach (var line in _lines)
+        {
+            if (!line.ItemId.HasValue)
+            {
+                _error = $"Item missing on line {line.LineNumber}.";
+                lines = [];
+                return false;
+            }
+
+            if (line.OrderedQuantity <= 0m)
+            {
+                _error = $"Ordered quantity must be positive on line {line.LineNumber}.";
+                lines = [];
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(line.UomCode))
+            {
+                _error = $"UOM missing on line {line.LineNumber}.";
+                lines = [];
+                return false;
+            }
+
+            built.Add(new ShellPurchaseOrderDraftLineSaveRequest
+            {
+                LineNumber = line.LineNumber,
+                ItemId = line.ItemId.Value,
+                OrderedQuantity = line.OrderedQuantity,
+                UomCode = line.UomCode.Trim().ToUpperInvariant(),
+                Description = string.IsNullOrWhiteSpace(line.Description) ? null : line.Description.Trim(),
+                UnitCost = line.UnitCost
+            });
+        }
+
+        if (built.Count == 0)
+        {
+            _error = "At least one line is required.";
+            lines = [];
+            return false;
+        }
+
+        lines = built;
+        return true;
+    }
+
+    private bool TryBlockDraftEdits()
+    {
+        if (WritesBlocked)
+        {
+            _error = ShellState.WriteBlockMessage;
+            return true;
+        }
+
+        if (!CanEditDraft)
+        {
+            _error = "Only draft purchase orders can be modified.";
+            return true;
+        }
+
+        if (OperationalItems.Count == 0)
+        {
+            _error = "No active inventory-managed item is available for purchase order lines.";
+            return true;
+        }
+
+        return false;
+    }
+
+    private void OnOrderDateChanged(DateTime? value)
+    {
+        _orderDatePicker = value;
+        _orderDate = DateOnly.FromDateTime(value ?? DateTime.Today);
+    }
+
+    private void OnExpectedDateChanged(DateTime? value)
+    {
+        _expectedDatePicker = value;
+        _expectedDate = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private string BuildDetailHref() =>
+        _saved is null ? string.Empty : $"/documents/purchase_order/{_saved.DocumentId:D}";
+
+    private sealed class PurchaseOrderLineEditor
+    {
+        public int LineNumber { get; set; }
+        public Guid? ItemId { get; set; }
+        public decimal OrderedQuantity { get; set; } = 1m;
+        public string UomCode { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal? UnitCost { get; set; }
+        public decimal LineTotal => OrderedQuantity * (UnitCost ?? 0m);
+        public static PurchaseOrderLineEditor Blank(int lineNumber) => new() { LineNumber = lineNumber };
+    }
+}

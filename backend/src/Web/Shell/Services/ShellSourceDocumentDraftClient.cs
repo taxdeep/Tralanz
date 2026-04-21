@@ -296,6 +296,34 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
             },
             cancellationToken);
 
+    public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SavePurchaseOrderDraftAsync(
+        Guid? documentId,
+        ShellPurchaseOrderDraftSaveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            request.CompanyId,
+            request.UserId,
+            request.VendorId,
+            request.OrderDate,
+            request.ExpectedDate,
+            request.VendorReference,
+            request.Memo,
+            Lines = request.Lines.Select(static line => new
+            {
+                line.LineNumber,
+                line.ItemId,
+                line.OrderedQuantity,
+                line.UomCode,
+                line.Description,
+                line.UnitCost
+            }).ToArray()
+        };
+
+        return SaveAsync(documentId, "accounting/purchase-orders/drafts", payload, cancellationToken);
+    }
+
     private async Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SaveAsync(
         Guid? documentId,
         string path,
