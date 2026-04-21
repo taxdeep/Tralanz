@@ -2012,3 +2012,38 @@ Still deferred:
 Authority note:
 
 H.20.19 opens the Shell command surface after backend gates are present. The UI narrows obvious invalid actions, but backend API authority and repository lifecycle truth still decide every close/cancel transition.
+
+## Phase H.20.20 checkpoint
+
+H.20.20 locks the accounting boundary for purchase order close.
+
+Boundary:
+
+- PO close remains a lifecycle freeze only.
+- PO close does not post a journal entry.
+- PO close does not settle GR/IR.
+- PO close does not recognize PPV or any purchase variance.
+- PO close still requires fully aligned ordered/received/billed quantity and no open discrepancy lanes.
+- Existing API authority and repository lifecycle checks remain decisive.
+- This does not introduce a PPV command, close accounting command, or tracked receipt flow.
+
+What changed:
+
+- Purchase-order lifecycle audit payload for close now records `AccountingBoundary = lifecycle_close_only`.
+- The same audit payload records `AccountingEffectStatus = not_posted`.
+- The audit note explicitly states that close does not post JE, settle GR/IR, or recognize PPV.
+- Shell Lifecycle Closure copy now tells the operator that Close is not an accounting posting action.
+
+Still deferred:
+
+- PO close accounting effects
+- PPV recognition and posting
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- tracked receipt
+
+Authority note:
+
+H.20.20 keeps close from becoming hidden accounting behavior. The PO can be frozen as operational lifecycle truth, but accounting recognition remains in explicit later commands.

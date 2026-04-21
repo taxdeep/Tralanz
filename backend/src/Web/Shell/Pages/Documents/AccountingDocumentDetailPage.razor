@@ -1960,7 +1960,7 @@
 
         if (CanClosePurchaseOrder())
         {
-            return "Ordered, received, and billed quantities are aligned with no active discrepancy lanes. Close will freeze this PO lifecycle after backend authority confirms the transition.";
+            return "Ordered, received, and billed quantities are aligned with no active discrepancy lanes. Close freezes this PO lifecycle only; it does not post a journal entry, settle GR/IR, or recognize PPV.";
         }
 
         if (CanCancelPurchaseOrder())

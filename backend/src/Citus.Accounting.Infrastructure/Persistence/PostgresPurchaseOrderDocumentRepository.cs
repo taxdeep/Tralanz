@@ -1087,7 +1087,10 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             PurchaseOrderDocumentStatuses.Closed,
             entityNumber,
             displayNumber,
-            cancellationToken);
+            cancellationToken,
+            accountingBoundary: "lifecycle_close_only",
+            accountingEffectStatus: "not_posted",
+            accountingBoundaryNote: "PO close freezes the purchase-order lifecycle only; it does not post a journal entry, settle GR/IR, or recognize purchase price variance.");
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Closed);
@@ -2322,7 +2325,10 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         string toStatus,
         string entityNumber,
         string displayNumber,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? accountingBoundary = null,
+        string? accountingEffectStatus = null,
+        string? accountingBoundaryNote = null)
     {
         if (!await TableExistsAsync(connection, transaction, "audit_logs", cancellationToken))
         {
@@ -2359,17 +2365,32 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         command.Parameters.AddWithValue("actor_id", actorId);
         command.Parameters.AddWithValue("entity_id", documentId);
         command.Parameters.AddWithValue("action", action);
-        command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(
-            new
-            {
-                DocumentId = documentId,
-                EntityNumber = entityNumber,
-                DisplayNumber = displayNumber,
-                FromStatus = PurchaseOrderDocumentStatuses.Normalize(fromStatus),
-                ToStatus = PurchaseOrderDocumentStatuses.Normalize(toStatus),
-                Action = action
-            },
-            JsonOptions));
+        var payload = new Dictionary<string, object?>
+        {
+            ["DocumentId"] = documentId,
+            ["EntityNumber"] = entityNumber,
+            ["DisplayNumber"] = displayNumber,
+            ["FromStatus"] = PurchaseOrderDocumentStatuses.Normalize(fromStatus),
+            ["ToStatus"] = PurchaseOrderDocumentStatuses.Normalize(toStatus),
+            ["Action"] = action
+        };
+
+        if (!string.IsNullOrWhiteSpace(accountingBoundary))
+        {
+            payload["AccountingBoundary"] = accountingBoundary;
+        }
+
+        if (!string.IsNullOrWhiteSpace(accountingEffectStatus))
+        {
+            payload["AccountingEffectStatus"] = accountingEffectStatus;
+        }
+
+        if (!string.IsNullOrWhiteSpace(accountingBoundaryNote))
+        {
+            payload["AccountingBoundaryNote"] = accountingBoundaryNote;
+        }
+
+        command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload, JsonOptions));
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

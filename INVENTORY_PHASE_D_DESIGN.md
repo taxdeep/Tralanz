@@ -2375,3 +2375,40 @@ Still not included:
 Authority note:
 
 H.20.19 keeps close/cancel as backend-governed lifecycle transitions. The Shell offers the action only when the read model says it is plausible; the API and repository remain the source of truth for permission and legality.
+
+## Phase H.20.20 checkpoint
+
+H.20.20 makes the purchase-order close accounting boundary explicit.
+
+Boundary:
+
+- Close is lifecycle freeze only.
+- Close does not create JE truth.
+- Close does not settle GR/IR.
+- Close does not recognize PPV / purchase variance.
+- Close still depends on fully aligned three-quantity truth and no active discrepancy lanes.
+- Backend authority and repository legality remain unchanged.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No repository-level permission checks.
+- No tracked receipt operational flow.
+
+What changed:
+
+- PO close audit payload now carries an accounting boundary marker.
+- PO close audit payload now records that accounting effect is not posted by the close transition.
+- Shell close guidance states that close does not post JE, settle GR/IR, or recognize PPV.
+
+Still not included:
+
+- PO close journal effects
+- PPV recognition / posting
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- tracked receipt enablement
+
+Authority note:
+
+H.20.20 protects the truth ladder: PO close freezes order lifecycle, while accounting effects stay outside close until a future explicit accounting command is introduced.
