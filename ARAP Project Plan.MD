@@ -1753,3 +1753,41 @@ Still deferred:
 Authority note:
 
 H.20.12 makes approval intent visible without moving authority into the UI. Operators can review request state and threshold pressure, while backend API and repository boundaries continue to own lifecycle transitions.
+
+## Phase H.20.13 checkpoint
+
+H.20.13 adds the first Web Shell command bridge for PO approval requests.
+
+Boundary:
+
+- Shell commands are limited to approval request lifecycle: request, submit, and reject.
+- It does not add PO approve, issue, reopen, close, cancel, or approval reversal buttons to the Shell.
+- It does not introduce formal workflow tables or persisted company approval limits.
+- It does not change API authority decisions or repository lifecycle legality.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Web Shell review client can POST PO approval request commands.
+- PO detail can create an approval request from draft PO context with optional reason.
+- PO detail can submit a draft approval request into the approval queue.
+- PO approval request queue can reject submitted pending requests.
+- Command results surface API outcome/message feedback in the Shell.
+- Shell refreshes PO detail or queue state after command execution.
+
+Still deferred:
+
+- PO approve / reverse approval buttons in Shell
+- PO issue / close / cancel buttons in Shell
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.13 lets operators move approval-request intent through the UI, but approval authority remains in the API and lifecycle state remains in the PO repository. Rejection still affects only the approval-request trail and does not mutate ordered truth.

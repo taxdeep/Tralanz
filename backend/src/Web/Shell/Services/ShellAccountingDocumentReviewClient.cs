@@ -73,6 +73,45 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>> RequestPurchaseOrderApprovalAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        string? reason,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderApprovalCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/approval-request",
+            new PurchaseOrderApprovalRequestCommand(companyId, userId, reason),
+            "request purchase order approval",
+            documentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>> SubmitPurchaseOrderApprovalRequestAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderApprovalCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/approval-request/{requestId:D}/submit",
+            new PurchaseOrderApprovalRequestTransitionCommand(companyId, userId),
+            "submit purchase order approval request",
+            documentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>> RejectPurchaseOrderApprovalRequestAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderApprovalCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/approval-request/{requestId:D}/reject",
+            new PurchaseOrderApprovalRequestTransitionCommand(companyId, userId),
+            "reject purchase order approval request",
+            documentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,
@@ -292,6 +331,41 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         }
     }
 
+    private async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>> PostPurchaseOrderApprovalCommandAsync<TRequest>(
+        string requestUri,
+        TRequest request,
+        string operationLabel,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<ShellPurchaseOrderApprovalRequestCommandResultSummary>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>.Failure(
+                    $"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to {OperationLabel} for purchase order {DocumentId}.", operationLabel, documentId);
+            return WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
     private async Task<WebShellAuthenticatedApiResult<T>> GetOptionalAsync<T>(
         string requestUri,
         string operationLabel,
@@ -485,4 +559,13 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             _ => null
         };
     }
+
+    private sealed record PurchaseOrderApprovalRequestCommand(
+        Guid CompanyId,
+        Guid UserId,
+        string? Reason);
+
+    private sealed record PurchaseOrderApprovalRequestTransitionCommand(
+        Guid CompanyId,
+        Guid UserId);
 }

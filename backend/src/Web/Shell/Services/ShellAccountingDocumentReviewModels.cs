@@ -277,6 +277,17 @@ public sealed record class ShellPurchaseOrderApprovalRequestSummary
     public string? Reason { get; init; }
 }
 
+public sealed record class ShellPurchaseOrderApprovalRequestCommandResultSummary
+{
+    public ShellPurchaseOrderApprovalRequestSummary? Request { get; init; }
+
+    public string TransitionCode { get; init; } = string.Empty;
+
+    public string OutcomeCode { get; init; } = string.Empty;
+
+    public string Message { get; init; } = string.Empty;
+}
+
 public sealed record class ShellAccountingDocumentLifecycleActionSummary
 {
     public string ActionCode { get; init; } = string.Empty;

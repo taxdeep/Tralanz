@@ -2081,3 +2081,46 @@ Still not included:
 Authority note:
 
 H.20.12 is visibility only. The Shell can explain PO approval queue state, but the API remains the authority gate and PO document state remains lifecycle truth.
+
+## Phase H.20.13 checkpoint
+
+H.20.13 adds a minimal Web Shell command bridge for purchase order approval request workflow.
+
+Boundary:
+
+- Shell command surface covers request, submit, and reject only.
+- No PO approve button.
+- No PO reverse approval button.
+- No issue, close, cancel, or amendment buttons.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No lifecycle legality changes.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Web Shell can call the accounting API approval-request command endpoints.
+- Purchase order detail can record an approval request for draft POs.
+- Purchase order detail can submit a recorded draft approval request into the queue.
+- The approval request queue can reject submitted pending requests.
+- Command results are shown with API outcome messages and the Shell refreshes the affected read model.
+
+Still not included:
+
+- PO approval / release lifecycle buttons in Shell
+- approval reversal lifecycle button in Shell
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.13 allows operators to manage approval-request intent from Shell without weakening the truth ladder. PO document state, approval authority, and lifecycle mutation remain backend-owned.

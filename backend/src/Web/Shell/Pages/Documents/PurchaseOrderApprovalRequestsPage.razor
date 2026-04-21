@@ -42,6 +42,18 @@
         </MudAlert>
     }
 
+    @if (_isCommandRunning)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Warning" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_commandMessage))
+    {
+        <MudAlert Severity="_commandSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_commandMessage
+        </MudAlert>
+    }
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
         <MudPaper Class="pa-4" Elevation="0">
             <MudText Typo="Typo.caption">Active Company</MudText>
@@ -100,7 +112,7 @@
                     <MudTh>Approval</MudTh>
                     <MudTh>Amount</MudTh>
                     <MudTh>Actors</MudTh>
-                    <MudTh></MudTh>
+                    <MudTh>Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd>
@@ -132,6 +144,13 @@
                         <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildPurchaseOrderHref(context.PurchaseOrderId)">
                             Open
                         </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   Disabled="@(_isCommandRunning || WritesBlocked || !CanReject(context))"
+                                   OnClick="@(() => RejectAsync(context))">
+                            Reject
+                        </MudButton>
                     </MudTd>
                 </RowTemplate>
             </MudTable>
@@ -142,8 +161,11 @@
 @code {
     private bool _isLoading;
     private bool _includeClosed;
+    private bool _isCommandRunning;
     private int _take = 50;
     private string? _errorText;
+    private string? _commandMessage;
+    private Severity _commandSeverity = Severity.Info;
     private IReadOnlyList<ShellPurchaseOrderApprovalRequestSummary> _requests = Array.Empty<ShellPurchaseOrderApprovalRequestSummary>();
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private int PendingCount => _requests.Count(static item => string.Equals(item.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase));
@@ -181,6 +203,58 @@
         _requests = result.Value ?? Array.Empty<ShellPurchaseOrderApprovalRequestSummary>();
         _errorText = result.ErrorMessage;
         _isLoading = false;
+    }
+
+    private async Task RejectAsync(ShellPurchaseOrderApprovalRequestSummary request)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isCommandRunning = true;
+        _commandMessage = null;
+        _commandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await ReviewClient.RejectPurchaseOrderApprovalRequestAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                request.PurchaseOrderId,
+                request.RequestId,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _commandSeverity = Severity.Warning;
+                _commandMessage = result.ErrorMessage ?? "The approval request reject command did not return a response.";
+            }
+            else
+            {
+                _commandSeverity = string.Equals(result.Value.OutcomeCode, "rejected", StringComparison.OrdinalIgnoreCase)
+                    ? Severity.Success
+                    : Severity.Warning;
+                _commandMessage = string.IsNullOrWhiteSpace(result.Value.Message)
+                    ? "Purchase order approval request rejected."
+                    : result.Value.Message;
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _commandSeverity = Severity.Error;
+            _commandMessage = ex.Message;
+        }
+        finally
+        {
+            _isCommandRunning = false;
+        }
     }
 
     private static string BuildPurchaseOrderHref(Guid purchaseOrderId) =>
@@ -221,6 +295,22 @@
             "cancelled" => Color.Default,
             _ => Color.Default
         };
+
+    private static bool CanReject(ShellPurchaseOrderApprovalRequestSummary request) =>
+        string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _commandSeverity = Severity.Warning;
+        _commandMessage = ShellState.WriteBlockMessage;
+        return true;
+    }
 
     private static string GetThresholdNote(ShellPurchaseOrderApprovalRequestSummary request) =>
         request.RequiresGovernanceApproval

@@ -62,6 +62,64 @@
             @_purchaseOrder.AnchorGovernance.Summary
         </MudAlert>
 
+        @if (_isPurchaseOrderApprovalCommandRunning)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Warning" Style="margin-bottom:1rem;" />
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_purchaseOrderApprovalCommandMessage))
+        {
+            <MudAlert Severity="_purchaseOrderApprovalCommandSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                @_purchaseOrderApprovalCommandMessage
+            </MudAlert>
+        }
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.h6" Class="mb-3">Approval Request Control</MudText>
+            <div style="display:grid;grid-template-columns:minmax(18rem,1fr) auto;gap:0.75rem;align-items:end;">
+                @if (CanRequestPurchaseOrderApproval())
+                {
+                    <MudTextField T="string"
+                                  Label="Reason"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  @bind-Value="_purchaseOrderApprovalReason"
+                                  Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)" />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.Approval"
+                               OnClick="RequestPurchaseOrderApprovalAsync"
+                               Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                        Request
+                    </MudButton>
+                }
+                else if (CanSubmitPurchaseOrderApprovalRequest())
+                {
+                    <MudText Typo="Typo.body2">
+                        @GetPurchaseOrderApprovalRequestSummary(_latestPurchaseOrderApprovalRequest)
+                    </MudText>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.Send"
+                               OnClick="SubmitPurchaseOrderApprovalRequestAsync"
+                               Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                        Submit
+                    </MudButton>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">
+                        @GetPurchaseOrderApprovalControlSummary()
+                    </MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Href="/documents/purchase-orders/approval-requests">
+                        Review Queue
+                    </MudButton>
+                }
+            </div>
+        </MudPaper>
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
             <MudPaper Class="pa-4" Elevation="0">
                 <MudText Typo="Typo.caption">Purchase Order</MudText>
@@ -957,9 +1015,13 @@
 
     private bool _isLoading;
     private bool _isReverseCommandRunning;
+    private bool _isPurchaseOrderApprovalCommandRunning;
     private string? _errorText;
     private string? _reverseCommandMessage;
     private Severity _reverseCommandSeverity = Severity.Info;
+    private string? _purchaseOrderApprovalCommandMessage;
+    private Severity _purchaseOrderApprovalCommandSeverity = Severity.Info;
+    private string? _purchaseOrderApprovalReason;
     private ShellAccountingDocumentReviewSummary? _document;
     private ShellPurchaseOrderReviewSummary? _purchaseOrder;
     private IReadOnlyList<ShellPurchaseOrderLifecycleAuditEntry> _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
@@ -986,6 +1048,8 @@
         {
             _reverseCommandMessage = null;
             _reverseCommandSeverity = Severity.Info;
+            _purchaseOrderApprovalCommandMessage = null;
+            _purchaseOrderApprovalCommandSeverity = Severity.Info;
         }
 
         _document = null;
@@ -1246,6 +1310,40 @@
             "Reverse request recorded.");
     }
 
+    private async Task RequestPurchaseOrderApprovalAsync()
+    {
+        if (_purchaseOrder is null || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderApprovalCommandAsync(
+            () => ReviewClient.RequestPurchaseOrderApprovalAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                _purchaseOrderApprovalReason,
+                CancellationToken.None),
+            "Purchase order approval request recorded.");
+    }
+
+    private async Task SubmitPurchaseOrderApprovalRequestAsync()
+    {
+        if (_purchaseOrder is null || _latestPurchaseOrderApprovalRequest is null || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderApprovalCommandAsync(
+            () => ReviewClient.SubmitPurchaseOrderApprovalRequestAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                _latestPurchaseOrderApprovalRequest.RequestId,
+                CancellationToken.None),
+            "Purchase order approval request submitted.");
+    }
+
     private async Task SubmitReverseRequestAsync()
     {
         if (_document is null || _latestReverseRequest is null || TryBlockWrites())
@@ -1357,6 +1455,52 @@
         }
     }
 
+    private async Task RunPurchaseOrderApprovalCommandAsync(
+        Func<Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>>> command,
+        string fallbackSuccessMessage)
+    {
+        _isPurchaseOrderApprovalCommandRunning = true;
+        _purchaseOrderApprovalCommandMessage = null;
+        _purchaseOrderApprovalCommandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await command();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _purchaseOrderApprovalCommandSeverity = Severity.Warning;
+                _purchaseOrderApprovalCommandMessage = result.ErrorMessage ?? "The purchase order approval command did not return a response.";
+            }
+            else
+            {
+                _purchaseOrderApprovalCommandSeverity = IsPurchaseOrderApprovalCommandSuccess(result.Value)
+                    ? Severity.Success
+                    : Severity.Warning;
+                _purchaseOrderApprovalCommandMessage = string.IsNullOrWhiteSpace(result.Value.Message)
+                    ? fallbackSuccessMessage
+                    : result.Value.Message;
+                _latestPurchaseOrderApprovalRequest = result.Value.Request;
+                _purchaseOrderApprovalReason = null;
+            }
+
+            await LoadPurchaseOrderStateAsync();
+        }
+        catch (Exception ex)
+        {
+            _purchaseOrderApprovalCommandSeverity = Severity.Error;
+            _purchaseOrderApprovalCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isPurchaseOrderApprovalCommandRunning = false;
+        }
+    }
+
     private async Task<bool> EnsureWriteGateStateAsync()
     {
         await ShellState.EnsureHydratedAsync();
@@ -1391,6 +1535,18 @@
 
         _reverseCommandSeverity = Severity.Warning;
         _reverseCommandMessage = ShellState.WriteBlockMessage;
+        return true;
+    }
+
+    private bool TryBlockPurchaseOrderApprovalWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _purchaseOrderApprovalCommandSeverity = Severity.Warning;
+        _purchaseOrderApprovalCommandMessage = ShellState.WriteBlockMessage;
         return true;
     }
 
@@ -1503,6 +1659,49 @@
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? "no reason recorded" : request.Reason;
         return $"{amount}; {threshold}; {reason}.";
     }
+
+    private bool CanRequestPurchaseOrderApproval() =>
+        _purchaseOrder is not null &&
+        string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) &&
+        (_latestPurchaseOrderApprovalRequest is null ||
+         !string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase));
+
+    private bool CanSubmitPurchaseOrderApprovalRequest() =>
+        _purchaseOrder is not null &&
+        _latestPurchaseOrderApprovalRequest is not null &&
+        string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "draft", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private string GetPurchaseOrderApprovalControlSummary()
+    {
+        if (_purchaseOrder is null)
+        {
+            return "Purchase order approval state is unavailable.";
+        }
+
+        if (!string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Approval requests are only started from draft POs. Current status is {FormatPurchaseOrderQuantityStatus(_purchaseOrder.Status)}.";
+        }
+
+        if (_latestPurchaseOrderApprovalRequest is not null &&
+            string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The latest approval request is already submitted and waiting in the approval queue.";
+        }
+
+        return "Review the latest approval request before taking another PO approval action.";
+    }
+
+    private static bool IsPurchaseOrderApprovalCommandSuccess(ShellPurchaseOrderApprovalRequestCommandResultSummary result) =>
+        result.OutcomeCode.Trim().ToLowerInvariant() is
+            "requested" or
+            "already_requested" or
+            "submitted" or
+            "already_submitted" or
+            "rejected";
 
     private static bool IsSettlementDocument(ShellAccountingDocumentReviewSummary? document) =>
         document?.SourceType is "receive_payment" or "credit_application" or "pay_bill" or "vendor_credit_application";
