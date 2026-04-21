@@ -232,10 +232,22 @@ public sealed class WebShellBusinessSessionClient(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
-        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(error?.Error))
+        try
         {
-            return error.Error;
+            var error = await response.Content.ReadFromJsonAsync<ErrorResponse>(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(error?.Error))
+            {
+                return error.Error;
+            }
+        }
+        catch (Exception)
+        {
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            var plainTextSummary = SummarizePlainTextError(text);
+            if (!string.IsNullOrWhiteSpace(plainTextSummary))
+            {
+                return $"Business session request returned HTTP {(int)response.StatusCode}: {plainTextSummary}";
+            }
         }
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
@@ -244,6 +256,26 @@ public sealed class WebShellBusinessSessionClient(
         }
 
         return $"Business session request returned HTTP {(int)response.StatusCode}.";
+    }
+
+    private static string SummarizePlainTextError(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var summary = text
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line));
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return string.Empty;
+        }
+
+        return summary.Length <= 180
+            ? summary
+            : summary[..180] + "...";
     }
 
     private sealed record ErrorResponse(string Error);

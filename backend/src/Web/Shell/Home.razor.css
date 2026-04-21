@@ -229,7 +229,7 @@
     margin-top: 0.85rem;
 }
 
-.ws-home__module-links ::deep(.mud-button-root) {
+.ws-home__module-links ::deep .mud-button-root {
     justify-content: flex-start;
     min-height: 2.35rem;
     text-align: left;

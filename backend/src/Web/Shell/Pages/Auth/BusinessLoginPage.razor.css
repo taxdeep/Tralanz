@@ -25,7 +25,6 @@
 
 .ws-login__bar-meta {
     color: #97a8b7;
-    letter-spacing: 0.08em;
     text-transform: uppercase;
 }
 
@@ -69,7 +68,6 @@
     color: #10202a;
     font-size: 2.5rem;
     font-weight: 800;
-    letter-spacing: -0.08em;
 }
 
 .ws-login__title {
@@ -87,20 +85,35 @@
     margin-top: 0.45rem;
     min-height: 44px;
     font-weight: 700;
-    letter-spacing: 0.03em;
 }
 
 .ws-login__switcher {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 0.45rem;
     padding: 1rem;
     background: rgba(0, 0, 0, 0.18);
     border-top: 1px solid rgba(151, 168, 183, 0.12);
+    text-align: center;
 }
 
 .ws-login__switch-link {
     color: #7ab6d9;
     font-size: 0.82rem;
+}
+
+@media (max-width: 520px) {
+    .ws-login {
+        width: min(100%, calc(100vw - 1.5rem));
+    }
+
+    .ws-login__body {
+        padding: 1.45rem 1rem 1.2rem;
+    }
+
+    .ws-login__switcher {
+        display: grid;
+    }
 }

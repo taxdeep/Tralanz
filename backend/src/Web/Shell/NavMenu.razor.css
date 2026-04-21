@@ -32,7 +32,7 @@
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.ws-nav__link ::deep(.mud-icon-root) {
+.ws-nav__link ::deep .mud-icon-root {
     flex: 0 0 auto;
     color: #7ab6d9;
 }
@@ -51,7 +51,7 @@
     color: #f4f8fb;
 }
 
-.ws-nav__link.active ::deep(.mud-icon-root) {
+.ws-nav__link.active ::deep .mud-icon-root {
     color: #6fcf97;
 }
 
