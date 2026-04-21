@@ -9,6 +9,7 @@
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellCounterpartyOnboardingClient CounterpartyClient
 @inject ShellInventoryReceiptClient InventoryReceipt
+@inject ShellAccountingDocumentReviewClient ReviewClient
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 
@@ -404,6 +405,16 @@
 
         <MudPaper Elevation="0" Class="pa-5">
             <MudText Typo="Typo.h6" Class="mb-3">Recent purchase receipts</MudText>
+            @if (_isReceiptVarianceRefreshing)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Warning" Style="margin-bottom:1rem;" />
+            }
+            @if (!string.IsNullOrWhiteSpace(_receiptVarianceCommandMessage))
+            {
+                <MudAlert Severity="_receiptVarianceCommandSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @_receiptVarianceCommandMessage
+                </MudAlert>
+            }
             @if (_dashboard.RecentReceipts.Count == 0)
             {
                 <MudText Typo="Typo.body2" Class="text-secondary">No inventory purchase receipts have been posted yet.</MudText>
@@ -419,6 +430,7 @@
                         <MudTh>Qty</MudTh>
                         <MudTh>Cost (Base)</MudTh>
                         <MudTh>Status</MudTh>
+                        <MudTh>PPV Control</MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd>@context.DocumentNumber</MudTd>
@@ -428,6 +440,24 @@
                         <MudTd>@context.TotalQuantity</MudTd>
                         <MudTd>@context.TotalCostBase</MudTd>
                         <MudTd>@context.Status</MudTd>
+                        <MudTd>
+                            <MudStack Spacing="1">
+                                <MudChip T="string"
+                                         Color="@GetReceiptPurchaseVarianceColor(context.Id)"
+                                         Variant="Variant.Outlined"
+                                         Size="Size.Small">
+                                    @GetReceiptPurchaseVarianceTitle(context.Id)
+                                </MudChip>
+                                <MudText Typo="Typo.caption">@GetReceiptPurchaseVarianceDetail(context.Id)</MudText>
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@(_isReceiptVarianceRefreshing || WritesBlocked)"
+                                           OnClick="@(() => RefreshReceiptPurchaseVarianceAsync(context))">
+                                    Refresh PPV
+                                </MudButton>
+                            </MudStack>
+                        </MudTd>
                     </RowTemplate>
                 </MudTable>
             }
@@ -465,6 +495,9 @@
     private ShellCounterpartyOnboardingSummary? _counterpartySummary;
     private string? _error;
     private bool _isSaving;
+    private bool _isReceiptVarianceRefreshing;
+    private string? _receiptVarianceCommandMessage;
+    private Severity _receiptVarianceCommandSeverity = Severity.Info;
     private Guid? _selectedVendorId;
     private DateTime? _postingDate = DateTime.Today;
     private string _transactionCurrencyCode = string.Empty;
@@ -478,6 +511,8 @@
     private int _loadedBillHandoffLineCount;
     private InventoryBillReceiptHandoffSummary? _billReceiptHandoffSummary;
     private InventoryPurchaseReceiptSummary? _lastPostedReceipt;
+    private IReadOnlyDictionary<Guid, ShellReceiptGrIrApSettlementSummary> _receiptSettlementSummaries =
+        new Dictionary<Guid, ShellReceiptGrIrApSettlementSummary>();
 
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool IsBillHandoff => BillId.HasValue;
@@ -881,6 +916,56 @@
         _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
     }
 
+    private async Task RefreshReceiptPurchaseVarianceAsync(InventoryPurchaseReceiptSummary receipt)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isReceiptVarianceRefreshing = true;
+        _receiptVarianceCommandMessage = null;
+        _receiptVarianceCommandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await ReviewClient.RefreshReceiptPurchaseVarianceAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                receipt.Id,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _receiptVarianceCommandSeverity = Severity.Warning;
+                _receiptVarianceCommandMessage = result.ErrorMessage ?? "Receipt PPV control refresh did not return a response.";
+                return;
+            }
+
+            var summaries = _receiptSettlementSummaries.ToDictionary(static item => item.Key, static item => item.Value);
+            summaries[receipt.Id] = result.Value;
+            _receiptSettlementSummaries = summaries;
+
+            _receiptVarianceCommandSeverity = GetReceiptPurchaseVarianceSeverity(result.Value.PurchaseVarianceStatus);
+            _receiptVarianceCommandMessage =
+                $"{receipt.DocumentNumber} PPV control refreshed: {BuildReceiptPurchaseVarianceSummary(result.Value)}";
+        }
+        catch (Exception ex)
+        {
+            _receiptVarianceCommandSeverity = Severity.Error;
+            _receiptVarianceCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptVarianceRefreshing = false;
+        }
+    }
+
     private void ResetForm(bool preserveBillContext = false)
     {
         _postingDate = DateTime.Today;
@@ -970,6 +1055,68 @@
 
         return ("Would over-receipt", "Posting the current receipt would push total receipted quantity above the bill hand-off quantity and should be reviewed carefully.");
     }
+
+    private string GetReceiptPurchaseVarianceTitle(Guid receiptDocumentId) =>
+        _receiptSettlementSummaries.TryGetValue(receiptDocumentId, out var summary)
+            ? FormatReceiptPurchaseVarianceStatus(summary.PurchaseVarianceStatus)
+            : "PPV not refreshed";
+
+    private string GetReceiptPurchaseVarianceDetail(Guid receiptDocumentId) =>
+        _receiptSettlementSummaries.TryGetValue(receiptDocumentId, out var summary)
+            ? BuildReceiptPurchaseVarianceSummary(summary)
+            : "Refresh to surface GR/IR/AP variance control for this receipt.";
+
+    private Color GetReceiptPurchaseVarianceColor(Guid receiptDocumentId) =>
+        _receiptSettlementSummaries.TryGetValue(receiptDocumentId, out var summary)
+            ? GetReceiptPurchaseVarianceSeverity(summary.PurchaseVarianceStatus) switch
+            {
+                Severity.Success => Color.Success,
+                Severity.Warning => Color.Warning,
+                Severity.Error => Color.Error,
+                _ => Color.Info
+            }
+            : Color.Default;
+
+    private static Severity GetReceiptPurchaseVarianceSeverity(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "candidate_not_reviewed" => Severity.Warning,
+            "blocked" => Severity.Error,
+            "blocked_settlement_not_posted" => Severity.Error,
+            "blocked_journal_not_posted" => Severity.Error,
+            "blocked_open_item_not_cleared" => Severity.Error,
+            "blocked_bill_not_posted" => Severity.Error,
+            "blocked_quantity_basis_missing" => Severity.Error,
+            "variance_inconsistent" => Severity.Error,
+            "no_variance" => Severity.Success,
+            _ => Severity.Info
+        };
+
+    private static string FormatReceiptPurchaseVarianceStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "not_applicable" => "Not Applicable",
+            "no_variance" => "No Variance",
+            "candidate_not_reviewed" => "Candidate Not Reviewed",
+            "blocked" => "Blocked",
+            "blocked_settlement_not_posted" => "Settlement Not Posted",
+            "blocked_journal_not_posted" => "Journal Not Posted",
+            "blocked_open_item_not_cleared" => "AP Open Item Not Cleared",
+            "blocked_bill_not_posted" => "Bill Not Posted",
+            "blocked_quantity_basis_missing" => "Quantity Basis Missing",
+            "variance_inconsistent" => "Variance Inconsistent",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static string BuildReceiptPurchaseVarianceSummary(ShellReceiptGrIrApSettlementSummary summary) =>
+        summary.PurchaseVarianceStatus.Trim().ToLowerInvariant() switch
+        {
+            "candidate_not_reviewed" => $"{summary.PurchaseVarianceCandidateLineCount} candidate line(s) totaling {summary.PurchaseVarianceAmountBase:N2} base are ready for PPV review.",
+            "blocked" => $"{summary.PurchaseVarianceBlockedLineCount} PPV line(s) are blocked by settlement, journal, AP clearing, bill posting, or quantity-basis prerequisites.",
+            "no_variance" => $"{summary.PurchaseVarianceNoVarianceLineCount} settled line(s) currently show no purchase variance.",
+            "not_applicable" => "No downstream purchase variance control lines are attached to this receipt yet.",
+            _ => $"{summary.PurchaseVarianceLineCount} PPV control line(s), status {FormatReceiptPurchaseVarianceStatus(summary.PurchaseVarianceStatus)}."
+        };
 
     private bool TryBlockWrites()
     {

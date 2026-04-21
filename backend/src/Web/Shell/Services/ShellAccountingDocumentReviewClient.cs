@@ -218,6 +218,18 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> RefreshReceiptPurchaseVarianceAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptGrIrSettlementCommandAsync(
+            $"accounting/receipts/{receiptDocumentId:D}/grir-settlement/purchase-variance/refresh",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "refresh receipt purchase variance control",
+            receiptDocumentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,
@@ -542,6 +554,41 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         }
     }
 
+    private async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> PostReceiptGrIrSettlementCommandAsync<TRequest>(
+        string requestUri,
+        TRequest request,
+        string operationLabel,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrApSettlementSummary>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>.Failure(
+                    $"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to {OperationLabel} for receipt {ReceiptDocumentId}.", operationLabel, receiptDocumentId);
+            return WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
+        }
+    }
+
     private async Task<WebShellAuthenticatedApiResult<T>> GetOptionalAsync<T>(
         string requestUri,
         string operationLabel,
@@ -752,4 +799,8 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         string DiscrepancyType,
         string InvestigationStatus,
         string? ReviewNote);
+
+    private sealed record ReceiptGrIrSettlementRefreshCommand(
+        Guid CompanyId,
+        Guid UserId);
 }

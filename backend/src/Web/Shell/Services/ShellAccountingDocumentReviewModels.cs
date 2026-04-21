@@ -302,6 +302,89 @@ public sealed record class ShellPurchaseOrderPurchaseVarianceSummary
     public DateTimeOffset? LastRefreshedAt { get; init; }
 }
 
+public sealed record class ShellReceiptGrIrApSettlementSummary
+{
+    public string SettlementStatus { get; init; } = string.Empty;
+
+    public int SettlementLineCount { get; init; }
+
+    public int EligibleLineCount { get; init; }
+
+    public int BlockedLineCount { get; init; }
+
+    public int BlockedGrIrNotPostedLineCount { get; init; }
+
+    public int BlockedBillNotPostedLineCount { get; init; }
+
+    public int BlockedMissingApOpenItemLineCount { get; init; }
+
+    public int BlockedJournalNotPostedLineCount { get; init; }
+
+    public int BlockedAmountExceededLineCount { get; init; }
+
+    public int PartiallySettledLineCount { get; init; }
+
+    public int SettledLineCount { get; init; }
+
+    public decimal SettlementAmountBase { get; init; }
+
+    public decimal EligibleAmountBase { get; init; }
+
+    public decimal SettledAmountBase { get; init; }
+
+    public decimal RemainingAmountBase { get; init; }
+
+    public int SettlementBatchCount { get; init; }
+
+    public int JournalNotPostedBatchCount { get; init; }
+
+    public int JournalPostedBatchCount { get; init; }
+
+    public int JournalStaleBatchCount { get; init; }
+
+    public int JournalInconsistentBatchCount { get; init; }
+
+    public string JournalReconciliationStatus { get; init; } = string.Empty;
+
+    public DateTimeOffset? LastJournalRefreshedAt { get; init; }
+
+    public int OpenItemNotClearedBatchCount { get; init; }
+
+    public int OpenItemClearedBatchCount { get; init; }
+
+    public int OpenItemReversedBatchCount { get; init; }
+
+    public int OpenItemBlockedBatchCount { get; init; }
+
+    public int OpenItemStaleBatchCount { get; init; }
+
+    public int OpenItemInconsistentBatchCount { get; init; }
+
+    public string OpenItemClearingStatus { get; init; } = string.Empty;
+
+    public DateTimeOffset? LastOpenItemClearedAt { get; init; }
+
+    public DateTimeOffset? LastOpenItemReversedAt { get; init; }
+
+    public int PurchaseVarianceLineCount { get; init; }
+
+    public int PurchaseVarianceCandidateLineCount { get; init; }
+
+    public int PurchaseVarianceNoVarianceLineCount { get; init; }
+
+    public int PurchaseVarianceBlockedLineCount { get; init; }
+
+    public string PurchaseVarianceStatus { get; init; } = string.Empty;
+
+    public decimal PurchaseVarianceAmountBase { get; init; }
+
+    public DateTimeOffset? LastPurchaseVarianceRefreshedAt { get; init; }
+
+    public DateTimeOffset? LastRefreshedAt { get; init; }
+
+    public DateTimeOffset? LastSettledAt { get; init; }
+}
+
 public sealed record class ShellPurchaseOrderLifecycleAuditEntry
 {
     public Guid AuditId { get; init; }
