@@ -420,6 +420,40 @@ public sealed record class ShellReceiptGrIrApSettlementSummary
     public DateTimeOffset? LastSettledAt { get; init; }
 }
 
+public sealed record class ShellPostReceiptGrIrCommandResult
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public Guid PostingBatchId { get; init; }
+
+    public Guid JournalEntryId { get; init; }
+
+    public string JournalEntryDisplayNumber { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public DateTimeOffset PostedAt { get; init; }
+}
+
+public sealed record class ShellReceiptGrIrApSettlementExecutionResult
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public Guid SettlementBatchId { get; init; }
+
+    public string IdempotencyKey { get; init; } = string.Empty;
+
+    public decimal RequestedAmountBase { get; init; }
+
+    public decimal SettledQuantity { get; init; }
+
+    public decimal SettledAmountBase { get; init; }
+
+    public int SettlementLineCount { get; init; }
+
+    public ShellReceiptGrIrApSettlementSummary Summary { get; init; } = new();
+}
+
 public sealed record class ShellPurchaseOrderLifecycleAuditEntry
 {
     public Guid AuditId { get; init; }

@@ -473,12 +473,26 @@
                                                OnClick="@(() => RefreshReceiptGrIrBridgeAsync(context))">
                                         Refresh Bridge
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Info"
+                                               Size="Size.Small"
+                                               Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
+                                               OnClick="@(() => PostReceiptGrIrBridgeAsync(context))">
+                                        Post Bridge
+                                    </MudButton>
                                     <MudButton Variant="Variant.Outlined"
                                                Color="Color.Primary"
                                                Size="Size.Small"
                                                Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
                                                OnClick="@(() => RefreshReceiptGrIrSettlementAsync(context))">
                                         Refresh Settlement
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               Disabled="@(_isReceiptControlCommandRunning || WritesBlocked)"
+                                               OnClick="@(() => ExecuteReceiptGrIrSettlementAsync(context))">
+                                        Execute Settlement
                                     </MudButton>
                                     <MudButton Variant="Variant.Outlined"
                                                Color="Color.Secondary"
@@ -1005,6 +1019,52 @@
         }
     }
 
+    private async Task PostReceiptGrIrBridgeAsync(InventoryPurchaseReceiptSummary receipt)
+    {
+        if (TryBlockReceiptControlWrites())
+        {
+            return;
+        }
+
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var result = await ReviewClient.PostReceiptGrIrBridgeAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                receipt.Id,
+                cancellationToken: CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _receiptControlCommandSeverity = Severity.Warning;
+                _receiptControlCommandMessage = result.ErrorMessage ?? "Receipt GR/IR bridge post did not return a response.";
+                return;
+            }
+
+            await RefreshReceiptGrIrBridgeSummaryAfterCommandAsync(receipt.Id);
+
+            _receiptControlCommandSeverity = Severity.Success;
+            _receiptControlCommandMessage =
+                $"{receipt.DocumentNumber} GR/IR bridge posted as {result.Value.JournalEntryDisplayNumber}.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
+    }
+
     private async Task RefreshReceiptGrIrSettlementAsync(InventoryPurchaseReceiptSummary receipt)
     {
         await RefreshReceiptSettlementControlAsync(
@@ -1017,6 +1077,54 @@
             "GR/IR settlement",
             static summary => GetReceiptGrIrSettlementSeverity(summary.SettlementStatus),
             static summary => BuildReceiptGrIrSettlementSummary(summary));
+    }
+
+    private async Task ExecuteReceiptGrIrSettlementAsync(InventoryPurchaseReceiptSummary receipt)
+    {
+        if (TryBlockReceiptControlWrites())
+        {
+            return;
+        }
+
+        BeginReceiptControlCommand();
+
+        try
+        {
+            var result = await ReviewClient.ExecuteReceiptGrIrSettlementAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                receipt.Id,
+                cancellationToken: CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _receiptControlCommandSeverity = Severity.Warning;
+                _receiptControlCommandMessage = result.ErrorMessage ?? "Receipt GR/IR settlement execution did not return a response.";
+                return;
+            }
+
+            var summaries = _receiptSettlementSummaries.ToDictionary(static item => item.Key, static item => item.Value);
+            summaries[receipt.Id] = result.Value.Summary;
+            _receiptSettlementSummaries = summaries;
+
+            _receiptControlCommandSeverity = GetReceiptGrIrSettlementSeverity(result.Value.Summary.SettlementStatus);
+            _receiptControlCommandMessage =
+                $"{receipt.DocumentNumber} GR/IR settlement executed: {result.Value.SettlementLineCount} line(s), {result.Value.SettledAmountBase:N2} base settled.";
+        }
+        catch (Exception ex)
+        {
+            _receiptControlCommandSeverity = Severity.Error;
+            _receiptControlCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isReceiptControlCommandRunning = false;
+        }
     }
 
     private async Task RefreshReceiptGrIrJournalReconciliationAsync(InventoryPurchaseReceiptSummary receipt)
@@ -1093,6 +1201,24 @@
         {
             _isReceiptControlCommandRunning = false;
         }
+    }
+
+    private async Task RefreshReceiptGrIrBridgeSummaryAfterCommandAsync(Guid receiptDocumentId)
+    {
+        var refreshResult = await ReviewClient.RefreshReceiptGrIrBridgeAsync(
+            ShellState.ActiveCompany.Id,
+            ShellState.CurrentUserId,
+            receiptDocumentId,
+            CancellationToken.None);
+
+        if (refreshResult.Value is null)
+        {
+            return;
+        }
+
+        var summaries = _receiptBridgeSummaries.ToDictionary(static item => item.Key, static item => item.Value);
+        summaries[receiptDocumentId] = refreshResult.Value;
+        _receiptBridgeSummaries = summaries;
     }
 
     private void BeginReceiptControlCommand()
