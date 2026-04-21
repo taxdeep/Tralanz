@@ -844,6 +844,7 @@ public sealed record ReceiptDocumentLine
 public static class PurchaseOrderDocumentStatuses
 {
     public const string Draft = "draft";
+    public const string Approved = "approved";
     public const string Issued = "issued";
     public const string Closed = "closed";
     public const string Cancelled = "cancelled";
@@ -857,18 +858,22 @@ public static class PurchaseOrderDocumentStatuses
         return normalized switch
         {
             Draft => Draft,
+            Approved => Approved,
             Issued => Issued,
             Closed => Closed,
             Cancelled => Cancelled,
-            _ => throw new InvalidOperationException("Purchase orders only support draft, issued, closed, or cancelled status in the current phase.")
+            _ => throw new InvalidOperationException("Purchase orders only support draft, approved, issued, closed, or cancelled status in the current phase.")
         };
     }
 
     public static bool CanEdit(string status) =>
         string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
 
-    public static bool CanIssue(string status) =>
+    public static bool CanApprove(string status) =>
         string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+
+    public static bool CanIssue(string status) =>
+        string.Equals(Normalize(status), Approved, StringComparison.Ordinal);
 
     public static bool CanClose(string status) =>
         string.Equals(Normalize(status), Issued, StringComparison.Ordinal);
@@ -876,7 +881,7 @@ public static class PurchaseOrderDocumentStatuses
     public static bool CanCancel(string status)
     {
         var normalized = Normalize(status);
-        return normalized is Draft or Issued;
+        return normalized is Draft or Approved or Issued;
     }
 }
 
@@ -950,6 +955,7 @@ public sealed class PurchaseOrderDocument
         DateOnly? expectedDate = null,
         string? vendorReference = null,
         string? memo = null,
+        DateTimeOffset? approvedAt = null,
         DateTimeOffset? issuedAt = null,
         DateTimeOffset? closedAt = null,
         DateTimeOffset? cancelledAt = null)
@@ -969,6 +975,7 @@ public sealed class PurchaseOrderDocument
         ExpectedDate = expectedDate;
         VendorReference = string.IsNullOrWhiteSpace(vendorReference) ? null : vendorReference.Trim();
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        ApprovedAt = approvedAt;
         IssuedAt = issuedAt;
         ClosedAt = closedAt;
         CancelledAt = cancelledAt;
@@ -1003,6 +1010,8 @@ public sealed class PurchaseOrderDocument
     public string? VendorReference { get; }
 
     public string? Memo { get; }
+
+    public DateTimeOffset? ApprovedAt { get; }
 
     public DateTimeOffset? IssuedAt { get; }
 

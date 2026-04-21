@@ -1354,3 +1354,47 @@ Still out of scope until explicitly restarted:
 - tracked receipt
 - Shell-wide PO workbench
 - any redesign of Receipt-first / Bill truth ownership
+
+## Phase H.20.4 checkpoint
+
+H.20.4 adds the minimum PO approval / release boundary.
+
+Boundary:
+
+- This is lifecycle authority only.
+- It does not introduce role-backed approval permissions yet.
+- It does not introduce reopen or amendment workflows.
+- It does not let approved POs act as Receipt / Bill anchor truth.
+- It does not introduce PO-driven receiving, PO-driven billing, PPV posting, tracked receipt, or a Shell-wide PO workbench.
+
+What changed:
+
+- PO documents now support an `approved` lifecycle status between `draft` and `issued`.
+- Approval metadata is persisted:
+  - approved by user
+  - approved at timestamp
+- Backend repository methods now separate approval from release:
+  - `ApproveAsync`
+  - `IssueAsync`
+- A guarded approval endpoint exists:
+  - `POST /purchase-orders/{id}/approve`
+- Draft POs can no longer be issued directly.
+- Only approved POs can be issued.
+- Approved POs can be cancelled while untouched, but cannot be closed.
+- Receipt / Bill anchor governance still only allows issued POs.
+
+Still deferred:
+
+- role / permission-backed PO approval authority
+- approval thresholds
+- approval reversal
+- reopen / amendment policy
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.4 separates approval intent from release truth. Approval records that a draft PO is authorized for release, but it still cannot create Receipt or Bill anchor truth until the PO is explicitly issued.

@@ -4200,6 +4200,26 @@ accounting.MapPut(
     });
 
 accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approve",
+    async (Guid documentId, ApprovePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.ApproveAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
     "/purchase-orders/{documentId:guid}/issue",
     async (Guid documentId, IssuePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {

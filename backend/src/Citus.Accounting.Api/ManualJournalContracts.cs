@@ -340,6 +340,10 @@ public sealed record PurchaseOrderLookupQuery(Guid CompanyId);
 
 public sealed record PurchaseOrderListQuery(Guid CompanyId, int? Take);
 
+public sealed record ApprovePurchaseOrderHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
 public sealed record IssuePurchaseOrderHttpRequest(
     Guid CompanyId,
     Guid UserId);

@@ -52,6 +52,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                         new PurchaseOrderDraftLineSaveModel(2, itemBId, 5m, "EA", "Item B", 20m)
                     ]),
                 CancellationToken.None);
+            _ = await repository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
             _ = await repository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
 
             var orderedOnly = await repository.GetThreeQuantitySummaryAsync(new(companyId), saved.DocumentId, CancellationToken.None);
@@ -233,6 +234,9 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None));
 
+            await Assert.ThrowsAsync<InvalidOperationException>(() => poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None));
+            _ = await poRepository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None));
             _ = await poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
             var receipt = await receiptRepository.SaveDraftAsync(draftAnchor, CancellationToken.None);
             _ = await receiptRepository.PostAsync(new(companyId), new(userId), receipt.DocumentId, CancellationToken.None);
@@ -284,6 +288,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
                 CancellationToken.None);
+            _ = await poRepository.ApproveAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
             _ = await poRepository.IssueAsync(new(companyId), new(userId), saved.DocumentId, CancellationToken.None);
 
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 1, itemId, 4m, "posted");
@@ -337,6 +342,24 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var cancelledDraft = await repository.CancelAsync(new(companyId), new(userId), cancellableDraft.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledDraft.Status);
 
+            var cancellableApproved = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 20),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
+                CancellationToken.None);
+            var approved = await repository.ApproveAsync(new(companyId), new(userId), cancellableApproved.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Approved, approved.Status);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CloseAsync(new(companyId), new(userId), cancellableApproved.DocumentId, CancellationToken.None));
+            var cancelledApproved = await repository.CancelAsync(new(companyId), new(userId), cancellableApproved.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledApproved.Status);
+
             var untouchedIssued = await repository.SaveDraftAsync(
                 new PurchaseOrderDraftSaveModel(
                     null,
@@ -349,6 +372,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
                 CancellationToken.None);
+            _ = await repository.ApproveAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
             _ = await repository.IssueAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
             var cancelledIssued = await repository.CancelAsync(new(companyId), new(userId), untouchedIssued.DocumentId, CancellationToken.None);
             Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, cancelledIssued.Status);
@@ -365,6 +389,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
                 CancellationToken.None);
+            _ = await repository.ApproveAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None);
             _ = await repository.IssueAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None);
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, partiallyReceived.DocumentId, 1, itemId, 4m, "posted");
             await Assert.ThrowsAsync<InvalidOperationException>(() => repository.CancelAsync(new(companyId), new(userId), partiallyReceived.DocumentId, CancellationToken.None));
@@ -382,6 +407,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     null,
                     [new PurchaseOrderDraftLineSaveModel(1, itemId, 10m, "EA")]),
                 CancellationToken.None);
+            _ = await repository.ApproveAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
             _ = await repository.IssueAsync(new(companyId), new(userId), fullyAligned.DocumentId, CancellationToken.None);
             await SeedReceiptAnchorAsync(schemaConnectionString, companyId, fullyAligned.DocumentId, 1, itemId, 10m, "posted");
             _ = await SeedBillAnchorAsync(schemaConnectionString, companyId, fullyAligned.DocumentId, 1, itemId, 10m, "posted", vendorId);

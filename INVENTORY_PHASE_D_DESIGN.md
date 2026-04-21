@@ -1704,3 +1704,48 @@ Still not included:
 Authority note:
 
 H.20.3 keeps PO as ordered truth. Close / cancel now has backend authority, but neither action is allowed to rewrite Receipt physical truth, Bill AP truth, or existing Bill/Receipt matching truth.
+
+## Phase H.20.4 checkpoint
+
+H.20.4 introduces the smallest PO approval / release boundary.
+
+Boundary:
+
+- Approval is lifecycle authority, not Receipt or Bill truth.
+- Approved POs are not valid Receipt / Bill anchors.
+- No approval permission model or threshold workflow is introduced yet.
+- No reopen / amendment workflow.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+- No Shell-wide PO workbench.
+
+What changed:
+
+- PO status now includes:
+  - `draft`
+  - `approved`
+  - `issued`
+  - `closed`
+  - `cancelled`
+- Draft POs must be approved before they can be issued.
+- Approval records:
+  - approved by user
+  - approved at timestamp
+- Approved POs may still be cancelled while untouched.
+- Close remains limited to issued, fully aligned POs.
+- Receipt and Bill PO-anchor governance remains issued-only.
+
+Still not included:
+
+- role / permission-backed PO approver checks
+- approval limits
+- approval reversal
+- PO amendment / reopen policy
+- override-authorized overage consumption
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.4 keeps the truth ladder strict: draft owns editable intent, approved owns release authorization, issued owns operational anchor truth, and Receipt / Bill still own received / billed truth.

@@ -48,6 +48,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               expected_date,
               vendor_reference,
               memo,
+              approved_at,
               issued_at,
               closed_at,
               cancelled_at
@@ -68,6 +69,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         DateOnly? expectedDate;
         string? vendorReference;
         string? memo;
+        DateTimeOffset? approvedAt;
         DateTimeOffset? issuedAt;
         DateTimeOffset? closedAt;
         DateTimeOffset? cancelledAt;
@@ -94,6 +96,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             memo = reader.IsDBNull(reader.GetOrdinal("memo"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("memo"));
+            approvedAt = reader.IsDBNull(reader.GetOrdinal("approved_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("approved_at"));
             issuedAt = reader.IsDBNull(reader.GetOrdinal("issued_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("issued_at"));
@@ -118,6 +123,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             expectedDate,
             vendorReference,
             memo,
+            approvedAt,
             issuedAt,
             closedAt,
             cancelledAt);
@@ -151,6 +157,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               po.memo,
               po.created_at,
               po.updated_at,
+              po.approved_at,
               po.issued_at,
               po.closed_at,
               po.cancelled_at,
@@ -186,6 +193,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 reader.IsDBNull(reader.GetOrdinal("memo")) ? null : reader.GetString(reader.GetOrdinal("memo")),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
+                reader.IsDBNull(reader.GetOrdinal("approved_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("approved_at")),
                 reader.IsDBNull(reader.GetOrdinal("issued_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("issued_at")),
                 reader.IsDBNull(reader.GetOrdinal("closed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("closed_at")),
                 reader.IsDBNull(reader.GetOrdinal("cancelled_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at"))));
@@ -387,6 +395,58 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Draft);
     }
 
+    public async Task<SourceDocumentDraftSaveResult> ApproveAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureSchemaAsync(connection, transaction, cancellationToken);
+        var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (!PurchaseOrderDocumentStatuses.CanApprove(currentStatus))
+        {
+            throw new InvalidOperationException("Only draft purchase orders can be approved.");
+        }
+
+        await using var approveCommand = connection.CreateCommand();
+        approveCommand.Transaction = transaction;
+        approveCommand.CommandText =
+            $"""
+            update {PurchaseOrdersTableName}
+            set status = @approved_status,
+                approved_by_user_id = @approved_by_user_id,
+                approved_at = now(),
+                updated_by_user_id = @updated_by_user_id,
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status = @draft_status;
+            """;
+        approveCommand.Parameters.AddWithValue("document_id", documentId);
+        approveCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        approveCommand.Parameters.AddWithValue("approved_by_user_id", userId.Value);
+        approveCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
+        approveCommand.Parameters.AddWithValue("approved_status", PurchaseOrderDocumentStatuses.Approved);
+        approveCommand.Parameters.AddWithValue("draft_status", PurchaseOrderDocumentStatuses.Draft);
+
+        if (await approveCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Only draft purchase orders can be approved.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Approved);
+    }
+
     public async Task<SourceDocumentDraftSaveResult> IssueAsync(
         CompanyId companyId,
         UserId userId,
@@ -406,7 +466,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         if (!PurchaseOrderDocumentStatuses.CanIssue(currentStatus))
         {
-            throw new InvalidOperationException("Only draft purchase orders can be issued.");
+            throw new InvalidOperationException("Only approved purchase orders can be issued.");
         }
 
         await using var issueCommand = connection.CreateCommand();
@@ -421,18 +481,18 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 updated_at = now()
             where id = @document_id
               and company_id = @company_id
-              and status = @draft_status;
+              and status = @approved_status;
             """;
         issueCommand.Parameters.AddWithValue("document_id", documentId);
         issueCommand.Parameters.AddWithValue("company_id", companyId.Value);
         issueCommand.Parameters.AddWithValue("issued_by_user_id", userId.Value);
         issueCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
         issueCommand.Parameters.AddWithValue("issued_status", PurchaseOrderDocumentStatuses.Issued);
-        issueCommand.Parameters.AddWithValue("draft_status", PurchaseOrderDocumentStatuses.Draft);
+        issueCommand.Parameters.AddWithValue("approved_status", PurchaseOrderDocumentStatuses.Approved);
 
         if (await issueCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
         {
-            throw new InvalidOperationException("Only draft purchase orders can be issued.");
+            throw new InvalidOperationException("Only approved purchase orders can be issued.");
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -513,7 +573,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         if (!PurchaseOrderDocumentStatuses.CanCancel(currentStatus))
         {
-            throw new InvalidOperationException("Only draft or untouched issued purchase orders can be cancelled.");
+            throw new InvalidOperationException("Only draft, approved, or untouched issued purchase orders can be cancelled.");
         }
 
         var summary = await GetThreeQuantitySummaryAsync(companyId, documentId, cancellationToken);
@@ -531,7 +591,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 updated_at = now()
             where id = @document_id
               and company_id = @company_id
-              and status in (@draft_status, @issued_status);
+              and status in (@draft_status, @approved_status, @issued_status);
             """;
         cancelCommand.Parameters.AddWithValue("document_id", documentId);
         cancelCommand.Parameters.AddWithValue("company_id", companyId.Value);
@@ -539,11 +599,12 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         cancelCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
         cancelCommand.Parameters.AddWithValue("cancelled_status", PurchaseOrderDocumentStatuses.Cancelled);
         cancelCommand.Parameters.AddWithValue("draft_status", PurchaseOrderDocumentStatuses.Draft);
+        cancelCommand.Parameters.AddWithValue("approved_status", PurchaseOrderDocumentStatuses.Approved);
         cancelCommand.Parameters.AddWithValue("issued_status", PurchaseOrderDocumentStatuses.Issued);
 
         if (await cancelCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
         {
-            throw new InvalidOperationException("Only draft or untouched issued purchase orders can be cancelled.");
+            throw new InvalidOperationException("Only draft, approved, or untouched issued purchase orders can be cancelled.");
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -1472,6 +1533,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               created_at timestamptz not null default now(),
               updated_by_user_id uuid null,
               updated_at timestamptz not null default now(),
+              approved_by_user_id uuid null,
+              approved_at timestamptz null,
               issued_by_user_id uuid null,
               issued_at timestamptz null,
               closed_by_user_id uuid null,
@@ -1479,6 +1542,12 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               cancelled_by_user_id uuid null,
               cancelled_at timestamptz null
             );
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists approved_by_user_id uuid null;
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists approved_at timestamptz null;
 
             alter table {PurchaseOrdersTableName}
               add column if not exists closed_by_user_id uuid null;

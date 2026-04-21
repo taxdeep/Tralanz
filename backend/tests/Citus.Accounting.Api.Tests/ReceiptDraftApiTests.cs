@@ -23,16 +23,21 @@ public sealed class ReceiptDraftApiTests
     public void Purchase_order_status_helpers_are_foundation_only()
     {
         Assert.Equal(PurchaseOrderDocumentStatuses.Draft, PurchaseOrderDocumentStatuses.Normalize("draft"));
+        Assert.Equal(PurchaseOrderDocumentStatuses.Approved, PurchaseOrderDocumentStatuses.Normalize("approved"));
         Assert.Equal(PurchaseOrderDocumentStatuses.Issued, PurchaseOrderDocumentStatuses.Normalize("issued"));
         Assert.Equal(PurchaseOrderDocumentStatuses.Closed, PurchaseOrderDocumentStatuses.Normalize("closed"));
         Assert.Equal(PurchaseOrderDocumentStatuses.Cancelled, PurchaseOrderDocumentStatuses.Normalize("cancelled"));
         Assert.True(PurchaseOrderDocumentStatuses.CanEdit("draft"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanApprove("draft"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanApprove("approved"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanIssue("draft"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanIssue("approved"));
         Assert.False(PurchaseOrderDocumentStatuses.CanEdit("issued"));
-        Assert.True(PurchaseOrderDocumentStatuses.CanIssue("draft"));
         Assert.False(PurchaseOrderDocumentStatuses.CanIssue("closed"));
         Assert.True(PurchaseOrderDocumentStatuses.CanClose("issued"));
         Assert.False(PurchaseOrderDocumentStatuses.CanClose("draft"));
         Assert.True(PurchaseOrderDocumentStatuses.CanCancel("draft"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanCancel("approved"));
         Assert.True(PurchaseOrderDocumentStatuses.CanCancel("issued"));
         Assert.False(PurchaseOrderDocumentStatuses.CanCancel("closed"));
         Assert.Throws<InvalidOperationException>(() => PurchaseOrderDocumentStatuses.Normalize("posted"));
@@ -40,6 +45,7 @@ public sealed class ReceiptDraftApiTests
 
     [Theory]
     [InlineData(PurchaseOrderDocumentStatuses.Draft, false)]
+    [InlineData(PurchaseOrderDocumentStatuses.Approved, false)]
     [InlineData(PurchaseOrderDocumentStatuses.Issued, true)]
     [InlineData(PurchaseOrderDocumentStatuses.Closed, false)]
     [InlineData(PurchaseOrderDocumentStatuses.Cancelled, false)]

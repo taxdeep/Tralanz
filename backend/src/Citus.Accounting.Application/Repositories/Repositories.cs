@@ -123,6 +123,12 @@ public interface IPurchaseOrderDocumentRepository
         PurchaseOrderDraftSaveModel draft,
         CancellationToken cancellationToken);
 
+    Task<SourceDocumentDraftSaveResult> ApproveAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> IssueAsync(
         CompanyId companyId,
         UserId userId,
@@ -373,6 +379,7 @@ public sealed record PurchaseOrderDocumentListItem(
     string? Memo,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
+    DateTimeOffset? ApprovedAt,
     DateTimeOffset? IssuedAt,
     DateTimeOffset? ClosedAt,
     DateTimeOffset? CancelledAt);
