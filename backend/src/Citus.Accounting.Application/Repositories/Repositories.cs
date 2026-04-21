@@ -159,6 +159,44 @@ public interface IPurchaseOrderDocumentRepository
         int take,
         CancellationToken cancellationToken);
 
+    Task<PurchaseOrderApprovalRequestTransitionResult> RequestApprovalAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        string? reason,
+        CancellationToken cancellationToken);
+
+    Task<PurchaseOrderApprovalRequestRecord?> GetLatestApprovalRequestAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<PurchaseOrderApprovalRequestRecord>> ListApprovalRequestsAsync(
+        CompanyId companyId,
+        int take,
+        bool includeClosed,
+        CancellationToken cancellationToken);
+
+    Task<PurchaseOrderApprovalRequestTransitionResult?> SubmitApprovalRequestAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken);
+
+    Task<PurchaseOrderApprovalRequestTransitionResult?> RejectApprovalRequestAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> ReverseApprovalAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
     Task ValidateBillAnchorsForPostingAsync(
         CompanyId companyId,
         Guid billDocumentId,
@@ -202,6 +240,15 @@ public interface IBillReceiptMatchingRepository
         CompanyId companyId,
         IReadOnlyCollection<Guid> billDocumentIds,
         CancellationToken cancellationToken);
+}
+
+public static class PurchaseOrderApprovalThresholdPolicy
+{
+    public const decimal TemporaryGovernanceThresholdAmount = 10_000m;
+
+    public static bool RequiresGovernanceApproval(decimal? estimatedOrderAmount) =>
+        estimatedOrderAmount.HasValue &&
+        estimatedOrderAmount.Value > TemporaryGovernanceThresholdAmount;
 }
 
 public sealed record SourceDocumentDraftSaveResult(
@@ -408,6 +455,35 @@ public sealed record PurchaseOrderLifecycleAuditEntry(
     string? EntityNumber,
     string? DisplayNumber,
     DateTimeOffset CreatedAt);
+
+public sealed record PurchaseOrderApprovalRequestRecord(
+    Guid RequestId,
+    Guid PurchaseOrderId,
+    CompanyId CompanyId,
+    string EntityNumber,
+    string DisplayNumber,
+    string PurchaseOrderStatus,
+    decimal? EstimatedAmount,
+    decimal ThresholdAmount,
+    bool RequiresGovernanceApproval,
+    string RequestStatus,
+    string ApprovalStatus,
+    string RequestedByActorType,
+    Guid? RequestedByActorId,
+    DateTimeOffset RequestedAt,
+    string? SubmittedByActorType,
+    Guid? SubmittedByActorId,
+    DateTimeOffset? SubmittedAt,
+    string? RejectedByActorType,
+    Guid? RejectedByActorId,
+    DateTimeOffset? RejectedAt,
+    string? Reason);
+
+public sealed record PurchaseOrderApprovalRequestTransitionResult(
+    PurchaseOrderApprovalRequestRecord Request,
+    string TransitionCode,
+    string OutcomeCode,
+    string Message);
 
 public sealed record PurchaseOrderLineThreeQuantitySummary(
     int LineNumber,

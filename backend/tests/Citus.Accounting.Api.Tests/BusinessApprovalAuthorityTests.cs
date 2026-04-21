@@ -223,6 +223,33 @@ public sealed class BusinessApprovalAuthorityTests
         Assert.Equal("authority_allowed", decision.OutcomeCode);
     }
 
+    [Fact]
+    public void CanReversePurchaseOrderApproval_BlocksApproveOnlyRole()
+    {
+        var session = CreateSession("approve");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApprovalReversal(
+            session,
+            "reverse_approval");
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_purchase_order_approval_reversal_authority", decision.OutcomeCode);
+        Assert.Contains("book-governance", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanReversePurchaseOrderApproval_AllowsBookGovernanceRole()
+    {
+        var session = CreateSession("book_governance");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApprovalReversal(
+            session,
+            "reverse_approval");
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
     private static BusinessSessionContext CreateSession(params string[] roles) =>
         new()
         {

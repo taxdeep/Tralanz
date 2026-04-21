@@ -4,6 +4,7 @@ using Citus.Accounting.Domain.Common;
 using Citus.Accounting.Domain.Documents;
 using Npgsql;
 using NpgsqlTypes;
+using System.Globalization;
 using System.Text.Json;
 
 namespace Citus.Accounting.Infrastructure.Persistence;
@@ -264,6 +265,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             TypedValue =
             [
                 "purchase_order_approved",
+                "purchase_order_approval_reversed",
                 "purchase_order_released",
                 "purchase_order_reopened_for_amendment",
                 "purchase_order_closed",
@@ -290,6 +292,278 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         }
 
         return entries;
+    }
+
+    public async Task<PurchaseOrderApprovalRequestTransitionResult> RequestApprovalAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+        await EnsureApprovalAuditAvailableAsync(scope, cancellationToken);
+
+        var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
+            scope.Connection,
+            scope.Transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (!PurchaseOrderDocumentStatuses.CanApprove(currentStatus))
+        {
+            throw new InvalidOperationException("Only draft purchase orders can be submitted for approval.");
+        }
+
+        var existing = await GetLatestApprovalRequestAsync(scope, companyId, documentId, cancellationToken);
+        if (existing is not null && existing.RequestStatus is "draft" or "submitted")
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                existing,
+                "request",
+                "already_requested",
+                "A purchase order approval request is already open for this draft.");
+        }
+
+        var requestId = Guid.NewGuid();
+        var estimatedAmount = await CalculateEstimatedAmountAsync(scope, companyId.Value, documentId, cancellationToken);
+        var thresholdAmount = PurchaseOrderApprovalThresholdPolicy.TemporaryGovernanceThresholdAmount;
+        await AppendApprovalRequestAuditAsync(
+            scope,
+            companyId.Value,
+            requestId,
+            userId.Value,
+            "purchase_order_approval_requested",
+            new
+            {
+                RequestId = requestId,
+                PurchaseOrderId = documentId,
+                EntityNumber = entityNumber,
+                DisplayNumber = displayNumber,
+                PurchaseOrderStatus = currentStatus,
+                EstimatedAmount = estimatedAmount,
+                ThresholdAmount = thresholdAmount,
+                RequiresGovernanceApproval = PurchaseOrderApprovalThresholdPolicy.RequiresGovernanceApproval(estimatedAmount),
+                Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+                RequestStatus = "draft",
+                ApprovalStatus = "pending"
+            },
+            cancellationToken);
+
+        var request = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken)
+            ?? throw new InvalidOperationException("Purchase order approval request was recorded but could not be reloaded.");
+
+        return new PurchaseOrderApprovalRequestTransitionResult(
+            request,
+            "request",
+            "requested",
+            "Purchase order approval request was recorded. Submit it to place the request into the approval queue.");
+    }
+
+    public async Task<PurchaseOrderApprovalRequestRecord?> GetLatestApprovalRequestAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+        if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
+        {
+            return null;
+        }
+
+        return await GetLatestApprovalRequestAsync(scope, companyId, documentId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PurchaseOrderApprovalRequestRecord>> ListApprovalRequestsAsync(
+        CompanyId companyId,
+        int take,
+        bool includeClosed,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+        if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
+        {
+            return Array.Empty<PurchaseOrderApprovalRequestRecord>();
+        }
+
+        var requested = await ListApprovalRequestRequestedEventsAsync(
+            scope,
+            companyId,
+            Math.Clamp(take, 1, 200),
+            cancellationToken);
+        var requests = new List<PurchaseOrderApprovalRequestRecord>();
+        foreach (var request in requested)
+        {
+            var record = await BuildApprovalRequestRecordAsync(scope, companyId, request, cancellationToken);
+            if (includeClosed || string.Equals(record.ApprovalStatus, "pending", StringComparison.Ordinal))
+            {
+                requests.Add(record);
+            }
+        }
+
+        return requests;
+    }
+
+    public async Task<PurchaseOrderApprovalRequestTransitionResult?> SubmitApprovalRequestAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+        await EnsureApprovalAuditAvailableAsync(scope, cancellationToken);
+
+        var request = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken);
+        if (request is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(request.ApprovalStatus, "pending", StringComparison.Ordinal))
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                request,
+                "submit",
+                "blocked_by_approval_status",
+                $"Only pending purchase order approval requests can be submitted. Current approval status is '{request.ApprovalStatus}'.");
+        }
+
+        if (!string.Equals(request.PurchaseOrderStatus, PurchaseOrderDocumentStatuses.Draft, StringComparison.Ordinal))
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                request,
+                "submit",
+                "blocked_by_purchase_order_status",
+                $"Only draft purchase orders can submit approval requests. Current purchase order status is '{request.PurchaseOrderStatus}'.");
+        }
+
+        if (request.RequestStatus == "submitted")
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                request,
+                "submit",
+                "already_submitted",
+                "Purchase order approval request is already in the queue.");
+        }
+
+        if (request.RequestStatus != "draft")
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                request,
+                "submit",
+                "blocked_by_request_status",
+                $"Only draft purchase order approval requests can be submitted. Current status is '{request.RequestStatus}'.");
+        }
+
+        await AppendApprovalRequestAuditAsync(
+            scope,
+            companyId.Value,
+            requestId,
+            userId.Value,
+            "purchase_order_approval_submitted",
+            new
+            {
+                request.RequestId,
+                request.PurchaseOrderId,
+                TransitionCode = "submit",
+                PreviousRequestStatus = request.RequestStatus,
+                RequestStatus = "submitted",
+                ApprovalStatus = request.ApprovalStatus
+            },
+            cancellationToken);
+
+        var updated = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken) ?? request;
+        return new PurchaseOrderApprovalRequestTransitionResult(
+            updated,
+            "submit",
+            "submitted",
+            "Purchase order approval request is now queued for approval review.");
+    }
+
+    public async Task<PurchaseOrderApprovalRequestTransitionResult?> RejectApprovalRequestAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+        await EnsureApprovalAuditAvailableAsync(scope, cancellationToken);
+
+        var request = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken);
+        if (request is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(request.ApprovalStatus, "pending", StringComparison.Ordinal))
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                request,
+                "reject",
+                "blocked_by_approval_status",
+                $"Only pending purchase order approval requests can be rejected. Current approval status is '{request.ApprovalStatus}'.");
+        }
+
+        if (request.RequestStatus != "submitted")
+        {
+            return new PurchaseOrderApprovalRequestTransitionResult(
+                request,
+                "reject",
+                "blocked_by_request_status",
+                $"Only submitted purchase order approval requests can be rejected. Current status is '{request.RequestStatus}'.");
+        }
+
+        await AppendApprovalRequestAuditAsync(
+            scope,
+            companyId.Value,
+            requestId,
+            userId.Value,
+            "purchase_order_approval_rejected",
+            new
+            {
+                request.RequestId,
+                request.PurchaseOrderId,
+                TransitionCode = "reject",
+                PreviousRequestStatus = request.RequestStatus,
+                RequestStatus = "rejected",
+                ApprovalStatus = "rejected"
+            },
+            cancellationToken);
+
+        var updated = await GetApprovalRequestAsync(scope, companyId, documentId, requestId, cancellationToken) ?? request;
+        return new PurchaseOrderApprovalRequestTransitionResult(
+            updated,
+            "reject",
+            "rejected",
+            "Purchase order approval request was rejected. PO ordered truth remains unchanged.");
     }
 
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
@@ -613,6 +887,70 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Issued);
+    }
+
+    public async Task<SourceDocumentDraftSaveResult> ReverseApprovalAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureSchemaAsync(connection, transaction, cancellationToken);
+        var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (!string.Equals(PurchaseOrderDocumentStatuses.Normalize(currentStatus), PurchaseOrderDocumentStatuses.Approved, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Only approved purchase orders can have approval reversed.");
+        }
+
+        await using var reverseCommand = connection.CreateCommand();
+        reverseCommand.Transaction = transaction;
+        reverseCommand.CommandText =
+            $"""
+            update {PurchaseOrdersTableName}
+            set status = @draft_status,
+                approved_by_user_id = null,
+                approved_at = null,
+                updated_by_user_id = @updated_by_user_id,
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status = @approved_status;
+            """;
+        reverseCommand.Parameters.AddWithValue("document_id", documentId);
+        reverseCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        reverseCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
+        reverseCommand.Parameters.AddWithValue("draft_status", PurchaseOrderDocumentStatuses.Draft);
+        reverseCommand.Parameters.AddWithValue("approved_status", PurchaseOrderDocumentStatuses.Approved);
+
+        if (await reverseCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Only approved purchase orders can have approval reversed.");
+        }
+
+        await InsertLifecycleAuditLogIfAvailableAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            userId.Value,
+            "purchase_order_approval_reversed",
+            currentStatus,
+            PurchaseOrderDocumentStatuses.Draft,
+            entityNumber,
+            displayNumber,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Draft);
     }
 
     public async Task<SourceDocumentDraftSaveResult> ReopenForAmendmentAsync(
@@ -1437,6 +1775,394 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return await GetThreeQuantitySummaryAsync(companyId, purchaseOrderId, cancellationToken);
     }
 
+    private static async Task EnsureApprovalAuditAvailableAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
+        {
+            throw new InvalidOperationException("Purchase order approval request audit trail is not available.");
+        }
+    }
+
+    private static async Task AppendApprovalRequestAuditAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid requestId,
+        Guid actorId,
+        string action,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            insert into audit_logs (
+              id,
+              company_id,
+              actor_type,
+              actor_id,
+              entity_type,
+              entity_id,
+              action,
+              payload
+            )
+            values (
+              @id,
+              @company_id,
+              'user',
+              @actor_id,
+              'purchase_order_approval_request',
+              @entity_id,
+              @action,
+              @payload::jsonb
+            );
+            """);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("actor_id", actorId);
+        command.Parameters.AddWithValue("entity_id", requestId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload, JsonOptions));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<PurchaseOrderApprovalRequestRecord?> GetLatestApprovalRequestAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var requested = await LoadApprovalRequestRequestedEventAsync(
+            scope,
+            companyId,
+            documentId,
+            null,
+            cancellationToken);
+
+        return requested is null
+            ? null
+            : await BuildApprovalRequestRecordAsync(scope, companyId, requested, cancellationToken);
+    }
+
+    private static async Task<PurchaseOrderApprovalRequestRecord?> GetApprovalRequestAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid documentId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var requested = await LoadApprovalRequestRequestedEventAsync(
+            scope,
+            companyId,
+            documentId,
+            requestId,
+            cancellationToken);
+
+        return requested is null
+            ? null
+            : await BuildApprovalRequestRecordAsync(scope, companyId, requested, cancellationToken);
+    }
+
+    private static async Task<ApprovalRequestRequestedEvent?> LoadApprovalRequestRequestedEventAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        Guid documentId,
+        Guid? requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              entity_id,
+              actor_type,
+              actor_id,
+              coalesce(payload ->> 'purchaseOrderId', payload ->> 'PurchaseOrderId') as purchase_order_id,
+              coalesce(payload ->> 'entityNumber', payload ->> 'EntityNumber') as entity_number,
+              coalesce(payload ->> 'displayNumber', payload ->> 'DisplayNumber') as display_number,
+              coalesce(payload ->> 'purchaseOrderStatus', payload ->> 'PurchaseOrderStatus') as purchase_order_status,
+              coalesce(payload ->> 'estimatedAmount', payload ->> 'EstimatedAmount') as estimated_amount,
+              coalesce(payload ->> 'thresholdAmount', payload ->> 'ThresholdAmount') as threshold_amount,
+              coalesce(payload ->> 'requiresGovernanceApproval', payload ->> 'RequiresGovernanceApproval') as requires_governance_approval,
+              coalesce(payload ->> 'requestStatus', payload ->> 'RequestStatus') as request_status,
+              coalesce(payload ->> 'approvalStatus', payload ->> 'ApprovalStatus') as approval_status,
+              coalesce(payload ->> 'reason', payload ->> 'Reason') as reason,
+              created_at
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'purchase_order_approval_request'
+              and action = 'purchase_order_approval_requested'
+              and coalesce(payload ->> 'purchaseOrderId', payload ->> 'PurchaseOrderId') = @purchase_order_id
+              and (@request_id is null or entity_id = @request_id)
+            order by created_at desc, id desc
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("purchase_order_id", documentId.ToString());
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("request_id", NpgsqlDbType.Uuid)
+        {
+            TypedValue = requestId
+        });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return ReadApprovalRequestRequestedEvent(reader);
+    }
+
+    private static async Task<IReadOnlyList<ApprovalRequestRequestedEvent>> ListApprovalRequestRequestedEventsAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              entity_id,
+              actor_type,
+              actor_id,
+              coalesce(payload ->> 'purchaseOrderId', payload ->> 'PurchaseOrderId') as purchase_order_id,
+              coalesce(payload ->> 'entityNumber', payload ->> 'EntityNumber') as entity_number,
+              coalesce(payload ->> 'displayNumber', payload ->> 'DisplayNumber') as display_number,
+              coalesce(payload ->> 'purchaseOrderStatus', payload ->> 'PurchaseOrderStatus') as purchase_order_status,
+              coalesce(payload ->> 'estimatedAmount', payload ->> 'EstimatedAmount') as estimated_amount,
+              coalesce(payload ->> 'thresholdAmount', payload ->> 'ThresholdAmount') as threshold_amount,
+              coalesce(payload ->> 'requiresGovernanceApproval', payload ->> 'RequiresGovernanceApproval') as requires_governance_approval,
+              coalesce(payload ->> 'requestStatus', payload ->> 'RequestStatus') as request_status,
+              coalesce(payload ->> 'approvalStatus', payload ->> 'ApprovalStatus') as approval_status,
+              coalesce(payload ->> 'reason', payload ->> 'Reason') as reason,
+              created_at
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'purchase_order_approval_request'
+              and action = 'purchase_order_approval_requested'
+            order by created_at desc, id desc
+            limit @take;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("take", Math.Clamp(take, 1, 200));
+
+        var requests = new List<ApprovalRequestRequestedEvent>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            requests.Add(ReadApprovalRequestRequestedEvent(reader));
+        }
+
+        return requests;
+    }
+
+    private static async Task<PurchaseOrderApprovalRequestRecord> BuildApprovalRequestRecordAsync(
+        PostgresCommandScope scope,
+        CompanyId companyId,
+        ApprovalRequestRequestedEvent requested,
+        CancellationToken cancellationToken)
+    {
+        var submitted = await LoadApprovalRequestTransitionAsync(
+            scope,
+            companyId.Value,
+            requested.RequestId,
+            "purchase_order_approval_submitted",
+            cancellationToken);
+        var rejected = await LoadApprovalRequestTransitionAsync(
+            scope,
+            companyId.Value,
+            requested.RequestId,
+            "purchase_order_approval_rejected",
+            cancellationToken);
+        var currentPurchaseOrderStatus = await LoadPurchaseOrderStatusAsync(
+            scope,
+            companyId.Value,
+            requested.PurchaseOrderId,
+            cancellationToken) ?? requested.PurchaseOrderStatus;
+
+        var normalizedPurchaseOrderStatus = PurchaseOrderDocumentStatuses.Normalize(currentPurchaseOrderStatus);
+        var approvalStatus = rejected is not null
+            ? "rejected"
+            : normalizedPurchaseOrderStatus is PurchaseOrderDocumentStatuses.Approved or PurchaseOrderDocumentStatuses.Issued or PurchaseOrderDocumentStatuses.Closed
+                ? "approved"
+                : normalizedPurchaseOrderStatus == PurchaseOrderDocumentStatuses.Cancelled
+                    ? "cancelled"
+                    : requested.ApprovalStatus;
+        var requestStatus = rejected is not null
+            ? "rejected"
+            : submitted is not null
+                ? "submitted"
+                : requested.RequestStatus;
+
+        return new PurchaseOrderApprovalRequestRecord(
+            requested.RequestId,
+            requested.PurchaseOrderId,
+            companyId,
+            requested.EntityNumber,
+            requested.DisplayNumber,
+            normalizedPurchaseOrderStatus,
+            requested.EstimatedAmount,
+            requested.ThresholdAmount,
+            requested.RequiresGovernanceApproval,
+            requestStatus,
+            approvalStatus,
+            requested.ActorType,
+            requested.ActorId,
+            requested.CreatedAt,
+            submitted?.ActorType,
+            submitted?.ActorId,
+            submitted?.CreatedAt,
+            rejected?.ActorType,
+            rejected?.ActorId,
+            rejected?.CreatedAt,
+            requested.Reason);
+    }
+
+    private static async Task<ApprovalRequestTransitionEvent?> LoadApprovalRequestTransitionAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid requestId,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select
+              actor_type,
+              actor_id,
+              coalesce(payload ->> 'requestStatus', payload ->> 'RequestStatus') as request_status,
+              coalesce(payload ->> 'approvalStatus', payload ->> 'ApprovalStatus') as approval_status,
+              created_at
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'purchase_order_approval_request'
+              and entity_id = @request_id
+              and action = @action
+            order by created_at desc, id desc
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("request_id", requestId);
+        command.Parameters.AddWithValue("action", action);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ApprovalRequestTransitionEvent(
+            reader.GetString(reader.GetOrdinal("actor_type")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("request_status")) ? null : reader.GetString(reader.GetOrdinal("request_status")),
+            reader.IsDBNull(reader.GetOrdinal("approval_status")) ? null : reader.GetString(reader.GetOrdinal("approval_status")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")));
+    }
+
+    private static async Task<string?> LoadPurchaseOrderStatusAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select status
+            from {PurchaseOrdersTableName}
+            where company_id = @company_id
+              and id = @document_id
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task<decimal?> CalculateEstimatedAmountAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            select
+              bool_or(unit_cost is null) as has_missing_unit_cost,
+              sum(ordered_quantity * unit_cost)::numeric(18,6) as estimated_amount
+            from {PurchaseOrderLinesTableName}
+            where company_id = @company_id
+              and purchase_order_id = @document_id;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        if (!reader.IsDBNull(reader.GetOrdinal("has_missing_unit_cost")) &&
+            reader.GetBoolean(reader.GetOrdinal("has_missing_unit_cost")))
+        {
+            return null;
+        }
+
+        return reader.IsDBNull(reader.GetOrdinal("estimated_amount"))
+            ? null
+            : Round6(reader.GetDecimal(reader.GetOrdinal("estimated_amount")));
+    }
+
+    private static ApprovalRequestRequestedEvent ReadApprovalRequestRequestedEvent(NpgsqlDataReader reader) =>
+        new(
+            reader.GetGuid(reader.GetOrdinal("entity_id")),
+            Guid.Parse(reader.GetString(reader.GetOrdinal("purchase_order_id"))),
+            reader.IsDBNull(reader.GetOrdinal("entity_number")) ? string.Empty : reader.GetString(reader.GetOrdinal("entity_number")),
+            reader.IsDBNull(reader.GetOrdinal("display_number")) ? string.Empty : reader.GetString(reader.GetOrdinal("display_number")),
+            reader.IsDBNull(reader.GetOrdinal("purchase_order_status"))
+                ? PurchaseOrderDocumentStatuses.Draft
+                : reader.GetString(reader.GetOrdinal("purchase_order_status")),
+            ReadNullableDecimal(reader, "estimated_amount"),
+            ReadNullableDecimal(reader, "threshold_amount") ?? PurchaseOrderApprovalThresholdPolicy.TemporaryGovernanceThresholdAmount,
+            ReadNullableBoolean(reader, "requires_governance_approval") ?? false,
+            reader.IsDBNull(reader.GetOrdinal("request_status")) ? "draft" : reader.GetString(reader.GetOrdinal("request_status")),
+            reader.IsDBNull(reader.GetOrdinal("approval_status")) ? "pending" : reader.GetString(reader.GetOrdinal("approval_status")),
+            reader.GetString(reader.GetOrdinal("actor_type")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+            reader.IsDBNull(reader.GetOrdinal("reason")) ? null : reader.GetString(reader.GetOrdinal("reason")));
+
+    private static decimal? ReadNullableDecimal(NpgsqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        return decimal.TryParse(
+            reader.GetString(ordinal),
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : null;
+    }
+
+    private static bool? ReadNullableBoolean(NpgsqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        return bool.TryParse(reader.GetString(ordinal), out var value)
+            ? value
+            : null;
+    }
+
     private static async Task<IReadOnlyList<PurchaseOrderDocumentLine>> LoadLinesAsync(
         PostgresCommandScope scope,
         Guid companyId,
@@ -1824,7 +2550,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<(string EntityNumber, string DisplayNumber, string Status)> LoadIdentityAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         Guid companyId,
         Guid documentId,
         CancellationToken cancellationToken)
@@ -2047,4 +2773,27 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         string? ReviewNote,
         Guid? ReviewedByUserId,
         DateTimeOffset? ReviewedAt);
+
+    private sealed record ApprovalRequestRequestedEvent(
+        Guid RequestId,
+        Guid PurchaseOrderId,
+        string EntityNumber,
+        string DisplayNumber,
+        string PurchaseOrderStatus,
+        decimal? EstimatedAmount,
+        decimal ThresholdAmount,
+        bool RequiresGovernanceApproval,
+        string RequestStatus,
+        string ApprovalStatus,
+        string ActorType,
+        Guid? ActorId,
+        DateTimeOffset CreatedAt,
+        string? Reason);
+
+    private sealed record ApprovalRequestTransitionEvent(
+        string ActorType,
+        Guid? ActorId,
+        string? RequestStatus,
+        string? ApprovalStatus,
+        DateTimeOffset CreatedAt);
 }

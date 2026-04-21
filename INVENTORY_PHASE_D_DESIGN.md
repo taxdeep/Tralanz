@@ -1997,3 +1997,45 @@ Still not included:
 Authority note:
 
 H.20.10 makes amount-sensitive PO approval explicit without changing the truth ladder. PO remains ordered truth, Receipt remains physical receipt truth, Bill remains AP charge truth, and the API guards who may approve before the PO state transition is attempted.
+
+## Phase H.20.11 checkpoint
+
+H.20.11 introduces the smallest approval request queue, rejection, and approval reversal surface for purchase orders.
+
+Boundary:
+
+- Audit-backed approval request read model only.
+- No dedicated approval workflow table yet.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No Shell lifecycle command surface.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- The temporary PO governance threshold now has one shared application policy.
+- Draft POs can create approval requests with optional reason text.
+- Approval requests can be submitted into a pending queue.
+- Pending requests can be rejected without changing PO ordered truth.
+- Approval request records expose requested/submitted/rejected actors and amount threshold context.
+- Approved-but-unissued POs can reverse approval back to draft through a governance-only command.
+- PO lifecycle audit includes approval reversal events.
+
+Still not included:
+
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- approval queue UI
+- lifecycle command buttons in Shell
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.11 keeps the truth ladder intact. Approval request audit rows explain approval intent and queue status; PO state still owns lifecycle truth, and reversal is allowed only before issue creates operational anchor truth.

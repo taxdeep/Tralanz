@@ -342,6 +342,25 @@ public sealed record PurchaseOrderLifecycleAuditQuery(Guid CompanyId, int? Take)
 
 public sealed record PurchaseOrderListQuery(Guid CompanyId, int? Take);
 
+public sealed record PurchaseOrderApprovalRequestListQuery(Guid CompanyId, int? Take, bool? IncludeClosed);
+
+public sealed record RequestPurchaseOrderApprovalHttpRequest(
+    Guid CompanyId,
+    Guid UserId,
+    string? Reason);
+
+public sealed record SubmitPurchaseOrderApprovalRequestHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
+public sealed record RejectPurchaseOrderApprovalRequestHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
+public sealed record ReversePurchaseOrderApprovalHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
 public sealed record ApprovePurchaseOrderHttpRequest(
     Guid CompanyId,
     Guid UserId);

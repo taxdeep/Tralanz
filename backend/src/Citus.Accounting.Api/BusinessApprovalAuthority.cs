@@ -1,8 +1,11 @@
+using Citus.Accounting.Application.Repositories;
+
 namespace Citus.Accounting.Api;
 
 public static class BusinessApprovalAuthority
 {
-    public const decimal PurchaseOrderApprovalGovernanceThresholdAmount = 10_000m;
+    public const decimal PurchaseOrderApprovalGovernanceThresholdAmount =
+        PurchaseOrderApprovalThresholdPolicy.TemporaryGovernanceThresholdAmount;
 
     public static readonly IReadOnlyList<string> OpenItemAdjustmentApprovalRoles =
     [
@@ -51,6 +54,9 @@ public static class BusinessApprovalAuthority
         session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
 
     public static bool CanReopenPurchaseOrderForAmendment(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderAmendmentRole) == true;
+
+    public static bool CanReversePurchaseOrderApproval(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderAmendmentRole) == true;
 
     public static Decision EvaluateOpenItemAdjustmentApproval(
@@ -195,8 +201,7 @@ public static class BusinessApprovalAuthority
     }
 
     public static bool RequiresPurchaseOrderGovernanceApproval(decimal? estimatedOrderAmount) =>
-        estimatedOrderAmount.HasValue &&
-        estimatedOrderAmount.Value > PurchaseOrderApprovalGovernanceThresholdAmount;
+        PurchaseOrderApprovalThresholdPolicy.RequiresGovernanceApproval(estimatedOrderAmount);
 
     public static Decision EvaluatePurchaseOrderRelease(
         BusinessSessionContext? session,
@@ -248,6 +253,32 @@ public static class BusinessApprovalAuthority
             true,
             "authority_allowed",
             $"The business session has authority to {transitionCode} the purchase order for amendment.");
+    }
+
+    public static Decision EvaluatePurchaseOrderApprovalReversal(
+        BusinessSessionContext? session,
+        string transitionCode)
+    {
+        if (session is null)
+        {
+            return new Decision(
+                false,
+                "blocked_session_required",
+                $"A business session is required to {transitionCode} purchase order approval.");
+        }
+
+        if (!CanReversePurchaseOrderApproval(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_approval_reversal_authority",
+                $"Only a company owner or book-governance user can {transitionCode} purchase order approval.");
+        }
+
+        return new Decision(
+            true,
+            "authority_allowed",
+            $"The business session has authority to {transitionCode} purchase order approval.");
     }
 
     private static bool IsOpenItemAdjustmentApprovalRole(string role) =>

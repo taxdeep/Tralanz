@@ -4091,6 +4091,22 @@ accounting.MapGet(
     });
 
 accounting.MapGet(
+    "/purchase-orders/approval-requests",
+    async (
+        [AsParameters] PurchaseOrderApprovalRequestListQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var requests = await repository.ListApprovalRequestsAsync(
+            new(query.CompanyId),
+            query.Take ?? 50,
+            query.IncludeClosed ?? false,
+            cancellationToken);
+
+        return Results.Ok(requests);
+    });
+
+accounting.MapGet(
     "/purchase-orders/{documentId:guid}",
     async (
         Guid documentId,
@@ -4164,6 +4180,117 @@ accounting.MapGet(
             cancellationToken);
 
         return Results.Ok(entries);
+    });
+
+accounting.MapGet(
+    "/purchase-orders/{documentId:guid}/approval-request",
+    async (
+        Guid documentId,
+        [AsParameters] PurchaseOrderLookupQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var request = await repository.GetLatestApprovalRequestAsync(new(query.CompanyId), documentId, cancellationToken);
+        return request is null
+            ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
+            : Results.Ok(request);
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval-request",
+    async (
+        Guid documentId,
+        RequestPurchaseOrderApprovalHttpRequest request,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.RequestApprovalAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                request.Reason,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval-request/{requestId:guid}/submit",
+    async (
+        Guid documentId,
+        Guid requestId,
+        SubmitPurchaseOrderApprovalRequestHttpRequest request,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SubmitApprovalRequestAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                requestId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval-request/{requestId:guid}/reject",
+    async (
+        Guid documentId,
+        Guid requestId,
+        RejectPurchaseOrderApprovalRequestHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var current = await repository.GetLatestApprovalRequestAsync(new(request.CompanyId), documentId, cancellationToken);
+        if (current is null || current.RequestId != requestId)
+        {
+            return Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." });
+        }
+
+        var authorityBlock = RequirePurchaseOrderApprovalAuthority(
+            sessionAccessor.Current,
+            "reject_approval_request",
+            current.EstimatedAmount);
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.RejectApprovalRequestAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                requestId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
     });
 
 accounting.MapPost(
@@ -4254,6 +4381,39 @@ accounting.MapPost(
         try
         {
             var result = await repository.ApproveAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval/reverse",
+    async (
+        Guid documentId,
+        ReversePurchaseOrderApprovalHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequirePurchaseOrderApprovalReversalAuthority(
+            sessionAccessor.Current,
+            "reverse_approval");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.ReverseApprovalAsync(
                 new(request.CompanyId),
                 new(request.UserId),
                 documentId,
@@ -5961,6 +6121,26 @@ static IResult? RequirePurchaseOrderAmendmentAuthority(
     string transitionCode)
 {
     var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderAmendment(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderApprovalReversalAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApprovalReversal(
         session,
         transitionCode);
 

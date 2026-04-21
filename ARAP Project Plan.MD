@@ -1668,3 +1668,44 @@ Still deferred:
 Authority note:
 
 H.20.10 keeps threshold authority at the API command boundary. The repository still owns PO lifecycle mutation and state legality, while the API decides whether the caller can enter the approval command for the current estimated PO amount.
+
+## Phase H.20.11 checkpoint
+
+H.20.11 adds the first PO approval request queue, rejection, and approval reversal boundary.
+
+Boundary:
+
+- Approval requests are append-only audit-backed read models for now.
+- It does not introduce a formal approval workflow table yet.
+- It does not introduce multi-approver routing or persisted company approval limits.
+- It does not move CompanyAccess authority checks inside repository methods.
+- It does not add Shell lifecycle command buttons yet.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- PO approval threshold policy is shared from the application repository contract layer so API and persistence use the same temporary threshold.
+- Purchase orders can record an approval request while still in draft.
+- Approval requests can be submitted into a queue read model backed by `audit_logs`.
+- Submitted approval requests can be rejected by users with the same amount-sensitive approval authority used by PO approval.
+- Approval request records expose request status, approval status, submit/reject actors, estimated amount, threshold amount, and governance requirement.
+- Approved POs can have approval reversed back to draft through a governance-only API command.
+- Lifecycle audit read model now includes `purchase_order_approval_reversed`.
+- Authority tests now cover approval reversal authority.
+
+Still deferred:
+
+- persisted company/book approval threshold configuration
+- formal approval workflow tables
+- multi-approver routing
+- approval request Shell workbench
+- lifecycle action buttons in Shell
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.11 keeps approval-request state explanatory and queue-oriented while PO document state remains authoritative. Rejection does not mutate ordered truth, and approval reversal is limited to approved-but-unissued POs through governance authority.
