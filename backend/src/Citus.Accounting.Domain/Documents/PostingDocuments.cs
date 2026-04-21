@@ -875,6 +875,12 @@ public static class PurchaseOrderDocumentStatuses
     public static bool CanIssue(string status) =>
         string.Equals(Normalize(status), Approved, StringComparison.Ordinal);
 
+    public static bool CanReopenForAmendment(string status)
+    {
+        var normalized = Normalize(status);
+        return normalized is Approved or Issued;
+    }
+
     public static bool CanClose(string status) =>
         string.Equals(Normalize(status), Issued, StringComparison.Ordinal);
 
@@ -958,7 +964,8 @@ public sealed class PurchaseOrderDocument
         DateTimeOffset? approvedAt = null,
         DateTimeOffset? issuedAt = null,
         DateTimeOffset? closedAt = null,
-        DateTimeOffset? cancelledAt = null)
+        DateTimeOffset? cancelledAt = null,
+        DateTimeOffset? amendmentStartedAt = null)
     {
         if (vendorId == Guid.Empty)
         {
@@ -979,6 +986,7 @@ public sealed class PurchaseOrderDocument
         IssuedAt = issuedAt;
         ClosedAt = closedAt;
         CancelledAt = cancelledAt;
+        AmendmentStartedAt = amendmentStartedAt;
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -1018,6 +1026,8 @@ public sealed class PurchaseOrderDocument
     public DateTimeOffset? ClosedAt { get; }
 
     public DateTimeOffset? CancelledAt { get; }
+
+    public DateTimeOffset? AmendmentStartedAt { get; }
 
     public IReadOnlyList<PurchaseOrderDocumentLine> PurchaseOrderLines { get; }
 }

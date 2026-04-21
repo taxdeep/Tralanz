@@ -51,7 +51,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               approved_at,
               issued_at,
               closed_at,
-              cancelled_at
+              cancelled_at,
+              amendment_started_at
             from {PurchaseOrdersTableName}
             where company_id = @company_id
               and id = @document_id
@@ -73,6 +74,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         DateTimeOffset? issuedAt;
         DateTimeOffset? closedAt;
         DateTimeOffset? cancelledAt;
+        DateTimeOffset? amendmentStartedAt;
 
         await using (var reader = await headerCommand.ExecuteReaderAsync(cancellationToken))
         {
@@ -108,6 +110,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             cancelledAt = reader.IsDBNull(reader.GetOrdinal("cancelled_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at"));
+            amendmentStartedAt = reader.IsDBNull(reader.GetOrdinal("amendment_started_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("amendment_started_at"));
         }
 
         var lines = await LoadLinesAsync(scope, companyId.Value, documentId, cancellationToken);
@@ -126,7 +131,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             approvedAt,
             issuedAt,
             closedAt,
-            cancelledAt);
+            cancelledAt,
+            amendmentStartedAt);
     }
 
     public async Task<IReadOnlyList<PurchaseOrderDocumentListItem>> ListAsync(
@@ -161,6 +167,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               po.issued_at,
               po.closed_at,
               po.cancelled_at,
+              po.amendment_started_at,
               count(line.id)::int as line_count,
               coalesce(sum(line.ordered_quantity), 0)::numeric(18,6) as total_ordered_quantity
             from {PurchaseOrdersTableName} po
@@ -196,7 +203,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 reader.IsDBNull(reader.GetOrdinal("approved_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("approved_at")),
                 reader.IsDBNull(reader.GetOrdinal("issued_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("issued_at")),
                 reader.IsDBNull(reader.GetOrdinal("closed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("closed_at")),
-                reader.IsDBNull(reader.GetOrdinal("cancelled_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at"))));
+                reader.IsDBNull(reader.GetOrdinal("cancelled_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("cancelled_at")),
+                reader.IsDBNull(reader.GetOrdinal("amendment_started_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("amendment_started_at"))));
         }
 
         return items;
@@ -497,6 +505,65 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await transaction.CommitAsync(cancellationToken);
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Issued);
+    }
+
+    public async Task<SourceDocumentDraftSaveResult> ReopenForAmendmentAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await EnsureSchemaAsync(connection, transaction, cancellationToken);
+        var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            documentId,
+            cancellationToken);
+
+        if (!PurchaseOrderDocumentStatuses.CanReopenForAmendment(currentStatus))
+        {
+            throw new InvalidOperationException("Only approved or issued purchase orders can be reopened for amendment.");
+        }
+
+        await EnsureCanReopenForAmendmentAsync(connection, transaction, companyId.Value, documentId, cancellationToken);
+
+        await using var reopenCommand = connection.CreateCommand();
+        reopenCommand.Transaction = transaction;
+        reopenCommand.CommandText =
+            $"""
+            update {PurchaseOrdersTableName}
+            set status = @draft_status,
+                approved_by_user_id = null,
+                approved_at = null,
+                issued_by_user_id = null,
+                issued_at = null,
+                amendment_started_by_user_id = @amendment_started_by_user_id,
+                amendment_started_at = now(),
+                updated_by_user_id = @updated_by_user_id,
+                updated_at = now()
+            where id = @document_id
+              and company_id = @company_id
+              and status in (@approved_status, @issued_status);
+            """;
+        reopenCommand.Parameters.AddWithValue("document_id", documentId);
+        reopenCommand.Parameters.AddWithValue("company_id", companyId.Value);
+        reopenCommand.Parameters.AddWithValue("amendment_started_by_user_id", userId.Value);
+        reopenCommand.Parameters.AddWithValue("updated_by_user_id", userId.Value);
+        reopenCommand.Parameters.AddWithValue("draft_status", PurchaseOrderDocumentStatuses.Draft);
+        reopenCommand.Parameters.AddWithValue("approved_status", PurchaseOrderDocumentStatuses.Approved);
+        reopenCommand.Parameters.AddWithValue("issued_status", PurchaseOrderDocumentStatuses.Issued);
+
+        if (await reopenCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Only approved or issued purchase orders can be reopened for amendment.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, PurchaseOrderDocumentStatuses.Draft);
     }
 
     public async Task<SourceDocumentDraftSaveResult> CloseAsync(
@@ -1303,6 +1370,74 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         }
     }
 
+    private static async Task EnsureCanReopenForAmendmentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        if (await HasPurchaseOrderAnchorsAsync(connection, transaction, "receipt_lines", companyId, documentId, cancellationToken))
+        {
+            throw new InvalidOperationException("Purchase orders with existing receipt anchors cannot be reopened for amendment.");
+        }
+
+        if (await HasPurchaseOrderAnchorsAsync(connection, transaction, "bill_lines", companyId, documentId, cancellationToken))
+        {
+            throw new InvalidOperationException("Purchase orders with existing bill anchors cannot be reopened for amendment.");
+        }
+
+        await using var discrepancyCommand = connection.CreateCommand();
+        discrepancyCommand.Transaction = transaction;
+        discrepancyCommand.CommandText =
+            $"""
+            select exists (
+              select 1
+              from {QuantityDiscrepanciesTableName}
+              where company_id = @company_id
+                and purchase_order_id = @document_id
+                and investigation_status in ('open', 'override_authorized')
+            );
+            """;
+        discrepancyCommand.Parameters.AddWithValue("company_id", companyId);
+        discrepancyCommand.Parameters.AddWithValue("document_id", documentId);
+
+        if (await discrepancyCommand.ExecuteScalarAsync(cancellationToken) is true)
+        {
+            throw new InvalidOperationException("Purchase orders with active quantity discrepancy lanes cannot be reopened for amendment.");
+        }
+    }
+
+    private static async Task<bool> HasPurchaseOrderAnchorsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string lineTableName,
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, lineTableName, cancellationToken))
+        {
+            return false;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"""
+            select exists (
+              select 1
+              from {lineTableName}
+              where company_id = @company_id
+                and purchase_order_id = @document_id
+            );
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("document_id", documentId);
+
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
     private static async Task<IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary>> LoadQuantityDiscrepanciesAsync(
         PostgresCommandScope scope,
         Guid companyId,
@@ -1540,7 +1675,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               closed_by_user_id uuid null,
               closed_at timestamptz null,
               cancelled_by_user_id uuid null,
-              cancelled_at timestamptz null
+              cancelled_at timestamptz null,
+              amendment_started_by_user_id uuid null,
+              amendment_started_at timestamptz null
             );
 
             alter table {PurchaseOrdersTableName}
@@ -1560,6 +1697,12 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
             alter table {PurchaseOrdersTableName}
               add column if not exists cancelled_at timestamptz null;
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists amendment_started_by_user_id uuid null;
+
+            alter table {PurchaseOrdersTableName}
+              add column if not exists amendment_started_at timestamptz null;
 
             create unique index if not exists ux_purchase_orders_company_entity_number
               on {PurchaseOrdersTableName} (company_id, entity_number);
@@ -1668,6 +1811,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand("select to_regclass(@table_name) is not null;");
+        command.Parameters.AddWithValue("table_name", tableName);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select to_regclass(@table_name) is not null;";
         command.Parameters.AddWithValue("table_name", tableName);
         return await command.ExecuteScalarAsync(cancellationToken) is true;
     }

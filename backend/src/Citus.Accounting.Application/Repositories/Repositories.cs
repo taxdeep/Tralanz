@@ -135,6 +135,12 @@ public interface IPurchaseOrderDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<SourceDocumentDraftSaveResult> ReopenForAmendmentAsync(
+        CompanyId companyId,
+        UserId userId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> CloseAsync(
         CompanyId companyId,
         UserId userId,
@@ -382,7 +388,8 @@ public sealed record PurchaseOrderDocumentListItem(
     DateTimeOffset? ApprovedAt,
     DateTimeOffset? IssuedAt,
     DateTimeOffset? ClosedAt,
-    DateTimeOffset? CancelledAt);
+    DateTimeOffset? CancelledAt,
+    DateTimeOffset? AmendmentStartedAt);
 
 public sealed record PurchaseOrderLineThreeQuantitySummary(
     int LineNumber,

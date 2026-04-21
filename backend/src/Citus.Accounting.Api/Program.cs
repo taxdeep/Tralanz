@@ -4240,6 +4240,26 @@ accounting.MapPost(
     });
 
 accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/reopen-for-amendment",
+    async (Guid documentId, ReopenPurchaseOrderForAmendmentHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.ReopenForAmendmentAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
     "/purchase-orders/{documentId:guid}/close",
     async (Guid documentId, ClosePurchaseOrderHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {

@@ -422,6 +422,84 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
         }
     }
 
+    [Fact]
+    public async Task PurchaseOrderAmendmentGuard_ReopensOnlyUntouchedApprovedOrIssuedPurchaseOrders()
+    {
+        var baseConnectionString = GetPostgreSqlConnectionString();
+        if (string.IsNullOrWhiteSpace(baseConnectionString))
+        {
+            return;
+        }
+
+        var schemaName = $"citus_h205_{Guid.NewGuid():N}";
+        await CreateSchemaAsync(baseConnectionString, schemaName);
+
+        try
+        {
+            var schemaConnectionString = BuildSchemaConnectionString(baseConnectionString, schemaName);
+            var repository = new PostgresPurchaseOrderDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                new PostgresExecutionContextAccessor());
+            var companyId = Guid.NewGuid();
+            var userId = Guid.NewGuid();
+            var vendorId = Guid.NewGuid();
+            var itemId = Guid.NewGuid();
+
+            var draft = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 24),
+                    null,
+                    null,
+                    null,
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 5m, "EA")]),
+                CancellationToken.None);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None));
+
+            var approved = await repository.ApproveAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Approved, approved.Status);
+            var reopenedApproved = await repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Draft, reopenedApproved.Status);
+            var reopenedApprovedDocument = await repository.GetAsync(new(companyId), draft.DocumentId, CancellationToken.None);
+            Assert.NotNull(reopenedApprovedDocument);
+            Assert.Null(reopenedApprovedDocument!.ApprovedAt);
+            Assert.NotNull(reopenedApprovedDocument.AmendmentStartedAt);
+
+            _ = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    draft.DocumentId,
+                    new(companyId),
+                    new(userId),
+                    vendorId,
+                    new DateOnly(2026, 4, 24),
+                    null,
+                    null,
+                    "Amended ordered quantity before release.",
+                    [new PurchaseOrderDraftLineSaveModel(1, itemId, 6m, "EA")]),
+                CancellationToken.None);
+            _ = await repository.ApproveAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            var reopenedIssued = await repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Draft, reopenedIssued.Status);
+            var reopenedIssuedDocument = await repository.GetAsync(new(companyId), draft.DocumentId, CancellationToken.None);
+            Assert.NotNull(reopenedIssuedDocument);
+            Assert.Null(reopenedIssuedDocument!.ApprovedAt);
+            Assert.Null(reopenedIssuedDocument.IssuedAt);
+
+            _ = await repository.ApproveAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            _ = await repository.IssueAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None);
+            await SeedReceiptAnchorAsync(schemaConnectionString, companyId, draft.DocumentId, 1, itemId, 1m, "draft");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ReopenForAmendmentAsync(new(companyId), new(userId), draft.DocumentId, CancellationToken.None));
+        }
+        finally
+        {
+            await DropSchemaAsync(baseConnectionString, schemaName);
+        }
+    }
+
     private static async Task SeedReceiptAnchorAsync(
         string connectionString,
         Guid companyId,

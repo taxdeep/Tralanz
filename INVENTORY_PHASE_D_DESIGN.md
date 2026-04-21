@@ -1749,3 +1749,45 @@ Still not included:
 Authority note:
 
 H.20.4 keeps the truth ladder strict: draft owns editable intent, approved owns release authorization, issued owns operational anchor truth, and Receipt / Bill still own received / billed truth.
+
+## Phase H.20.5 checkpoint
+
+H.20.5 introduces the smallest PO reopen-for-amendment guard.
+
+Boundary:
+
+- Amendment stays before downstream operational truth.
+- No closed or cancelled PO can reopen.
+- No PO with Receipt or Bill anchor rows can reopen, including draft downstream documents.
+- No full amendment request / approval workflow is introduced yet.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+- No Shell-wide PO workbench.
+
+What changed:
+
+- PO lifecycle now has an explicit reopen-for-amendment transition:
+  - `approved` -> `draft`
+  - `issued` -> `draft`
+- The transition is exposed by:
+  - `POST /purchase-orders/{id}/reopen-for-amendment`
+- Reopen for amendment clears current approval and issue markers.
+- Reopen for amendment records:
+  - amendment started by user
+  - amendment started at timestamp
+- The PO must be re-approved and re-issued before it can anchor Receipt or Bill rows again.
+
+Still not included:
+
+- amendment request queues
+- amendment approval / rejection history
+- permission-backed amendment authority
+- approval limits
+- approval reversal outside amendment
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.5 prevents amendment from becoming a hidden rewrite path. Once any Receipt or Bill document has started referencing the PO, amendment is blocked and later correction must move through future governed adjustment, return, variance, or close paths.

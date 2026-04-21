@@ -34,6 +34,10 @@ public sealed class ReceiptDraftApiTests
         Assert.True(PurchaseOrderDocumentStatuses.CanIssue("approved"));
         Assert.False(PurchaseOrderDocumentStatuses.CanEdit("issued"));
         Assert.False(PurchaseOrderDocumentStatuses.CanIssue("closed"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanReopenForAmendment("draft"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanReopenForAmendment("approved"));
+        Assert.True(PurchaseOrderDocumentStatuses.CanReopenForAmendment("issued"));
+        Assert.False(PurchaseOrderDocumentStatuses.CanReopenForAmendment("closed"));
         Assert.True(PurchaseOrderDocumentStatuses.CanClose("issued"));
         Assert.False(PurchaseOrderDocumentStatuses.CanClose("draft"));
         Assert.True(PurchaseOrderDocumentStatuses.CanCancel("draft"));

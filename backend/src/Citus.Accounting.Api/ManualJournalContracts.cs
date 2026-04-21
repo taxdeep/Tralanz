@@ -348,6 +348,10 @@ public sealed record IssuePurchaseOrderHttpRequest(
     Guid CompanyId,
     Guid UserId);
 
+public sealed record ReopenPurchaseOrderForAmendmentHttpRequest(
+    Guid CompanyId,
+    Guid UserId);
+
 public sealed record ClosePurchaseOrderHttpRequest(
     Guid CompanyId,
     Guid UserId);

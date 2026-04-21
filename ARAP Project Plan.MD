@@ -1398,3 +1398,46 @@ Still deferred:
 Authority note:
 
 H.20.4 separates approval intent from release truth. Approval records that a draft PO is authorized for release, but it still cannot create Receipt or Bill anchor truth until the PO is explicitly issued.
+
+## Phase H.20.5 checkpoint
+
+H.20.5 adds the minimum PO reopen-for-amendment policy.
+
+Boundary:
+
+- This is amendment control only.
+- It does not introduce a full amendment request / approval workflow.
+- It does not reopen closed or cancelled POs.
+- It does not allow amendment after any Receipt or Bill anchor row references the PO, even if the downstream document is still draft.
+- It does not change Receipt-first physical truth or Bill AP truth.
+- It does not introduce PPV posting, tracked receipt, or a Shell-wide PO workbench.
+
+What changed:
+
+- Backend repository methods now expose:
+  - `ReopenForAmendmentAsync`
+- A guarded amendment endpoint exists:
+  - `POST /purchase-orders/{id}/reopen-for-amendment`
+- Approved or issued POs can be returned to draft only while untouched by downstream Receipt / Bill anchors.
+- Reopen for amendment clears current approval / issue markers because release authority must be re-earned after editing.
+- Reopen for amendment records:
+  - amendment started by user
+  - amendment started at timestamp
+- Draft, closed, and cancelled POs cannot be reopened through this route.
+
+Still deferred:
+
+- formal amendment request workflow
+- amendment approval history / audit trail
+- role / permission-backed amendment authority
+- approval thresholds
+- approval reversal outside amendment
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.5 keeps amendment before downstream truth. A PO can return to editable draft only while it has not become part of any Receipt or Bill working document, so amendment cannot rewrite physical or AP truth after operations have started.
