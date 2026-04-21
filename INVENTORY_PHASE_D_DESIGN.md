@@ -2450,3 +2450,41 @@ Still not included:
 Authority note:
 
 H.20.21 is the cross-layer visibility checkpoint for PO and PPV: the Shell reads the same persisted variance control truth that the accounting lane owns, rather than inventing a separate UI-only status.
+
+## Phase H.20.22 checkpoint
+
+H.20.22 adds purchase variance posting readiness without posting.
+
+Boundary:
+
+- Readiness is read/control truth only.
+- No PPV journal is created.
+- No PPV posting command is exposed.
+- No approval, disposition, write-off, or reversal workflow is introduced.
+- Candidate variance lines with no blocked lines are ready for a future explicit PPV command.
+- No-variance and not-applicable states are not posting-ready.
+- Blocked states stay blocked until GR/IR/AP settlement prerequisites are complete.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No tracked receipt operational flow.
+
+What changed:
+
+- PO purchase variance summary now exposes posting readiness fields.
+- Readiness is computed from the persisted receipt/GRIR/AP purchase variance lane.
+- Shell PO detail shows posting readiness and explains whether a future explicit PPV command would be allowed.
+
+Still not included:
+
+- PPV journal posting
+- PPV approval / disposition workflow
+- PO close journal effects
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- tracked receipt enablement
+
+Authority note:
+
+H.20.22 gives the next large复验 a clean target: UI, API read model, repository truth, lifecycle gates, and downstream variance control can now be validated together before any PPV posting behavior is introduced.

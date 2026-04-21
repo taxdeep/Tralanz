@@ -1413,6 +1413,11 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var candidateLineCount = reader.GetInt32(reader.GetOrdinal("candidate_line_count"));
         var noVarianceLineCount = reader.GetInt32(reader.GetOrdinal("no_variance_line_count"));
         var blockedLineCount = reader.GetInt32(reader.GetOrdinal("blocked_line_count"));
+        var candidateVarianceAmountBase = Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("candidate_variance_amount_base")));
+        var readinessStatus = PurchaseOrderPurchaseVariancePostingReadinessPolicy.ResolveStatus(
+            lineCount,
+            candidateLineCount,
+            blockedLineCount);
 
         return new PurchaseOrderPurchaseVarianceSummary(
             purchaseOrderId,
@@ -1425,7 +1430,14 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 candidateLineCount,
                 noVarianceLineCount,
                 blockedLineCount),
-            Round6(reader.GetFieldValue<decimal>(reader.GetOrdinal("candidate_variance_amount_base"))),
+            candidateVarianceAmountBase,
+            PurchaseOrderPurchaseVariancePostingReadinessPolicy.CanRequestPosting(readinessStatus),
+            readinessStatus,
+            PurchaseOrderPurchaseVariancePostingReadinessPolicy.BuildReason(
+                readinessStatus,
+                candidateLineCount,
+                blockedLineCount,
+                candidateVarianceAmountBase),
             reader.IsDBNull(reader.GetOrdinal("last_refreshed_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_refreshed_at")));
@@ -2580,6 +2592,13 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             0,
             ReceiptGrIrApPurchaseVarianceStatusPolicy.NotApplicable,
             0m,
+            false,
+            PurchaseOrderPurchaseVariancePostingReadinessPolicy.NotApplicable,
+            PurchaseOrderPurchaseVariancePostingReadinessPolicy.BuildReason(
+                PurchaseOrderPurchaseVariancePostingReadinessPolicy.NotApplicable,
+                0,
+                0,
+                0m),
             null);
 
     private static void ValidateDraft(PurchaseOrderDraftSaveModel draft)

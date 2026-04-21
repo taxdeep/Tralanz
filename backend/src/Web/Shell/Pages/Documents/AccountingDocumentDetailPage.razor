@@ -277,6 +277,9 @@
                 <MudAlert Severity="@GetPurchaseOrderPurchaseVarianceSeverity(_purchaseOrder.PurchaseVariance.VarianceStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
                     @BuildPurchaseOrderPurchaseVarianceSummary(_purchaseOrder.PurchaseVariance)
                 </MudAlert>
+                <MudAlert Severity="@GetPurchaseOrderPurchaseVariancePostingReadinessSeverity(_purchaseOrder.PurchaseVariance.PostingReadinessStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @_purchaseOrder.PurchaseVariance.PostingReadinessReason
+                </MudAlert>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
                     <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
                         <MudText Typo="Typo.caption">Status</MudText>
@@ -287,6 +290,11 @@
                         <MudText Typo="Typo.caption">Candidate Lines</MudText>
                         <MudText Typo="Typo.h6">@_purchaseOrder.PurchaseVariance.CandidateLineCount</MudText>
                         <MudText Typo="Typo.body2" Class="text-secondary">@_purchaseOrder.PurchaseVariance.CandidateVarianceAmountBase.ToString("N2") base</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Posting Readiness</MudText>
+                        <MudText Typo="Typo.h6">@FormatPurchaseOrderPurchaseVariancePostingReadiness(_purchaseOrder.PurchaseVariance.PostingReadinessStatus)</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@(_purchaseOrder.PurchaseVariance.CanRequestPosting ? "Future command allowed" : "Future command blocked")</MudText>
                     </MudPaper>
                     <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
                         <MudText Typo="Typo.caption">Blocked Lines</MudText>
@@ -2037,6 +2045,15 @@
             _ => Severity.Info
         };
 
+    private static Severity GetPurchaseOrderPurchaseVariancePostingReadinessSeverity(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "ready_for_posting" => Severity.Success,
+            "blocked" => Severity.Error,
+            "no_variance" => Severity.Info,
+            _ => Severity.Info
+        };
+
     private static string FormatPurchaseOrderPurchaseVarianceStatus(string? status) =>
         status?.Trim().ToLowerInvariant() switch
         {
@@ -2050,6 +2067,16 @@
             "blocked_bill_not_posted" => "Bill Not Posted",
             "blocked_quantity_basis_missing" => "Quantity Basis Missing",
             "variance_inconsistent" => "Variance Inconsistent",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static string FormatPurchaseOrderPurchaseVariancePostingReadiness(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "not_applicable" => "Not Applicable",
+            "no_variance" => "No Variance",
+            "ready_for_posting" => "Ready For Future Posting",
+            "blocked" => "Blocked",
             _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
         };
 

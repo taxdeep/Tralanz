@@ -229,6 +229,12 @@ public sealed record class ShellPurchaseOrderPurchaseVarianceSummary
 
     public decimal CandidateVarianceAmountBase { get; init; }
 
+    public bool CanRequestPosting { get; init; }
+
+    public string PostingReadinessStatus { get; init; } = string.Empty;
+
+    public string PostingReadinessReason { get; init; } = string.Empty;
+
     public DateTimeOffset? LastRefreshedAt { get; init; }
 }
 

@@ -2081,3 +2081,38 @@ Still deferred:
 Authority note:
 
 H.20.21 stitches UI and logic together at the read/control layer: PO review can see downstream variance control truth, while accounting recognition remains an explicit later boundary.
+
+## Phase H.20.22 checkpoint
+
+H.20.22 adds purchase variance posting readiness to the purchase-order review surface.
+
+Boundary:
+
+- This is a readiness gate only.
+- It does not create a PPV journal.
+- It does not create a PPV posting command.
+- It does not approve, dispose, write off, or reverse PPV.
+- Readiness is true only when downstream variance control has candidate lines and no blocked lines.
+- No-variance and not-applicable states are not posting-ready because there is nothing to post.
+- Blocked states remain blocked until GR/IR settlement, settlement journal, AP open-item clearing, Bill posting, and quantity basis are complete.
+
+What changed:
+
+- Purchase-order variance summary now includes `CanRequestPosting`, `PostingReadinessStatus`, and `PostingReadinessReason`.
+- The repository computes readiness from the same persisted purchase variance lines used by H.19/H.20.21.
+- Web Shell PO detail shows posting readiness beside purchase variance status.
+- Shell labels the ready state as permission for a future explicit command, not as an automatic posting.
+
+Still deferred:
+
+- PPV journal posting command
+- PPV approval / disposition workflow
+- PO close accounting effects
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- tracked receipt
+
+Authority note:
+
+H.20.22 is the right point for a large cross-layer复验: PO lifecycle UI, backend authority gates, three-quantity truth, GR/IR/AP variance control, and Shell read models now meet at one PO review surface.

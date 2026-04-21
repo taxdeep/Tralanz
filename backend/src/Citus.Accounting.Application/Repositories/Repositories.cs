@@ -544,7 +544,52 @@ public sealed record PurchaseOrderPurchaseVarianceSummary(
     int BlockedLineCount,
     string VarianceStatus,
     decimal CandidateVarianceAmountBase,
+    bool CanRequestPosting,
+    string PostingReadinessStatus,
+    string PostingReadinessReason,
     DateTimeOffset? LastRefreshedAt);
+
+public static class PurchaseOrderPurchaseVariancePostingReadinessPolicy
+{
+    public const string NotApplicable = "not_applicable";
+    public const string NoVariance = "no_variance";
+    public const string ReadyForPosting = "ready_for_posting";
+    public const string Blocked = "blocked";
+
+    public static string ResolveStatus(
+        int varianceLineCount,
+        int candidateLineCount,
+        int blockedLineCount)
+    {
+        if (varianceLineCount <= 0)
+        {
+            return NotApplicable;
+        }
+
+        if (blockedLineCount > 0)
+        {
+            return Blocked;
+        }
+
+        return candidateLineCount > 0 ? ReadyForPosting : NoVariance;
+    }
+
+    public static bool CanRequestPosting(string readinessStatus) =>
+        string.Equals(readinessStatus, ReadyForPosting, StringComparison.Ordinal);
+
+    public static string BuildReason(
+        string readinessStatus,
+        int candidateLineCount,
+        int blockedLineCount,
+        decimal candidateVarianceAmountBase) =>
+        readinessStatus switch
+        {
+            ReadyForPosting => $"{candidateLineCount} purchase variance candidate line(s) totaling {candidateVarianceAmountBase:N2} base are ready for a future explicit PPV posting/disposition command.",
+            Blocked => $"{blockedLineCount} purchase variance line(s) are still blocked by GR/IR settlement, settlement journal, AP clearing, Bill posting, or quantity-basis prerequisites.",
+            NoVariance => "Downstream GR/IR/AP variance control exists and currently reports no purchase variance to post.",
+            _ => "No downstream purchase variance control lines are currently attached to this purchase order."
+        };
+}
 
 public static class PurchaseOrderThreeQuantityStatusPolicy
 {
