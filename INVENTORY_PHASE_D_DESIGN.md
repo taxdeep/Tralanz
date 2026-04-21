@@ -2211,3 +2211,45 @@ Still not included:
 Authority note:
 
 H.20.15 keeps issued operational truth backend-owned. The Shell may request release only after approval, and the API/repository decide whether the PO can become operational anchor truth.
+
+## Phase H.20.16 checkpoint
+
+H.20.16 adds a guarded approval-reversal action in the Web Shell for approved purchase orders.
+
+Boundary:
+
+- Reverse Approval appears only for approved purchase orders.
+- No reversal action is exposed after the PO has been issued.
+- No reversal action is exposed from draft, submitted request, rejected request, closed, or cancelled context.
+- No close, cancel, or amendment buttons.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No lifecycle legality changes.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Web Shell can call the backend PO approval-reversal endpoint.
+- Purchase order detail shows Reverse Approval beside Release while approval is complete but unreleased.
+- Shell command feedback accepts the backend draft lifecycle result as successful approval rollback.
+- API authority and repository state checks continue to gate reversal.
+
+Still not included:
+
+- PO close / cancel lifecycle buttons in Shell
+- reopen-for-amendment button in Shell
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.16 keeps approval reversal as a governance-controlled rollback, not a UI-owned state edit. The Shell requests the transition, while the API and repository decide whether approved-but-unissued PO truth can return to draft.
