@@ -148,6 +148,18 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> ReopenPurchaseOrderForAmendmentAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderLifecycleCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/reopen-for-amendment",
+            new PurchaseOrderApprovalRequestTransitionCommand(companyId, userId),
+            "reopen purchase order for amendment",
+            documentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,

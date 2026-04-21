@@ -155,6 +155,25 @@
             </div>
         </MudPaper>
 
+        @if (CanReopenPurchaseOrderForAmendment())
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Amendment Control</MudText>
+                <div style="display:grid;grid-template-columns:minmax(18rem,1fr) auto;gap:0.75rem;align-items:end;">
+                    <MudText Typo="Typo.body2">
+                        Reopen moves the purchase order back to draft for amendment. Backend governance will block this if receipt, bill, or active quantity-discrepancy truth already depends on the PO.
+                    </MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.Edit"
+                               OnClick="ReopenPurchaseOrderForAmendmentAsync"
+                               Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                        Reopen For Amendment
+                    </MudButton>
+                </div>
+            </MudPaper>
+        }
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
             <MudPaper Class="pa-4" Elevation="0">
                 <MudText Typo="Typo.caption">Purchase Order</MudText>
@@ -1427,6 +1446,22 @@
             "Purchase order approval reversed.");
     }
 
+    private async Task ReopenPurchaseOrderForAmendmentAsync()
+    {
+        if (_purchaseOrder is null || !CanReopenPurchaseOrderForAmendment() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderLifecycleCommandAsync(
+            () => ReviewClient.ReopenPurchaseOrderForAmendmentAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                CancellationToken.None),
+            "Purchase order reopened for amendment.");
+    }
+
     private async Task SubmitReverseRequestAsync()
     {
         if (_document is null || _latestReverseRequest is null || TryBlockWrites())
@@ -1814,6 +1849,11 @@
     private bool CanReversePurchaseOrderApproval() =>
         _purchaseOrder is not null &&
         string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanReopenPurchaseOrderForAmendment() =>
+        _purchaseOrder is not null &&
+        (string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(_purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase));
 
     private string GetPurchaseOrderApprovalControlSummary()
     {

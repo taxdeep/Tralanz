@@ -1905,3 +1905,39 @@ Still deferred:
 Authority note:
 
 H.20.16 keeps approval rollback backend-owned. The Shell can request reversal only from the approved lifecycle point; the API still decides reversal authority, and the repository still owns the final status mutation back to draft.
+
+## Phase H.20.17 checkpoint
+
+H.20.17 adds a guarded Shell reopen-for-amendment action for approved or issued purchase orders.
+
+Boundary:
+
+- Shell amendment reopen appears only while the PO status is approved or issued.
+- It does not expose close or cancel lifecycle buttons.
+- It does not bypass API amendment authority or repository lifecycle checks.
+- It does not reopen POs that already have receipt, bill, or active discrepancy anchors; the backend remains the final gate.
+- It does not introduce formal workflow tables or persisted company approval limits.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Web Shell review client can call the existing PO reopen-for-amendment endpoint.
+- PO detail shows a separate Amendment Control panel for approved or issued POs.
+- Reopen command feedback treats the backend draft lifecycle result as a successful controlled amendment start.
+- The detail page refreshes PO, approval request, audit, and downstream read models after the command.
+
+Still deferred:
+
+- PO close / cancel lifecycle buttons in Shell
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.17 keeps amendment reopening backend-owned. The Shell only requests the transition at approved/issued lifecycle points; the API checks amendment authority and the repository refuses reopening when downstream anchor truth already depends on the PO.
