@@ -1625,3 +1625,46 @@ Still deferred:
 Authority note:
 
 H.20.9 makes the lifecycle trail visible to operators without moving any PO authority into the UI. The Shell can review and explain lifecycle history, while backend PO state and command endpoints continue to own lifecycle legality.
+
+## Phase H.20.10 checkpoint
+
+H.20.10 adds the first PO approval threshold skeleton.
+
+Boundary:
+
+- Threshold policy is API-owned and temporary.
+- It does not introduce a persisted company threshold table yet.
+- It does not introduce approval request queues, rejection, reversal, or multi-step approval routing.
+- It does not move lifecycle authority into the repository contract.
+- It does not change PO lifecycle state rules.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- `BusinessApprovalAuthority` now has a temporary PO approval governance threshold.
+- Ordinary `approve` permission can approve POs only within the temporary threshold.
+- Above-threshold PO approval requires owner or governance-level authority.
+- PO approval endpoint evaluates the PO estimated amount before calling repository approval.
+- PO detail API returns approval-threshold summary data.
+- Web Shell PO detail shows the approval-threshold result as read-only context.
+- Authority tests cover:
+  - ordinary approver within threshold
+  - ordinary approver blocked above threshold
+  - owner allowed above threshold
+
+Still deferred:
+
+- persisted company/book approval threshold configuration
+- formal PO approval request queue
+- approval rejection / reversal
+- multi-approver routing
+- repository-level authority policy
+- lifecycle action buttons in Shell
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.10 keeps threshold authority at the API command boundary. The repository still owns PO lifecycle mutation and state legality, while the API decides whether the caller can enter the approval command for the current estimated PO amount.

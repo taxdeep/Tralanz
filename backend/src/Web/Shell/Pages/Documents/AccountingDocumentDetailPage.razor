@@ -80,6 +80,11 @@
                 <MudText Typo="Typo.h6">@_purchaseOrder.Lines.Count</MudText>
                 <MudText Typo="Typo.body2">@($"{_purchaseOrder.Lines.Sum(static line => line.OrderedQuantity):N2} ordered quantity")</MudText>
             </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Approval Threshold</MudText>
+                <MudText Typo="Typo.h6">@GetPurchaseOrderApprovalThresholdTitle(_purchaseOrder)</MudText>
+                <MudText Typo="Typo.body2">@_purchaseOrder.ApprovalAuthority.Summary</MudText>
+            </MudPaper>
         </div>
 
         @if (_purchaseOrder.ThreeQuantity is not null)
@@ -1395,6 +1400,20 @@
         $"&origin={Uri.EscapeDataString("Current source detail")}" +
         $"&returnHref={Uri.EscapeDataString($"/documents/purchase_order/{purchaseOrder.Id:D}")}" +
         $"&returnLabel={Uri.EscapeDataString("Back to purchase order")}";
+
+    private static string GetPurchaseOrderApprovalThresholdTitle(ShellPurchaseOrderReviewSummary purchaseOrder)
+    {
+        var estimated = purchaseOrder.ApprovalAuthority.EstimatedOrderAmount ?? purchaseOrder.EstimatedAmount;
+        var amountLabel = estimated.HasValue ? estimated.Value.ToString("N2") : "n/a";
+        if (!estimated.HasValue)
+        {
+            return $"Threshold not evaluated | {amountLabel}";
+        }
+
+        return purchaseOrder.ApprovalAuthority.RequiresGovernanceApproval
+            ? $"Governance required | {amountLabel}"
+            : $"Approver allowed | {amountLabel}";
+    }
 
     private static string FormatStatusMovement(string? fromStatus, string? toStatus)
     {

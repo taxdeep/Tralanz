@@ -2,6 +2,8 @@ namespace Citus.Accounting.Api;
 
 public static class BusinessApprovalAuthority
 {
+    public const decimal PurchaseOrderApprovalGovernanceThresholdAmount = 10_000m;
+
     public static readonly IReadOnlyList<string> OpenItemAdjustmentApprovalRoles =
     [
         "owner",
@@ -41,6 +43,9 @@ public static class BusinessApprovalAuthority
 
     public static bool CanApprovePurchaseOrder(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
+
+    public static bool CanApprovePurchaseOrderAboveThreshold(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsPurchaseOrderGovernanceApprovalRole) == true;
 
     public static bool CanReleasePurchaseOrder(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
@@ -155,7 +160,8 @@ public static class BusinessApprovalAuthority
 
     public static Decision EvaluatePurchaseOrderApproval(
         BusinessSessionContext? session,
-        string transitionCode)
+        string transitionCode,
+        decimal? estimatedOrderAmount = null)
     {
         if (session is null)
         {
@@ -173,11 +179,24 @@ public static class BusinessApprovalAuthority
                 $"Only a company owner, approval user, or book-governance user can {transitionCode} a purchase order.");
         }
 
+        if (RequiresPurchaseOrderGovernanceApproval(estimatedOrderAmount) &&
+            !CanApprovePurchaseOrderAboveThreshold(session))
+        {
+            return new Decision(
+                false,
+                "blocked_purchase_order_approval_threshold",
+                $"Purchase orders above {PurchaseOrderApprovalGovernanceThresholdAmount:N2} require company owner or governance approval.");
+        }
+
         return new Decision(
             true,
             "authority_allowed",
             $"The business session has authority to {transitionCode} the purchase order.");
     }
+
+    public static bool RequiresPurchaseOrderGovernanceApproval(decimal? estimatedOrderAmount) =>
+        estimatedOrderAmount.HasValue &&
+        estimatedOrderAmount.Value > PurchaseOrderApprovalGovernanceThresholdAmount;
 
     public static Decision EvaluatePurchaseOrderRelease(
         BusinessSessionContext? session,
@@ -238,6 +257,11 @@ public static class BusinessApprovalAuthority
 
     private static bool IsPurchaseOrderApprovalRole(string role) =>
         PurchaseOrderApprovalRoles.Contains(
+            role.Trim().ToLowerInvariant(),
+            StringComparer.Ordinal);
+
+    private static bool IsPurchaseOrderGovernanceApprovalRole(string role) =>
+        PurchaseOrderAmendmentRoles.Contains(
             role.Trim().ToLowerInvariant(),
             StringComparer.Ordinal);
 

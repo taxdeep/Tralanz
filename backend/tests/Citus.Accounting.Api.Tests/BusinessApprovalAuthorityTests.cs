@@ -133,7 +133,37 @@ public sealed class BusinessApprovalAuthorityTests
 
         var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
             session,
-            "approve");
+            "approve",
+            9_999.99m);
+
+        Assert.True(decision.Allowed);
+        Assert.Equal("authority_allowed", decision.OutcomeCode);
+    }
+
+    [Fact]
+    public void CanApprovePurchaseOrder_BlocksApprovePermissionAboveThreshold()
+    {
+        var session = CreateSession("user", "approve");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
+            session,
+            "approve",
+            BusinessApprovalAuthority.PurchaseOrderApprovalGovernanceThresholdAmount + 0.01m);
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("blocked_purchase_order_approval_threshold", decision.OutcomeCode);
+        Assert.Contains("governance approval", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanApprovePurchaseOrder_AllowsOwnerAboveThreshold()
+    {
+        var session = CreateSession("owner");
+
+        var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
+            session,
+            "approve",
+            BusinessApprovalAuthority.PurchaseOrderApprovalGovernanceThresholdAmount + 10_000m);
 
         Assert.True(decision.Allowed);
         Assert.Equal("authority_allowed", decision.OutcomeCode);

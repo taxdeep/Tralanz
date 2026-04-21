@@ -1958,3 +1958,42 @@ Still not included:
 Authority note:
 
 H.20.9 is a visibility step. The Shell consumes PO and lifecycle audit read models, but lifecycle authority still stays in backend state and command policy.
+
+## Phase H.20.10 checkpoint
+
+H.20.10 introduces the first purchase order approval threshold skeleton.
+
+Boundary:
+
+- API authority skeleton only.
+- No persisted threshold management surface yet.
+- No approval queue, rejection path, reversal path, or multi-step route.
+- No lifecycle legality changes.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Purchase order approval has a temporary governance threshold.
+- Ordinary PO approvers are allowed within that threshold.
+- Above-threshold approval requires owner or governance authority.
+- The approve endpoint reads the PO amount estimate before invoking the repository transition.
+- Purchase order detail read model exposes the threshold decision summary.
+- Web Shell PO detail displays the threshold decision as read-only context.
+
+Still not included:
+
+- persisted approval limit policies
+- approval request queues
+- approval rejection / reversal
+- lifecycle command buttons in Shell
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.10 makes amount-sensitive PO approval explicit without changing the truth ladder. PO remains ordered truth, Receipt remains physical receipt truth, Bill remains AP charge truth, and the API guards who may approve before the PO state transition is attempted.

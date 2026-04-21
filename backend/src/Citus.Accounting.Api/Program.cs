@@ -5,6 +5,7 @@ using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Queries;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
+using Citus.Accounting.Domain.Documents;
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Infrastructure.Persistence;
 using Citus.Ui.Shared.Business;
@@ -4060,6 +4061,7 @@ accounting.MapGet(
 
         return Results.Ok(documents.Select(document => new
         {
+            EstimatedAmount = CalculatePurchaseOrderListEstimatedAmount(document),
             document.DocumentId,
             document.EntityNumber,
             document.DisplayNumber,
@@ -4083,6 +4085,7 @@ accounting.MapGet(
                 AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
                 Summary = PurchaseOrderAnchorPolicy.BuildAnchorStatusSummary(document.Status)
             },
+            ApprovalAuthority = BuildPurchaseOrderApprovalAuthoritySummary(CalculatePurchaseOrderListEstimatedAmount(document)),
             ThreeQuantity = summaries.TryGetValue(document.DocumentId, out var summary) ? summary : null
         }));
     });
@@ -4102,8 +4105,10 @@ accounting.MapGet(
         }
 
         var summary = await repository.GetThreeQuantitySummaryAsync(new(query.CompanyId), documentId, cancellationToken);
+        var estimatedAmount = CalculatePurchaseOrderDocumentEstimatedAmount(document);
         return Results.Ok(new
         {
+            EstimatedAmount = estimatedAmount,
             document.Id,
             CompanyId = document.CompanyId.Value,
             EntityNumber = document.EntityNumber.Value,
@@ -4124,6 +4129,7 @@ accounting.MapGet(
                 AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
                 Summary = PurchaseOrderAnchorPolicy.BuildAnchorStatusSummary(document.Status)
             },
+            ApprovalAuthority = BuildPurchaseOrderApprovalAuthoritySummary(estimatedAmount),
             ThreeQuantity = summary,
             Lines = document.PurchaseOrderLines.Select(line => new
             {
@@ -4230,7 +4236,16 @@ accounting.MapPost(
     "/purchase-orders/{documentId:guid}/approve",
     async (Guid documentId, ApprovePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var authorityBlock = RequirePurchaseOrderApprovalAuthority(sessionAccessor.Current, "approve");
+        var document = await repository.GetAsync(new(request.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Purchase order document was not found in the active company context." });
+        }
+
+        var authorityBlock = RequirePurchaseOrderApprovalAuthority(
+            sessionAccessor.Current,
+            "approve",
+            CalculatePurchaseOrderDocumentEstimatedAmount(document));
         if (authorityBlock is not null)
         {
             return authorityBlock;
@@ -5899,11 +5914,13 @@ static IResult? RequireGrIrSettlementExecutionAuthority(
 
 static IResult? RequirePurchaseOrderApprovalAuthority(
     BusinessSessionContext? session,
-    string transitionCode)
+    string transitionCode,
+    decimal? estimatedOrderAmount = null)
 {
     var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
         session,
-        transitionCode);
+        transitionCode,
+        estimatedOrderAmount);
 
     return decision.Allowed
         ? null
@@ -5912,6 +5929,8 @@ static IResult? RequirePurchaseOrderApprovalAuthority(
             {
                 transitionCode,
                 outcomeCode = decision.OutcomeCode,
+                estimatedOrderAmount,
+                approvalThresholdAmount = BusinessApprovalAuthority.PurchaseOrderApprovalGovernanceThresholdAmount,
                 message = decision.Message
             },
             statusCode: StatusCodes.Status403Forbidden);
@@ -5956,6 +5975,26 @@ static IResult? RequirePurchaseOrderAmendmentAuthority(
             },
             statusCode: StatusCodes.Status403Forbidden);
 }
+
+static decimal? CalculatePurchaseOrderListEstimatedAmount(PurchaseOrderDocumentListItem document) => null;
+
+static decimal? CalculatePurchaseOrderDocumentEstimatedAmount(PurchaseOrderDocument document) =>
+    document.PurchaseOrderLines.Any(static line => !line.UnitCost.HasValue)
+        ? null
+        : document.PurchaseOrderLines.Sum(static line => line.OrderedQuantity * line.UnitCost!.Value);
+
+static object BuildPurchaseOrderApprovalAuthoritySummary(decimal? estimatedOrderAmount) =>
+    new
+    {
+        EstimatedOrderAmount = estimatedOrderAmount,
+        ThresholdAmount = BusinessApprovalAuthority.PurchaseOrderApprovalGovernanceThresholdAmount,
+        RequiresGovernanceApproval = BusinessApprovalAuthority.RequiresPurchaseOrderGovernanceApproval(estimatedOrderAmount),
+        Summary = !estimatedOrderAmount.HasValue
+            ? "Estimated purchase order amount is unavailable, so the temporary threshold does not add an approval block yet."
+            : BusinessApprovalAuthority.RequiresPurchaseOrderGovernanceApproval(estimatedOrderAmount)
+            ? "Purchase order approval is above the temporary governance threshold and requires owner or governance authority."
+            : "Purchase order approval is within the temporary approver threshold."
+    };
 
 static IResult ToCsvFileResult(ReportCsvExporter.ReportCsvFile file) =>
     Results.File(Encoding.UTF8.GetBytes(file.Content), file.ContentType, file.FileName);

@@ -144,7 +144,11 @@ public sealed record class ShellPurchaseOrderReviewSummary
 
     public DateTimeOffset? AmendmentStartedAt { get; init; }
 
+    public decimal? EstimatedAmount { get; init; }
+
     public ShellPurchaseOrderAnchorGovernanceSummary AnchorGovernance { get; init; } = new();
+
+    public ShellPurchaseOrderApprovalAuthoritySummary ApprovalAuthority { get; init; } = new();
 
     public ShellPurchaseOrderThreeQuantitySummary? ThreeQuantity { get; init; }
 
@@ -169,6 +173,17 @@ public sealed record class ShellPurchaseOrderLineSummary
 public sealed record class ShellPurchaseOrderAnchorGovernanceSummary
 {
     public bool AllowsNewAnchors { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
+}
+
+public sealed record class ShellPurchaseOrderApprovalAuthoritySummary
+{
+    public decimal? EstimatedOrderAmount { get; init; }
+
+    public decimal ThresholdAmount { get; init; }
+
+    public bool RequiresGovernanceApproval { get; init; }
 
     public string Summary { get; init; } = string.Empty;
 }
