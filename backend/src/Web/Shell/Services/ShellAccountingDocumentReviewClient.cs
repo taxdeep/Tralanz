@@ -124,6 +124,18 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> ReleasePurchaseOrderAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        await PostPurchaseOrderLifecycleCommandAsync(
+            $"accounting/purchase-orders/{documentId:D}/issue",
+            new PurchaseOrderApprovalRequestTransitionCommand(companyId, userId),
+            "release purchase order",
+            documentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,

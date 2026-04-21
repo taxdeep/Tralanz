@@ -1830,3 +1830,41 @@ Still deferred:
 Authority note:
 
 H.20.14 makes approval executable from the review workflow without bypassing backend authority. The Shell can initiate approval only from queued request context; the API still decides authority and threshold eligibility, and the repository still owns lifecycle mutation.
+
+## Phase H.20.15 checkpoint
+
+H.20.15 adds the first guarded Shell release action for approved purchase orders.
+
+Boundary:
+
+- Shell release appears only when the PO is already approved.
+- It does not add issue/release access to draft or queued approval-request states.
+- It does not add close, cancel, amendment, or approval reversal buttons to the Shell.
+- It does not change API release authority or repository lifecycle legality.
+- It does not introduce formal workflow tables or persisted company approval limits.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Web Shell review client can call the existing PO issue/release endpoint.
+- PO detail exposes Release only for approved POs.
+- Release command feedback uses the backend lifecycle result and refreshes the PO detail read model.
+- Existing API release authority remains the gate for whether release is allowed.
+
+Still deferred:
+
+- PO approval reversal button in Shell
+- PO close / cancel lifecycle buttons in Shell
+- amendment/reopen command in Shell
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.15 moves approved PO intent into issued operational anchor truth only through the existing API command. The Shell surfaces the action at the correct lifecycle point, while backend authority and repository state checks remain decisive.

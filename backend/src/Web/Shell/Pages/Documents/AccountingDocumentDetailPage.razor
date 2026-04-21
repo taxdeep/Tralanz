@@ -119,6 +119,19 @@
                         Approve
                     </MudButton>
                 }
+                else if (CanReleasePurchaseOrder())
+                {
+                    <MudText Typo="Typo.body2">
+                        Approval is complete. Release moves the purchase order into issued anchor truth for Receipt and Bill workflows.
+                    </MudText>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Send"
+                               OnClick="ReleasePurchaseOrderAsync"
+                               Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                        Release
+                    </MudButton>
+                }
                 else
                 {
                     <MudText Typo="Typo.body2">
@@ -1373,6 +1386,22 @@
             "Purchase order approved.");
     }
 
+    private async Task ReleasePurchaseOrderAsync()
+    {
+        if (_purchaseOrder is null || !CanReleasePurchaseOrder() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderLifecycleCommandAsync(
+            () => ReviewClient.ReleasePurchaseOrderAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                CancellationToken.None),
+            "Purchase order released.");
+    }
+
     private async Task SubmitReverseRequestAsync()
     {
         if (_document is null || _latestReverseRequest is null || TryBlockWrites())
@@ -1553,7 +1582,7 @@
             }
             else
             {
-                _purchaseOrderApprovalCommandSeverity = string.Equals(result.Value.Status, "approved", StringComparison.OrdinalIgnoreCase)
+                _purchaseOrderApprovalCommandSeverity = IsSuccessfulPurchaseOrderLifecycleStatus(result.Value.Status)
                     ? Severity.Success
                     : Severity.Warning;
                 _purchaseOrderApprovalCommandMessage = string.IsNullOrWhiteSpace(result.Value.DisplayNumber)
@@ -1753,6 +1782,10 @@
         string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
 
+    private bool CanReleasePurchaseOrder() =>
+        _purchaseOrder is not null &&
+        string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase);
+
     private string GetPurchaseOrderApprovalControlSummary()
     {
         if (_purchaseOrder is null)
@@ -1782,6 +1815,9 @@
             "submitted" or
             "already_submitted" or
             "rejected";
+
+    private static bool IsSuccessfulPurchaseOrderLifecycleStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() is "approved" or "issued";
 
     private static bool IsSettlementDocument(ShellAccountingDocumentReviewSummary? document) =>
         document?.SourceType is "receive_payment" or "credit_application" or "pay_bill" or "vendor_credit_application";

@@ -2168,3 +2168,46 @@ Still not included:
 Authority note:
 
 H.20.14 keeps approval attached to queued intent. The Shell initiates the action, but backend authority decides whether it can happen and PO state remains lifecycle truth.
+
+## Phase H.20.15 checkpoint
+
+H.20.15 adds a guarded PO release action in the Web Shell.
+
+Boundary:
+
+- Release action appears only for approved purchase orders.
+- No release action from draft, submitted request, rejected request, closed, or cancelled context.
+- No approval reversal button.
+- No close, cancel, or amendment buttons.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No lifecycle legality changes.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Web Shell can call the backend PO issue/release endpoint.
+- Purchase order detail shows Release only after approval is complete.
+- Shell command feedback reflects backend lifecycle result and refreshes the PO detail read model.
+- API authority and repository state checks continue to gate release.
+
+Still not included:
+
+- approval reversal lifecycle button in Shell
+- PO close / cancel lifecycle buttons in Shell
+- reopen-for-amendment button in Shell
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.15 keeps issued operational truth backend-owned. The Shell may request release only after approval, and the API/repository decide whether the PO can become operational anchor truth.
