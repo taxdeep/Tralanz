@@ -144,6 +144,13 @@
                         <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildPurchaseOrderHref(context.PurchaseOrderId)">
                             Open
                         </MudButton>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   Size="Size.Small"
+                                   Disabled="@(_isCommandRunning || WritesBlocked || !CanApprove(context))"
+                                   OnClick="@(() => ApproveAsync(context))">
+                            Approve
+                        </MudButton>
                         <MudButton Variant="Variant.Outlined"
                                    Color="Color.Error"
                                    Size="Size.Small"
@@ -257,6 +264,55 @@
         }
     }
 
+    private async Task ApproveAsync(ShellPurchaseOrderApprovalRequestSummary request)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _isCommandRunning = true;
+        _commandMessage = null;
+        _commandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await ReviewClient.ApprovePurchaseOrderAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                request.PurchaseOrderId,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _commandSeverity = Severity.Warning;
+                _commandMessage = result.ErrorMessage ?? "The purchase order approve command did not return a response.";
+            }
+            else
+            {
+                _commandSeverity = string.Equals(result.Value.Status, "approved", StringComparison.OrdinalIgnoreCase)
+                    ? Severity.Success
+                    : Severity.Warning;
+                _commandMessage = $"Purchase order {result.Value.DisplayNumber} moved to {FormatStatus(result.Value.Status)}.";
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _commandSeverity = Severity.Error;
+            _commandMessage = ex.Message;
+        }
+        finally
+        {
+            _isCommandRunning = false;
+        }
+    }
+
     private static string BuildPurchaseOrderHref(Guid purchaseOrderId) =>
         $"/documents/purchase_order/{purchaseOrderId:D}";
 
@@ -297,6 +353,11 @@
         };
 
     private static bool CanReject(ShellPurchaseOrderApprovalRequestSummary request) =>
+        string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CanApprove(ShellPurchaseOrderApprovalRequestSummary request) =>
+        string.Equals(request.PurchaseOrderStatus, "draft", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
 

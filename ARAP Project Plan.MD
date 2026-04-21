@@ -1791,3 +1791,42 @@ Still deferred:
 Authority note:
 
 H.20.13 lets operators move approval-request intent through the UI, but approval authority remains in the API and lifecycle state remains in the PO repository. Rejection still affects only the approval-request trail and does not mutate ordered truth.
+
+## Phase H.20.14 checkpoint
+
+H.20.14 adds a guarded Shell approval action from the submitted PO approval request queue.
+
+Boundary:
+
+- Shell PO approval is available only when a PO approval request is submitted and pending.
+- It does not add a naked approve button directly on draft POs.
+- It does not add issue, reopen, close, cancel, or approval reversal buttons to the Shell.
+- It does not change API approval authority, threshold checks, or repository lifecycle legality.
+- It does not introduce formal workflow tables or persisted company approval limits.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Web Shell review client can call the existing PO approve endpoint.
+- PO approval request queue shows Approve only for draft POs with submitted pending approval requests.
+- PO detail shows Approve only through the latest submitted pending approval request.
+- Approval command feedback uses the backend lifecycle result and refreshes the Shell read model.
+- Existing API authority and amount-threshold blocks remain the source of truth for whether approval is allowed.
+
+Still deferred:
+
+- PO issue / release button in Shell
+- PO approval reversal button in Shell
+- PO close / cancel lifecycle buttons in Shell
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.14 makes approval executable from the review workflow without bypassing backend authority. The Shell can initiate approval only from queued request context; the API still decides authority and threshold eligibility, and the repository still owns lifecycle mutation.

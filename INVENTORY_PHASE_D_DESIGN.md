@@ -2124,3 +2124,47 @@ Still not included:
 Authority note:
 
 H.20.13 allows operators to manage approval-request intent from Shell without weakening the truth ladder. PO document state, approval authority, and lifecycle mutation remain backend-owned.
+
+## Phase H.20.14 checkpoint
+
+H.20.14 adds the first guarded PO approval action in the Web Shell.
+
+Boundary:
+
+- Approval action appears only from submitted, pending approval request context.
+- No direct draft PO approve button.
+- No issue / release button.
+- No approval reversal button.
+- No close, cancel, or amendment buttons.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No lifecycle legality changes.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Web Shell can call the backend PO approve endpoint.
+- The approval request queue can approve submitted pending requests when the PO remains draft.
+- Purchase order detail can approve through the latest submitted pending approval request.
+- Shell command feedback reflects backend lifecycle result and refreshes the affected read model.
+- API authority and threshold checks continue to gate approval.
+
+Still not included:
+
+- PO release / issue lifecycle button in Shell
+- approval reversal lifecycle button in Shell
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.14 keeps approval attached to queued intent. The Shell initiates the action, but backend authority decides whether it can happen and PO state remains lifecycle truth.

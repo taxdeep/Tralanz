@@ -106,6 +106,19 @@
                         Submit
                     </MudButton>
                 }
+                else if (CanApprovePurchaseOrderFromApprovalRequest())
+                {
+                    <MudText Typo="Typo.body2">
+                        @GetPurchaseOrderApprovalRequestSummary(_latestPurchaseOrderApprovalRequest)
+                    </MudText>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               OnClick="ApprovePurchaseOrderFromApprovalRequestAsync"
+                               Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                        Approve
+                    </MudButton>
+                }
                 else
                 {
                     <MudText Typo="Typo.body2">
@@ -1344,6 +1357,22 @@
             "Purchase order approval request submitted.");
     }
 
+    private async Task ApprovePurchaseOrderFromApprovalRequestAsync()
+    {
+        if (_purchaseOrder is null || !CanApprovePurchaseOrderFromApprovalRequest() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderLifecycleCommandAsync(
+            () => ReviewClient.ApprovePurchaseOrderAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                CancellationToken.None),
+            "Purchase order approved.");
+    }
+
     private async Task SubmitReverseRequestAsync()
     {
         if (_document is null || _latestReverseRequest is null || TryBlockWrites())
@@ -1486,6 +1515,50 @@
                     : result.Value.Message;
                 _latestPurchaseOrderApprovalRequest = result.Value.Request;
                 _purchaseOrderApprovalReason = null;
+            }
+
+            await LoadPurchaseOrderStateAsync();
+        }
+        catch (Exception ex)
+        {
+            _purchaseOrderApprovalCommandSeverity = Severity.Error;
+            _purchaseOrderApprovalCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isPurchaseOrderApprovalCommandRunning = false;
+        }
+    }
+
+    private async Task RunPurchaseOrderLifecycleCommandAsync(
+        Func<Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>>> command,
+        string fallbackSuccessMessage)
+    {
+        _isPurchaseOrderApprovalCommandRunning = true;
+        _purchaseOrderApprovalCommandMessage = null;
+        _purchaseOrderApprovalCommandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await command();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _purchaseOrderApprovalCommandSeverity = Severity.Warning;
+                _purchaseOrderApprovalCommandMessage = result.ErrorMessage ?? "The purchase order lifecycle command did not return a response.";
+            }
+            else
+            {
+                _purchaseOrderApprovalCommandSeverity = string.Equals(result.Value.Status, "approved", StringComparison.OrdinalIgnoreCase)
+                    ? Severity.Success
+                    : Severity.Warning;
+                _purchaseOrderApprovalCommandMessage = string.IsNullOrWhiteSpace(result.Value.DisplayNumber)
+                    ? fallbackSuccessMessage
+                    : $"Purchase order {result.Value.DisplayNumber} moved to {FormatPurchaseOrderQuantityStatus(result.Value.Status)}.";
             }
 
             await LoadPurchaseOrderStateAsync();
@@ -1671,6 +1744,13 @@
         _latestPurchaseOrderApprovalRequest is not null &&
         string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "draft", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanApprovePurchaseOrderFromApprovalRequest() =>
+        _purchaseOrder is not null &&
+        _latestPurchaseOrderApprovalRequest is not null &&
+        string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_latestPurchaseOrderApprovalRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(_latestPurchaseOrderApprovalRequest.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
 
     private string GetPurchaseOrderApprovalControlSummary()
