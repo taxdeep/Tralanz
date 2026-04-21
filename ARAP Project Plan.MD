@@ -1709,3 +1709,47 @@ Still deferred:
 Authority note:
 
 H.20.11 keeps approval-request state explanatory and queue-oriented while PO document state remains authoritative. Rejection does not mutate ordered truth, and approval reversal is limited to approved-but-unissued POs through governance authority.
+
+## Phase H.20.12 checkpoint
+
+H.20.12 surfaces the PO approval request queue in the Web Shell.
+
+Boundary:
+
+- Web Shell read surface only.
+- It does not add approval request create, submit, reject, approve, or reversal buttons to the Shell.
+- It does not introduce formal workflow tables or persisted company approval limits.
+- It does not change PO lifecycle legality, approval authority, or repository write policy.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Web Shell review client can read PO approval requests from the accounting API.
+- New PO approval request queue page lists pending records by default and can include closed records.
+- Queue rows show:
+  - PO display/entity numbers
+  - PO lifecycle status
+  - request status
+  - approval status
+  - requested/submitted/rejected actors
+  - estimated amount and temporary governance threshold context
+- Dashboard and Payables navigation expose a PO Approvals entry point.
+- Purchase order detail links to the approval request queue.
+- Purchase order detail shows the latest approval request summary beside approval-threshold context.
+- Lifecycle audit labels now include approval reversal events.
+
+Still deferred:
+
+- Shell approval command buttons
+- formal approval workflow tables
+- multi-approver routing
+- persisted company/book approval threshold configuration
+- repository-level authority policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+
+Authority note:
+
+H.20.12 makes approval intent visible without moving authority into the UI. Operators can review request state and threshold pressure, while backend API and repository boundaries continue to own lifecycle transitions.

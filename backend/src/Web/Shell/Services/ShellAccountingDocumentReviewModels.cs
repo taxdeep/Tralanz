@@ -234,6 +234,49 @@ public sealed record class ShellPurchaseOrderLifecycleAuditEntry
     public DateTimeOffset CreatedAt { get; init; }
 }
 
+public sealed record class ShellPurchaseOrderApprovalRequestSummary
+{
+    public Guid RequestId { get; init; }
+
+    public Guid PurchaseOrderId { get; init; }
+
+    public string EntityNumber { get; init; } = string.Empty;
+
+    public string DisplayNumber { get; init; } = string.Empty;
+
+    public string PurchaseOrderStatus { get; init; } = string.Empty;
+
+    public decimal? EstimatedAmount { get; init; }
+
+    public decimal ThresholdAmount { get; init; }
+
+    public bool RequiresGovernanceApproval { get; init; }
+
+    public string RequestStatus { get; init; } = string.Empty;
+
+    public string ApprovalStatus { get; init; } = string.Empty;
+
+    public string RequestedByActorType { get; init; } = string.Empty;
+
+    public Guid? RequestedByActorId { get; init; }
+
+    public DateTimeOffset RequestedAt { get; init; }
+
+    public string? SubmittedByActorType { get; init; }
+
+    public Guid? SubmittedByActorId { get; init; }
+
+    public DateTimeOffset? SubmittedAt { get; init; }
+
+    public string? RejectedByActorType { get; init; }
+
+    public Guid? RejectedByActorId { get; init; }
+
+    public DateTimeOffset? RejectedAt { get; init; }
+
+    public string? Reason { get; init; }
+}
+
 public sealed record class ShellAccountingDocumentLifecycleActionSummary
 {
     public string ActionCode { get; init; } = string.Empty;

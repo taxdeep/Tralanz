@@ -50,6 +50,29 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             documentId,
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellPurchaseOrderApprovalRequestSummary>>> ListPurchaseOrderApprovalRequestsAsync(
+        Guid companyId,
+        int take = 50,
+        bool includeClosed = false,
+        CancellationToken cancellationToken = default) =>
+        await GetListAsync<ShellPurchaseOrderApprovalRequestSummary>(
+            $"accounting/purchase-orders/approval-requests?companyId={companyId:D}&take={Math.Clamp(take, 1, 200)}&includeClosed={includeClosed.ToString().ToLowerInvariant()}",
+            "purchase order approval requests",
+            "purchase_order",
+            Guid.Empty,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestSummary>> GetLatestPurchaseOrderApprovalRequestAsync(
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        await GetOptionalAsync<ShellPurchaseOrderApprovalRequestSummary>(
+            $"accounting/purchase-orders/{documentId:D}/approval-request?companyId={companyId:D}",
+            "purchase order approval request",
+            "purchase_order",
+            documentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellAccountingDocumentReverseRequestSummary>> GetLatestReverseRequestAsync(
         Guid companyId,
         string sourceType,

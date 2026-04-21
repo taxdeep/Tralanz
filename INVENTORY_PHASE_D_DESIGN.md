@@ -2039,3 +2039,45 @@ Still not included:
 Authority note:
 
 H.20.11 keeps the truth ladder intact. Approval request audit rows explain approval intent and queue status; PO state still owns lifecycle truth, and reversal is allowed only before issue creates operational anchor truth.
+
+## Phase H.20.12 checkpoint
+
+H.20.12 adds a read-only Web Shell workbench for purchase order approval requests.
+
+Boundary:
+
+- Shell read model only.
+- No Shell approval request commands.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No lifecycle legality changes.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Web Shell can load the accounting API approval request queue.
+- The queue defaults to pending approval requests and can include closed records.
+- The queue displays PO lifecycle status, request status, approval status, actor timestamps, amount estimate, and threshold pressure.
+- Dashboard and Payables navigation expose the PO approval review surface.
+- Purchase order detail links into the approval queue and shows the latest approval request snapshot.
+- Approval reversal is now labeled in the purchase order lifecycle audit timeline.
+
+Still not included:
+
+- approval request create / submit / reject buttons in Shell
+- PO approve / reverse approval buttons in Shell
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.12 is visibility only. The Shell can explain PO approval queue state, but the API remains the authority gate and PO document state remains lifecycle truth.

@@ -53,6 +53,9 @@
             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildPurchaseOrderBrowserHref(_purchaseOrder)">
                 Browse Purchase Orders
             </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/documents/purchase-orders/approval-requests">
+                Approval Requests
+            </MudButton>
         </div>
 
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
@@ -84,6 +87,11 @@
                 <MudText Typo="Typo.caption">Approval Threshold</MudText>
                 <MudText Typo="Typo.h6">@GetPurchaseOrderApprovalThresholdTitle(_purchaseOrder)</MudText>
                 <MudText Typo="Typo.body2">@_purchaseOrder.ApprovalAuthority.Summary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudText Typo="Typo.caption">Latest Approval Request</MudText>
+                <MudText Typo="Typo.h6">@GetPurchaseOrderApprovalRequestTitle(_latestPurchaseOrderApprovalRequest)</MudText>
+                <MudText Typo="Typo.body2">@GetPurchaseOrderApprovalRequestSummary(_latestPurchaseOrderApprovalRequest)</MudText>
             </MudPaper>
         </div>
 
@@ -955,6 +963,7 @@
     private ShellAccountingDocumentReviewSummary? _document;
     private ShellPurchaseOrderReviewSummary? _purchaseOrder;
     private IReadOnlyList<ShellPurchaseOrderLifecycleAuditEntry> _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
+    private ShellPurchaseOrderApprovalRequestSummary? _latestPurchaseOrderApprovalRequest;
     private ShellAccountingDocumentReverseRequestSummary? _latestReverseRequest;
     private ShellAccountingDocumentReverseApplyReadinessSummary? _reverseApplyReadiness;
     private ShellAccountingDocumentReverseExecutionPlanSummary? _reverseExecutionPlan;
@@ -982,6 +991,7 @@
         _document = null;
         _purchaseOrder = null;
         _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
+        _latestPurchaseOrderApprovalRequest = null;
         _latestReverseRequest = null;
         _reverseApplyReadiness = null;
         _reverseExecutionPlan = null;
@@ -1160,6 +1170,21 @@
 
         _purchaseOrderLifecycleAudit = auditResult.Value ?? Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
         CapturePageError(auditResult.ErrorMessage);
+
+        var approvalRequestResult = await ReviewClient.GetLatestPurchaseOrderApprovalRequestAsync(
+            ShellState.ActiveCompany.Id,
+            DocumentId,
+            CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(approvalRequestResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        _latestPurchaseOrderApprovalRequest = approvalRequestResult.Value;
+        if (_latestPurchaseOrderApprovalRequest is null && !approvalRequestResult.IsNotFound)
+        {
+            CapturePageError(approvalRequestResult.ErrorMessage);
+        }
     }
 
     private async Task<IReadOnlyDictionary<Guid, BlockerReverseDetail>?> LoadBlockerReverseDetailsAsync(
@@ -1428,7 +1453,9 @@
             "purchase_order_created" => "Created",
             "purchase_order_draft_updated" => "Draft Updated",
             "purchase_order_approved" => "Approved",
+            "purchase_order_approval_reversed" => "Approval Reversed",
             "purchase_order_issued" => "Issued",
+            "purchase_order_released" => "Released",
             "purchase_order_reopened_for_amendment" => "Reopened For Amendment",
             "purchase_order_closed" => "Closed",
             "purchase_order_cancelled" => "Cancelled",
@@ -1443,6 +1470,9 @@
             "issued" => "Issued",
             "closed" => "Closed",
             "cancelled" => "Cancelled",
+            "submitted" => "Submitted",
+            "pending" => "Pending",
+            "rejected" => "Rejected",
             "not_received" => "Not Received",
             "partially_received" => "Partially Received",
             "fully_received" => "Fully Received",
@@ -1453,6 +1483,26 @@
             "complete" => "Complete",
             _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
         };
+
+    private static string GetPurchaseOrderApprovalRequestTitle(ShellPurchaseOrderApprovalRequestSummary? request) =>
+        request is null
+            ? "No request"
+            : $"{FormatPurchaseOrderQuantityStatus(request.RequestStatus)} | {FormatPurchaseOrderQuantityStatus(request.ApprovalStatus)}";
+
+    private static string GetPurchaseOrderApprovalRequestSummary(ShellPurchaseOrderApprovalRequestSummary? request)
+    {
+        if (request is null)
+        {
+            return "No approval request has been recorded for this purchase order.";
+        }
+
+        var amount = request.EstimatedAmount?.ToString("N2") ?? "n/a";
+        var threshold = request.RequiresGovernanceApproval
+            ? $"governance threshold required above {request.ThresholdAmount:N2}"
+            : $"within temporary threshold {request.ThresholdAmount:N2}";
+        var reason = string.IsNullOrWhiteSpace(request.Reason) ? "no reason recorded" : request.Reason;
+        return $"{amount}; {threshold}; {reason}.";
+    }
 
     private static bool IsSettlementDocument(ShellAccountingDocumentReviewSummary? document) =>
         document?.SourceType is "receive_payment" or "credit_application" or "pay_bill" or "vendor_credit_application";
