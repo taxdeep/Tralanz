@@ -135,6 +135,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         await reader.DisposeAsync();
 
         var issueCoverage = await LoadShipmentIssueCoverageAsync(connection, null, companyId, shipmentDocumentId, cancellationToken);
+        var issueLineSummaries = await LoadShipmentIssueLineSummariesAsync(connection, null, companyId, shipmentDocumentId, cancellationToken);
         var recentIssues = await LoadShipmentAnchoredIssuesAsync(connection, null, companyId, shipmentDocumentId, cancellationToken);
 
         var summary = new InventoryShipmentSummary(
@@ -157,6 +158,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             issueCoverage.RemainingQuantity,
             issueCoverage.MatchStatus,
             issueCoverage.LatestMatchedAt,
+            issueLineSummaries,
             recentIssues,
             Array.Empty<InventoryShipmentLineInput>());
 
@@ -586,6 +588,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 decimal.Round(totalQuantity, 6, MidpointRounding.AwayFromZero),
                 "pending_issue",
                 null,
+                Array.Empty<InventoryShipmentIssueLineSummary>(),
                 Array.Empty<InventorySalesIssueSummary>(),
                 request.Lines.OrderBy(line => line.LineNo).ToArray());
         }
@@ -1250,6 +1253,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("total_quantity")), 6, MidpointRounding.AwayFromZero),
                 "pending_issue",
                 null,
+                Array.Empty<InventoryShipmentIssueLineSummary>(),
                 Array.Empty<InventorySalesIssueSummary>(),
                 Array.Empty<InventoryShipmentLineInput>()));
         }
@@ -1345,6 +1349,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("total_quantity")), 6, MidpointRounding.AwayFromZero),
                 "pending_issue",
                 null,
+                Array.Empty<InventoryShipmentIssueLineSummary>(),
                 Array.Empty<InventorySalesIssueSummary>(),
                 Array.Empty<InventoryShipmentLineInput>()));
         }
@@ -2094,6 +2099,67 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             reader.IsDBNull(reader.GetOrdinal("latest_matched_at"))
                 ? null
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("latest_matched_at")));
+    }
+
+    private static async Task<IReadOnlyList<InventoryShipmentIssueLineSummary>> LoadShipmentIssueLineSummariesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        Guid shipmentDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              lane.item_id,
+              i.item_code,
+              i.name as item_name,
+              lane.warehouse_id,
+              w.warehouse_code,
+              w.name as warehouse_name,
+              lane.uom_code,
+              lane.source_line_count as shipment_line_count,
+              lane.source_quantity as shipment_quantity,
+              lane.matched_quantity as issued_quantity,
+              lane.remaining_quantity as remaining_to_issue_quantity,
+              lane.status as match_status
+            from inventory_outbound_matching_lanes lane
+            join inventory_items i
+              on i.id = lane.item_id
+             and i.company_id = lane.company_id
+            join inventory_warehouses w
+              on w.id = lane.warehouse_id
+             and w.company_id = lane.company_id
+            where lane.company_id = @company_id
+              and lane.lane_type = 'shipment_issue'
+              and lane.source_document_id = @shipment_document_id
+            order by i.item_code, w.warehouse_code, lane.uom_code;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("shipment_document_id", shipmentDocumentId);
+
+        var rows = new List<InventoryShipmentIssueLineSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new InventoryShipmentIssueLineSummary(
+                reader.GetGuid(reader.GetOrdinal("item_id")),
+                reader.GetString(reader.GetOrdinal("item_code")),
+                reader.GetString(reader.GetOrdinal("item_name")),
+                reader.GetGuid(reader.GetOrdinal("warehouse_id")),
+                reader.GetString(reader.GetOrdinal("warehouse_code")),
+                reader.GetString(reader.GetOrdinal("warehouse_name")),
+                reader.GetString(reader.GetOrdinal("uom_code")),
+                reader.GetInt32(reader.GetOrdinal("shipment_line_count")),
+                decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("shipment_quantity")), 6, MidpointRounding.AwayFromZero),
+                decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("issued_quantity")), 6, MidpointRounding.AwayFromZero),
+                decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("remaining_to_issue_quantity")), 6, MidpointRounding.AwayFromZero),
+                reader.GetString(reader.GetOrdinal("match_status"))));
+        }
+
+        return rows;
     }
 
     private static async Task<ShipmentIssueCoverageRow> LoadInvoiceIssueCoverageAsync(

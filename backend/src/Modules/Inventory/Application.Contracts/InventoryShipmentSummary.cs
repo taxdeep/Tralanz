@@ -20,5 +20,20 @@ public sealed record class InventoryShipmentSummary(
     decimal RemainingToIssueQuantity,
     string IssueMatchStatus,
     DateTimeOffset? LatestIssuePostedAt,
+    IReadOnlyList<InventoryShipmentIssueLineSummary> IssueLineSummaries,
     IReadOnlyList<InventorySalesIssueSummary> RecentIssues,
     IReadOnlyList<InventoryShipmentLineInput> Lines);
+
+public sealed record class InventoryShipmentIssueLineSummary(
+    Guid ItemId,
+    string ItemCode,
+    string ItemName,
+    Guid WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    string UomCode,
+    int ShipmentLineCount,
+    decimal ShipmentQuantity,
+    decimal IssuedQuantity,
+    decimal RemainingToIssueQuantity,
+    string MatchStatus);

@@ -753,9 +753,21 @@
                     </MudAlert>
                 }
                 <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@($"/company/inventory-shipment?sourceType=invoice&invoiceId={_document.Id:D}")">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Warning"
+                               Disabled="@(_invoiceShipmentLaneSummary.RemainingToShipQuantity <= 0m)"
+                               Href="@($"/company/inventory-shipment?sourceType=invoice&invoiceId={_document.Id:D}")">
                         Open Shipment Workspace
                     </MudButton>
+                    @if (_invoiceShipmentLaneSummary.RecentShipments.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Info"
+                                   Disabled="@(_invoiceShipmentLaneSummary.RemainingToIssueQuantity <= 0m)"
+                                   Href="@BuildInvoiceSalesIssueHref(_invoiceShipmentLaneSummary)">
+                            Open Sales Issue
+                        </MudButton>
+                    }
                 </div>
                 @if (_invoiceShipmentLaneSummary.RecentShipments.Count > 0)
                 {
@@ -3179,6 +3191,15 @@
             "over_issued" => "Sales Issue truth currently exceeds shipped quantity and should be reviewed before downstream accounting deepens.",
             _ => "Downstream Sales Issue follow-through has not been evaluated yet."
         };
+
+    private static string BuildInvoiceSalesIssueHref(InventoryInvoiceShipmentIssueLaneSummary summary)
+    {
+        var shipment = summary.RecentShipments.FirstOrDefault(static item => item.RemainingToIssueQuantity > 0m)
+            ?? summary.RecentShipments.FirstOrDefault();
+        return shipment is null
+            ? $"/company/inventory-sales-issue?sourceType=invoice&invoiceId={summary.InvoiceDocumentId:D}"
+            : $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={shipment.DocumentId:D}&customerId={shipment.CustomerId:D}";
+    }
 
     private static string GetSettlementFollowUpTitle(ShellAccountingDocumentReviewSummary document)
     {

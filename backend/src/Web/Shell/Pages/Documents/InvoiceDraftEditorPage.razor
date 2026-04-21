@@ -208,9 +208,21 @@
                 <MudText Typo="Typo.h6">Shipment-first outbound hand-off</MudText>
                 @if (_saved is not null && HasReadyInventoryGradeOutboundLines)
                 {
-                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildShipmentHandoffHref()">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Disabled="@(_invoiceShipmentLaneSummary is not null && _invoiceShipmentLaneSummary.RemainingToShipQuantity <= 0m)"
+                               Href="@BuildShipmentHandoffHref()">
                         Open Shipment Workspace
                     </MudButton>
+                    @if (_invoiceShipmentLaneSummary is not null && _invoiceShipmentLaneSummary.RecentShipments.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Success"
+                                   Disabled="@(_invoiceShipmentLaneSummary.RemainingToIssueQuantity <= 0m)"
+                                   Href="@BuildInvoiceSalesIssueHref(_invoiceShipmentLaneSummary)">
+                            Open Sales Issue
+                        </MudButton>
+                    }
                 }
             </div>
             @if (IncompleteInventoryHandoffLineCount > 0)
@@ -250,6 +262,23 @@
                     <strong>Downstream issue follow-through: @_invoiceShipmentLaneSummary.IssueMatchStatus.Replace('_', ' ')</strong>
                     <div>@BuildInvoiceIssueFollowThroughSummary(_invoiceShipmentLaneSummary)</div>
                 </MudAlert>
+                @if (_invoiceShipmentLaneSummary.RecentShipments.Count > 0)
+                {
+                    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;">
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Warning"
+                                   Disabled="@(_invoiceShipmentLaneSummary.RemainingToShipQuantity <= 0m)"
+                                   Href="@BuildShipmentHandoffHref()">
+                            Continue Shipment
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   Disabled="@(_invoiceShipmentLaneSummary.RemainingToIssueQuantity <= 0m)"
+                                   Href="@BuildInvoiceSalesIssueHref(_invoiceShipmentLaneSummary)">
+                            Continue Sales Issue
+                        </MudButton>
+                    </div>
+                }
                 @if (_invoiceShipmentLaneSummary.Discrepancies.Count > 0)
                 {
                     <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
@@ -1047,6 +1076,15 @@
             : Guid.TryParse(_customerIdText, out var customerId)
                 ? $"/company/inventory-shipment?origin=invoice-draft-handoff&sourceType=invoice&invoiceId={_saved.DocumentId:D}&customerId={customerId:D}"
                 : $"/company/inventory-shipment?origin=invoice-draft-handoff&sourceType=invoice&invoiceId={_saved.DocumentId:D}";
+
+    private static string BuildInvoiceSalesIssueHref(InventoryInvoiceShipmentIssueLaneSummary summary)
+    {
+        var shipment = summary.RecentShipments.FirstOrDefault(static item => item.RemainingToIssueQuantity > 0m)
+            ?? summary.RecentShipments.FirstOrDefault();
+        return shipment is null
+            ? $"/company/inventory-sales-issue?sourceType=invoice&invoiceId={summary.InvoiceDocumentId:D}"
+            : $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={shipment.DocumentId:D}&customerId={shipment.CustomerId:D}";
+    }
 
     private string BuildPostedDetailHref() =>
         _saved is null

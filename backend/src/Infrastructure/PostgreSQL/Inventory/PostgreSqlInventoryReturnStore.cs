@@ -522,6 +522,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
                 totalQuantity,
                 "pending_issue",
                 null,
+                Array.Empty<InventoryShipmentIssueLineSummary>(),
                 Array.Empty<InventorySalesIssueSummary>(),
                 Array.Empty<InventoryShipmentLineInput>()));
         }
