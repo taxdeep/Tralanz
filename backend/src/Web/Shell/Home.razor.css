@@ -1,0 +1,267 @@
+.ws-home {
+    display: grid;
+    gap: 1.4rem;
+    padding: 1.6rem clamp(1rem, 2vw, 2rem) 2.5rem;
+    color: #d9e2ea;
+}
+
+.ws-home__hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 1.4rem 0 1.1rem;
+    border-bottom: 1px solid rgba(146, 166, 184, 0.18);
+}
+
+.ws-home__eyebrow {
+    margin-bottom: 0.45rem;
+    color: #6fcf97;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.ws-home__hero h1 {
+    margin: 0;
+    color: #eef6f8;
+    font-size: clamp(1.7rem, 2.4vw, 2.7rem);
+    font-weight: 750;
+    line-height: 1.05;
+}
+
+.ws-home__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-top: 0.8rem;
+}
+
+.ws-home__meta span {
+    padding: 0.34rem 0.62rem;
+    border: 1px solid rgba(122, 182, 217, 0.26);
+    border-radius: 6px;
+    color: #b7c8d4;
+    background: rgba(12, 22, 30, 0.58);
+    font-size: 0.8rem;
+    font-weight: 650;
+}
+
+.ws-home__hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    justify-content: flex-end;
+}
+
+.ws-home__alert {
+    max-width: 72rem;
+}
+
+.ws-home__status-grid,
+.ws-home__action-grid,
+.ws-home__module-grid {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.ws-home__status-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ws-home__status-card {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-height: 5.1rem;
+    padding: 1rem;
+    border: 1px solid rgba(146, 166, 184, 0.14);
+    border-radius: 8px;
+    background: rgba(16, 26, 35, 0.78);
+}
+
+.ws-home__status-icon,
+.ws-home__action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 8px;
+}
+
+.ws-home__status-icon {
+    width: 2.3rem;
+    height: 2.3rem;
+    color: #6fcf97;
+    background: rgba(111, 207, 151, 0.13);
+}
+
+.ws-home__status-label {
+    color: #8da4b3;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.ws-home__status-value {
+    margin-top: 0.18rem;
+    color: #eef6f8;
+    font-size: 1.02rem;
+    font-weight: 750;
+}
+
+.ws-home__section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 1rem;
+    margin-top: 0.25rem;
+}
+
+.ws-home__section-head h2 {
+    margin: 0;
+    color: #eef6f8;
+    font-size: 1.1rem;
+}
+
+.ws-home__section-head p {
+    margin: 0.25rem 0 0;
+    color: #8fa4b4;
+    font-size: 0.9rem;
+}
+
+.ws-home__action-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ws-home__action {
+    display: flex;
+    align-items: center;
+    gap: 0.95rem;
+    min-height: 6.3rem;
+    padding: 1rem;
+    border: 1px solid rgba(146, 166, 184, 0.18);
+    border-radius: 8px;
+    color: #dce8ef;
+    background: rgba(15, 24, 33, 0.86);
+    text-decoration: none;
+    transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.ws-home__action:hover {
+    border-color: rgba(122, 182, 217, 0.52);
+    background: rgba(20, 33, 44, 0.96);
+    color: #f5fbff;
+    transform: translateY(-1px);
+}
+
+.ws-home__action-icon {
+    width: 2.65rem;
+    height: 2.65rem;
+}
+
+.ws-home__action strong,
+.ws-home__action small {
+    display: block;
+}
+
+.ws-home__action strong {
+    font-size: 0.98rem;
+}
+
+.ws-home__action small {
+    margin-top: 0.25rem;
+    color: #94aabc;
+    font-size: 0.82rem;
+}
+
+.ws-home__action--secondary .ws-home__action-icon,
+.ws-home__action--success .ws-home__action-icon {
+    color: #6fcf97;
+    background: rgba(111, 207, 151, 0.14);
+}
+
+.ws-home__action--info .ws-home__action-icon,
+.ws-home__action--primary .ws-home__action-icon {
+    color: #7ab6d9;
+    background: rgba(122, 182, 217, 0.14);
+}
+
+.ws-home__action--warning .ws-home__action-icon {
+    color: #d8b56a;
+    background: rgba(216, 181, 106, 0.16);
+}
+
+.ws-home__action--disabled {
+    opacity: 0.48;
+    pointer-events: none;
+}
+
+.ws-home__module-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+}
+
+.ws-home__module {
+    padding: 1rem;
+    border: 1px solid rgba(146, 166, 184, 0.14);
+    border-radius: 8px;
+    background: rgba(12, 20, 28, 0.64);
+}
+
+.ws-home__module-head {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: #7ab6d9;
+}
+
+.ws-home__module-head h3 {
+    margin: 0;
+    color: #e6f0f5;
+    font-size: 0.95rem;
+}
+
+.ws-home__module-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    margin-top: 0.85rem;
+}
+
+.ws-home__module-links ::deep(.mud-button-root) {
+    justify-content: flex-start;
+    min-height: 2.35rem;
+    text-align: left;
+}
+
+@media (max-width: 1100px) {
+    .ws-home__status-grid,
+    .ws-home__action-grid,
+    .ws-home__module-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .ws-home {
+        padding: 1rem;
+    }
+
+    .ws-home__hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ws-home__hero-actions,
+    .ws-home__status-grid,
+    .ws-home__action-grid,
+    .ws-home__module-grid,
+    .ws-home__module-links {
+        grid-template-columns: 1fr;
+    }
+
+    .ws-home__hero-actions {
+        justify-content: flex-start;
+    }
+}

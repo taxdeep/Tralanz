@@ -1,16 +1,18 @@
 .ws-appbar {
     background: linear-gradient(180deg, rgba(16, 24, 33, 0.98), rgba(12, 18, 25, 0.98));
     border-bottom: 1px solid rgba(124, 149, 168, 0.15);
+    min-height: 58px;
 }
 
 .ws-drawer {
+    --mud-drawer-width-left: 292px;
     background:
         linear-gradient(180deg, rgba(16, 24, 33, 0.98), rgba(10, 15, 21, 0.98));
     border-right: 1px solid rgba(124, 149, 168, 0.18);
 }
 
 .ws-brand {
-    padding: 1.1rem 1rem 0.9rem;
+    padding: 1.05rem 1rem 0.85rem;
     border-bottom: 1px solid rgba(124, 149, 168, 0.15);
 }
 
@@ -18,7 +20,6 @@
     color: #7ab6d9;
     font-size: 0.74rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
 }
 
 .ws-brand__title {
@@ -36,6 +37,8 @@
 
 .ws-main {
     min-height: 100vh;
+    background:
+        linear-gradient(180deg, rgba(13, 19, 26, 0.96), rgba(8, 13, 18, 1));
 }
 
 .ws-main--login {

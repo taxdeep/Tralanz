@@ -5,10 +5,166 @@
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject NavigationManager NavigationManager
 
+<PageTitle>Dashboard | Citus Web Shell</PageTitle>
+
+<section class="ws-home">
+    <div class="ws-home__hero">
+        <div>
+            <div class="ws-home__eyebrow">Business Workspace</div>
+            <h1>@ShellState.ActiveCompany.CompanyName</h1>
+            <div class="ws-home__meta">
+                <span>@ShellState.ActiveCompany.CompanyCode</span>
+                <span>@ShellState.ActiveCompany.BaseCurrencyCode</span>
+                <span>@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Multi-currency" : "Single currency")</span>
+                <span>@FormatStatus(ShellState.ActiveCompany.Status)</span>
+            </div>
+        </div>
+        <div class="ws-home__hero-actions">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.ReceiptLong"
+                       Href="/documents/invoice/draft-editor"
+                       Disabled="WritesBlocked">
+                New invoice
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       StartIcon="@Icons.Material.Filled.Article"
+                       Href="/documents/source-browser">
+                Documents
+            </MudButton>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_apiSessionWarning))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="ws-home__alert">
+            @_apiSessionWarning
+        </MudAlert>
+    }
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="ws-home__alert">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    <div class="ws-home__status-grid">
+        @foreach (var item in StatusItems)
+        {
+            <article class="ws-home__status-card">
+                <div class="ws-home__status-icon">
+                    <MudIcon Icon="@item.Icon" Size="Size.Small" />
+                </div>
+                <div>
+                    <div class="ws-home__status-label">@item.Label</div>
+                    <div class="ws-home__status-value">@item.Value</div>
+                </div>
+            </article>
+        }
+    </div>
+
+    <div class="ws-home__section-head">
+        <div>
+            <h2>Daily Work</h2>
+            <p>Receivables, payables, drafts, and review surfaces.</p>
+        </div>
+    </div>
+
+    <div class="ws-home__action-grid">
+        @foreach (var action in PrimaryActions)
+        {
+            <a class="@GetActionClass(action)" href="@action.Href" aria-disabled="@action.Disabled">
+                <span class="ws-home__action-icon">
+                    <MudIcon Icon="@action.Icon" Size="Size.Medium" />
+                </span>
+                <span>
+                    <strong>@action.Title</strong>
+                    <small>@action.Detail</small>
+                </span>
+            </a>
+        }
+    </div>
+
+    <div class="ws-home__module-grid">
+        @foreach (var module in Modules)
+        {
+            <section class="ws-home__module">
+                <div class="ws-home__module-head">
+                    <MudIcon Icon="@module.Icon" Size="Size.Small" />
+                    <h3>@module.Title</h3>
+                </div>
+                <div class="ws-home__module-links">
+                    @foreach (var link in module.Links)
+                    {
+                        <MudButton Variant="Variant.Text"
+                                   Color="@link.Color"
+                                   Size="Size.Small"
+                                   StartIcon="@link.Icon"
+                                   Href="@link.Href"
+                                   Disabled="@link.Disabled">
+                            @link.Title
+                        </MudButton>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+</section>
+
 @code {
     private Citus.Ui.Shared.Business.BusinessSessionContextSummary? _apiSessionContext;
+    private Web.Shell.Services.WebShellCompanyOnboardingSummary? _onboardingSummary;
     private string? _apiSessionWarning;
     private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private IReadOnlyList<StatusItem> StatusItems =>
+    [
+        new("Session", _apiSessionContext is null ? "Checking" : "Connected", Icons.Material.Filled.VerifiedUser),
+        new("Companies", ShellState.AvailableCompanies.Count.ToString(), Icons.Material.Filled.Business),
+        new("Chart", _onboardingSummary?.HasStarterChart == true ? $"{_onboardingSummary.StarterAccountCount} accounts" : "Review", Icons.Material.Filled.AccountTree),
+        new("Tax", _onboardingSummary?.HasActiveTaxCodes == true ? $"{_onboardingSummary.ActiveTaxCodeCount} active" : "Setup", Icons.Material.Filled.Percent)
+    ];
+
+    private IReadOnlyList<ActionTile> PrimaryActions =>
+    [
+        new("Receive Payment", "Apply AR cash receipts", "/ar/receive-payment", Icons.Material.Filled.Payments, Color.Secondary),
+        new("Pay Bill", "Prepare AP settlement", "/ap/pay-bill", Icons.Material.Filled.RequestQuote, Color.Info),
+        new("Journal Entry", "Create and review GL entries", "/gl/journal-entry/editor", Icons.Material.Filled.EditNote, Color.Primary, WritesBlocked),
+        new("Source Documents", "Browse posted business documents", "/documents/source-browser", Icons.Material.Filled.Article, Color.Secondary),
+        new("Invoice Draft", "Start a customer invoice", "/documents/invoice/draft-editor", Icons.Material.Filled.ReceiptLong, Color.Success, WritesBlocked),
+        new("Bill Draft", "Start a vendor bill", "/documents/bill/draft-editor", Icons.Material.Filled.Description, Color.Info, WritesBlocked)
+    ];
+
+    private IReadOnlyList<ModulePanel> Modules =>
+    [
+        new(
+            "Company Control",
+            Icons.Material.Filled.AdminPanelSettings,
+            [
+                new("Book Governance", "/company/book-governance", Icons.Material.Filled.MenuBook, Color.Secondary),
+                new("Bank & Cash", "/company/bank-and-cash-setup", Icons.Material.Filled.AccountBalance, Color.Secondary),
+                new("Tax Setup", "/company/tax-setup", Icons.Material.Filled.Percent, Color.Warning),
+                new("Memberships", "/company/membership-permissions", Icons.Material.Filled.Groups, Color.Info)
+            ]),
+        new(
+            "Trading Setup",
+            Icons.Material.Filled.Storefront,
+            [
+                new("Customers & Vendors", "/company/customer-vendor-setup", Icons.Material.Filled.Handshake, Color.Secondary),
+                new("Products & Services", "/company/product-service-setup", Icons.Material.Filled.Inventory2, Color.Secondary),
+                new("Inventory Foundation", "/company/inventory-foundation", Icons.Material.Filled.Warehouse, Color.Info),
+                new("Availability", "/company/inventory-availability", Icons.Material.Filled.FactCheck, Color.Info)
+            ]),
+        new(
+            "Profile",
+            Icons.Material.Filled.ManageAccounts,
+            [
+                new("User Profile", "/profile", Icons.Material.Filled.Person, Color.Primary),
+                new("Preferences", "/settings/user-preferences/system-setup", Icons.Material.Filled.Tune, Color.Default),
+                new("Adjustment Mapping", "/company/open-item-adjustment-account-mappings", Icons.Material.Filled.Schema, Color.Info)
+            ])
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -28,6 +184,13 @@
             return;
         }
 
+        if (!onboardingResult.RequiresSignIn &&
+            !onboardingResult.IsNotFound &&
+            string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+        {
+            _onboardingSummary = onboardingResult.Value;
+        }
+
         var probe = await SessionClient.ProbeContextAsync();
         if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
         {
@@ -37,83 +200,39 @@
         _apiSessionContext = probe.Context;
         if (_apiSessionContext is null)
         {
-            _apiSessionWarning = probe.ErrorMessage ?? "Accounting API did not accept the current shell session context. Future API-backed business pages will stay blocked until session configuration and membership truth align.";
-            return;
+            _apiSessionWarning = probe.ErrorMessage ?? "Accounting API did not accept the current shell session context.";
         }
     }
-}
 
-<div style="padding:2rem 2.25rem;color:#d9e2ea;">
-    <h1 style="margin:0 0 0.75rem 0;font-size:1.5rem;">Citus Web Shell</h1>
-    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:48rem;">
-        This shell hosts whitelist-compliant business workspaces. The current priority surfaces are the dark-mode Journal Entry workbench, the governed Multi-Book control area, the first API-backed AR/AP settlement preparation pages, and the new source-document draft editors.
-    </p>
-    <p style="margin:0 0 1rem 0;color:#aac0cf;max-width:48rem;">
-        Active company: <strong>@ShellState.ActiveCompany.CompanyName</strong> (@ShellState.ActiveCompany.CompanyCode).
-        Available shell companies: <strong>@ShellState.AvailableCompanies.Count</strong>.
-        Context source: <strong>@ShellState.ContextSource</strong>.
-    </p>
-    <p style="margin:0 0 1rem 0;color:#8bb5d6;max-width:48rem;">
-        API session probe:
-        <strong>@(_apiSessionContext is null ? "unavailable" : $"{_apiSessionContext.ActiveCompany.CompanyName} ({_apiSessionContext.ActiveCompany.CompanyCode})")</strong>.
-    </p>
-    @if (!string.IsNullOrWhiteSpace(_apiSessionWarning))
-    {
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin:0 0 1rem 0;max-width:60rem;">
-            @_apiSessionWarning
-        </MudAlert>
-    }
-    @if (WritesBlocked)
-    {
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin:0 0 1rem 0;max-width:60rem;">
-            @ShellState.WriteBlockMessage
-        </MudAlert>
-    }
-    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Href="/company/book-governance">
-            Open Multi-Book governance
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/bank-and-cash-setup">
-            Open Bank & Cash Setup
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/company/tax-setup">
-            Open Tax Setup
-        </MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Href="/ar/receive-payment">
-            Open Receive Payment
-        </MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Info" Href="/ap/pay-bill">
-            Open Pay Bill
-        </MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/gl/journal-entry/editor" Disabled="WritesBlocked">
-            Open Journal Entry workbench
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/documents/source-browser">
-            Open Source Documents
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="/documents/invoice/draft-editor" Disabled="WritesBlocked">
-            New Invoice Draft
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/documents/credit-note/draft-editor" Disabled="WritesBlocked">
-            New Credit Note Draft
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/bill/draft-editor" Disabled="WritesBlocked">
-            New Bill Draft
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/documents/vendor-credit/draft-editor" Disabled="WritesBlocked">
-            New Vendor Credit Draft
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/ar/credit-application">
-            Open Credit Application
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/ap/vendor-credit-application">
-            Open Vendor Credit Application
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/profile">
-            Open Profile
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/settings/user-preferences/system-setup">
-            User Preferences
-        </MudButton>
-    </div>
-</div>
+    private static string FormatStatus(string status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "Inactive"
+            : char.ToUpperInvariant(status[0]) + status[1..].ToLowerInvariant();
+
+    private static string GetActionClass(ActionTile action) =>
+        action.Disabled
+            ? "ws-home__action ws-home__action--disabled"
+            : $"ws-home__action ws-home__action--{action.Color.ToString().ToLowerInvariant()}";
+
+    private sealed record StatusItem(string Label, string Value, string Icon);
+
+    private sealed record ActionTile(
+        string Title,
+        string Detail,
+        string Href,
+        string Icon,
+        Color Color,
+        bool Disabled = false);
+
+    private sealed record ModulePanel(
+        string Title,
+        string Icon,
+        IReadOnlyList<ModuleLink> Links);
+
+    private sealed record ModuleLink(
+        string Title,
+        string Href,
+        string Icon,
+        Color Color,
+        bool Disabled = false);
+}

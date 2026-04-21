@@ -4,135 +4,176 @@
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 
 <nav class="ws-nav">
-    <NavLink href="/" Match="NavLinkMatch.All" class="ws-nav__link">
-        Home
-    </NavLink>
-    <NavLink href="/ar/receive-payment" class="ws-nav__link">
-        Receive Payment
-    </NavLink>
-    <NavLink href="/ar/credit-application" class="ws-nav__link">
-        Credit Application
-    </NavLink>
-    <NavLink href="/documents/source-browser" class="ws-nav__link">
-        Source Documents
-    </NavLink>
+    <div class="ws-nav__section">
+        <div class="ws-nav__section-title">Workspace</div>
+        <NavLink href="/" Match="NavLinkMatch.All" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" />
+            <span>Dashboard</span>
+        </NavLink>
+        <NavLink href="/documents/source-browser" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
+            <span>Source Documents</span>
+        </NavLink>
+        <NavLink href="/profile" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
+            <span>Profile</span>
+        </NavLink>
+    </div>
+
+    <div class="ws-nav__section">
+        <div class="ws-nav__section-title">Receivables</div>
+        <NavLink href="/ar/receive-payment" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Payments" Size="Size.Small" />
+            <span>Receive Payment</span>
+        </NavLink>
+        <NavLink href="/ar/credit-application" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Size="Size.Small" />
+            <span>Credit Application</span>
+        </NavLink>
     @if (WritesBlocked)
     {
         <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            Invoice Draft (Blocked)
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" />
+            <span>Invoice Draft</span>
         </span>
         <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            Credit Note Draft (Blocked)
+            <MudIcon Icon="@Icons.Material.Filled.CreditScore" Size="Size.Small" />
+            <span>Credit Note Draft</span>
         </span>
     }
     else
     {
         <NavLink href="/documents/invoice/draft-editor" class="ws-nav__link">
-            Invoice Draft
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" />
+            <span>Invoice Draft</span>
         </NavLink>
         <NavLink href="/documents/credit-note/draft-editor" class="ws-nav__link">
-            Credit Note Draft
+            <MudIcon Icon="@Icons.Material.Filled.CreditScore" Size="Size.Small" />
+            <span>Credit Note Draft</span>
         </NavLink>
     }
-    <NavLink href="/ap/pay-bill" class="ws-nav__link">
-        Pay Bill
-    </NavLink>
+    </div>
+
+    <div class="ws-nav__section">
+        <div class="ws-nav__section-title">Payables</div>
+        <NavLink href="/ap/pay-bill" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
+            <span>Pay Bill</span>
+        </NavLink>
+        <NavLink href="/ap/vendor-credit-application" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
+            <span>Vendor Credit</span>
+        </NavLink>
     @if (WritesBlocked)
     {
         <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            Bill Draft (Blocked)
+            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
+            <span>Bill Draft</span>
         </span>
     }
     else
     {
         <NavLink href="/documents/bill/draft-editor" class="ws-nav__link">
-            Bill Draft
+            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
+            <span>Bill Draft</span>
         </NavLink>
     }
-    <NavLink href="/ap/vendor-credit-application" class="ws-nav__link">
-        Vendor Credit Application
-    </NavLink>
     @if (WritesBlocked)
     {
         <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            Vendor Credit Draft (Blocked)
+            <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
+            <span>Vendor Credit Draft</span>
         </span>
     }
     else
     {
         <NavLink href="/documents/vendor-credit/draft-editor" class="ws-nav__link">
-            Vendor Credit Draft
+            <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
+            <span>Vendor Credit Draft</span>
         </NavLink>
     }
-    <NavLink href="/company/book-governance" class="ws-nav__link">
-        Book Governance
-    </NavLink>
-    <NavLink href="/company/bank-and-cash-setup" class="ws-nav__link">
-        Bank & Cash Setup
-    </NavLink>
-    <NavLink href="/company/tax-setup" class="ws-nav__link">
-        Tax Setup
-    </NavLink>
-    <NavLink href="/company/customer-vendor-setup" class="ws-nav__link">
-        Customer & Vendor Setup
-    </NavLink>
-    <NavLink href="/company/product-service-setup" class="ws-nav__link">
-        Product & Service Setup
-    </NavLink>
+    </div>
+
+    <div class="ws-nav__section">
+        <div class="ws-nav__section-title">Company</div>
+        <NavLink href="/company/book-governance" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Small" />
+            <span>Book Governance</span>
+        </NavLink>
+        <NavLink href="/company/bank-and-cash-setup" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" />
+            <span>Bank & Cash</span>
+        </NavLink>
+        <NavLink href="/company/tax-setup" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Percent" Size="Size.Small" />
+            <span>Tax Setup</span>
+        </NavLink>
+        <NavLink href="/company/customer-vendor-setup" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Handshake" Size="Size.Small" />
+            <span>Customers & Vendors</span>
+        </NavLink>
+        <NavLink href="/company/product-service-setup" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" />
+            <span>Products & Services</span>
+        </NavLink>
+    </div>
+
     @if (_showInventoryFoundation)
     {
-        <NavLink href="/company/inventory-foundation" class="ws-nav__link">
-            Inventory Foundation
-        </NavLink>
-        <NavLink href="/company/inventory-purchase-receipt" class="ws-nav__link">
-            Purchase Receipt
-        </NavLink>
-        <NavLink href="/company/inventory-shipment" class="ws-nav__link">
-            Shipment
-        </NavLink>
-        <NavLink href="/company/inventory-return-receive" class="ws-nav__link">
-            Return Receive
-        </NavLink>
-        <NavLink href="/company/inventory-sales-issue" class="ws-nav__link">
-            Sales Issue
-        </NavLink>
-        <NavLink href="/company/inventory-transfer" class="ws-nav__link">
-            Warehouse Transfer
-        </NavLink>
-        <NavLink href="/company/inventory-adjustment" class="ws-nav__link">
-            Inventory Adjustment
-        </NavLink>
-        <NavLink href="/company/inventory-manufacturing" class="ws-nav__link">
-            Manufacturing
-        </NavLink>
-        <NavLink href="/company/inventory-availability" class="ws-nav__link">
-            Inventory Availability
-        </NavLink>
+        <div class="ws-nav__section">
+            <div class="ws-nav__section-title">Inventory</div>
+            <NavLink href="/company/inventory-foundation" class="ws-nav__link">
+                <MudIcon Icon="@Icons.Material.Filled.Warehouse" Size="Size.Small" />
+                <span>Foundation</span>
+            </NavLink>
+            <NavLink href="/company/inventory-purchase-receipt" class="ws-nav__link">
+                <MudIcon Icon="@Icons.Material.Filled.MoveToInbox" Size="Size.Small" />
+                <span>Purchase Receipt</span>
+            </NavLink>
+            <NavLink href="/company/inventory-shipment" class="ws-nav__link">
+                <MudIcon Icon="@Icons.Material.Filled.LocalShipping" Size="Size.Small" />
+                <span>Shipment</span>
+            </NavLink>
+            <NavLink href="/company/inventory-transfer" class="ws-nav__link">
+                <MudIcon Icon="@Icons.Material.Filled.SyncAlt" Size="Size.Small" />
+                <span>Warehouse Transfer</span>
+            </NavLink>
+            <NavLink href="/company/inventory-availability" class="ws-nav__link">
+                <MudIcon Icon="@Icons.Material.Filled.FactCheck" Size="Size.Small" />
+                <span>Availability</span>
+            </NavLink>
+        </div>
     }
-    <NavLink href="/company/membership-permissions" class="ws-nav__link">
-        Membership Permissions
-    </NavLink>
-    <NavLink href="/company/open-item-adjustment-account-mappings" class="ws-nav__link">
-        Adjustment Mapping
-    </NavLink>
+
+    <div class="ws-nav__section">
+        <div class="ws-nav__section-title">Governance</div>
+        <NavLink href="/company/membership-permissions" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Small" />
+            <span>Memberships</span>
+        </NavLink>
+        <NavLink href="/company/open-item-adjustment-account-mappings" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Schema" Size="Size.Small" />
+            <span>Adjustment Mapping</span>
+        </NavLink>
     @if (WritesBlocked)
     {
         <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            Journal Entry Editor (Blocked)
+            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" />
+            <span>Journal Entry</span>
         </span>
     }
     else
     {
         <NavLink href="/gl/journal-entry/editor" class="ws-nav__link">
-            Journal Entry Editor
+            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" />
+            <span>Journal Entry</span>
         </NavLink>
     }
-    <NavLink href="/profile" class="ws-nav__link">
-        Profile
-    </NavLink>
-    <NavLink href="/settings/user-preferences/system-setup" class="ws-nav__link">
-        User Preferences
-    </NavLink>
+        <NavLink href="/settings/user-preferences/system-setup" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" />
+            <span>Preferences</span>
+        </NavLink>
+    </div>
 </nav>
 
 @code {

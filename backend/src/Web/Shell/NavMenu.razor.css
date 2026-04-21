@@ -1,18 +1,44 @@
 .ws-nav {
     display: grid;
-    gap: 0.35rem;
-    padding: 0.85rem 0.75rem;
+    gap: 0.9rem;
+    padding: 0.9rem 0.7rem 1.2rem;
+}
+
+.ws-nav__section {
+    display: grid;
+    gap: 0.22rem;
+}
+
+.ws-nav__section-title {
+    padding: 0 0.55rem 0.28rem;
+    color: #6fcf97;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
 }
 
 .ws-nav__link {
-    display: block;
-    padding: 0.72rem 0.85rem;
-    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 0.58rem;
+    min-height: 2.35rem;
+    padding: 0.54rem 0.62rem;
+    border-radius: 7px;
     color: #ced9e2;
     text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: background-color 120ms ease, color 120ms ease;
+    font-size: 0.84rem;
+    font-weight: 650;
+    line-height: 1.2;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.ws-nav__link ::deep(.mud-icon-root) {
+    flex: 0 0 auto;
+    color: #7ab6d9;
+}
+
+.ws-nav__link span {
+    overflow-wrap: anywhere;
 }
 
 .ws-nav__link:hover {
@@ -21,8 +47,12 @@
 }
 
 .ws-nav__link.active {
-    background: linear-gradient(180deg, rgba(122, 182, 217, 0.18), rgba(111, 207, 151, 0.12));
+    background: rgba(111, 207, 151, 0.15);
     color: #f4f8fb;
+}
+
+.ws-nav__link.active ::deep(.mud-icon-root) {
+    color: #6fcf97;
 }
 
 .ws-nav__link--disabled {
