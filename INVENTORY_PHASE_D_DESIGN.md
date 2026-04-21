@@ -2335,3 +2335,43 @@ Still not included:
 Authority note:
 
 H.20.18 prepares close/cancel for later Shell exposure by making the API authority boundary consistent first. State and downstream-anchor legality remain repository-owned.
+
+## Phase H.20.19 checkpoint
+
+H.20.19 exposes PO close and cancel lifecycle actions in the Web Shell.
+
+Boundary:
+
+- Close appears only for issued POs with fully aligned three-quantity truth and no open discrepancy lanes.
+- Cancel appears only for draft/approved POs or untouched issued POs with no received or billed quantity.
+- Backend business-session authority remains required.
+- Repository lifecycle legality and downstream anchor checks remain unchanged.
+- No close accounting effects.
+- No formal approval workflow table.
+- No persisted approval limit management.
+- No multi-step approver routing.
+- No repository-level permission checks.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Web Shell can call the backend PO close and cancel endpoints.
+- Purchase order detail shows a Lifecycle Closure panel when close/cancel is locally plausible.
+- Shell command feedback treats closed/cancelled lifecycle results as successful terminal states.
+- The detail page refreshes PO, audit, approval, and downstream read models after close/cancel.
+
+Still not included:
+
+- PO close journal effects
+- persisted approval limit policies
+- formal approval workflow tables
+- multi-approver routing
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.19 keeps close/cancel as backend-governed lifecycle transitions. The Shell offers the action only when the read model says it is plausible; the API and repository remain the source of truth for permission and legality.

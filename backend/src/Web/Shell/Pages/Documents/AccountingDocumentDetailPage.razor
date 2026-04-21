@@ -174,6 +174,40 @@
             </MudPaper>
         }
 
+        @if (CanShowPurchaseOrderClosureControl())
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.h6" Class="mb-3">Lifecycle Closure</MudText>
+                <div style="display:grid;grid-template-columns:minmax(18rem,1fr) auto;gap:0.75rem;align-items:end;">
+                    <MudText Typo="Typo.body2">
+                        @GetPurchaseOrderClosureControlSummary()
+                    </MudText>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
+                        @if (CanClosePurchaseOrder())
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       StartIcon="@Icons.Material.Filled.Lock"
+                                       OnClick="ClosePurchaseOrderAsync"
+                                       Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                                Close
+                            </MudButton>
+                        }
+                        @if (CanCancelPurchaseOrder())
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       StartIcon="@Icons.Material.Filled.Cancel"
+                                       OnClick="CancelPurchaseOrderAsync"
+                                       Disabled="@(_isPurchaseOrderApprovalCommandRunning || WritesBlocked)">
+                                Cancel
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+            </MudPaper>
+        }
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
             <MudPaper Class="pa-4" Elevation="0">
                 <MudText Typo="Typo.caption">Purchase Order</MudText>
@@ -1462,6 +1496,38 @@
             "Purchase order reopened for amendment.");
     }
 
+    private async Task ClosePurchaseOrderAsync()
+    {
+        if (_purchaseOrder is null || !CanClosePurchaseOrder() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderLifecycleCommandAsync(
+            () => ReviewClient.ClosePurchaseOrderAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                CancellationToken.None),
+            "Purchase order closed.");
+    }
+
+    private async Task CancelPurchaseOrderAsync()
+    {
+        if (_purchaseOrder is null || !CanCancelPurchaseOrder() || TryBlockPurchaseOrderApprovalWrites())
+        {
+            return;
+        }
+
+        await RunPurchaseOrderLifecycleCommandAsync(
+            () => ReviewClient.CancelPurchaseOrderAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _purchaseOrder.Id,
+                CancellationToken.None),
+            "Purchase order cancelled.");
+    }
+
     private async Task SubmitReverseRequestAsync()
     {
         if (_document is null || _latestReverseRequest is null || TryBlockWrites())
@@ -1855,6 +1921,56 @@
         (string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
          string.Equals(_purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase));
 
+    private bool CanShowPurchaseOrderClosureControl() =>
+        CanClosePurchaseOrder() || CanCancelPurchaseOrder();
+
+    private bool CanClosePurchaseOrder() =>
+        _purchaseOrder is not null &&
+        string.Equals(_purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase) &&
+        _purchaseOrder.ThreeQuantity is not null &&
+        string.Equals(_purchaseOrder.ThreeQuantity.QuantityStatus, "fully_billed", StringComparison.OrdinalIgnoreCase) &&
+        _purchaseOrder.ThreeQuantity.RemainingToReceiveQuantity == 0m &&
+        _purchaseOrder.ThreeQuantity.RemainingToBillQuantity == 0m &&
+        _purchaseOrder.ThreeQuantity.OpenDiscrepancyCount == 0;
+
+    private bool CanCancelPurchaseOrder() =>
+        _purchaseOrder is not null &&
+        (string.Equals(_purchaseOrder.Status, "draft", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(_purchaseOrder.Status, "approved", StringComparison.OrdinalIgnoreCase) ||
+         IsUntouchedIssuedPurchaseOrder(_purchaseOrder));
+
+    private static bool IsUntouchedIssuedPurchaseOrder(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        string.Equals(purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase) &&
+        purchaseOrder.ThreeQuantity is not null &&
+        purchaseOrder.ThreeQuantity.ReceivedQuantity == 0m &&
+        purchaseOrder.ThreeQuantity.BilledQuantity == 0m &&
+        purchaseOrder.ThreeQuantity.OpenDiscrepancyCount == 0;
+
+    private string GetPurchaseOrderClosureControlSummary()
+    {
+        if (_purchaseOrder is null)
+        {
+            return "Purchase order lifecycle closure state is unavailable.";
+        }
+
+        if (CanClosePurchaseOrder() && CanCancelPurchaseOrder())
+        {
+            return "This issued purchase order has no downstream quantity movement. It can either close if fully aligned or cancel if the order should be withdrawn before receipt/bill truth starts.";
+        }
+
+        if (CanClosePurchaseOrder())
+        {
+            return "Ordered, received, and billed quantities are aligned with no active discrepancy lanes. Close will freeze this PO lifecycle after backend authority confirms the transition.";
+        }
+
+        if (CanCancelPurchaseOrder())
+        {
+            return "No receipt or bill truth has been posted against this PO yet. Cancel will withdraw the order after backend authority confirms the transition.";
+        }
+
+        return "No close or cancel action is currently exposed for this PO lifecycle state.";
+    }
+
     private string GetPurchaseOrderApprovalControlSummary()
     {
         if (_purchaseOrder is null)
@@ -1886,7 +2002,7 @@
             "rejected";
 
     private static bool IsSuccessfulPurchaseOrderLifecycleStatus(string? status) =>
-        status?.Trim().ToLowerInvariant() is "draft" or "approved" or "issued";
+        status?.Trim().ToLowerInvariant() is "draft" or "approved" or "issued" or "closed" or "cancelled";
 
     private static bool IsSettlementDocument(ShellAccountingDocumentReviewSummary? document) =>
         document?.SourceType is "receive_payment" or "credit_application" or "pay_bill" or "vendor_credit_application";
