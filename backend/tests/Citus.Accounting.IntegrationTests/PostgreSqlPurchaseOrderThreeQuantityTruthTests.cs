@@ -550,6 +550,26 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
                     "purchase_order_reopened_for_amendment"
                 ],
                 actions);
+
+            var timeline = await repository.ListLifecycleAuditAsync(new(companyId), saved.DocumentId, 10, CancellationToken.None);
+            Assert.Equal(3, timeline.Count);
+            Assert.Equal("purchase_order_reopened_for_amendment", timeline[0].Action);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Issued, timeline[0].FromStatus);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Draft, timeline[0].ToStatus);
+            Assert.Equal("purchase_order_released", timeline[1].Action);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Approved, timeline[1].FromStatus);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Issued, timeline[1].ToStatus);
+            Assert.Equal("purchase_order_approved", timeline[2].Action);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Draft, timeline[2].FromStatus);
+            Assert.Equal(PurchaseOrderDocumentStatuses.Approved, timeline[2].ToStatus);
+            Assert.All(timeline, entry =>
+            {
+                Assert.Equal(saved.DocumentId, entry.PurchaseOrderId);
+                Assert.Equal("user", entry.ActorType);
+                Assert.Equal(userId, entry.ActorId);
+                Assert.Equal(saved.EntityNumber, entry.EntityNumber);
+                Assert.Equal(saved.DisplayNumber, entry.DisplayNumber);
+            });
         }
         finally
         {

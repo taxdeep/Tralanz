@@ -212,6 +212,86 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         return items;
     }
 
+    public async Task<IReadOnlyList<PurchaseOrderLifecycleAuditEntry>> ListLifecycleAuditAsync(
+        CompanyId companyId,
+        Guid documentId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (documentId == Guid.Empty)
+        {
+            throw new ArgumentException("Purchase order document id is required.", nameof(documentId));
+        }
+
+        var effectiveTake = take <= 0 ? 50 : Math.Min(take, 200);
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
+        if (!await TableExistsAsync(scope, "audit_logs", cancellationToken))
+        {
+            return Array.Empty<PurchaseOrderLifecycleAuditEntry>();
+        }
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              id,
+              entity_id,
+              action,
+              actor_type,
+              actor_id,
+              payload ->> 'FromStatus' as from_status,
+              payload ->> 'ToStatus' as to_status,
+              payload ->> 'EntityNumber' as entity_number,
+              payload ->> 'DisplayNumber' as display_number,
+              created_at
+            from audit_logs
+            where company_id = @company_id
+              and entity_type = 'purchase_order'
+              and entity_id = @document_id
+              and action = any(@actions::text[])
+            order by created_at desc, id desc
+            limit @take;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("document_id", documentId);
+        command.Parameters.Add(new NpgsqlParameter<string[]>("actions", NpgsqlDbType.Array | NpgsqlDbType.Text)
+        {
+            TypedValue =
+            [
+                "purchase_order_approved",
+                "purchase_order_released",
+                "purchase_order_reopened_for_amendment",
+                "purchase_order_closed",
+                "purchase_order_cancelled"
+            ]
+        });
+        command.Parameters.AddWithValue("take", effectiveTake);
+
+        var entries = new List<PurchaseOrderLifecycleAuditEntry>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(new PurchaseOrderLifecycleAuditEntry(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("entity_id")),
+                reader.GetString(reader.GetOrdinal("action")),
+                reader.GetString(reader.GetOrdinal("actor_type")),
+                reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+                reader.IsDBNull(reader.GetOrdinal("from_status")) ? null : reader.GetString(reader.GetOrdinal("from_status")),
+                reader.IsDBNull(reader.GetOrdinal("to_status")) ? null : reader.GetString(reader.GetOrdinal("to_status")),
+                reader.IsDBNull(reader.GetOrdinal("entity_number")) ? null : reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.IsDBNull(reader.GetOrdinal("display_number")) ? null : reader.GetString(reader.GetOrdinal("display_number")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"))));
+        }
+
+        return entries;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         PurchaseOrderDraftSaveModel draft,
         CancellationToken cancellationToken)

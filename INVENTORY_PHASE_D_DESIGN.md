@@ -1874,3 +1874,46 @@ Still not included:
 Authority note:
 
 H.20.7 preserves the PO lifecycle trail without creating another source of truth. Operators and later review surfaces can inspect the audit trail, while lifecycle legality remains governed by the PO document state machine.
+
+## Phase H.20.8 checkpoint
+
+H.20.8 adds the first PO lifecycle audit read model.
+
+Boundary:
+
+- Backend read model only.
+- No Shell timeline / review panel yet.
+- No approval queue, rejection path, reversal path, or approval threshold.
+- No lifecycle legality or authority changes.
+- No PPV journal recognition.
+- No tracked receipt operational flow.
+
+What changed:
+
+- Purchase order lifecycle audit can now be queried through:
+  - `GET /purchase-orders/{id}/lifecycle-audit`
+- The read model is backed by `audit_logs` lifecycle rows and returns:
+  - action
+  - actor
+  - from status
+  - to status
+  - document identity
+  - created timestamp
+- PO list and detail read models now include approval and amendment-start lifecycle timestamps.
+- Missing `audit_logs` tables produce an empty lifecycle timeline, preserving lightweight schema compatibility.
+
+Still not included:
+
+- Shell lifecycle timeline panel
+- approval limit policies
+- approval request queues
+- approval rejection / reversal
+- amendment history beyond lifecycle transition rows
+- permission checks inside repository methods
+- PO close journal effects
+- PPV recognition
+- tracked receipt enablement
+
+Authority note:
+
+H.20.8 makes the lifecycle audit trail consumable without shifting truth ownership. PO document state still decides lifecycle legality; audit history explains how that state moved.

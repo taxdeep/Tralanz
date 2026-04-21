@@ -1534,3 +1534,51 @@ Still deferred:
 Authority note:
 
 H.20.7 makes lifecycle changes reviewable without making audit history operational truth. The PO tables still own lifecycle state; audit rows provide append-only continuity for who changed the lifecycle and how state moved.
+
+## Phase H.20.8 checkpoint
+
+H.20.8 adds the minimum PO lifecycle audit read model.
+
+Boundary:
+
+- This is backend read continuity only.
+- It does not introduce a Shell timeline panel yet.
+- It does not introduce approval thresholds, approval queues, rejection, or reversal.
+- It does not change PO lifecycle legality or authority gates.
+- It does not change PO ordered truth, Receipt physical truth, or Bill AP truth.
+- It does not introduce PPV posting or tracked receipt.
+
+What changed:
+
+- Backend repository now exposes:
+  - `ListLifecycleAuditAsync`
+- API now exposes:
+  - `GET /purchase-orders/{id}/lifecycle-audit`
+- The read model returns lifecycle audit entries newest-first, including:
+  - action
+  - actor
+  - from status
+  - to status
+  - document identity
+  - created timestamp
+- PO list and detail responses now surface the lifecycle timestamps introduced by H.20.4-H.20.5:
+  - approved at
+  - amendment started at
+- If `audit_logs` is not available, the lifecycle audit read model returns an empty timeline rather than failing the PO page path.
+
+Still deferred:
+
+- Shell PO lifecycle timeline / review panel
+- formal PO approval request queue
+- approval rejection / reversal
+- approval limit thresholds
+- repository-level authority policy
+- privileged overage execution policy
+- PO close accounting effects
+- PPV posting
+- tracked receipt
+- Shell-wide PO lifecycle workbench
+
+Authority note:
+
+H.20.8 closes the write/read loop for lifecycle audit without making audit rows authoritative. PO state remains the lifecycle truth, while the audit timeline gives operators and later Shell surfaces a stable review trail.

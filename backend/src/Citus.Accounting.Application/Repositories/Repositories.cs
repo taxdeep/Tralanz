@@ -153,6 +153,12 @@ public interface IPurchaseOrderDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<PurchaseOrderLifecycleAuditEntry>> ListLifecycleAuditAsync(
+        CompanyId companyId,
+        Guid documentId,
+        int take,
+        CancellationToken cancellationToken);
+
     Task ValidateBillAnchorsForPostingAsync(
         CompanyId companyId,
         Guid billDocumentId,
@@ -390,6 +396,18 @@ public sealed record PurchaseOrderDocumentListItem(
     DateTimeOffset? ClosedAt,
     DateTimeOffset? CancelledAt,
     DateTimeOffset? AmendmentStartedAt);
+
+public sealed record PurchaseOrderLifecycleAuditEntry(
+    Guid AuditId,
+    Guid PurchaseOrderId,
+    string Action,
+    string ActorType,
+    Guid? ActorId,
+    string? FromStatus,
+    string? ToStatus,
+    string? EntityNumber,
+    string? DisplayNumber,
+    DateTimeOffset CreatedAt);
 
 public sealed record PurchaseOrderLineThreeQuantitySummary(
     int LineNumber,

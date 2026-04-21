@@ -338,6 +338,8 @@ public sealed record SavePurchaseOrderDraftLineHttpRequest(
 
 public sealed record PurchaseOrderLookupQuery(Guid CompanyId);
 
+public sealed record PurchaseOrderLifecycleAuditQuery(Guid CompanyId, int? Take);
+
 public sealed record PurchaseOrderListQuery(Guid CompanyId, int? Take);
 
 public sealed record ApprovePurchaseOrderHttpRequest(

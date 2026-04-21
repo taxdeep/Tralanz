@@ -4073,9 +4073,11 @@ accounting.MapGet(
             document.Memo,
             document.CreatedAt,
             document.UpdatedAt,
+            document.ApprovedAt,
             document.IssuedAt,
             document.ClosedAt,
             document.CancelledAt,
+            document.AmendmentStartedAt,
             AnchorGovernance = new
             {
                 AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
@@ -4112,9 +4114,11 @@ accounting.MapGet(
             document.ExpectedDate,
             document.VendorReference,
             document.Memo,
+            document.ApprovedAt,
             document.IssuedAt,
             document.ClosedAt,
             document.CancelledAt,
+            document.AmendmentStartedAt,
             AnchorGovernance = new
             {
                 AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
@@ -4131,6 +4135,29 @@ accounting.MapGet(
                 line.UnitCost
             })
         });
+    });
+
+accounting.MapGet(
+    "/purchase-orders/{documentId:guid}/lifecycle-audit",
+    async (
+        Guid documentId,
+        [AsParameters] PurchaseOrderLifecycleAuditQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Purchase order document was not found in the active company context." });
+        }
+
+        var entries = await repository.ListLifecycleAuditAsync(
+            new(query.CompanyId),
+            documentId,
+            query.Take ?? 50,
+            cancellationToken);
+
+        return Results.Ok(entries);
     });
 
 accounting.MapPost(
