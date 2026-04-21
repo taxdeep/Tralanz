@@ -7,6 +7,7 @@
 @inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject WebShellState ShellState
+@inject ILogger<BusinessLoginPage> Logger
 
 <PageTitle>Login | Citus Web Shell</PageTitle>
 
@@ -151,6 +152,13 @@
 
             await CompleteAuthenticatedSessionAsync(result);
         }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unhandled Web.Shell business sign-in failure.");
+            Snackbar.Add(
+                "Sign-in failed before the workspace could load. The server log has the exact error.",
+                Severity.Error);
+        }
         finally
         {
             _isSubmitting = false;
@@ -190,6 +198,13 @@
             }
 
             await CompleteAuthenticatedSessionAsync(result);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unhandled Web.Shell business MFA completion failure.");
+            Snackbar.Add(
+                "MFA completed, but the workspace could not load. The server log has the exact error.",
+                Severity.Error);
         }
         finally
         {

@@ -52,9 +52,17 @@ using Web.Shell;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var detailedCircuitErrors =
+    builder.Environment.IsDevelopment() ||
+    builder.Configuration.GetValue<bool>("DetailedErrors") ||
+    builder.Configuration.GetValue<bool>("CircuitOptions:DetailedErrors");
+
 builder.Services
     .AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(options =>
+    {
+        options.DetailedErrors = detailedCircuitErrors;
+    });
 
 builder.Services.AddMudServices();
 builder.Services.Configure<WebShellAppHostOptions>(builder.Configuration.GetSection(WebShellAppHostOptions.SectionName));
