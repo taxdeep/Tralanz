@@ -1116,9 +1116,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         }
 
         var normalizedStatus = PurchaseOrderQuantityDiscrepancyPolicy.NormalizeInvestigationStatus(investigationStatus);
-        var normalizedDiscrepancyType = string.IsNullOrWhiteSpace(discrepancyType)
-            ? throw new InvalidOperationException("PO quantity discrepancy type is required.")
-            : discrepancyType.Trim().ToLowerInvariant();
+        var normalizedDiscrepancyType = PurchaseOrderQuantityDiscrepancyPolicy.NormalizeDiscrepancyType(discrepancyType);
 
         if (normalizedStatus == PurchaseOrderQuantityDiscrepancyPolicy.Open)
         {

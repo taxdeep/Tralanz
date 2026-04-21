@@ -71,6 +71,21 @@ public static class PurchaseOrderQuantityDiscrepancyPolicy
         };
     }
 
+    public static string NormalizeDiscrepancyType(string? discrepancyType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(discrepancyType)
+            ? throw new InvalidOperationException("PO quantity discrepancy type is required.")
+            : discrepancyType.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            OverReceived => OverReceived,
+            OverBilled => OverBilled,
+            BilledAheadOfReceived => BilledAheadOfReceived,
+            _ => throw new InvalidOperationException("PO quantity discrepancy review only supports over_received, over_billed, or billed_ahead_of_received type.")
+        };
+    }
+
     public static bool IsReviewVisibleStatus(string? investigationStatus)
     {
         var normalized = NormalizeInvestigationStatus(investigationStatus);

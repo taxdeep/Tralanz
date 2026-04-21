@@ -28,6 +28,9 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
+            var receiptRepository = new PostgresReceiptDocumentRepository(
+                new PostgresConnectionFactory(schemaConnectionString),
+                new PostgresExecutionContextAccessor());
             var companyId = Guid.NewGuid();
             var userId = Guid.NewGuid();
             var vendorId = Guid.NewGuid();
@@ -138,6 +141,36 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             Assert.Contains(preserved.Discrepancies, static lane =>
                 lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverReceived &&
                 lane.InvestigationStatus == PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized);
+
+            var overReceiptAfterOverride = new ReceiptDraftSaveModel(
+                null,
+                new(companyId),
+                new(userId),
+                vendorId,
+                Guid.NewGuid(),
+                new DateOnly(2026, 4, 22),
+                null,
+                null,
+                "Override review remains control truth only.",
+                [new ReceiptDraftLineSaveModel(1, itemAId, 1m, "EA", null, saved.DocumentId, 1)]);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => receiptRepository.SaveDraftAsync(overReceiptAfterOverride, CancellationToken.None));
+
+            var overrideBilledAuthorized = await repository.ReviewQuantityDiscrepancyAsync(
+                new(companyId),
+                new(userId),
+                saved.DocumentId,
+                2,
+                PurchaseOrderQuantityDiscrepancyPolicy.OverBilled,
+                PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized,
+                "AP lead authorized investigation note; AP posting policy still remains authoritative.",
+                CancellationToken.None);
+            Assert.NotNull(overrideBilledAuthorized);
+            Assert.Contains(overrideBilledAuthorized!.Discrepancies, static lane =>
+                lane.DiscrepancyType == PurchaseOrderQuantityDiscrepancyPolicy.OverBilled &&
+                lane.InvestigationStatus == PurchaseOrderQuantityDiscrepancyPolicy.OverrideAuthorized);
+
+            var overBillAfterOverride = await SeedBillAnchorAsync(schemaConnectionString, companyId, saved.DocumentId, 2, itemBId, 1m, "submitted", vendorId);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ValidateBillAnchorsForPostingAsync(new(companyId), overBillAfterOverride, CancellationToken.None));
         }
         finally
         {
