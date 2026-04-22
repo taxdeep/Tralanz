@@ -384,7 +384,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 line.LineAmount,
                 0m,
                 baseRevenue,
-                line.Description));
+                BuildSourceLineDescription("Invoice revenue", invoice.DisplayNumber.Value, line.LineNumber, line.Description)));
 
             if (line.TaxAmount > 0m)
             {
@@ -421,7 +421,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 baseRevenue,
                 0m,
-                line.Description));
+                BuildSourceLineDescription("Credit note revenue reversal", creditNote.DisplayNumber.Value, line.LineNumber, line.Description)));
 
             if (line.TaxAmount > 0m)
             {
@@ -474,7 +474,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 baseExpense,
                 0m,
-                $"Bill expense: {line.Description}"));
+                BuildSourceLineDescription("Bill expense", bill.DisplayNumber.Value, line.LineNumber, line.Description)));
 
             if (line.TaxAmount > 0m && line.IsTaxRecoverable)
             {
@@ -539,7 +539,7 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 expenseAmount,
                 0m,
                 baseExpense,
-                $"Vendor credit expense reversal: {line.Description}"));
+                BuildSourceLineDescription("Vendor credit expense reversal", vendorCredit.DisplayNumber.Value, line.LineNumber, line.Description)));
 
             if (line.TaxAmount > 0m && line.IsTaxRecoverable)
             {
@@ -1116,6 +1116,25 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             throw new InvalidOperationException(
                 $"Posting fragments are not balanced in base currency after FX conversion. Delta: {delta:0.00####}.");
         }
+    }
+
+    private static string BuildSourceLineDescription(
+        string role,
+        string documentNumber,
+        int lineNumber,
+        string description)
+    {
+        var normalizedRole = string.IsNullOrWhiteSpace(role)
+            ? "Source line"
+            : role.Trim();
+        var normalizedDocumentNumber = string.IsNullOrWhiteSpace(documentNumber)
+            ? "source document"
+            : documentNumber.Trim();
+        var normalizedDescription = string.IsNullOrWhiteSpace(description)
+            ? "No description"
+            : description.Trim();
+
+        return $"{normalizedRole} for {normalizedDocumentNumber} line {lineNumber}: {normalizedDescription}";
     }
 
     private static decimal Round6(decimal value) =>

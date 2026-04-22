@@ -65,6 +65,7 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(revenueAccountId, revenue.AccountId);
                 Assert.Equal(125m, revenue.Debit);
                 Assert.Equal(0m, revenue.Credit);
+                Assert.Equal("Credit note revenue reversal for CN-0001 line 1: Returned goods", revenue.Description);
             },
             tax =>
             {
@@ -144,6 +145,7 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(expenseAccountId, expense.AccountId);
                 Assert.Equal(0m, expense.Debit);
                 Assert.Equal(125m, expense.Credit);
+                Assert.Equal("Vendor credit expense reversal for VC-0001 line 1: Supplier rebate", expense.Description);
             },
             recoverableTax =>
             {
