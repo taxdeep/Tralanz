@@ -120,6 +120,69 @@ public sealed class ForeignCurrencySettlementPostingTests
         Assert.Equal("posted", result.Status);
     }
 
+    [Fact]
+    public void JournalAggregator_RejectsFxSnapshotCurrencyPairMismatch()
+    {
+        var document = CreateReceivePaymentDocument(
+            appliedAmountBase: 125m,
+            carryingAmountBase: 120m);
+        var aggregator = new DefaultJournalAggregator();
+        var mismatchedSnapshot = new FxSnapshotRef(
+            Guid.NewGuid(),
+            document.BaseCurrencyCode,
+            new CurrencyCode("CAD"),
+            1.25m,
+            document.DocumentDate,
+            document.DocumentDate,
+            "company_override");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            aggregator.Aggregate(
+                document,
+                CreateBalancedSettlementFragments(document),
+                new FxResolutionResult(mismatchedSnapshot, Array.Empty<string>())));
+
+        Assert.Contains("currency pair", exception.Message);
+    }
+
+    [Fact]
+    public void JournalAggregator_RejectsMixedFragmentCurrency()
+    {
+        var document = CreateReceivePaymentDocument(
+            appliedAmountBase: 125m,
+            carryingAmountBase: 120m);
+        var aggregator = new DefaultJournalAggregator();
+        var fragments = CreateBalancedSettlementFragments(document).ToArray();
+        fragments[1] = fragments[1] with { CurrencyCode = new CurrencyCode("CAD") };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            aggregator.Aggregate(
+                document,
+                fragments,
+                new FxResolutionResult(document.FxSnapshot!, Array.Empty<string>())));
+
+        Assert.Contains("fragment currency", exception.Message);
+    }
+
+    [Fact]
+    public void JournalAggregator_RejectsTransactionCurrencyImbalance()
+    {
+        var document = CreateReceivePaymentDocument(
+            appliedAmountBase: 125m,
+            carryingAmountBase: 120m);
+        var aggregator = new DefaultJournalAggregator();
+        var fragments = CreateBalancedSettlementFragments(document).ToArray();
+        fragments[1] = fragments[1] with { TxCredit = 99m };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            aggregator.Aggregate(
+                document,
+                fragments,
+                new FxResolutionResult(document.FxSnapshot!, Array.Empty<string>())));
+
+        Assert.Contains("transaction currency", exception.Message);
+    }
+
     private static ReceivePaymentDocument CreateReceivePaymentDocument(
         decimal appliedAmountBase,
         decimal carryingAmountBase)
@@ -187,6 +250,27 @@ public sealed class ForeignCurrencySettlementPostingTests
             totalAmount: 100m,
             memo: "Foreign-currency pay bill");
     }
+
+    private static IReadOnlyList<PostingFragment> CreateBalancedSettlementFragments(
+        ReceivePaymentDocument document) =>
+        [
+            new PostingFragment(
+                Guid.NewGuid(),
+                document.TransactionCurrencyCode,
+                100m,
+                0m,
+                125m,
+                0m,
+                "Settlement debit"),
+            new PostingFragment(
+                Guid.NewGuid(),
+                document.TransactionCurrencyCode,
+                0m,
+                100m,
+                0m,
+                125m,
+                "Settlement credit")
+        ];
 
     private static FxSnapshotRef CreateFxSnapshot(decimal rate) =>
         new(

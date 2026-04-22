@@ -211,6 +211,11 @@ public sealed class DefaultPostingValidator : IPostingValidator
                 throw new InvalidOperationException("FX revaluation document must target a foreign transaction currency.");
             }
 
+            if (fxRevaluation.RevaluationLines.Count == 0)
+            {
+                throw new InvalidOperationException("FX revaluation document must contain at least one revaluation line.");
+            }
+
             if (fxRevaluation.FxSnapshot is null)
             {
                 throw new InvalidOperationException("FX revaluation document requires a stored FX snapshot.");
@@ -1127,6 +1132,7 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(fragments);
         ArgumentNullException.ThrowIfNull(fxResult);
+        EnsureJournalInvariants(document, fragments, fxResult);
 
         var lines = fragments
             .Select((fragment, index) => new JournalEntryDraftLine(
@@ -1150,6 +1156,80 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
             document.BaseCurrencyCode,
             fxResult.Snapshot,
             lines);
+    }
+
+    private static void EnsureJournalInvariants(
+        IPostingDocument document,
+        IReadOnlyList<PostingFragment> fragments,
+        FxResolutionResult fxResult)
+    {
+        if (fragments.Count == 0)
+        {
+            throw new InvalidOperationException("Posting fragments must contain at least one journal line.");
+        }
+
+        if (fxResult.Snapshot.BaseCurrencyCode != document.BaseCurrencyCode ||
+            fxResult.Snapshot.QuoteCurrencyCode != document.TransactionCurrencyCode)
+        {
+            throw new InvalidOperationException(
+                "FX snapshot currency pair does not match the posting document currency context.");
+        }
+
+        if (document.TransactionCurrencyCode == document.BaseCurrencyCode && fxResult.Snapshot.Rate != 1m)
+        {
+            throw new InvalidOperationException(
+                "Base-currency posting requires an identity FX rate.");
+        }
+
+        foreach (var fragment in fragments)
+        {
+            if (fragment.AccountId == Guid.Empty)
+            {
+                throw new InvalidOperationException("Posting fragment account id is required.");
+            }
+
+            if (fragment.CurrencyCode != document.TransactionCurrencyCode)
+            {
+                throw new InvalidOperationException(
+                    "Posting fragment currency does not match the posting document transaction currency.");
+            }
+
+            if (fragment.TxDebit < 0m ||
+                fragment.TxCredit < 0m ||
+                fragment.Debit < 0m ||
+                fragment.Credit < 0m)
+            {
+                throw new InvalidOperationException("Posting fragments cannot contain negative debit or credit amounts.");
+            }
+
+            if (fragment.TxDebit > 0m && fragment.TxCredit > 0m)
+            {
+                throw new InvalidOperationException(
+                    "Posting fragment cannot carry both transaction debit and transaction credit amounts.");
+            }
+
+            if (fragment.Debit > 0m && fragment.Credit > 0m)
+            {
+                throw new InvalidOperationException(
+                    "Posting fragment cannot carry both base debit and base credit amounts.");
+            }
+        }
+
+        var transactionDelta = fragments.Sum(static fragment => fragment.TxDebit) -
+            fragments.Sum(static fragment => fragment.TxCredit);
+        if (transactionDelta != 0m)
+        {
+            throw new InvalidOperationException(
+                $"Posting fragments are not balanced in transaction currency. Delta: {transactionDelta:0.00####}.");
+        }
+
+        var baseDelta = fragments.Sum(static fragment => fragment.Debit) -
+            fragments.Sum(static fragment => fragment.Credit);
+        if (baseDelta != 0m)
+        {
+            throw new InvalidOperationException(
+                $"Posting fragments are not balanced in base currency. Delta: {baseDelta:0.00####}.");
+        }
     }
 }
 
