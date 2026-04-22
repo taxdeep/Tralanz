@@ -405,6 +405,30 @@
                                 }
                             </div>
 
+                            @if (reconciliation.PostingRoleRows.Count > 0)
+                            {
+                                <MudTable Items="reconciliation.PostingRoleRows" Dense="true" Hover="true" Class="je-review-table mt-3">
+                                    <HeaderContent>
+                                        <MudTh>Posting role</MudTh>
+                                        <MudTh>Lines</MudTh>
+                                        <MudTh>Tx debit</MudTh>
+                                        <MudTh>Tx credit</MudTh>
+                                        <MudTh>Debit</MudTh>
+                                        <MudTh>Credit</MudTh>
+                                        <MudTh>Evidence</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Posting role">@context.RoleLabel</MudTd>
+                                        <MudTd DataLabel="Lines">@context.LineCount</MudTd>
+                                        <MudTd DataLabel="Tx debit">@FormatAmount(context.TransactionDebit)</MudTd>
+                                        <MudTd DataLabel="Tx credit">@FormatAmount(context.TransactionCredit)</MudTd>
+                                        <MudTd DataLabel="Debit">@FormatAmount(context.Debit)</MudTd>
+                                        <MudTd DataLabel="Credit">@FormatAmount(context.Credit)</MudTd>
+                                        <MudTd DataLabel="Evidence">@context.Evidence</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+
                             @if (_sourceTrace.Lines.Count > 0)
                             {
                                 <MudTable Items="_sourceTrace.Lines" Dense="true" Hover="true" Class="je-review-table mt-3">
@@ -715,6 +739,7 @@
             .Where(accountCode => !journalAccountCodes.Contains(accountCode))
             .ToArray();
         var mappedSourceAccountCount = sourceAccountCodes.Length - unmappedSourceAccounts.Length;
+        var postingRoleRows = BuildPostingRoleRows(review, sourceAccountCodes).ToArray();
         var unmappedSourceAccountLabel = unmappedSourceAccounts.Length == 0
             ? string.Empty
             : string.Join(", ", unmappedSourceAccounts.Take(4));
@@ -738,6 +763,7 @@
                 sourceAccountCodes.Length,
                 mappedSourceAccountCount,
                 unmappedSourceAccountLabel,
+                postingRoleRows,
                 amountDelta,
                 lineDelta);
         }
@@ -754,6 +780,7 @@
                 sourceAccountCodes.Length,
                 mappedSourceAccountCount,
                 unmappedSourceAccountLabel,
+                postingRoleRows,
                 amountDelta,
                 lineDelta);
         }
@@ -768,9 +795,109 @@
             sourceAccountCodes.Length,
             mappedSourceAccountCount,
             unmappedSourceAccountLabel,
+            postingRoleRows,
             amountDelta,
             lineDelta);
     }
+
+    private static IEnumerable<SourceTracePostingRoleRow> BuildPostingRoleRows(
+        JournalEntryReview review,
+        IReadOnlyCollection<string> sourceAccountCodes)
+    {
+        var sourceAccountCodeSet = sourceAccountCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return review.Lines
+            .Select(line => new
+            {
+                Role = ClassifyPostingRole(line, sourceAccountCodeSet),
+                Line = line
+            })
+            .GroupBy(item => item.Role)
+            .OrderBy(group => group.Key.SortOrder)
+            .ThenBy(group => group.Key.Label, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var lines = group.Select(item => item.Line).ToArray();
+                return new SourceTracePostingRoleRow(
+                    group.Key.Label,
+                    lines.Length,
+                    lines.Sum(static line => line.TransactionDebit),
+                    lines.Sum(static line => line.TransactionCredit),
+                    lines.Sum(static line => line.Debit),
+                    lines.Sum(static line => line.Credit),
+                    BuildRoleEvidence(lines));
+            });
+    }
+
+    private static PostingRoleKey ClassifyPostingRole(
+        JournalEntryReviewLine line,
+        IReadOnlySet<string> sourceAccountCodes)
+    {
+        if (sourceAccountCodes.Contains(line.AccountCode))
+        {
+            return new PostingRoleKey(10, "Source account");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.ControlRole))
+        {
+            return new PostingRoleKey(20, $"Control: {line.ControlRole}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.TaxComponentType))
+        {
+            return new PostingRoleKey(30, $"Tax: {line.TaxComponentType}");
+        }
+
+        if (line.IsRealizedFxLine)
+        {
+            return new PostingRoleKey(40, "Realized FX");
+        }
+
+        if (ContainsToken(line.AccountSystemRole, "unrealized") ||
+            ContainsToken(line.AccountSystemKey, "unrealized") ||
+            ContainsToken(line.AccountSystemRole, "fx") ||
+            ContainsToken(line.AccountSystemKey, "fx"))
+        {
+            return new PostingRoleKey(45, "FX revaluation");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.AccountSystemRole))
+        {
+            return new PostingRoleKey(50, $"System: {line.AccountSystemRole}");
+        }
+
+        return new PostingRoleKey(90, $"Other {line.RootType}");
+    }
+
+    private static string BuildRoleEvidence(IReadOnlyCollection<JournalEntryReviewLine> lines)
+    {
+        var accounts = lines
+            .Select(static line => line.AccountCode)
+            .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToArray();
+
+        if (accounts.Length == 0)
+        {
+            return "No account code";
+        }
+
+        var suffix = lines
+            .Select(static line => line.AccountCode)
+            .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count() > accounts.Length
+            ? ", ..."
+            : string.Empty;
+
+        return string.Join(", ", accounts) + suffix;
+    }
+
+    private static bool ContainsToken(string? value, string token) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(token, StringComparison.OrdinalIgnoreCase);
 
     private static Color GetStatusColor(string status) =>
         status switch
@@ -838,6 +965,18 @@
         int SourceAccountCount,
         int MappedSourceAccountCount,
         string UnmappedSourceAccountLabel,
+        IReadOnlyList<SourceTracePostingRoleRow> PostingRoleRows,
         decimal AmountDelta,
         int LineDelta);
+
+    private sealed record SourceTracePostingRoleRow(
+        string RoleLabel,
+        int LineCount,
+        decimal TransactionDebit,
+        decimal TransactionCredit,
+        decimal Debit,
+        decimal Credit,
+        string Evidence);
+
+    private readonly record struct PostingRoleKey(int SortOrder, string Label);
 }
