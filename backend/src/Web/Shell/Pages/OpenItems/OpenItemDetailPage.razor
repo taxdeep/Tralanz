@@ -1,7 +1,12 @@
 @page "/open-items/{OpenItemType}/{OpenItemId:guid}"
+@using Modules.GL.JournalEntry
 @using Web.Shell.Services
 @inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellOpenItemDrillDownClient DrillDownClient
+@inject ShellOpenItemAdjustmentAccountMappingClient MappingClient
+@inject IJournalEntryAccountCatalog Accounts
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
     <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
@@ -25,6 +30,13 @@
     {
         <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
             @_errorText
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellState.WriteBlockMessage
         </MudAlert>
     }
 
@@ -68,11 +80,254 @@
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/{item.SourceType}/{item.SourceDocumentId:D}")">
                     Open Source Document
                 </MudButton>
+                @if (TryBuildSourceBrowserHref(item.SourceType, item.PartyRole, item.PartyId, out var relatedDocumentsHref))
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildBrowserNavigationHref(relatedDocumentsHref, "Open item detail", "Back to open item")">
+                        Browse Related Documents
+                    </MudButton>
+                }
             </div>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+                <div>
+                    <MudText Typo="Typo.h6">Open Item Adjustment Control</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Request and execute write-off or small-balance adjustment through backend governance and the Posting Engine.
+                    </MudText>
+                </div>
+                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Warning">Backend-owned execution</MudChip>
+            </div>
+
+            @if (_isAdjustmentCommandRunning)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Warning" Style="margin-bottom:1rem;" />
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_adjustmentCommandMessage))
+            {
+                <MudAlert Severity="_adjustmentCommandSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @_adjustmentCommandMessage
+                </MudAlert>
+            }
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Operator Next Step</MudText>
+                    <MudText Typo="Typo.h6">@GetAdjustmentNextLegalActionSummary().Title</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetAdjustmentNextLegalActionSummary().Detail</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Adjustment Policy</MudText>
+                    <MudText Typo="Typo.h6">@GetAdjustmentPolicySummaryTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetAdjustmentPolicySummaryDetail()</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Request Workflow</MudText>
+                    <MudText Typo="Typo.h6">@GetAdjustmentRequestSummaryTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetAdjustmentRequestSummaryDetail()</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Posting Readiness</MudText>
+                    <MudText Typo="Typo.h6">@GetAdjustmentExecutionSummaryTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetAdjustmentExecutionSummaryDetail()</MudText>
+                </MudPaper>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+                <MudSelect T="string" Label="Adjustment Type" Variant="Variant.Outlined" Value="_adjustmentType" ValueChanged="OnAdjustmentTypeChangedAsync" Disabled="@(_isAdjustmentCommandRunning || WritesBlocked)">
+                    <MudSelectItem T="string" Value="@("write_off")">Write-off</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("small_balance_adjustment")">Small balance adjustment</MudSelectItem>
+                </MudSelect>
+                <MudDatePicker Label="Adjustment Date" Variant="Variant.Outlined" Date="_adjustmentDatePicker" DateChanged="OnAdjustmentDateChanged" Disabled="@(_isAdjustmentCommandRunning || WritesBlocked)" />
+                <MudNumericField T="decimal?" Label="Adjustment Amount" Variant="Variant.Outlined" Min="0m" @bind-Value="_adjustmentAmountTx" Disabled="@(_isAdjustmentCommandRunning || WritesBlocked)" />
+                <MudTextField T="string" Label="Reason" Variant="Variant.Outlined" @bind-Value="_adjustmentReason" Disabled="@(_isAdjustmentCommandRunning || WritesBlocked)" />
+                <MudSelect T="string" Label="Adjustment Account" Variant="Variant.Outlined" @bind-Value="_adjustmentAccountIdText" Disabled="@(_isAdjustmentCommandRunning || WritesBlocked || _accountOptions.Count == 0)">
+                    @foreach (var account in _accountOptions)
+                    {
+                        <MudSelectItem T="string" Value="@account.AccountId.ToString("D")">@FormatAdjustmentAccountOption(account)</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+                <MudText Typo="Typo.caption" Class="text-secondary" Style="display:block;margin-bottom:1rem;">
+                    Adjustment account candidates are restricted to active manual-posting revenue, cost-of-sales, or expense accounts. Bank, AR/AP control, tax, asset, liability, and equity accounts are intentionally excluded from this shell picker.
+                </MudText>
+
+            <MudPaper Class="pa-3" Elevation="0" Style="margin-bottom:1rem;background:rgba(255,255,255,0.02);">
+                <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start;margin-bottom:0.75rem;">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">Execution Policy</MudText>
+                        <MudText Typo="Typo.caption" Class="text-secondary">
+                            Backend primary-execution scope for @FormatOpenItemType(item.OpenItemType) / @FormatAdjustmentType(_adjustmentType).
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Variant="Variant.Outlined" Color="@GetAdjustmentPolicyChipColor()">
+                        @GetAdjustmentPolicyChipLabel()
+                    </MudChip>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_adjustmentPolicyMessage))
+                {
+                    <MudAlert Severity="@GetAdjustmentPolicySeverity()" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:0.75rem;">
+                        @_adjustmentPolicyMessage
+                    </MudAlert>
+                }
+
+                @if (_adjustmentPolicyMappings.Count > 0)
+                {
+                    <MudTable Items="_adjustmentPolicyMappings" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh>Scope</MudTh>
+                            <MudTh>Offset Account</MudTh>
+                            <MudTh>Execution Role</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.ScopeLabel</MudTd>
+                            <MudTd>@context.AccountLabel</MudTd>
+                            <MudTd>@GetPolicyExecutionRole(context)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="RefreshAdjustmentPreviewAsync" Disabled="_isAdjustmentCommandRunning">
+                    Refresh Preview
+                </MudButton>
+                @if (TryBuildAdjustmentPolicyHref(OpenItemType, _adjustmentType, out var adjustmentPolicyHref))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@adjustmentPolicyHref">
+                        Review Mapping Policy
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="RequestAdjustmentAsync" Disabled="@(!CanRequestAdjustment())">
+                    Request Adjustment
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="SubmitAdjustmentRequestAsync" Disabled="@(!CanSubmitAdjustment())">
+                    Submit Request
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="CancelAdjustmentRequestAsync" Disabled="@(!CanCancelAdjustment())">
+                    Cancel Request
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="ApproveAdjustmentRequestAsync" Disabled="@(!CanApproveAdjustment())">
+                    Approve Request
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="RejectAdjustmentRequestAsync" Disabled="@(!CanRejectAdjustment())">
+                    Reject Request
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="ExecuteAdjustmentRequestAsync" Disabled="@(!CanExecuteAdjustment())">
+                    Execute Posting Adjustment
+                </MudButton>
+            </div>
+
+            @{
+                var adjustmentOperatorBullets = GetAdjustmentOperatorBulletSummary();
+            }
+            @if (adjustmentOperatorBullets.Count > 0)
+            {
+                <MudPaper Class="pa-3" Elevation="0" Style="margin-bottom:1rem;background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Operator Summary</MudText>
+                    <ul style="margin:0;padding-left:1.25rem;color:#97a8b7;">
+                        @foreach (var bullet in adjustmentOperatorBullets)
+                        {
+                            <li style="margin-bottom:0.35rem;">@bullet</li>
+                        }
+                    </ul>
+                </MudPaper>
+            }
+
+            @if (_adjustmentPreview is not null)
+            {
+                <MudAlert Severity="@(_adjustmentPreview.IsAvailable ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @_adjustmentPreview.Reason
+                </MudAlert>
+                <MudTable Items="BuildAdjustmentPreviewRows(_adjustmentPreview)" Dense="true" Style="margin-bottom:1rem;">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @if (_latestAdjustmentRequest is not null)
+            {
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Latest Adjustment Request</MudText>
+                <MudTable Items="BuildAdjustmentRequestRows(_latestAdjustmentRequest)" Dense="true" Style="margin-bottom:1rem;">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @if (_adjustmentReadiness is not null)
+            {
+                <MudAlert Severity="@(_adjustmentReadiness.IsAvailable ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @_adjustmentReadiness.Reason
+                </MudAlert>
+                <MudTable Items="BuildAdjustmentReadinessRows(_adjustmentReadiness)" Dense="true" Style="margin-bottom:1rem;">
+                    <RowTemplate>
+                        <MudTd DataLabel="Field">@context.Label</MudTd>
+                        <MudTd DataLabel="Value">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @if (_adjustmentExecutionPlan is not null)
+            {
+                <MudAlert Severity="@(_adjustmentExecutionPlan.CanExecute ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                    @_adjustmentExecutionPlan.Reason
+                </MudAlert>
+                <MudTable Items="_adjustmentExecutionPlan.Steps" Dense="true" Hover="true" Bordered="true" Style="margin-bottom:1rem;">
+                    <HeaderContent>
+                        <MudTh>#</MudTh>
+                        <MudTh>Step</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Backend Reason</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.StepNumber</MudTd>
+                        <MudTd>@context.StepLabel</MudTd>
+                        <MudTd>@FormatPlanStepStatus(context.StepStatus)</MudTd>
+                        <MudTd>@context.Reason</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @if (_adjustmentExecutionResult is not null)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Dense="true">
+                    Adjustment posted as @_adjustmentExecutionResult.JournalEntryDisplayNumber. The backend has reduced or closed the open item and appended audit completion.
+                </MudAlert>
+            }
         </MudPaper>
 
         <MudPaper Class="pa-4" Elevation="0">
             <MudText Typo="Typo.h6" Class="mb-3">Settlement / Application Trail</MudText>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Operator Follow-up</MudText>
+                    <MudText Typo="Typo.h6">@GetApplicationTrailNextActionSummary(item).Title</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetApplicationTrailNextActionSummary(item).Detail</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Settlement State</MudText>
+                    <MudText Typo="Typo.h6">@GetApplicationTrailSummaryTitle(item)</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetApplicationTrailSummaryDetail(item)</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Linked Applications</MudText>
+                    <MudText Typo="Typo.h6">@GetApplicationTrailCountTitle()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetApplicationTrailCountDetail()</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                    <MudText Typo="Typo.caption">Consumed Coverage</MudText>
+                    <MudText Typo="Typo.h6">@GetApplicationTrailCoverageTitle(item)</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@GetApplicationTrailCoverageDetail(item)</MudText>
+                </MudPaper>
+            </div>
             @if (_response.Applications.Count == 0)
             {
                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
@@ -128,6 +383,23 @@
     private string? _errorText;
     private ShellOpenItemDrillDownResponse? _response;
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
+    private IReadOnlyList<JournalEntryAccountOption> _accountOptions = Array.Empty<JournalEntryAccountOption>();
+    private readonly List<ShellOpenItemAdjustmentAccountMappingRecord> _adjustmentPolicyMappings = [];
+    private ShellOpenItemAdjustmentPreviewSummary? _adjustmentPreview;
+    private ShellOpenItemAdjustmentRequestSummary? _latestAdjustmentRequest;
+    private ShellOpenItemAdjustmentReadinessSummary? _adjustmentReadiness;
+    private ShellOpenItemAdjustmentExecutionPlanSummary? _adjustmentExecutionPlan;
+    private ShellOpenItemAdjustmentExecutionResultSummary? _adjustmentExecutionResult;
+    private string? _adjustmentPolicyMessage;
+    private bool _isAdjustmentCommandRunning;
+    private string? _adjustmentCommandMessage;
+    private Severity _adjustmentCommandSeverity = Severity.Info;
+    private string _adjustmentType = "write_off";
+    private string? _adjustmentReason;
+    private string? _adjustmentAccountIdText;
+    private decimal? _adjustmentAmountTx;
+    private DateTime? _adjustmentDatePicker = DateTime.Today;
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -135,17 +407,55 @@
         _errorText = null;
         _response = null;
         _factRows = Array.Empty<FactRow>();
+        _adjustmentPreview = null;
+        _latestAdjustmentRequest = null;
+        _adjustmentReadiness = null;
+        _adjustmentExecutionPlan = null;
+        _adjustmentExecutionResult = null;
+        _adjustmentPolicyMappings.Clear();
+        _adjustmentPolicyMessage = null;
+        _adjustmentCommandMessage = null;
+        _adjustmentType = GetDefaultAdjustmentType(OpenItemType);
 
-        var response = await DrillDownClient.GetAsync(ShellState.ActiveCompany.Id, OpenItemType, OpenItemId);
+        if (!await EnsureWriteGateStateAsync())
+        {
+            _isLoading = false;
+            return;
+        }
+
+        var responseResult = await DrillDownClient.GetAsync(ShellState.ActiveCompany.Id, OpenItemType, OpenItemId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(responseResult, CancellationToken.None))
+        {
+            _isLoading = false;
+            return;
+        }
+
+        var response = responseResult.Value;
         if (response?.OpenItem is null)
         {
-            _errorText = $"The requested {OpenItemType.ToUpperInvariant()} open item could not be found in company {ShellState.ActiveCompany.CompanyCode}.";
+            _errorText = responseResult.IsNotFound
+                ? $"The requested {OpenItemType.ToUpperInvariant()} open item could not be found in company {ShellState.ActiveCompany.CompanyCode}."
+                : responseResult.ErrorMessage ?? $"Unable to load the requested {OpenItemType.ToUpperInvariant()} open item.";
             _isLoading = false;
             return;
         }
 
         _response = response;
+        _adjustmentAmountTx ??= response.OpenItem.OpenAmountTx;
         _factRows = BuildFactRows(response.OpenItem);
+        var manualAccounts = await Accounts.ListManualPostingAccountsAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+        _accountOptions = manualAccounts
+            .Where(IsGovernedAdjustmentAccountCandidate)
+            .OrderByDescending(IsPreferredAdjustmentAccountCandidate)
+            .ThenBy(static account => account.Code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        _adjustmentAccountIdText = ResolveDefaultAdjustmentAccount(_accountOptions)?.AccountId.ToString("D") ?? _accountOptions.FirstOrDefault()?.AccountId.ToString("D");
+        if (!await LoadAdjustmentFlowAsync())
+        {
+            _isLoading = false;
+            return;
+        }
+
         _isLoading = false;
     }
 
@@ -159,6 +469,591 @@
         new("Original Base", $"{FormatAmount(item.OriginalAmountBase)} {item.BaseCurrencyCode}"),
         new("Open Tx", $"{FormatAmount(item.OpenAmountTx)} {item.DocumentCurrencyCode}"),
         new("Open Base", $"{FormatAmount(item.OpenAmountBase)} {item.BaseCurrencyCode}")
+    ];
+
+    private async Task<bool> LoadAdjustmentFlowAsync()
+    {
+        if (!await LoadAdjustmentPolicyAsync())
+        {
+            return false;
+        }
+
+        var companyId = ShellState.ActiveCompany.Id;
+        var adjustmentDate = GetAdjustmentDate();
+        var previewResult = await DrillDownClient.GetAdjustmentPreviewAsync(
+            companyId,
+            OpenItemType,
+            OpenItemId,
+            _adjustmentType,
+            adjustmentDate,
+            GetAdjustmentAmount());
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(previewResult, CancellationToken.None))
+        {
+            return false;
+        }
+
+        _adjustmentPreview = previewResult.Value;
+        CapturePageError(previewResult.ErrorMessage);
+
+        var latestRequestResult = await DrillDownClient.GetLatestAdjustmentRequestAsync(companyId, OpenItemType, OpenItemId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(latestRequestResult, CancellationToken.None))
+        {
+            return false;
+        }
+
+        _latestAdjustmentRequest = latestRequestResult.Value;
+        CapturePageError(latestRequestResult.ErrorMessage);
+        if (_latestAdjustmentRequest is null || string.Equals(_latestAdjustmentRequest.RequestStatus, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            _adjustmentReadiness = null;
+            _adjustmentExecutionPlan = null;
+            return true;
+        }
+
+        var readinessResult = await DrillDownClient.GetAdjustmentReadinessAsync(
+            companyId,
+            OpenItemType,
+            OpenItemId,
+            _latestAdjustmentRequest.RequestId,
+            adjustmentDate);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(readinessResult, CancellationToken.None))
+        {
+            return false;
+        }
+
+        _adjustmentReadiness = readinessResult.Value;
+        CapturePageError(readinessResult.ErrorMessage);
+
+        var executionPlanResult = await DrillDownClient.GetAdjustmentExecutionPlanAsync(
+            companyId,
+            OpenItemType,
+            OpenItemId,
+            _latestAdjustmentRequest.RequestId,
+            adjustmentDate);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(executionPlanResult, CancellationToken.None))
+        {
+            return false;
+        }
+
+        _adjustmentExecutionPlan = executionPlanResult.Value;
+        CapturePageError(executionPlanResult.ErrorMessage);
+        return true;
+    }
+
+    private async Task RefreshAdjustmentPreviewAsync()
+    {
+        _adjustmentCommandMessage = null;
+        _adjustmentExecutionResult = null;
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                if (!await LoadAdjustmentFlowAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return new AdjustmentCommandOutcome(true, "Adjustment preview refreshed from backend truth.");
+            },
+            successSeverity: Severity.Info);
+    }
+
+    private async Task<bool> LoadAdjustmentPolicyAsync()
+    {
+        _adjustmentPolicyMappings.Clear();
+        _adjustmentPolicyMessage = null;
+
+        var policyResult = await MappingClient.ListAsync(
+            ShellState.ActiveCompany.Id,
+            NormalizeOpenItemTypeForMapping(OpenItemType),
+            _adjustmentType,
+            includeInactive: false,
+            bookId: null,
+            policyScope: "primary_execution",
+            searchText: null,
+            limit: 20,
+            CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(policyResult, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(policyResult.ErrorMessage))
+        {
+            _adjustmentPolicyMessage = policyResult.ErrorMessage;
+            return true;
+        }
+
+        _adjustmentPolicyMappings.AddRange(policyResult.Value?.Mappings ?? Array.Empty<ShellOpenItemAdjustmentAccountMappingRecord>());
+        if (_adjustmentPolicyMappings.Count == 0)
+        {
+            _adjustmentPolicyMessage =
+                $"No active {FormatOpenItemType(NormalizeOpenItemTypeForMapping(OpenItemType))} mapping exists for {FormatAdjustmentType(_adjustmentType)}. Backend execution will keep using the structural adjustment-account guard until governance activates a mapping.";
+            return true;
+        }
+
+        var preferred = _adjustmentPolicyMappings.FirstOrDefault(static mapping => mapping.BookId is not null) ?? _adjustmentPolicyMappings[0];
+        _adjustmentPolicyMessage =
+            $"Primary execution currently resolves to {preferred.AccountLabel} via {preferred.ScopeLabel}. Backend execution will enforce this active mapping scope.";
+
+        if (_accountOptions.Any(option => option.AccountId == preferred.AdjustmentAccountId) &&
+            !string.Equals(_adjustmentAccountIdText, preferred.AdjustmentAccountId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        {
+            _adjustmentAccountIdText = preferred.AdjustmentAccountId.ToString("D");
+        }
+
+        return true;
+    }
+
+    private async Task RequestAdjustmentAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                var attemptResult = await DrillDownClient.RequestAdjustmentAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    OpenItemType,
+                    OpenItemId,
+                    _adjustmentType,
+                    GetAdjustmentDate(),
+                    GetAdjustmentAmount(),
+                    _adjustmentReason);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(attemptResult, CancellationToken.None))
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                if (!await LoadAdjustmentFlowAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return attemptResult.Value is null
+                    ? new AdjustmentCommandOutcome(true, attemptResult.ErrorMessage ?? "Unable to request the adjustment.", Severity.Warning)
+                    : new AdjustmentCommandOutcome(true, attemptResult.Value.Message ?? "Adjustment request submitted to backend governance.");
+            });
+    }
+
+    private async Task SubmitAdjustmentRequestAsync()
+    {
+        if (_latestAdjustmentRequest is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                var result = await DrillDownClient.SubmitAdjustmentRequestAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    OpenItemType,
+                    OpenItemId,
+                    _latestAdjustmentRequest.RequestId);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                if (!await LoadAdjustmentFlowAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return result.Value is null
+                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to submit the adjustment request.", Severity.Warning)
+                    : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request submitted.");
+            });
+    }
+
+    private async Task CancelAdjustmentRequestAsync()
+    {
+        if (_latestAdjustmentRequest is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                var result = await DrillDownClient.CancelAdjustmentRequestAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    OpenItemType,
+                    OpenItemId,
+                    _latestAdjustmentRequest.RequestId);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                if (!await LoadAdjustmentFlowAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return result.Value is null
+                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to cancel the adjustment request.", Severity.Warning)
+                    : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request cancelled.");
+            },
+            successSeverity: Severity.Info);
+    }
+
+    private async Task ApproveAdjustmentRequestAsync()
+    {
+        if (_latestAdjustmentRequest is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                var result = await DrillDownClient.ApproveAdjustmentRequestAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    OpenItemType,
+                    OpenItemId,
+                    _latestAdjustmentRequest.RequestId);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                if (!await LoadAdjustmentFlowAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return result.Value is null
+                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to approve the adjustment request.", Severity.Warning)
+                    : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request approved.");
+            });
+    }
+
+    private async Task RejectAdjustmentRequestAsync()
+    {
+        if (_latestAdjustmentRequest is null || TryBlockWrites())
+        {
+            return;
+        }
+
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                var result = await DrillDownClient.RejectAdjustmentRequestAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    OpenItemType,
+                    OpenItemId,
+                    _latestAdjustmentRequest.RequestId);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                if (!await LoadAdjustmentFlowAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return result.Value is null
+                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to reject the adjustment request.", Severity.Warning)
+                    : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request rejected.");
+            },
+            successSeverity: Severity.Warning);
+    }
+
+    private async Task ExecuteAdjustmentRequestAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        if (_latestAdjustmentRequest is null || !Guid.TryParse(_adjustmentAccountIdText, out var adjustmentAccountId))
+        {
+            _adjustmentCommandSeverity = Severity.Warning;
+            _adjustmentCommandMessage = "Select a governed adjustment account before execution.";
+            return;
+        }
+
+        await RunAdjustmentCommandAsync(
+            async () =>
+            {
+                var result = await DrillDownClient.ExecuteAdjustmentRequestAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    OpenItemType,
+                    OpenItemId,
+                    _latestAdjustmentRequest.RequestId,
+                    adjustmentAccountId,
+                    GetAdjustmentDate());
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                if (result.Value is null)
+                {
+                    if (!await LoadAdjustmentFlowAsync())
+                    {
+                        return new AdjustmentCommandOutcome(false, null);
+                    }
+
+                    return new AdjustmentCommandOutcome(
+                        true,
+                        result.ErrorMessage ?? "Unable to execute the adjustment.",
+                        Severity.Warning);
+                }
+
+                _adjustmentExecutionResult = result.Value;
+                if (!await ReloadOpenItemAfterAdjustmentAsync())
+                {
+                    return new AdjustmentCommandOutcome(false, null);
+                }
+
+                return new AdjustmentCommandOutcome(
+                    true,
+                    $"Adjustment posted as {result.Value.JournalEntryDisplayNumber ?? result.Value.JournalEntryId?.ToString("D") ?? "journal entry unavailable"}.");
+            });
+    }
+
+    private async Task<bool> ReloadOpenItemAfterAdjustmentAsync()
+    {
+        var responseResult = await DrillDownClient.GetAsync(ShellState.ActiveCompany.Id, OpenItemType, OpenItemId);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(responseResult, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (responseResult.Value?.OpenItem is not null)
+        {
+            _response = responseResult.Value;
+            _factRows = BuildFactRows(responseResult.Value.OpenItem);
+        }
+        else
+        {
+            CapturePageError(responseResult.ErrorMessage);
+        }
+
+        return await LoadAdjustmentFlowAsync();
+    }
+
+    private async Task RunAdjustmentCommandAsync(
+        Func<Task<AdjustmentCommandOutcome>> operation,
+        Severity successSeverity = Severity.Success)
+    {
+        _isAdjustmentCommandRunning = true;
+        _adjustmentCommandMessage = null;
+        _adjustmentCommandSeverity = successSeverity;
+
+        try
+        {
+            var outcome = await operation();
+            if (!outcome.Continue)
+            {
+                return;
+            }
+
+            _adjustmentCommandMessage = outcome.Message;
+            if (outcome.OverrideSeverity.HasValue)
+            {
+                _adjustmentCommandSeverity = outcome.OverrideSeverity.Value;
+            }
+            else if (_adjustmentCommandSeverity != Severity.Warning)
+            {
+                _adjustmentCommandSeverity = successSeverity;
+            }
+        }
+        catch (Exception ex)
+        {
+            _adjustmentCommandSeverity = Severity.Error;
+            _adjustmentCommandMessage = ex.Message;
+        }
+        finally
+        {
+            _isAdjustmentCommandRunning = false;
+        }
+    }
+
+    private void OnAdjustmentDateChanged(DateTime? value)
+    {
+        _adjustmentDatePicker = value;
+    }
+
+    private async Task OnAdjustmentTypeChangedAsync(string value)
+    {
+        _adjustmentType = value;
+        _adjustmentExecutionResult = null;
+        _adjustmentCommandMessage = null;
+        await RefreshAdjustmentPreviewAsync();
+    }
+
+    private bool CanRequestAdjustment() =>
+        !WritesBlocked &&
+        !_isAdjustmentCommandRunning &&
+        _adjustmentPreview?.IsAvailable == true &&
+        (_latestAdjustmentRequest is null || string.Equals(_latestAdjustmentRequest.RequestStatus, "cancelled", StringComparison.OrdinalIgnoreCase));
+
+    private bool CanSubmitAdjustment() =>
+        !WritesBlocked &&
+        !_isAdjustmentCommandRunning &&
+        string.Equals(_latestAdjustmentRequest?.RequestStatus, "draft", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanCancelAdjustment() =>
+        !WritesBlocked &&
+        !_isAdjustmentCommandRunning &&
+        _latestAdjustmentRequest is not null &&
+        (string.Equals(_latestAdjustmentRequest.RequestStatus, "draft", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(_latestAdjustmentRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase)) &&
+        !string.Equals(_latestAdjustmentRequest.ExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ExecutionStatus, "journal_entry_posted", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanApproveAdjustment() =>
+        !WritesBlocked &&
+        !_isAdjustmentCommandRunning &&
+        _latestAdjustmentRequest?.RequiresApproval == true &&
+        string.Equals(_latestAdjustmentRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ApprovalStatus, "approved", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ExecutionStatus, "journal_entry_posted", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanRejectAdjustment() =>
+        !WritesBlocked &&
+        !_isAdjustmentCommandRunning &&
+        _latestAdjustmentRequest?.RequiresApproval == true &&
+        string.Equals(_latestAdjustmentRequest.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ApprovalStatus, "rejected", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_latestAdjustmentRequest.ExecutionStatus, "journal_entry_posted", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanExecuteAdjustment() =>
+        !WritesBlocked &&
+        !_isAdjustmentCommandRunning &&
+        _adjustmentExecutionPlan?.CanExecute == true &&
+        string.Equals(_latestAdjustmentRequest?.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        Guid.TryParse(_adjustmentAccountIdText, out var adjustmentAccountId) &&
+        _accountOptions.Any(account => account.AccountId == adjustmentAccountId);
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _errorText = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private void CapturePageError(string? message)
+    {
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _errorText ??= message;
+        }
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _adjustmentCommandSeverity = Severity.Warning;
+        _adjustmentCommandMessage = ShellState.WriteBlockMessage;
+        return true;
+    }
+
+    private DateOnly GetAdjustmentDate() =>
+        DateOnly.FromDateTime(_adjustmentDatePicker ?? DateTime.Today);
+
+    private decimal? GetAdjustmentAmount() =>
+        _adjustmentAmountTx.HasValue && _adjustmentAmountTx.Value > 0m
+            ? _adjustmentAmountTx.Value
+            : null;
+
+    private static IReadOnlyList<FactRow> BuildAdjustmentPreviewRows(ShellOpenItemAdjustmentPreviewSummary preview) =>
+    [
+        new("Action", preview.ActionLabel),
+        new("Adjustment Type", FormatAdjustmentType(preview.AdjustmentType)),
+        new("Adjustment Date", preview.AdjustmentDate.ToString("yyyy-MM-dd")),
+        new("Open Tx", $"{FormatAmount(preview.OpenAmountTx)} {preview.DocumentCurrencyCode}"),
+        new("Open Base", $"{FormatAmount(preview.OpenAmountBase)} {preview.BaseCurrencyCode}"),
+        new("Requested Adjustment Tx", $"{FormatAmount(preview.RequestedAdjustmentAmountTx)} {preview.DocumentCurrencyCode}"),
+        new("Requested Adjustment Base", $"{FormatAmount(preview.RequestedAdjustmentAmountBase)} {preview.BaseCurrencyCode}"),
+        new("Remaining Tx After Execution", $"{FormatAmount(preview.RemainingAmountTx)} {preview.DocumentCurrencyCode}"),
+        new("Approval", preview.RequiresApproval ? $"Required | {preview.ApprovalStatus}" : "Not required"),
+        new("Application Count", preview.ApplicationCount.ToString("N0")),
+        new("Execution Mode", FormatExecutionMode(preview.ExecutionMode)),
+        new("Availability", FormatAvailabilityMode(preview.AvailabilityMode, preview.IsAvailable))
+    ];
+
+    private static IReadOnlyList<FactRow> BuildAdjustmentRequestRows(ShellOpenItemAdjustmentRequestSummary request)
+    {
+        var rows = new List<FactRow>
+        {
+            new("Request Id", request.RequestId.ToString("D")),
+            new("Adjustment Type", FormatAdjustmentType(request.AdjustmentType)),
+            new("Adjustment Date", request.AdjustmentDate.ToString("yyyy-MM-dd")),
+            new("Requested Adjustment Tx", FormatAmount(request.RequestedAdjustmentAmountTx)),
+            new("Requested Adjustment Base", FormatAmount(request.RequestedAdjustmentAmountBase)),
+            new("Approval", request.RequiresApproval ? $"Required | {request.ApprovalStatus}" : "Not required"),
+            new("Request Status", request.RequestStatus),
+            new("Execution Status", request.ExecutionStatus),
+            new("Requested At", request.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss zzz")),
+            new("Requested By", FormatActor(request.RequestedByActorType, request.RequestedByActorId)),
+            new("Reason", string.IsNullOrWhiteSpace(request.Reason) ? "No reason captured" : request.Reason!)
+        };
+
+        if (request.SubmittedAt is not null)
+        {
+            rows.Add(new("Submitted At", request.SubmittedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Submitted By", FormatActor(request.SubmittedByActorType, request.SubmittedByActorId)));
+        }
+
+        if (request.ApprovedAt is not null)
+        {
+            rows.Add(new("Approved At", request.ApprovedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Approved By", FormatActor(request.ApprovedByActorType, request.ApprovedByActorId)));
+        }
+
+        if (request.RejectedAt is not null)
+        {
+            rows.Add(new("Rejected At", request.RejectedAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Rejected By", FormatActor(request.RejectedByActorType, request.RejectedByActorId)));
+        }
+
+        if (request.CancelledAt is not null)
+        {
+            rows.Add(new("Cancelled At", request.CancelledAt.Value.ToString("yyyy-MM-dd HH:mm:ss zzz")));
+            rows.Add(new("Cancelled By", FormatActor(request.CancelledByActorType, request.CancelledByActorId)));
+        }
+
+        return rows;
+    }
+
+    private static IReadOnlyList<FactRow> BuildAdjustmentReadinessRows(ShellOpenItemAdjustmentReadinessSummary readiness) =>
+    [
+        new("As Of Date", readiness.AsOfDate.ToString("yyyy-MM-dd")),
+        new("Governance Ready", readiness.GovernanceReady ? "Yes" : "No"),
+        new("Open Item Ready", readiness.OpenItemReady ? "Yes" : "No"),
+        new("Posting Execution Ready", readiness.PostingExecutionReady ? "Yes" : "No"),
+        new("Execution Mode", FormatExecutionMode(readiness.ExecutionMode)),
+        new("Availability", FormatAvailabilityMode(readiness.AvailabilityMode, readiness.IsAvailable))
     ];
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
@@ -194,6 +1089,524 @@
             "vendor" => "Vendor",
             _ => "Party"
         };
+
+    private static string FormatOpenItemType(string? openItemType) =>
+        openItemType?.Trim().ToLowerInvariant() switch
+        {
+            "ar" or "ar_open_item" => "AR Open Item",
+            "ap" or "ap_open_item" => "AP Open Item",
+            _ => string.IsNullOrWhiteSpace(openItemType) ? "Open Item" : openItemType
+        };
+
+    private static string GetDefaultAdjustmentType(string? openItemType) =>
+        string.Equals(openItemType, "ap", StringComparison.OrdinalIgnoreCase)
+            ? "small_balance_adjustment"
+            : "write_off";
+
+    private static string NormalizeOpenItemTypeForMapping(string? openItemType) =>
+        string.Equals(openItemType, "ap", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(openItemType, "ap_open_item", StringComparison.OrdinalIgnoreCase)
+            ? "ap_open_item"
+            : "ar_open_item";
+
+    private static JournalEntryAccountOption? ResolveDefaultAdjustmentAccount(IReadOnlyList<JournalEntryAccountOption> accounts) =>
+        accounts.FirstOrDefault(IsPreferredAdjustmentAccountCandidate)
+        ?? accounts.FirstOrDefault(static account => string.Equals(account.RootType, "expense", StringComparison.OrdinalIgnoreCase))
+        ?? accounts.FirstOrDefault(static account => string.Equals(account.RootType, "revenue", StringComparison.OrdinalIgnoreCase))
+        ?? accounts.FirstOrDefault();
+
+    private static bool IsGovernedAdjustmentAccountCandidate(JournalEntryAccountOption account) =>
+        account.AllowManualPosting &&
+        account.RootType is "revenue" or "cost_of_sales" or "expense";
+
+    private static bool IsPreferredAdjustmentAccountCandidate(JournalEntryAccountOption account)
+    {
+        var searchText = $"{account.Code} {account.Name} {account.DetailType} {account.TypeLabel}".ToLowerInvariant();
+        return searchText.Contains("write") ||
+               searchText.Contains("bad debt") ||
+               searchText.Contains("adjust") ||
+               searchText.Contains("rounding");
+    }
+
+    private static string FormatAdjustmentAccountOption(JournalEntryAccountOption account)
+    {
+        var rootLabel = FormatRootType(account.RootType);
+        return $"{account.DisplayText} | {rootLabel} / {account.TypeLabel}";
+    }
+
+    private static string FormatRootType(string? rootType) =>
+        rootType?.Trim().ToLowerInvariant() switch
+        {
+            "revenue" => "Revenue",
+            "cost_of_sales" => "Cost of Sales",
+            "expense" => "Expense",
+            _ => string.IsNullOrWhiteSpace(rootType) ? "Unknown" : rootType
+        };
+
+    private static string FormatAdjustmentType(string? adjustmentType) =>
+        adjustmentType?.Trim().ToLowerInvariant() switch
+        {
+            "write_off" => "Write-off",
+            "small_balance_adjustment" => "Small balance adjustment",
+            _ => string.IsNullOrWhiteSpace(adjustmentType) ? "Adjustment" : adjustmentType
+        };
+
+    private string GetApplicationTrailSummaryTitle(ShellOpenItemDetail item)
+    {
+        if (_response?.Applications.Count is not > 0)
+        {
+            return "Unapplied";
+        }
+
+        return item.OpenAmountTx == 0m ? "Fully applied" : "Partially applied";
+    }
+
+    private string GetApplicationTrailSummaryDetail(ShellOpenItemDetail item)
+    {
+        if (_response?.Applications.Count is not > 0)
+        {
+            return "No settlement or credit application rows are currently consuming this open item.";
+        }
+
+        var lastAppliedAt = _response.Applications.Max(static application => application.CreatedAt);
+        return $"Latest application row was recorded at {lastAppliedAt:yyyy-MM-dd HH:mm 'UTC'}.";
+    }
+
+    private string GetApplicationTrailCountTitle() =>
+        _response?.Applications.Count is > 0
+            ? $"{_response.Applications.Count} row(s)"
+            : "0 rows";
+
+    private string GetApplicationTrailCountDetail()
+    {
+        if (_response?.Applications.Count is not > 0)
+        {
+            return "No receive-payment, credit-application, pay-bill, or vendor-credit-application rows are linked yet.";
+        }
+
+        var grouped = _response.Applications
+            .GroupBy(application => GetApplicationLabel(application.ApplicationType))
+            .Select(group => $"{group.Key}: {group.Count()}")
+            .ToArray();
+        return string.Join(" | ", grouped);
+    }
+
+    private string GetApplicationTrailCoverageTitle(ShellOpenItemDetail item)
+    {
+        var appliedAmountTx = item.OriginalAmountTx - item.OpenAmountTx;
+        return $"{FormatAmount(appliedAmountTx)} applied";
+    }
+
+    private string GetApplicationTrailCoverageDetail(ShellOpenItemDetail item)
+    {
+        if (item.OriginalAmountTx == 0m)
+        {
+            return "Original amount is zero, so no application coverage ratio is available.";
+        }
+
+        var appliedAmountTx = item.OriginalAmountTx - item.OpenAmountTx;
+        var coverage = appliedAmountTx / item.OriginalAmountTx;
+        return $"{coverage:P0} of original {FormatAmount(item.OriginalAmountTx)} has been consumed; {FormatAmount(item.OpenAmountTx)} remains open.";
+    }
+
+    private ApplicationTrailNextActionSummary GetApplicationTrailNextActionSummary(ShellOpenItemDetail item)
+    {
+        if (_response?.Applications.Count is not > 0)
+        {
+            return new ApplicationTrailNextActionSummary(
+                "No trail follow-up needed",
+                "No settlement or application rows currently consume this open item. Use related-source browsing only if you want adjacent AR/AP context before requesting an adjustment.");
+        }
+
+        if (item.OpenAmountTx == 0m)
+        {
+            return new ApplicationTrailNextActionSummary(
+                "Review fully applied history",
+                $"{_response.Applications.Count} application row(s) have fully consumed the original amount. Open linked source documents if you need audit follow-up before treating this item as closed out.");
+        }
+
+        return new ApplicationTrailNextActionSummary(
+            "Review consuming applications",
+            $"{_response.Applications.Count} application row(s) still consume part of this open item. Review the trail and related source documents before deciding whether a residual write-off or small-balance adjustment is still appropriate.");
+    }
+
+    private string GetAdjustmentPolicySummaryTitle() =>
+        _adjustmentPolicyMappings.Count == 0 ? "Structural guard" : "Mapped execution";
+
+    private string GetAdjustmentPolicySummaryDetail()
+    {
+        if (_adjustmentPolicyMappings.Count == 0)
+        {
+            return $"No primary-execution mapping is active for {FormatAdjustmentType(_adjustmentType)}. Backend uses structural account validation.";
+        }
+
+        var preferred = _adjustmentPolicyMappings.FirstOrDefault(static mapping => mapping.BookId is not null) ?? _adjustmentPolicyMappings[0];
+        return $"{preferred.ScopeLabel} routes {FormatAdjustmentType(_adjustmentType).ToLowerInvariant()} into {preferred.AccountLabel}.";
+    }
+
+    private string GetAdjustmentRequestSummaryTitle()
+    {
+        if (_latestAdjustmentRequest is null)
+        {
+            return "No active workflow";
+        }
+
+        return $"{FormatAdjustmentRequestStatus(_latestAdjustmentRequest.RequestStatus)} | {FormatAdjustmentExecutionStatus(_latestAdjustmentRequest.ExecutionStatus)}";
+    }
+
+    private string GetAdjustmentRequestSummaryDetail()
+    {
+        if (_latestAdjustmentRequest is null)
+        {
+            return "No governed write-off or small-balance request has been recorded for this open item.";
+        }
+
+        if (_latestAdjustmentRequest.RequiresApproval)
+        {
+            return $"Approval: {FormatApprovalStatus(_latestAdjustmentRequest.ApprovalStatus)}. {(_latestAdjustmentRequest.Reason ?? "Review the latest governed request record for operator-entered context.")}";
+        }
+
+        return $"Requested {FormatAmount(_latestAdjustmentRequest.RequestedAdjustmentAmountTx)} on {_latestAdjustmentRequest.AdjustmentDate:yyyy-MM-dd}.";
+    }
+
+    private string GetAdjustmentExecutionSummaryTitle()
+    {
+        if (_adjustmentExecutionResult is not null)
+        {
+            return "Posting completed";
+        }
+
+        if (_adjustmentExecutionPlan is not null)
+        {
+            return _adjustmentExecutionPlan.CanExecute ? "Execution ready" : "Execution blocked";
+        }
+
+        if (_adjustmentReadiness is not null)
+        {
+            return _adjustmentReadiness.IsAvailable ? "Readiness available" : "Readiness blocked";
+        }
+
+        return "Preview pending";
+    }
+
+    private string GetAdjustmentExecutionSummaryDetail()
+    {
+        if (_adjustmentExecutionResult is not null)
+        {
+            return $"Posted as {_adjustmentExecutionResult.JournalEntryDisplayNumber ?? "linked JE"} for {FormatAmount(_adjustmentExecutionResult.AdjustmentAmountTx)}.";
+        }
+
+        if (_adjustmentExecutionPlan is not null)
+        {
+            var readyCount = _adjustmentExecutionPlan.Steps.Count(step => string.Equals(step.StepStatus, "ready", StringComparison.OrdinalIgnoreCase));
+            return $"{readyCount}/{_adjustmentExecutionPlan.Steps.Count} execution steps are ready. {_adjustmentExecutionPlan.Reason}";
+        }
+
+        if (_adjustmentReadiness is not null)
+        {
+            return _adjustmentReadiness.Reason;
+        }
+
+        return "Refresh preview to evaluate current governance, open-item, and posting execution state.";
+    }
+
+    private IReadOnlyList<string> GetAdjustmentOperatorBulletSummary()
+    {
+        var bullets = new List<string>();
+
+        if (_adjustmentExecutionResult is not null)
+        {
+            bullets.Add(
+                $"Latest governed adjustment already posted as {_adjustmentExecutionResult.JournalEntryDisplayNumber ?? "a linked journal entry"}.");
+            return bullets;
+        }
+
+        if (_adjustmentPreview is not null)
+        {
+            bullets.Add(
+                _adjustmentPreview.IsAvailable
+                    ? $"Preview is structurally available for {FormatAdjustmentType(_adjustmentType).ToLowerInvariant()} on the current residual amount."
+                    : $"Preview is currently blocked: {_adjustmentPreview.Reason}");
+        }
+
+        if (_adjustmentReadiness is not null)
+        {
+            if (!_adjustmentReadiness.GovernanceReady)
+            {
+                bullets.Add("Governance state is not yet ready for final posting execution.");
+            }
+
+            if (!_adjustmentReadiness.OpenItemReady)
+            {
+                bullets.Add("Open-item state still needs attention before backend adjustment execution can proceed.");
+            }
+
+            if (!_adjustmentReadiness.PostingExecutionReady)
+            {
+                bullets.Add("Posting Engine execution is still blocked on the current request/readiness state.");
+            }
+
+            if (_adjustmentReadiness.IsAvailable)
+            {
+                bullets.Add("Readiness probe is available, so the next decision should come from request workflow or execution planning rather than guessing from balances alone.");
+            }
+        }
+
+        if (_adjustmentExecutionPlan is not null)
+        {
+            var blockedCount = _adjustmentExecutionPlan.Steps.Count(step => string.Equals(step.StepStatus, "blocked", StringComparison.OrdinalIgnoreCase));
+            var readyCount = _adjustmentExecutionPlan.Steps.Count(step => string.Equals(step.StepStatus, "ready", StringComparison.OrdinalIgnoreCase));
+
+            if (_adjustmentExecutionPlan.CanExecute)
+            {
+                bullets.Add(
+                    $"Execution plan is clear with {readyCount}/{_adjustmentExecutionPlan.Steps.Count} steps ready.");
+            }
+            else
+            {
+                bullets.Add(
+                    $"Execution plan still has {blockedCount} blocked step(s) and {readyCount}/{_adjustmentExecutionPlan.Steps.Count} ready step(s).");
+            }
+        }
+
+        if (!HasSelectedGovernedAdjustmentAccount() && (_adjustmentExecutionPlan?.CanExecute == true || _adjustmentReadiness?.PostingExecutionReady == true))
+        {
+            bullets.Add("Select a governed adjustment account before requesting final posting execution from this shell.");
+        }
+
+        return bullets;
+    }
+
+    private AdjustmentNextLegalActionSummary GetAdjustmentNextLegalActionSummary()
+    {
+        if (WritesBlocked)
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Writes blocked",
+                ShellState.WriteBlockMessage ?? "Company or platform write gate is currently blocking governed adjustment actions.");
+        }
+
+        if (_isAdjustmentCommandRunning)
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Command in progress",
+                "Wait for the current governed adjustment command to finish before issuing another action from this page.");
+        }
+
+        if (_adjustmentExecutionResult is not null ||
+            string.Equals(_latestAdjustmentRequest?.ExecutionStatus, "journal_entry_posted", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Adjustment already posted",
+                "Posting Engine execution already completed for the latest governed adjustment. Use source-document and journal-entry drill-down for audit follow-up instead of issuing a new command.");
+        }
+
+        if (CanExecuteAdjustment())
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Execute posting adjustment",
+                _adjustmentExecutionPlan?.Reason ??
+                "The governed request is submitted, execution is ready, and a valid governed offset account is selected.");
+        }
+
+        if (string.Equals(_latestAdjustmentRequest?.ExecutionStatus, "execution_requested", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Await posting execution",
+                "A governed execution request is already on file for the latest adjustment. Wait for backend posting completion instead of resubmitting from the shell.");
+        }
+
+        if ((_adjustmentExecutionPlan?.CanExecute == true || _adjustmentReadiness?.PostingExecutionReady == true) &&
+            !HasSelectedGovernedAdjustmentAccount())
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Select governed adjustment account",
+                "Backend execution is otherwise ready, but this shell still needs a valid governed offset account selection before it can request posting execution.");
+        }
+
+        if (CanApproveAdjustment() || CanRejectAdjustment())
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Review submitted request",
+                $"The latest governed request is awaiting approval review. Current approval state: {FormatApprovalStatus(_latestAdjustmentRequest?.ApprovalStatus)}.");
+        }
+
+        if (CanSubmitAdjustment())
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Submit governed request",
+                "The latest adjustment request is still draft. Submit it so backend governance can treat it as the active request record.");
+        }
+
+        if (CanRequestAdjustment())
+        {
+            return (_response?.Applications.Count ?? 0) > 0
+                ? new AdjustmentNextLegalActionSummary(
+                    "Request governed adjustment",
+                    $"Preview says a governed adjustment is available even though {_response!.Applications.Count} application row(s) already touch this item. If that residual action is intended, request it from this page and keep the application trail in view.")
+                : new AdjustmentNextLegalActionSummary(
+                    "Request governed adjustment",
+                    "Preview is available and no active governed request currently blocks you. Record the write-off or small-balance request from this page.");
+        }
+
+        if (string.Equals(_latestAdjustmentRequest?.ApprovalStatus, "rejected", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Record a fresh request",
+                "The latest governed adjustment request was rejected. If adjustment is still needed, revise the inputs and record a new request.");
+        }
+
+        if (string.Equals(_latestAdjustmentRequest?.RequestStatus, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Refresh preview or start again",
+                "The last governed request was cancelled. Refresh preview if inputs changed, then record a fresh request if adjustment is still needed.");
+        }
+
+        if (_adjustmentExecutionPlan is not null)
+        {
+            return new AdjustmentNextLegalActionSummary(
+                "Resolve execution blockers",
+                _adjustmentExecutionPlan.Reason);
+        }
+
+        if (_adjustmentReadiness is not null)
+        {
+            return new AdjustmentNextLegalActionSummary(
+                _adjustmentReadiness.IsAvailable ? "Refresh execution plan" : "Resolve readiness blockers",
+                _adjustmentReadiness.Reason);
+        }
+
+        return new AdjustmentNextLegalActionSummary(
+            "Refresh preview",
+            "Start by refreshing preview so this page can reload the current governed request, readiness, and posting-execution truth for this open item.");
+    }
+
+    private bool HasSelectedGovernedAdjustmentAccount() =>
+        Guid.TryParse(_adjustmentAccountIdText, out var adjustmentAccountId) &&
+        _accountOptions.Any(account => account.AccountId == adjustmentAccountId);
+
+    private Severity GetAdjustmentPolicySeverity() =>
+        _adjustmentPolicyMappings.Count == 0 ? Severity.Info : Severity.Success;
+
+    private Color GetAdjustmentPolicyChipColor() =>
+        _adjustmentPolicyMappings.Count == 0 ? Color.Info : Color.Success;
+
+    private string GetAdjustmentPolicyChipLabel() =>
+        _adjustmentPolicyMappings.Count == 0 ? "Structural fallback" : "Mapped execution";
+
+    private static string GetPolicyExecutionRole(ShellOpenItemAdjustmentAccountMappingRecord mapping) =>
+        mapping.BookId is null ? "Company default / fallback scope" : "Primary-book override";
+
+    private static bool TryBuildAdjustmentPolicyHref(string? openItemType, string? adjustmentType, out string href)
+    {
+        var normalizedOpenItemType = NormalizeOpenItemTypeForMapping(openItemType);
+        href =
+            $"/company/open-item-adjustment-account-mappings?openItemType={Uri.EscapeDataString(normalizedOpenItemType)}&policyScope=primary_execution";
+
+        if (!string.IsNullOrWhiteSpace(adjustmentType))
+        {
+            href += $"&adjustmentType={Uri.EscapeDataString(adjustmentType.Trim().ToLowerInvariant())}";
+        }
+
+        return true;
+    }
+
+    private static bool TryBuildSourceBrowserHref(string? sourceType, string? counterpartyRole, Guid counterpartyId, out string href)
+    {
+        href = string.Empty;
+        var normalizedSourceType = sourceType?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedSourceType))
+        {
+            return false;
+        }
+
+        var normalizedCounterpartyRole = counterpartyRole?.Trim().ToLowerInvariant();
+        href =
+            $"/documents/source-browser?sourceType={Uri.EscapeDataString(normalizedSourceType)}" +
+            $"&counterpartyRole={Uri.EscapeDataString(normalizedCounterpartyRole ?? string.Empty)}" +
+            $"&counterpartyId={counterpartyId:D}";
+        return true;
+    }
+
+    private string BuildBrowserNavigationHref(string href, string origin, string returnLabel)
+    {
+        var openItemHref = $"/open-items/{OpenItemType}/{OpenItemId:D}";
+        return
+            $"{href}&origin={Uri.EscapeDataString(origin)}" +
+            $"&returnHref={Uri.EscapeDataString(openItemHref)}" +
+            $"&returnLabel={Uri.EscapeDataString(returnLabel)}";
+    }
+
+    private static string FormatExecutionMode(string? executionMode) =>
+        executionMode?.Trim().ToLowerInvariant() switch
+        {
+            "posting_engine_adjustment" => "Posting Engine Adjustment",
+            "request_recording_only" => "Request Recording Only",
+            "governed_execution_skeleton" => "Governed Execution Skeleton",
+            _ => string.IsNullOrWhiteSpace(executionMode) ? "Unknown" : executionMode
+        };
+
+    private static string FormatAvailabilityMode(string? availabilityMode, bool isAvailable) =>
+        availabilityMode?.Trim().ToLowerInvariant() switch
+        {
+            "available_for_execution" => "Available for execution",
+            "available_now" => "Available now",
+            "blocked" => isAvailable ? "Available" : "Blocked",
+            "not_implemented" => "Not implemented",
+            _ => isAvailable ? "Available" : availabilityMode ?? "Unknown"
+        };
+
+    private static string FormatPlanStepStatus(string? stepStatus) =>
+        stepStatus?.Trim().ToLowerInvariant() switch
+        {
+            "ready" => "Ready",
+            "blocked" => "Blocked",
+            "planned" => "Planned",
+            _ => string.IsNullOrWhiteSpace(stepStatus) ? "Unknown" : stepStatus
+        };
+
+    private static string FormatActor(string? actorType, Guid? actorId) =>
+        actorId.HasValue
+            ? $"{actorType ?? "actor"} | {actorId.Value:D}"
+            : actorType ?? "Unknown";
+
+    private static string FormatAdjustmentRequestStatus(string? requestStatus) =>
+        requestStatus?.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Draft request",
+            "submitted" => "Submitted request",
+            "cancelled" => "Cancelled request",
+            _ => string.IsNullOrWhiteSpace(requestStatus) ? "Unknown request" : requestStatus
+        };
+
+    private static string FormatAdjustmentExecutionStatus(string? executionStatus) =>
+        executionStatus?.Trim().ToLowerInvariant() switch
+        {
+            "not_requested" => "Execution not requested",
+            "execution_requested" => "Execution requested",
+            "journal_entry_posted" => "JE posted",
+            _ => string.IsNullOrWhiteSpace(executionStatus) ? "Unknown execution" : executionStatus
+        };
+
+    private static string FormatApprovalStatus(string? approvalStatus) =>
+        approvalStatus?.Trim().ToLowerInvariant() switch
+        {
+            "not_required" => "Not required",
+            "pending" => "Pending",
+            "approved" => "Approved",
+            "rejected" => "Rejected",
+            _ => string.IsNullOrWhiteSpace(approvalStatus) ? "Unknown" : approvalStatus
+        };
+
+    private sealed record class AdjustmentCommandOutcome(
+        bool Continue,
+        string? Message,
+        Severity? OverrideSeverity = null);
+
+    private sealed record class AdjustmentNextLegalActionSummary(string Title, string Detail);
+
+    private sealed record class ApplicationTrailNextActionSummary(string Title, string Detail);
 
     private sealed record class FactRow(string Label, string Value);
 }

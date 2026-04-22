@@ -1,16 +1,182 @@
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject WebShellState ShellState
+@inject ILogger<ShellLayout> Logger
+
 @inherits LayoutComponentBase
 
-<MudLayout>
-    <MudDrawer Open="true" Elevation="1" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md" Class="ws-drawer">
-        <div class="ws-brand">
-            <div class="ws-brand__eyebrow">Citus</div>
-            <div class="ws-brand__title">Web Shell</div>
-            <div class="ws-brand__subtitle">Dark accounting workspace host</div>
-        </div>
-        <NavMenu />
-    </MudDrawer>
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
 
-    <MudMainContent Class="ws-main">
-        @Body
+@if (!_isShellReady)
+{
+    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+    </MudContainer>
+}
+else if (!ShellState.IsAuthenticated)
+{
+    <MudMainContent Class="ws-main ws-main--login">
+        <MudContainer MaxWidth="MaxWidth.Small" Class="pa-6">
+            @if (IsLoginRoute)
+            {
+                @Body
+            }
+            else
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+            }
+        </MudContainer>
     </MudMainContent>
-</MudLayout>
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="1" Class="ws-appbar">
+            <div class="ws-appbar__brand">
+                <span class="ws-appbar__mark">C</span>
+                <span>Citus Web Shell</span>
+            </div>
+            <MudSpacer />
+            <WebShellTopBar />
+        </MudAppBar>
+
+        <MudDrawer Open="true"
+                   Width="316px"
+                   Elevation="1"
+                   Variant="DrawerVariant.Responsive"
+                   Breakpoint="Breakpoint.Md"
+                   Class="ws-drawer">
+            <div class="ws-brand">
+                <div class="ws-brand__badge">C</div>
+                <div>
+                    <div class="ws-brand__eyebrow">Citus</div>
+                    <div class="ws-brand__title">Web Shell</div>
+                    <div class="ws-brand__subtitle">Business workspace</div>
+                </div>
+            </div>
+            <ErrorBoundary>
+                <ChildContent>
+                    <NavMenu />
+                </ChildContent>
+                <ErrorContent>
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
+                        Navigation could not be loaded. Refresh the page after sign-in completes.
+                    </MudAlert>
+                </ErrorContent>
+            </ErrorBoundary>
+        </MudDrawer>
+
+        <MudMainContent Class="ws-main">
+            <ErrorBoundary>
+                <ChildContent>
+                    @Body
+                </ChildContent>
+                <ErrorContent>
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
+                        This workspace page could not be loaded. The session is still active; refresh or return to Home.
+                    </MudAlert>
+                </ErrorContent>
+            </ErrorBoundary>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code
+{
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#7ab6d9",
+            Secondary = "#6fcf97",
+            Background = "#0d131a",
+            Surface = "#121a22",
+            AppbarBackground = "#101821",
+            DrawerBackground = "#0f151d",
+            DrawerText = "#d9e2ea",
+            TextPrimary = "#d9e2ea",
+            TextSecondary = "#97a8b7",
+            Info = "#7ab6d9",
+            Success = "#6fcf97",
+            Warning = "#d8b56a"
+        }
+    };
+
+    private bool _isShellReady;
+
+    private bool IsLoginRoute =>
+        NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
+            .StartsWith("login", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await RestoreStoredSessionAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Web.Shell failed while restoring the browser business session.");
+                ShellState.ClearAuthenticatedSession();
+                await TryClearStoredSessionTokenAsync();
+            }
+            finally
+            {
+                _isShellReady = true;
+                StateHasChanged();
+            }
+        }
+
+        if (!_isShellReady)
+        {
+            return;
+        }
+
+        if (!ShellState.IsAuthenticated && !IsLoginRoute)
+        {
+            NavigationManager.NavigateTo("login", replace: true);
+        }
+        else if (ShellState.IsAuthenticated && IsLoginRoute)
+        {
+            NavigationManager.NavigateTo("/", replace: true);
+        }
+    }
+
+    private async Task RestoreStoredSessionAsync()
+    {
+        var storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
+        if (string.IsNullOrWhiteSpace(storedToken))
+        {
+            ShellState.ClearAuthenticatedSession();
+            return;
+        }
+
+        var session = await SessionClient.ResumeSessionAsync(storedToken);
+        if (session is null)
+        {
+            await TryClearStoredSessionTokenAsync();
+            ShellState.ClearAuthenticatedSession();
+            return;
+        }
+
+        ShellState.ApplyAuthenticatedSession(storedToken, session.Context, session.ExpiresAtUtc);
+    }
+
+    private async Task TryClearStoredSessionTokenAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Web.Shell could not clear the stored browser business session token.");
+        }
+    }
+}

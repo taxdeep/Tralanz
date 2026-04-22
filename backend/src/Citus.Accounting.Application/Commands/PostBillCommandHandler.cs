@@ -9,17 +9,23 @@ public sealed class PostBillCommandHandler
     private readonly IBillDocumentRepository _documents;
     private readonly IPostingEngine _postingEngine;
     private readonly IApOpenItemRepository _openItems;
+    private readonly IBillReceiptMatchingRepository _billReceiptMatchingRepository;
+    private readonly IPurchaseOrderDocumentRepository _purchaseOrders;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostBillCommandHandler(
         IBillDocumentRepository documents,
         IPostingEngine postingEngine,
         IApOpenItemRepository openItems,
+        IBillReceiptMatchingRepository billReceiptMatchingRepository,
+        IPurchaseOrderDocumentRepository purchaseOrders,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
         _postingEngine = postingEngine ?? throw new ArgumentNullException(nameof(postingEngine));
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
+        _billReceiptMatchingRepository = billReceiptMatchingRepository ?? throw new ArgumentNullException(nameof(billReceiptMatchingRepository));
+        _purchaseOrders = purchaseOrders ?? throw new ArgumentNullException(nameof(purchaseOrders));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -35,6 +41,27 @@ public sealed class PostBillCommandHandler
             if (document is null)
             {
                 throw new InvalidOperationException("Bill document was not found in the active company context.");
+            }
+
+            if (!string.Equals(document.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Only submitted bills can be posted.");
+            }
+
+            await _purchaseOrders.ValidateBillAnchorsForPostingAsync(
+                command.CompanyId,
+                command.DocumentId,
+                ct);
+
+            var receiptHandoffSummary = await _billReceiptMatchingRepository.GetBillLaneSummaryAsync(
+                command.CompanyId,
+                command.DocumentId,
+                ct);
+
+            if (!BillReceiptPostingGatePolicy.AllowsBillPost(receiptHandoffSummary.MatchStatus))
+            {
+                throw new InvalidOperationException(
+                    BillReceiptPostingGatePolicy.GetBlockedPostMessage(receiptHandoffSummary));
             }
 
             var acceptedFxSnapshotId =

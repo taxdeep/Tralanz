@@ -23,29 +23,125 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Identity and security core
+-- Platform account, CompanyAccess, and SysAdmin core
 -- ---------------------------------------------------------------------------
 
+-- Physical table name remains `users` in this draft to avoid touching every
+-- actor-reference FK in the baseline. Semantically, this is Platform
+-- Identity / Account storage, not a Business App Users module.
 CREATE TABLE users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text NOT NULL UNIQUE,
   username text UNIQUE,
+  display_name text,
   password_hash text NOT NULL,
-  is_active boolean NOT NULL DEFAULT true,
+  status text NOT NULL DEFAULT 'active',
+  email_verified_at timestamptz,
+  locked_until timestamptz,
+  mfa_mode text NOT NULL DEFAULT 'none',
+  security_stamp text NOT NULL DEFAULT gen_random_uuid()::text,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT users_status_chk CHECK (status IN ('active', 'disabled', 'locked', 'pending_verification')),
+  CONSTRAINT users_mfa_mode_chk CHECK (mfa_mode IN ('none', 'email_code', 'totp_app'))
+);
+
+CREATE TABLE account_verification_codes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose text NOT NULL,
+  destination text,
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT account_verification_codes_purpose_chk CHECK (purpose IN ('email_verification', 'email_change', 'password_change', 'password_reset')),
+  CONSTRAINT account_verification_codes_failed_attempts_chk CHECK (failed_attempts >= 0)
+);
+
+-- SysAdmin is an independent PlatformOps identity realm. SysAdmin accounts are
+-- not company members and must never become business posting actors.
+CREATE TABLE sysadmin_accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text NOT NULL UNIQUE,
+  display_name text NOT NULL DEFAULT '',
+  password_hash text NOT NULL,
+  status text NOT NULL DEFAULT 'active',
+  last_login_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT sysadmin_accounts_status_chk CHECK (status IN ('active', 'disabled', 'locked'))
+);
+
+CREATE TABLE sysadmin_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sysadmin_account_id uuid NOT NULL REFERENCES sysadmin_accounts(id) ON DELETE CASCADE,
+  session_token_hash text NOT NULL UNIQUE,
+  expires_at timestamptz NOT NULL,
+  last_seen_at timestamptz NOT NULL DEFAULT NOW(),
+  revoked_at timestamptz,
+  remote_ip text,
+  user_agent text,
+  created_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_notification_dispatches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_type text NOT NULL,
+  destination text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  provider_key text,
+  attempt_count integer NOT NULL DEFAULT 0,
+  sent_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE platform_runtime_state (
+  state_key text PRIMARY KEY,
+  json jsonb NOT NULL,
+  updated_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO platform_runtime_state (state_key, json)
+VALUES ('maintenance', '{"enabled": false, "message": "Maintenance mode is off.", "scheduledUntilUtc": null}'::jsonb)
+ON CONFLICT (state_key) DO NOTHING;
+
+INSERT INTO platform_runtime_state (state_key, json)
+VALUES ('notification_readiness', '{"configPresent": false, "testStatus": "untested", "lastTestedAtUtc": null, "verificationReady": false}'::jsonb)
+ON CONFLICT (state_key) DO NOTHING;
 
 CREATE TABLE companies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   entity_number text NOT NULL UNIQUE,
   legal_name text NOT NULL,
+  entity_type text NOT NULL DEFAULT 'corporation',
+  industry text NOT NULL DEFAULT 'general_services',
+  incorporated_on date,
+  fiscal_year_end_month smallint NOT NULL DEFAULT 12,
+  fiscal_year_end_day smallint NOT NULL DEFAULT 31,
+  business_number text,
+  phone text,
+  email text,
+  address_line text,
+  city text,
+  province_state text,
+  postal_code text,
+  country text NOT NULL DEFAULT 'Canada',
+  account_code_length smallint NOT NULL DEFAULT 4,
   base_currency_code char(3) NOT NULL,
   multi_currency_enabled boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT companies_account_code_length_chk CHECK (account_code_length BETWEEN 4 AND 6),
   CONSTRAINT companies_status_chk CHECK (status IN ('active', 'inactive', 'suspended', 'archived'))
 );
 
@@ -55,11 +151,13 @@ CREATE TABLE company_memberships (
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role text NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
-  permissions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT company_memberships_role_chk CHECK (role IN ('owner', 'user')),
-  CONSTRAINT company_memberships_unique_member UNIQUE (company_id, user_id)
+  CONSTRAINT company_memberships_permissions_array_chk CHECK (jsonb_typeof(permissions) = 'array'),
+  CONSTRAINT company_memberships_unique_member UNIQUE (company_id, user_id),
+  CONSTRAINT company_memberships_session_context_unique UNIQUE (id, company_id, user_id)
 );
 
 CREATE TABLE business_sessions (
@@ -67,8 +165,74 @@ CREATE TABLE business_sessions (
   token_hash text NOT NULL UNIQUE,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   active_company_id uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+  membership_id uuid NOT NULL REFERENCES company_memberships(id) ON DELETE CASCADE,
+  role text NOT NULL,
+  permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  company_status text NOT NULL,
+  permission_version text,
+  security_stamp_snapshot text NOT NULL,
   expires_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT NOW()
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT business_sessions_role_chk CHECK (role IN ('owner', 'user')),
+  CONSTRAINT business_sessions_permissions_array_chk CHECK (jsonb_typeof(permissions) = 'array'),
+  CONSTRAINT business_sessions_company_status_chk CHECK (company_status IN ('active', 'inactive', 'suspended', 'archived')),
+  CONSTRAINT business_sessions_membership_context_fk
+    FOREIGN KEY (membership_id, active_company_id, user_id)
+    REFERENCES company_memberships(id, company_id, user_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE business_session_mfa_challenges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  active_company_id uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+  membership_id uuid NOT NULL REFERENCES company_memberships(id) ON DELETE CASCADE,
+  role text NOT NULL,
+  permissions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  company_status text NOT NULL,
+  factor text NOT NULL,
+  destination text NOT NULL,
+  code_hash text NOT NULL,
+  security_stamp_snapshot text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT business_session_mfa_challenges_role_chk CHECK (role IN ('owner', 'user')),
+  CONSTRAINT business_session_mfa_challenges_permissions_array_chk CHECK (jsonb_typeof(permissions) = 'array'),
+  CONSTRAINT business_session_mfa_challenges_company_status_chk CHECK (company_status IN ('active', 'inactive', 'suspended', 'archived')),
+  CONSTRAINT business_session_mfa_challenges_factor_chk CHECK (factor IN ('email_code', 'totp_app'))
+);
+
+CREATE TABLE account_mfa_recovery_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  current_mfa_mode text NOT NULL,
+  status text NOT NULL DEFAULT 'requested',
+  request_reason text NOT NULL,
+  requested_at timestamptz NOT NULL DEFAULT NOW(),
+  review_reason text,
+  reviewed_at timestamptz,
+  reviewed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  execution_reason text,
+  executed_at timestamptz,
+  executed_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  CONSTRAINT account_mfa_recovery_requests_current_mode_chk CHECK (current_mfa_mode IN ('none', 'email_code', 'totp_app')),
+  CONSTRAINT account_mfa_recovery_requests_status_chk CHECK (status IN ('requested', 'approved', 'rejected', 'executed'))
+);
+
+CREATE TABLE account_mfa_totp_enrollments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status text NOT NULL,
+  secret_base32 text NOT NULL, -- protected ciphertext for new rows; legacy plaintext tolerated during migration
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  expires_at timestamptz,
+  confirmed_at timestamptz,
+  revoked_at timestamptz,
+  last_used_at timestamptz,
+  CONSTRAINT account_mfa_totp_enrollments_status_chk CHECK (status IN ('pending', 'active', 'revoked'))
 );
 
 CREATE TABLE platform_modules (
@@ -191,6 +355,29 @@ CREATE TABLE company_book_remeasurement_policies (
   CONSTRAINT company_book_remeasurement_policies_rounding_chk CHECK (
     fx_rounding_policy IN ('currency_precision')
   )
+);
+
+CREATE TABLE company_chart_template_bindings (
+  company_id uuid PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  template_key text NOT NULL,
+  template_version text NOT NULL,
+  account_code_length smallint NOT NULL,
+  base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  country text NOT NULL,
+  entity_type text NOT NULL,
+  industry text NOT NULL,
+  reserved_ranges jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mandatory_system_roles jsonb NOT NULL DEFAULT '[]'::jsonb,
+  applied_by_sysadmin_account_id uuid REFERENCES sysadmin_accounts(id) ON DELETE SET NULL,
+  applied_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_chart_template_bindings_reserved_ranges_array_chk CHECK (jsonb_typeof(reserved_ranges) = 'array'),
+  CONSTRAINT company_chart_template_bindings_mandatory_roles_array_chk CHECK (jsonb_typeof(mandatory_system_roles) = 'array')
+);
+
+CREATE TABLE platform_entity_number_sequences (
+  entity_year integer PRIMARY KEY,
+  next_number bigint NOT NULL,
+  CONSTRAINT platform_entity_number_sequences_next_number_chk CHECK (next_number > 0)
 );
 
 CREATE TABLE company_book_governed_change_requests (
@@ -1213,8 +1400,40 @@ CREATE TABLE audit_logs (
 -- Indexes
 -- ---------------------------------------------------------------------------
 
+CREATE INDEX idx_users_status_email
+  ON users (status, email);
+
+CREATE INDEX idx_account_verification_codes_active
+  ON account_verification_codes (user_id, purpose, expires_at DESC)
+  WHERE consumed_at IS NULL;
+
+CREATE INDEX idx_sysadmin_accounts_status_email
+  ON sysadmin_accounts (status, email);
+
+CREATE INDEX idx_sysadmin_sessions_active
+  ON sysadmin_sessions (sysadmin_account_id, expires_at DESC)
+  WHERE revoked_at IS NULL;
+
+CREATE INDEX idx_platform_notification_dispatches_status
+  ON platform_notification_dispatches (status, created_at DESC);
+
 CREATE INDEX idx_company_memberships_company_active
   ON company_memberships (company_id, is_active);
+
+CREATE INDEX idx_business_sessions_user_company_expiry
+  ON business_sessions (user_id, active_company_id, expires_at DESC);
+
+CREATE INDEX idx_business_session_mfa_challenges_active
+  ON business_session_mfa_challenges (user_id, factor, expires_at DESC)
+  WHERE consumed_at IS NULL;
+
+CREATE INDEX idx_account_mfa_recovery_requests_open
+  ON account_mfa_recovery_requests (user_id, status, requested_at DESC)
+  WHERE status IN ('requested', 'approved');
+
+CREATE INDEX idx_account_mfa_totp_enrollments_active
+  ON account_mfa_totp_enrollments (user_id, status, created_at DESC)
+  WHERE status IN ('pending', 'active');
 
 CREATE INDEX idx_company_currencies_company_enabled
   ON company_currencies (company_id, is_enabled);
@@ -1332,12 +1551,30 @@ CREATE UNIQUE INDEX uq_company_book_governance_signals_company_book_identity
 CREATE INDEX idx_audit_logs_company_entity_created
   ON audit_logs (company_id, entity_type, entity_id, created_at DESC);
 
+CREATE INDEX idx_audit_logs_action_created_at
+  ON audit_logs (action, created_at DESC);
+
 -- ---------------------------------------------------------------------------
 -- updated_at triggers
 -- ---------------------------------------------------------------------------
 
 CREATE TRIGGER trg_users_set_updated_at
 BEFORE UPDATE ON users
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_sysadmin_accounts_set_updated_at
+BEFORE UPDATE ON sysadmin_accounts
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_platform_runtime_state_set_updated_at
+BEFORE UPDATE ON platform_runtime_state
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_platform_notification_dispatches_set_updated_at
+BEFORE UPDATE ON platform_notification_dispatches
 FOR EACH ROW
 EXECUTE FUNCTION citus_set_updated_at();
 

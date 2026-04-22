@@ -40,17 +40,13 @@ public sealed class SysAdminControlState
         };
     }
 
-    public SysAdminControlContextSummary GetContext()
+    public SysAdminControlContextSummary GetContext() => GetContext(operatorOverride: null);
+
+    public SysAdminControlContextSummary GetContext(SysAdminOperatorSummary? operatorOverride)
     {
         lock (_sync)
         {
-            return new SysAdminControlContextSummary
-            {
-                Operator = _operator,
-                ActiveCompany = ResolveActiveCompanyContext(),
-                MaintenanceState = _maintenanceState,
-                AvailableCompanies = _companies
-            };
+            return BuildContext(operatorOverride);
         }
     }
 
@@ -78,7 +74,13 @@ public sealed class SysAdminControlState
         }
     }
 
-    public bool TrySetActiveCompany(Guid companyId, out SysAdminControlContextSummary? context)
+    public bool TrySetActiveCompany(Guid companyId, out SysAdminControlContextSummary? context) =>
+        TrySetActiveCompany(companyId, operatorOverride: null, out context);
+
+    public bool TrySetActiveCompany(
+        Guid companyId,
+        SysAdminOperatorSummary? operatorOverride,
+        out SysAdminControlContextSummary? context)
     {
         lock (_sync)
         {
@@ -89,13 +91,7 @@ public sealed class SysAdminControlState
             }
 
             _activeCompanyId = companyId;
-            context = new SysAdminControlContextSummary
-            {
-                Operator = _operator,
-                ActiveCompany = ResolveActiveCompanyContext(),
-                MaintenanceState = _maintenanceState,
-                AvailableCompanies = _companies
-            };
+            context = BuildContext(operatorOverride);
 
             return true;
         }
@@ -133,6 +129,15 @@ public sealed class SysAdminControlState
         }
     }
 
+    private SysAdminControlContextSummary BuildContext(SysAdminOperatorSummary? operatorOverride) =>
+        new()
+        {
+            Operator = operatorOverride ?? _operator,
+            ActiveCompany = ResolveActiveCompanyContext(),
+            MaintenanceState = _maintenanceState,
+            AvailableCompanies = _companies
+        };
+
     private CompanyContextSummary ResolveActiveCompanyContext()
     {
         var activeCompany = _companies.FirstOrDefault(company => company.Id == _activeCompanyId);
@@ -168,9 +173,7 @@ public sealed class SysAdminControlState
 
     private static IReadOnlyList<CompanyWorkspaceSummary> BuildCompanies(SysAdminControlOptions options)
     {
-        var configuredCompanies = options.Companies.Count > 0
-            ? options.Companies
-            : GetDefaultCompanies();
+        var configuredCompanies = options.Companies;
 
         var userCounts = configuredCompanies.ToDictionary(company => company.Id, company => 0);
 
@@ -205,7 +208,7 @@ public sealed class SysAdminControlState
         IReadOnlyList<CompanyWorkspaceSummary> companies)
     {
         var companyLookup = companies.ToDictionary(company => company.Id, company => company.CompanyCode);
-        var configuredUsers = options.Users.Count > 0 ? options.Users : GetDefaultUsers(companies);
+        var configuredUsers = options.Users;
 
         return configuredUsers
             .Select(user => new ManagedUserSummary
@@ -233,66 +236,4 @@ public sealed class SysAdminControlState
             .ToArray();
     }
 
-    private static List<CompanyWorkspaceOptions> GetDefaultCompanies() =>
-    [
-        new CompanyWorkspaceOptions
-        {
-            Id = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
-            CompanyCode = "NORTHWIND",
-            CompanyName = "Northwind Studio Ltd.",
-            BaseCurrencyCode = "USD",
-            MultiCurrencyEnabled = true,
-            Status = "active"
-        },
-        new CompanyWorkspaceOptions
-        {
-            Id = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6"),
-            CompanyCode = "BLUEHARBOR",
-            CompanyName = "Blue Harbor Trading Co.",
-            BaseCurrencyCode = "CAD",
-            MultiCurrencyEnabled = false,
-            Status = "active"
-        }
-    ];
-
-    private static List<ManagedUserOptions> GetDefaultUsers(IReadOnlyList<CompanyWorkspaceSummary> companies)
-    {
-        var northwind = companies.FirstOrDefault(company => company.CompanyCode == "NORTHWIND")?.Id ?? Guid.Empty;
-        var blueHarbor = companies.FirstOrDefault(company => company.CompanyCode == "BLUEHARBOR")?.Id ?? Guid.Empty;
-
-        return
-        [
-            new ManagedUserOptions
-            {
-                Id = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"),
-                DisplayName = "Alice Rowan",
-                Email = "alice.rowan@northwind.example",
-                Username = "alice.rowan",
-                IsActive = true,
-                Roles = ["owner", "reports"],
-                CompanyIds = northwind == Guid.Empty ? [] : [northwind]
-            },
-            new ManagedUserOptions
-            {
-                Id = Guid.Parse("3512739f-2af3-41f5-8fd4-d648d913a274"),
-                DisplayName = "Ben Mercer",
-                Email = "ben.mercer@blueharbor.example",
-                Username = "ben.mercer",
-                IsActive = true,
-                Roles = ["user", "ap"],
-                CompanyIds = blueHarbor == Guid.Empty ? [] : [blueHarbor]
-            },
-            new ManagedUserOptions
-            {
-                Id = Guid.Parse("64f5186b-b854-49ec-a473-2f14554ecf77"),
-                DisplayName = "Casey Lin",
-                Email = "casey.lin@group.example",
-                Username = "casey.lin",
-                IsActive = true,
-                IsSysAdmin = true,
-                Roles = ["sysadmin"],
-                CompanyIds = northwind == Guid.Empty || blueHarbor == Guid.Empty ? [] : [northwind, blueHarbor]
-            }
-        ];
-    }
 }

@@ -1,0 +1,1007 @@
+@page "/company/inventory-foundation"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellInventoryFoundationClient InventoryFoundation
+@inject ISnackbar Snackbar
+
+<PageTitle>Inventory Foundation</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D</MudText>
+            <MudText Typo="Typo.h4">Inventory Foundation Governance</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Govern the first company-scoped inventory truth: costing policy, item master shape, and warehouse master shape. This is still foundation work only, not a full receipt/issue/transfer workbench.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you here to confirm the first inventory governance truth before AP, AR, and Inventory start sharing real movement and costing semantics.
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Inventory Foundation is closed by default for <strong>@_onboardingSummary.Industry</strong> companies. Keep using Product &amp; Service Setup as the lighter catalog surface until company governance deliberately opens inventory-managed trading flow later.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                @if (IsCompanyReadyHandOff)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/ready">
+                        Back To Company Ready
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Info" Href="/company/product-service-setup">
+                    Open Product & Service Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @if (_onboardingSummary is not null && _onboardingSummary.SupportsInventoryFoundation && WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+    }
+    else if (_dashboard is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Inventory items</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.Items.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @ActiveItems.Count active and @InactiveItems.Count inactive item-master rows currently exist.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Warehouses</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.Warehouses.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @ActiveWarehouses.Count active warehouse rows are ready to anchor future receipt, issue, and transfer truth.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Costing policy</MudText>
+                    <MudText Typo="Typo.h6">@GetCostingPolicyHeadline()</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Negative stock is currently @(CurrentPolicy?.NegativeStockAllowed == true ? "allowed" : "blocked"), and write-off approval is @(CurrentPolicy?.RequireWriteOffApproval == true ? "required" : "not required").
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            `Product / Service Setup` remains the lighter business-entry surface. This page governs the stricter inventory-side truth that trading companies grow into, while service-led companies can stay lighter and continue leaning on service catalog + task flow later.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Company costing policy</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="InventoryCostingMethod"
+                                   Label="Default costing method"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_policyEditor.DefaultCostingMethod">
+                            @foreach (var option in CostingMethodOptions)
+                            {
+                                <MudSelectItem T="InventoryCostingMethod" Value="@option">@GetCostingMethodLabel(option)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSwitch T="bool"
+                                   Label="Allow negative stock"
+                                   Color="Color.Warning"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_policyEditor.NegativeStockAllowed" />
+                        <MudText Typo="Typo.body2" Class="text-secondary">
+                            Strict mode keeps this off by default and expects operators to correct source truth first.
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSwitch T="bool"
+                                   Label="Require write-off approval"
+                                   Color="Color.Primary"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_policyEditor.RequireWriteOffApproval" />
+                        <MudText Typo="Typo.body2" Class="text-secondary">
+                            This is the company governance default until the later user-permission surface takes over.
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="SavePolicyAsync">
+                        @(_isSaving ? "Saving..." : "Save Costing Policy")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">@(_itemEditor.ItemId.HasValue ? "Edit inventory item" : "Add inventory item")</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="3">
+                        <MudTextField T="string"
+                                      Label="Item code"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_itemEditor.ItemCode" />
+                    </MudItem>
+                    <MudItem xs="12" md="5">
+                        <MudTextField T="string"
+                                      Label="Name"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_itemEditor.Name" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="InventoryItemKind"
+                                   Label="Item kind"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_itemEditor.ItemKind">
+                            @foreach (var option in ItemKindOptions)
+                            {
+                                <MudSelectItem T="InventoryItemKind" Value="@option">@GetItemKindLabel(option)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudTextField T="string"
+                                      Label="Stock UOM"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                      @bind-Value="_itemEditor.StockUomCode" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string"
+                                      Label="Description"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_itemEditor.Description" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudSelect T="ManageInventoryMethod"
+                                   Label="Inventory method"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.ManageInventoryMethod">
+                            @foreach (var option in ManageInventoryOptions)
+                            {
+                                <MudSelectItem T="ManageInventoryMethod"
+                                               Value="@option"
+                                               Disabled="@IsManageInventoryMethodGuarded(option)">
+                                    @GetManageInventoryMethodLabel(option)
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudSelect T="InventoryCostingMethod"
+                                   Label="Item costing method"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   @bind-Value="_itemEditor.DefaultCostingMethod">
+                            @foreach (var option in CostingMethodOptions)
+                            {
+                                <MudSelectItem T="InventoryCostingMethod" Value="@option">@GetCostingMethodLabel(option)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudSelect T="InventoryBackorderMode"
+                                   Label="Backorder mode"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.BackorderMode">
+                            @foreach (var option in BackorderModeOptions)
+                            {
+                                <MudSelectItem T="InventoryBackorderMode" Value="@option">@GetBackorderModeLabel(option)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudSelect T="InventoryLowStockActivity"
+                                   Label="Low-stock activity"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.LowStockActivity">
+                            @foreach (var option in LowStockActivityOptions)
+                            {
+                                <MudSelectItem T="InventoryLowStockActivity" Value="@option">@GetLowStockActivityLabel(option)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    @if (_itemEditor.ItemKind == InventoryItemKind.Stock)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="@(_itemEditor.ManageInventoryMethod == ManageInventoryMethod.ManageStockBySku ? Severity.Warning : Severity.Info)"
+                                      Variant="Variant.Outlined"
+                                      Dense="true">
+                                Operational guardrail: tracked lot/serial inventory is not being opened in this stage. New items must stay on the warehouse-managed path until tracked receipt, shipment, opening-balance, transfer, and build inputs are ready.
+                                @if (_itemEditor.ManageInventoryMethod == ManageInventoryMethod.ManageStockBySku)
+                                {
+                                    <span> This item already carries the guarded tracked mode, so it can be reviewed here, but downstream workbenches still expose only warehouse-managed stock.</span>
+                                }
+                            </MudAlert>
+                        </MudItem>
+                    }
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Guid?"
+                                   Label="Inventory asset account"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.DefaultInventoryAssetAccountId">
+                            <MudSelectItem T="Guid?" Value="@((Guid?)null)">-- Select --</MudSelectItem>
+                            @foreach (var option in InventoryAssetAccountOptions)
+                            {
+                                <MudSelectItem T="Guid?" Value="@((Guid?)option.AccountId)">@option.DisplayText</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Guid?"
+                                   Label="COGS account"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.DefaultCogsAccountId">
+                            <MudSelectItem T="Guid?" Value="@((Guid?)null)">-- Select --</MudSelectItem>
+                            @foreach (var option in ExpenseAccountOptions)
+                            {
+                                <MudSelectItem T="Guid?" Value="@((Guid?)option.AccountId)">@option.DisplayText</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Guid?"
+                                   Label="Write-off account"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.DefaultWriteOffAccountId">
+                            <MudSelectItem T="Guid?" Value="@((Guid?)null)">-- Select --</MudSelectItem>
+                            @foreach (var option in ExpenseAccountOptions)
+                            {
+                                <MudSelectItem T="Guid?" Value="@((Guid?)option.AccountId)">@option.DisplayText</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Guid?"
+                                   Label="Purchase variance account"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked || _itemEditor.ItemKind != InventoryItemKind.Stock)"
+                                   @bind-Value="_itemEditor.DefaultPurchaseVarianceAccountId">
+                            <MudSelectItem T="Guid?" Value="@((Guid?)null)">-- Select --</MudSelectItem>
+                            @foreach (var option in ExpenseAccountOptions)
+                            {
+                                <MudSelectItem T="Guid?" Value="@((Guid?)option.AccountId)">@option.DisplayText</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    Service and non-stock items stay on `DontManageStock` in this minimal foundation flow. Stock items now also need a stock UOM plus inventory-facing default accounts before receipt, issue, and write-off truth can stay inside inventory.
+                </MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="SaveItemAsync">
+                        @(_isSaving ? "Saving..." : _itemEditor.ItemId.HasValue ? "Save Inventory Item" : "Add Inventory Item")
+                    </MudButton>
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Default"
+                               Disabled="@_isSaving"
+                               OnClick="ResetItemEditor">
+                        @(_itemEditor.ItemId.HasValue ? "Cancel Edit" : "Clear")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Inventory items</MudText>
+            @if (_dashboard.Items.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No inventory item truth exists yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.Items" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Kind</MudTh>
+                        <MudTh>UOM</MudTh>
+                        <MudTh>Tracking</MudTh>
+                        <MudTh>Costing</MudTh>
+                        <MudTh>Defaults</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.ItemCode</MudTd>
+                        <MudTd>
+                            <MudText Typo="Typo.body2">@context.Name</MudText>
+                            @if (!string.IsNullOrWhiteSpace(context.Description))
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.Description</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>@GetItemKindLabel(context.ItemKind)</MudTd>
+                        <MudTd>@(string.IsNullOrWhiteSpace(context.StockUomCode) ? "-" : context.StockUomCode)</MudTd>
+                        <MudTd>@GetManageInventoryMethodLabel(context.ManageInventoryMethod)</MudTd>
+                        <MudTd>@GetCostingMethodLabel(context.DefaultCostingMethod)</MudTd>
+                        <MudTd>@GetItemDefaultsLabel(context)</MudTd>
+                        <MudTd>@(context.IsActive ? "Active" : "Inactive")</MudTd>
+                        <MudTd>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => EditItem(context))">Edit</MudButton>
+                                @if (context.IsActive)
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Warning" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => SetItemActiveAsync(context, false))">Deactivate</MudButton>
+                                }
+                                else
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Success" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => SetItemActiveAsync(context, true))">Reactivate</MudButton>
+                                }
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">@(_warehouseEditor.WarehouseId.HasValue ? "Edit warehouse" : "Add warehouse")</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="3">
+                        <MudTextField T="string"
+                                      Label="Warehouse code"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_warehouseEditor.WarehouseCode" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string"
+                                      Label="Warehouse name"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_warehouseEditor.Name" />
+                    </MudItem>
+                    <MudItem xs="12" md="5">
+                        <MudTextField T="string"
+                                      Label="Description"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_warehouseEditor.Description" />
+                    </MudItem>
+                </MudGrid>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="SaveWarehouseAsync">
+                        @(_isSaving ? "Saving..." : _warehouseEditor.WarehouseId.HasValue ? "Save Warehouse" : "Add Warehouse")
+                    </MudButton>
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Default"
+                               Disabled="@_isSaving"
+                               OnClick="ResetWarehouseEditor">
+                        @(_warehouseEditor.WarehouseId.HasValue ? "Cancel Edit" : "Clear")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Warehouses</MudText>
+            @if (_dashboard.Warehouses.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No warehouse truth exists yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.Warehouses" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.WarehouseCode</MudTd>
+                        <MudTd>@context.Name</MudTd>
+                        <MudTd>@(string.IsNullOrWhiteSpace(context.Description) ? "-" : context.Description)</MudTd>
+                        <MudTd>@(context.IsActive ? "Active" : "Inactive")</MudTd>
+                        <MudTd>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => EditWarehouse(context))">Edit</MudButton>
+                                @if (context.IsActive)
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Warning" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => SetWarehouseActiveAsync(context, false))">Deactivate</MudButton>
+                                }
+                                else
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Success" Disabled="@(_isSaving || WritesBlocked)" OnClick="@(() => SetWarehouseActiveAsync(context, true))">Reactivate</MudButton>
+                                }
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                @if (IsCompanyReadyHandOff)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/ready">
+                        Back To Company Ready
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/company/inventory-purchase-receipt">
+                    Receipt Control
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/inventory-shipment">
+                    Shipment
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/company/inventory-sales-issue">
+                    Sales Issue
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/inventory-transfer">
+                    Warehouse Transfer
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Href="/company/inventory-adjustment">
+                    Inventory Adjustment
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/inventory-manufacturing">
+                    Manufacturing
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/inventory-availability">
+                    Inventory Availability
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/product-service-setup">
+                    Product & Service Setup
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/bank-and-cash-setup">
+                    Bank & Cash Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
+    private static readonly InventoryItemKind[] ItemKindOptions =
+    [
+        InventoryItemKind.Stock,
+        InventoryItemKind.NonStock,
+        InventoryItemKind.Service
+    ];
+
+    private static readonly ManageInventoryMethod[] ManageInventoryOptions =
+    [
+        ManageInventoryMethod.ManageStock,
+        ManageInventoryMethod.ManageStockBySku,
+        ManageInventoryMethod.DontManageStock
+    ];
+
+    private static readonly InventoryCostingMethod[] CostingMethodOptions =
+    [
+        InventoryCostingMethod.MovingAverage,
+        InventoryCostingMethod.Fifo
+    ];
+
+    private static readonly InventoryBackorderMode[] BackorderModeOptions =
+    [
+        InventoryBackorderMode.Disallow,
+        InventoryBackorderMode.AllowNegative,
+        InventoryBackorderMode.AllowNegativeWithWarning
+    ];
+
+    private static readonly InventoryLowStockActivity[] LowStockActivityOptions =
+    [
+        InventoryLowStockActivity.Nothing,
+        InventoryLowStockActivity.Warn,
+        InventoryLowStockActivity.BlockOutbound
+    ];
+
+    private InventoryFoundationDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private string? _error;
+    private bool _isSaving;
+    private PolicyEditorState _policyEditor = new();
+    private ItemEditorState _itemEditor = new();
+    private WarehouseEditorState _warehouseEditor = new();
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private InventoryCostingPolicyRecord? CurrentPolicy => _dashboard?.Summary.CostingPolicy;
+    private IReadOnlyList<InventoryManagedItemSummary> ActiveItems => _dashboard?.Items.Where(static item => item.IsActive).ToList() ?? [];
+    private IReadOnlyList<InventoryManagedItemSummary> InactiveItems => _dashboard?.Items.Where(static item => !item.IsActive).ToList() ?? [];
+    private IReadOnlyList<InventoryManagedWarehouseSummary> ActiveWarehouses => _dashboard?.Warehouses.Where(static warehouse => warehouse.IsActive).ToList() ?? [];
+    private IReadOnlyList<InventoryFoundationAccountOption> InventoryAssetAccountOptions => _dashboard?.InventoryAssetAccountOptions ?? [];
+    private IReadOnlyList<InventoryFoundationAccountOption> ExpenseAccountOptions => _dashboard?.ExpenseAccountOptions ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+            {
+                return;
+            }
+
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!onboardingResult.RequiresSignIn &&
+                !onboardingResult.IsNotFound &&
+                string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+            {
+                _onboardingSummary = onboardingResult.Value;
+            }
+
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+            {
+                return;
+            }
+
+            _dashboard = await InventoryFoundation.EnsureDashboardAsync(ShellState.ActiveCompany.Id, ShellState.CurrentUserId);
+            ApplyPolicyEditorFromDashboard();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SavePolicyAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            await InventoryFoundation.SavePolicyAsync(
+                new InventoryCostingPolicyUpdateRequest(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    _policyEditor.DefaultCostingMethod,
+                    _policyEditor.NegativeStockAllowed,
+                    _policyEditor.RequireWriteOffApproval),
+                _dashboard);
+            await ReloadDashboardAsync();
+            Snackbar.Add("Inventory costing policy saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveItemAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            await InventoryFoundation.SaveItemAsync(BuildItemRequest(), _dashboard);
+            await ReloadDashboardAsync();
+            ResetItemEditor();
+            Snackbar.Add("Inventory item saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SetItemActiveAsync(InventoryManagedItemSummary item, bool isActive)
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            await InventoryFoundation.SetItemActiveAsync(ShellState.ActiveCompany.Id, item.Id, isActive, _dashboard);
+            await ReloadDashboardAsync();
+            Snackbar.Add(isActive ? "Inventory item reactivated." : "Inventory item deactivated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveWarehouseAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            await InventoryFoundation.SaveWarehouseAsync(
+                new InventoryWarehouseUpsertRequest(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    _warehouseEditor.WarehouseId,
+                    _warehouseEditor.WarehouseCode,
+                    _warehouseEditor.Name,
+                    _warehouseEditor.Description),
+                _dashboard);
+            await ReloadDashboardAsync();
+            ResetWarehouseEditor();
+            Snackbar.Add("Warehouse saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SetWarehouseActiveAsync(InventoryManagedWarehouseSummary warehouse, bool isActive)
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            await InventoryFoundation.SetWarehouseActiveAsync(ShellState.ActiveCompany.Id, warehouse.Id, isActive, _dashboard);
+            await ReloadDashboardAsync();
+            Snackbar.Add(isActive ? "Warehouse reactivated." : "Warehouse deactivated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ReloadDashboardAsync()
+    {
+        _dashboard = await InventoryFoundation.GetDashboardAsync(ShellState.ActiveCompany.Id);
+        ApplyPolicyEditorFromDashboard();
+    }
+
+    private InventoryItemUpsertRequest BuildItemRequest()
+    {
+        var manageMethod = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.ManageInventoryMethod
+            : ManageInventoryMethod.DontManageStock;
+        var backorderMode = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.BackorderMode
+            : InventoryBackorderMode.Disallow;
+        var lowStockActivity = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.LowStockActivity
+            : InventoryLowStockActivity.Nothing;
+        var stockUomCode = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.StockUomCode
+            : null;
+        var defaultInventoryAssetAccountId = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.DefaultInventoryAssetAccountId
+            : null;
+        var defaultCogsAccountId = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.DefaultCogsAccountId
+            : null;
+        var defaultWriteOffAccountId = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.DefaultWriteOffAccountId
+            : null;
+        var defaultPurchaseVarianceAccountId = _itemEditor.ItemKind == InventoryItemKind.Stock
+            ? _itemEditor.DefaultPurchaseVarianceAccountId
+            : null;
+
+        return new InventoryItemUpsertRequest(
+            ShellState.ActiveCompany.Id,
+            ShellState.CurrentUserId,
+            _itemEditor.ItemId,
+            _itemEditor.ItemCode,
+            _itemEditor.Name,
+            _itemEditor.Description,
+            _itemEditor.ItemKind,
+            stockUomCode,
+            manageMethod,
+            _itemEditor.DefaultCostingMethod,
+            backorderMode,
+            lowStockActivity,
+            defaultInventoryAssetAccountId,
+            defaultCogsAccountId,
+            defaultWriteOffAccountId,
+            defaultPurchaseVarianceAccountId);
+    }
+
+    private void EditItem(InventoryManagedItemSummary item)
+    {
+        _itemEditor = new ItemEditorState
+        {
+            ItemId = item.Id,
+            ItemCode = item.ItemCode,
+            Name = item.Name,
+            Description = item.Description,
+            ItemKind = item.ItemKind,
+            StockUomCode = item.StockUomCode,
+            ManageInventoryMethod = item.ManageInventoryMethod,
+            DefaultCostingMethod = item.DefaultCostingMethod,
+            BackorderMode = item.BackorderMode,
+            LowStockActivity = item.LowStockActivity,
+            DefaultInventoryAssetAccountId = item.DefaultInventoryAssetAccountId,
+            DefaultCogsAccountId = item.DefaultCogsAccountId,
+            DefaultWriteOffAccountId = item.DefaultWriteOffAccountId,
+            DefaultPurchaseVarianceAccountId = item.DefaultPurchaseVarianceAccountId
+        };
+    }
+
+    private void ResetItemEditor() => _itemEditor = new ItemEditorState();
+
+    private void EditWarehouse(InventoryManagedWarehouseSummary warehouse)
+    {
+        _warehouseEditor = new WarehouseEditorState
+        {
+            WarehouseId = warehouse.Id,
+            WarehouseCode = warehouse.WarehouseCode,
+            Name = warehouse.Name,
+            Description = warehouse.Description
+        };
+    }
+
+    private void ResetWarehouseEditor() => _warehouseEditor = new WarehouseEditorState();
+
+    private void ApplyPolicyEditorFromDashboard()
+    {
+        var policy = CurrentPolicy;
+        _policyEditor = new PolicyEditorState
+        {
+            DefaultCostingMethod = policy?.DefaultCostingMethod ?? InventoryCostingMethod.MovingAverage,
+            NegativeStockAllowed = policy?.NegativeStockAllowed ?? false,
+            RequireWriteOffApproval = policy?.RequireWriteOffApproval ?? true
+        };
+    }
+
+    private string GetCostingPolicyHeadline() =>
+        CurrentPolicy is null
+            ? "Not initialized"
+            : $"{GetCostingMethodLabel(CurrentPolicy.DefaultCostingMethod)} / {(CurrentPolicy.NegativeStockAllowed ? "Negative allowed" : "Strict")}";
+
+    private static string GetCostingMethodLabel(InventoryCostingMethod method) => method switch
+    {
+        InventoryCostingMethod.MovingAverage => "Moving average",
+        InventoryCostingMethod.Fifo => "FIFO",
+        _ => method.ToString()
+    };
+
+    private static string GetItemKindLabel(InventoryItemKind kind) => kind switch
+    {
+        InventoryItemKind.Stock => "Stock",
+        InventoryItemKind.NonStock => "Non-stock",
+        InventoryItemKind.Service => "Service",
+        _ => kind.ToString()
+    };
+
+    private static string GetManageInventoryMethodLabel(ManageInventoryMethod method) => method switch
+    {
+        ManageInventoryMethod.DontManageStock => "Do not track stock",
+        ManageInventoryMethod.ManageStock => "Track stock",
+        ManageInventoryMethod.ManageStockBySku => "Track by SKU (guarded)",
+        _ => method.ToString()
+    };
+
+    private bool IsManageInventoryMethodGuarded(ManageInventoryMethod method) =>
+        method == ManageInventoryMethod.ManageStockBySku &&
+        _itemEditor.ManageInventoryMethod != ManageInventoryMethod.ManageStockBySku;
+
+    private static string GetBackorderModeLabel(InventoryBackorderMode mode) => mode switch
+    {
+        InventoryBackorderMode.Disallow => "Disallow",
+        InventoryBackorderMode.AllowNegative => "Allow negative",
+        InventoryBackorderMode.AllowNegativeWithWarning => "Allow negative with warning",
+        _ => mode.ToString()
+    };
+
+    private static string GetLowStockActivityLabel(InventoryLowStockActivity activity) => activity switch
+    {
+        InventoryLowStockActivity.Nothing => "Do nothing",
+        InventoryLowStockActivity.Warn => "Warn only",
+        InventoryLowStockActivity.BlockOutbound => "Block outbound",
+        _ => activity.ToString()
+    };
+
+    private static string GetItemDefaultsLabel(InventoryManagedItemSummary item)
+    {
+        if (item.ItemKind != InventoryItemKind.Stock)
+        {
+            return "Not inventory-managed";
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(item.DefaultInventoryAssetAccountLabel))
+        {
+            parts.Add($"Asset: {item.DefaultInventoryAssetAccountLabel}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.DefaultCogsAccountLabel))
+        {
+            parts.Add($"COGS: {item.DefaultCogsAccountLabel}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.DefaultWriteOffAccountLabel))
+        {
+            parts.Add($"Write-off: {item.DefaultWriteOffAccountLabel}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.DefaultPurchaseVarianceAccountLabel))
+        {
+            parts.Add($"Variance: {item.DefaultPurchaseVarianceAccountLabel}");
+        }
+
+        return parts.Count == 0 ? "Missing defaults" : string.Join(" | ", parts);
+    }
+
+    private sealed class PolicyEditorState
+    {
+        public InventoryCostingMethod DefaultCostingMethod { get; set; } = InventoryCostingMethod.MovingAverage;
+        public bool NegativeStockAllowed { get; set; }
+        public bool RequireWriteOffApproval { get; set; } = true;
+    }
+
+    private sealed class ItemEditorState
+    {
+        public Guid? ItemId { get; set; }
+        public string ItemCode { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public InventoryItemKind ItemKind { get; set; } = InventoryItemKind.Stock;
+        public string? StockUomCode { get; set; } = "EA";
+        public ManageInventoryMethod ManageInventoryMethod { get; set; } = ManageInventoryMethod.ManageStock;
+        public InventoryCostingMethod DefaultCostingMethod { get; set; } = InventoryCostingMethod.MovingAverage;
+        public InventoryBackorderMode BackorderMode { get; set; } = InventoryBackorderMode.Disallow;
+        public InventoryLowStockActivity LowStockActivity { get; set; } = InventoryLowStockActivity.Warn;
+        public Guid? DefaultInventoryAssetAccountId { get; set; }
+        public Guid? DefaultCogsAccountId { get; set; }
+        public Guid? DefaultWriteOffAccountId { get; set; }
+        public Guid? DefaultPurchaseVarianceAccountId { get; set; }
+    }
+
+    private sealed class WarehouseEditorState
+    {
+        public Guid? WarehouseId { get; set; }
+        public string WarehouseCode { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+    }
+}

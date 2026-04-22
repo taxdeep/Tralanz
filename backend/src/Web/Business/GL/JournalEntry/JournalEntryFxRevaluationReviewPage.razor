@@ -1,0 +1,737 @@
+@page "/gl/fx-revaluation/{DocumentId:guid}"
+@using Microsoft.AspNetCore.Components.Web
+@using Modules.CompanyAccess.SessionContext
+@using MudBlazor
+@inject ICompanyAccessShellSession ShellSession
+@inject JournalEntryFxRevaluationClient FxRevaluationClient
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_batch is null ? "FX revaluation" : $"{_batch.DisplayNumber} | FX revaluation")</PageTitle>
+
+<div class="fxr-review">
+    <div class="fxr-review-shell">
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+        }
+        else if (!string.IsNullOrWhiteSpace(_errorText))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                @_errorText
+            </MudAlert>
+        }
+        else if (_batch is not null)
+        {
+            <div class="fxr-review-title">
+                <div>
+                    <div class="fxr-review-title__eyebrow">General Ledger</div>
+                    <h1>@_batch.DisplayNumber</h1>
+                    <p>@FormatBatchKind(_batch.BatchKind) for @_batch.TransactionCurrencyCode into @_batch.BaseCurrencyCode.</p>
+                </div>
+                <div class="fxr-review-title__chips">
+                    <MudChip T="string" Variant="Variant.Text" Color="@GetStatusColor(_batch.Status)">@_batch.Status</MudChip>
+                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@FormatBatchKind(_batch.BatchKind)</MudChip>
+                </div>
+            </div>
+
+            @if (WritesBlocked)
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                    @ShellSession.WriteBlockMessage
+                </MudAlert>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_commandErrorText))
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                    @_commandErrorText
+                </MudAlert>
+            }
+
+            <div class="fxr-review-summary-grid">
+                <div class="fxr-review-card">
+                    <span>Source document</span>
+                    <strong>@_batch.DisplayNumber</strong>
+                    <small>@_batch.EntityNumber</small>
+                </div>
+                <div class="fxr-review-card">
+                    <span>Revaluation date</span>
+                    <strong>@_batch.DocumentDate.ToString("yyyy-MM-dd")</strong>
+                    <small>@_batch.TransactionCurrencyCode / @_batch.BaseCurrencyCode</small>
+                </div>
+                <div class="fxr-review-card">
+                    <span>FX rate</span>
+                    <strong>@_batch.FxRate.ToString("0.######")</strong>
+                    <small>@_batch.FxRateType, @_batch.FxQuoteBasis</small>
+                </div>
+                <div class="fxr-review-card">
+                    <span>Unrealized total</span>
+                    <strong>@FormatSigned(UnrealizedTotal)</strong>
+                    <small>@_batch.Lines.Count line(s)</small>
+                </div>
+            </div>
+
+            <div class="fxr-review-layout">
+                <div class="fxr-review-stack">
+                    <div class="fxr-review-panel">
+                        <div class="fxr-review-panel__header">
+                            <div>
+                                <div class="fxr-review-panel__title">Revaluation Lines</div>
+                                <div class="fxr-review-panel__caption">Open-item carrying base compared with revalued base.</div>
+                            </div>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@($"{_batch.Lines.Count} lines")</MudChip>
+                        </div>
+
+                        <MudTable Items="_batch.Lines" Dense="true" Hover="true" Class="fxr-review-table">
+                            <HeaderContent>
+                                <MudTh>#</MudTh>
+                                <MudTh>Target</MudTh>
+                                <MudTh>Open tx</MudTh>
+                                <MudTh>Carrying base</MudTh>
+                                <MudTh>Revalued base</MudTh>
+                                <MudTh>Unrealized</MudTh>
+                                <MudTh>Description</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="#">@context.LineNumber</MudTd>
+                                <MudTd DataLabel="Target">
+                                    <div class="fxr-review-entry">
+                                        <strong>@FormatOpenItemType(context.TargetOpenItemType)</strong>
+                                        <small>@context.TargetOpenItemId.ToString("N")[..8] / @context.TargetBalanceSide</small>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="Open tx">@FormatMoney(context.OpenAmountTx) @_batch.TransactionCurrencyCode</MudTd>
+                                <MudTd DataLabel="Carrying base">@FormatMoney(context.CarryingAmountBase)</MudTd>
+                                <MudTd DataLabel="Revalued base">@FormatMoney(context.RevaluedAmountBase)</MudTd>
+                                <MudTd DataLabel="Unrealized">
+                                    <span class="@GetSignedClass(context.UnrealizedAmountBase)">@FormatSigned(context.UnrealizedAmountBase)</span>
+                                </MudTd>
+                                <MudTd DataLabel="Description">@DisplayText(context.Description)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+
+                    <div class="fxr-review-panel">
+                        <div class="fxr-review-panel__header">
+                            <div>
+                                <div class="fxr-review-panel__title">Cascade Chain</div>
+                                <div class="fxr-review-panel__caption">Active revaluations that may need ordered unwind.</div>
+                            </div>
+                            @if (_isPlanLoading)
+                            {
+                                <MudProgressCircular Indeterminate="true" Color="Color.Info" Size="Size.Small" />
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_planErrorText))
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                                @_planErrorText
+                            </MudAlert>
+                        }
+                        else if (_cascadePlan is not null)
+                        {
+                            <div class="fxr-review-chain-summary">
+                                <div>
+                                    <span>Requested</span>
+                                    <strong>@_cascadePlan.RequestedDisplayNumber</strong>
+                                </div>
+                                <div>
+                                    <span>Next unwind target</span>
+                                    <strong>@_cascadePlan.NextDisplayNumber</strong>
+                                </div>
+                                <div>
+                                    <span>Tail</span>
+                                    <strong>@(_cascadePlan.RequestedBatchIsTail ? "Yes" : "No")</strong>
+                                </div>
+                            </div>
+
+                            <MudTable Items="_cascadePlan.ActiveRevaluationChain" Dense="true" Hover="true" Class="fxr-review-table">
+                                <HeaderContent>
+                                    <MudTh>Batch</MudTh>
+                                    <MudTh>Date</MudTh>
+                                    <MudTh>Posted</MudTh>
+                                    <MudTh>Role</MudTh>
+                                    <MudTh></MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Batch">@context.DisplayNumber</MudTd>
+                                    <MudTd DataLabel="Date">@context.RevaluationDate.ToString("yyyy-MM-dd")</MudTd>
+                                    <MudTd DataLabel="Posted">@FormatTimestamp(context.PostedAt)</MudTd>
+                                    <MudTd DataLabel="Role">@FormatPlanRole(context)</MudTd>
+                                    <MudTd DataLabel="">
+                                        <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildFxReviewHref(context.DocumentId)">
+                                            Open
+                                        </MudButton>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                        else
+                        {
+                            <div class="fxr-review-empty">No cascade plan has been loaded.</div>
+                        }
+                    </div>
+                </div>
+
+                <div class="fxr-review-stack">
+                    <div class="fxr-review-panel">
+                        <div class="fxr-review-panel__header">
+                            <div>
+                                <div class="fxr-review-panel__title">FX Snapshot</div>
+                                <div class="fxr-review-panel__caption">Persisted rate semantics used by posting.</div>
+                            </div>
+                        </div>
+
+                        <div class="fxr-review-facts">
+                            <div class="fxr-review-fact">
+                                <span>Snapshot</span>
+                                <strong>@(_batch.FxSnapshotId?.ToString("N")[..8] ?? "Identity")</strong>
+                            </div>
+                            <div class="fxr-review-fact">
+                                <span>Requested</span>
+                                <strong>@_batch.FxRequestedDate.ToString("yyyy-MM-dd")</strong>
+                            </div>
+                            <div class="fxr-review-fact">
+                                <span>Effective</span>
+                                <strong>@_batch.FxEffectiveDate.ToString("yyyy-MM-dd")</strong>
+                            </div>
+                            <div class="fxr-review-fact">
+                                <span>Reason</span>
+                                <strong>@_batch.FxPostingReason</strong>
+                            </div>
+                            <div class="fxr-review-fact fxr-review-fact--wide">
+                                <span>Source</span>
+                                <strong>@_batch.FxSource</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="fxr-review-panel">
+                        <div class="fxr-review-panel__header">
+                            <div>
+                                <div class="fxr-review-panel__title">Governance</div>
+                                <div class="fxr-review-panel__caption">Book policy captured with the batch.</div>
+                            </div>
+                        </div>
+
+                        <div class="fxr-review-facts">
+                            <div class="fxr-review-fact">
+                                <span>Book</span>
+                                <strong>@DisplayText(_batch.BookCode)</strong>
+                            </div>
+                            <div class="fxr-review-fact">
+                                <span>Standard</span>
+                                <strong>@DisplayText(_batch.AccountingStandard)</strong>
+                            </div>
+                            <div class="fxr-review-fact">
+                                <span>Profile</span>
+                                <strong>@DisplayText(_batch.RevaluationProfile)</strong>
+                            </div>
+                            <div class="fxr-review-fact">
+                                <span>Rounding</span>
+                                <strong>@DisplayText(_batch.FxRoundingPolicy)</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="fxr-review-panel">
+                        <div class="fxr-review-panel__header">
+                            <div>
+                                <div class="fxr-review-panel__title">Unwind Control</div>
+                                <div class="fxr-review-panel__caption">Prepare or auto-post next-period/cascade unwind.</div>
+                            </div>
+                            @if (_isCommandRunning)
+                            {
+                                <MudProgressCircular Indeterminate="true" Color="Color.Info" Size="Size.Small" />
+                            }
+                        </div>
+
+                        <div class="fxr-review-control-grid">
+                            <MudDatePicker Label="Unwind date"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Date="@_unwindDatePicker"
+                                           DateChanged="OnUnwindDateChanged"
+                                           Disabled="@(_isCommandRunning || WritesBlocked)" />
+                            <MudTextField T="string"
+                                          Label="Memo"
+                                          @bind-Value="_unwindMemo"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Disabled="@(_isCommandRunning || WritesBlocked)" />
+                        </div>
+
+                        <div class="fxr-review-links">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       StartIcon="@Icons.Material.Filled.Publish"
+                                       Disabled="@(!CanPostBatch)"
+                                       OnClick="PostBatchAsync">
+                                Post batch
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Info"
+                                       StartIcon="@Icons.Material.Filled.Undo"
+                                       Disabled="@(!CanPrepareUnwind)"
+                                       OnClick="PrepareNextPeriodUnwindAsync">
+                                Prepare unwind
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.AccountTree"
+                                       Disabled="@(!CanPrepareCascade)"
+                                       OnClick="PrepareCascadeUnwindAsync">
+                                Prepare cascade
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Warning"
+                                       StartIcon="@Icons.Material.Filled.DoneAll"
+                                       Disabled="@(!CanAutoPostCascade)"
+                                       OnClick="AutoPostCascadeUnwindAsync">
+                                Auto-post cascade
+                            </MudButton>
+                        </div>
+
+                        @if (_preparedUnwind is not null)
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-3">
+                                Prepared @_preparedUnwind.DisplayNumber with @_preparedUnwind.PreparedLineCount line(s).
+                                <MudLink Href="@BuildFxReviewHref(_preparedUnwind.DocumentId)">Open unwind batch</MudLink>
+                            </MudAlert>
+                        }
+
+                        @if (_preparedCascade is not null)
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-3">
+                                Prepared cascade unwind @_preparedCascade.DraftDisplayNumber for @_preparedCascade.TargetDisplayNumber.
+                                <MudLink Href="@BuildFxReviewHref(_preparedCascade.DraftDocumentId)">Open draft batch</MudLink>
+                            </MudAlert>
+                        }
+
+                        @if (_postedBatch is not null)
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-3">
+                                Posted @_postedBatch.JournalEntryDisplayNumber.
+                                <MudLink Href="@BuildJournalReviewHref(_postedBatch.JournalEntryId)">Open JE review</MudLink>
+                            </MudAlert>
+                        }
+
+                        @if (_postedCascade is not null)
+                        {
+                            <div class="fxr-review-posted-steps">
+                                <div class="fxr-review-panel__caption">@_postedCascade.PostedStepCount cascade unwind step(s) posted.</div>
+                                @foreach (var step in _postedCascade.PostedSteps)
+                                {
+                                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+                                        @step.UnwindDisplayNumber posted as @step.JournalEntryDisplayNumber.
+                                        <MudLink Href="@BuildJournalReviewHref(step.JournalEntryId)">Open JE</MudLink>
+                                    </MudAlert>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="fxr-review-panel">
+                        <div class="fxr-review-panel__header">
+                            <div>
+                                <div class="fxr-review-panel__title">Control Links</div>
+                                <div class="fxr-review-panel__caption">Move between batch, JE, and GL workbench.</div>
+                            </div>
+                        </div>
+
+                        <div class="fxr-review-links">
+                            @if (_batch.ReversalOfDocumentId.HasValue)
+                            {
+                                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildFxReviewHref(_batch.ReversalOfDocumentId.Value)">
+                                    Open reversed batch
+                                </MudButton>
+                            }
+                            <MudButton Variant="Variant.Text" Color="Color.Default" Href="/gl/journal-entries">
+                                Journal workbench
+                            </MudButton>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code
+{
+    [Parameter]
+    public Guid DocumentId { get; set; }
+
+    private JournalEntryFxRevaluationBatchDetail? _batch;
+    private JournalEntryFxRevaluationCascadePlan? _cascadePlan;
+    private JournalEntryFxRevaluationUnwindPrepareResult? _preparedUnwind;
+    private JournalEntryFxRevaluationCascadePrepareResult? _preparedCascade;
+    private JournalEntryFxRevaluationPostResult? _postedBatch;
+    private JournalEntryFxRevaluationCascadePostResult? _postedCascade;
+    private bool _isLoading;
+    private bool _isPlanLoading;
+    private bool _isCommandRunning;
+    private string? _errorText;
+    private string? _planErrorText;
+    private string? _commandErrorText;
+    private DateTime? _unwindDatePicker = DateTime.Today.AddDays(1);
+    private string? _unwindMemo;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
+
+    private decimal UnrealizedTotal =>
+        _batch?.Lines.Sum(static line => line.UnrealizedAmountBase) ?? 0m;
+
+    private bool IsPostedRevaluation =>
+        _batch is not null &&
+        string.Equals(_batch.Status, "posted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_batch.BatchKind, "revaluation", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanPostBatch =>
+        !WritesBlocked &&
+        !_isCommandRunning &&
+        _batch is not null &&
+        string.Equals(_batch.Status, "draft", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanPrepareUnwind =>
+        !WritesBlocked &&
+        !_isCommandRunning &&
+        IsPostedRevaluation;
+
+    private bool CanPrepareCascade =>
+        !WritesBlocked &&
+        !_isCommandRunning &&
+        IsPostedRevaluation &&
+        _cascadePlan is not null;
+
+    private bool CanAutoPostCascade =>
+        CanPrepareCascade;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+        _commandErrorText = null;
+        _batch = null;
+        _cascadePlan = null;
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            var result = await FxRevaluationClient.GetAsync(ShellSession.ActiveCompanyId, DocumentId, CancellationToken.None);
+
+            if (HandleAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.IsNotFound || result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _errorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? $"FX revaluation batch {DocumentId:D} could not be found."
+                    : result.ErrorMessage;
+                return;
+            }
+
+            _batch = result.Value;
+
+            if (IsPostedRevaluation)
+            {
+                await LoadCascadePlanAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadCascadePlanAsync()
+    {
+        if (_batch is null)
+        {
+            return;
+        }
+
+        _isPlanLoading = true;
+        _planErrorText = null;
+
+        try
+        {
+            var result = await FxRevaluationClient.GetCascadeUnwindPlanAsync(
+                ShellSession.ActiveCompanyId,
+                _batch.Id,
+                CancellationToken.None);
+
+            if (HandleAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _planErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? "Cascade unwind plan is unavailable for this batch."
+                    : result.ErrorMessage;
+                return;
+            }
+
+            _cascadePlan = result.Value;
+        }
+        catch (Exception ex)
+        {
+            _planErrorText = ex.Message;
+        }
+        finally
+        {
+            _isPlanLoading = false;
+        }
+    }
+
+    private async Task PostBatchAsync()
+    {
+        if (!CanPostBatch || _batch is null)
+        {
+            return;
+        }
+
+        await RunCommandAsync(async () =>
+        {
+            var result = await FxRevaluationClient.PostAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _batch.Id,
+                cancellationToken: CancellationToken.None);
+
+            if (HandleAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _commandErrorText = result.ErrorMessage ?? "FX revaluation batch could not be posted.";
+                return;
+            }
+
+            _postedBatch = result.Value;
+            Snackbar.Add($"Posted {_postedBatch.JournalEntryDisplayNumber}.", Severity.Success);
+            await LoadAsync();
+        });
+    }
+
+    private async Task PrepareNextPeriodUnwindAsync()
+    {
+        if (!CanPrepareUnwind || _batch is null)
+        {
+            return;
+        }
+
+        await RunCommandAsync(async () =>
+        {
+            var result = await FxRevaluationClient.PrepareNextPeriodUnwindAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _batch.Id,
+                GetUnwindDate(),
+                NormalizeMemo(_unwindMemo),
+                CancellationToken.None);
+
+            if (HandleAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _commandErrorText = result.ErrorMessage ?? "Next-period unwind could not be prepared.";
+                return;
+            }
+
+            _preparedUnwind = result.Value;
+            Snackbar.Add($"Prepared {_preparedUnwind.DisplayNumber}.", Severity.Success);
+        });
+    }
+
+    private async Task PrepareCascadeUnwindAsync()
+    {
+        if (!CanPrepareCascade || _batch is null)
+        {
+            return;
+        }
+
+        await RunCommandAsync(async () =>
+        {
+            var result = await FxRevaluationClient.PrepareCascadeUnwindAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _batch.Id,
+                GetUnwindDate(),
+                NormalizeMemo(_unwindMemo),
+                CancellationToken.None);
+
+            if (HandleAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _commandErrorText = result.ErrorMessage ?? "Cascade unwind could not be prepared.";
+                return;
+            }
+
+            _preparedCascade = result.Value;
+            Snackbar.Add($"Prepared {_preparedCascade.DraftDisplayNumber}.", Severity.Success);
+        });
+    }
+
+    private async Task AutoPostCascadeUnwindAsync()
+    {
+        if (!CanAutoPostCascade || _batch is null)
+        {
+            return;
+        }
+
+        await RunCommandAsync(async () =>
+        {
+            var result = await FxRevaluationClient.AutoPostCascadeUnwindAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _batch.Id,
+                GetUnwindDate(),
+                NormalizeMemo(_unwindMemo),
+                CancellationToken.None);
+
+            if (HandleAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _commandErrorText = result.ErrorMessage ?? "Cascade unwind could not be posted.";
+                return;
+            }
+
+            _postedCascade = result.Value;
+            Snackbar.Add($"Posted {_postedCascade.PostedStepCount} cascade unwind step(s).", Severity.Success);
+            await LoadAsync();
+        });
+    }
+
+    private async Task RunCommandAsync(Func<Task> command)
+    {
+        _isCommandRunning = true;
+        _commandErrorText = null;
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            await command();
+        }
+        catch (Exception ex)
+        {
+            _commandErrorText = ex.Message;
+        }
+        finally
+        {
+            _isCommandRunning = false;
+        }
+    }
+
+    private void OnUnwindDateChanged(DateTime? value)
+    {
+        _unwindDatePicker = value ?? DateTime.Today.AddDays(1);
+    }
+
+    private DateOnly GetUnwindDate() =>
+        DateOnly.FromDateTime((_unwindDatePicker ?? DateTime.Today.AddDays(1)).Date);
+
+    private bool HandleAuthenticationResult<T>(JournalEntryFxRevaluationApiResult<T> result)
+    {
+        if (!result.RequiresSignIn)
+        {
+            return false;
+        }
+
+        Snackbar.Add(result.ErrorMessage ?? "Your business session has expired. Please sign in again.", Severity.Warning);
+        NavigationManager.NavigateTo("login", replace: true);
+        return true;
+    }
+
+    private static string BuildFxReviewHref(Guid documentId) =>
+        $"/gl/fx-revaluation/{documentId:D}";
+
+    private static string BuildJournalReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private static string FormatBatchKind(string value) =>
+        value switch
+        {
+            "revaluation" => "FX revaluation",
+            "next_period_unwind" => "Next-period unwind",
+            _ => value.Replace('_', ' ')
+        };
+
+    private static string FormatOpenItemType(string value) =>
+        value switch
+        {
+            "ar_open_item" => "AR open item",
+            "ap_open_item" => "AP open item",
+            _ => value.Replace('_', ' ')
+        };
+
+    private static string FormatPlanRole(JournalEntryFxRevaluationCascadePlanStep step)
+    {
+        if (step.IsRequestedBatch)
+        {
+            return "Requested";
+        }
+
+        if (step.IsNextStep)
+        {
+            return "Next";
+        }
+
+        return "Active";
+    }
+
+    private static string FormatMoney(decimal amount) =>
+        amount.ToString("N2");
+
+    private static string FormatSigned(decimal amount) =>
+        amount >= 0m ? $"+{amount:N2}" : amount.ToString("N2");
+
+    private static string FormatTimestamp(DateTimeOffset value) =>
+        value.ToString("yyyy-MM-dd HH:mm");
+
+    private static string DisplayText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value;
+
+    private static string? NormalizeMemo(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string GetSignedClass(decimal amount) =>
+        amount >= 0m ? "fxr-review-positive" : "fxr-review-negative";
+
+    private static Color GetStatusColor(string status) =>
+        status switch
+        {
+            "posted" => Color.Success,
+            "draft" => Color.Info,
+            "voided" => Color.Warning,
+            "reversed" => Color.Warning,
+            _ => Color.Secondary
+        };
+}

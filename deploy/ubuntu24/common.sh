@@ -11,6 +11,7 @@ readonly SOURCE_DIR="${INSTALL_ROOT}/source"
 readonly PUBLISH_DIR="${INSTALL_ROOT}/publish"
 readonly RUNTIME_DIR="${INSTALL_ROOT}/runtime"
 readonly BACKUP_DIR="${INSTALL_ROOT}/backups"
+readonly DOTNET_INSTALL_DIR="${CITUS_DOTNET_INSTALL_DIR:-/opt/dotnet}"
 readonly ENV_DIR="/etc/citus"
 readonly ENV_FILE="${ENV_DIR}/citus.env"
 readonly NGINX_SITE_PATH="/etc/nginx/sites-available/citus.conf"
@@ -18,6 +19,11 @@ readonly NGINX_ENABLED_PATH="/etc/nginx/sites-enabled/citus.conf"
 readonly SYSTEMD_DIR="/etc/systemd/system"
 readonly ACME_WEBROOT="${CITUS_ACME_WEBROOT:-/var/www/certbot}"
 readonly CERTBOT_DEPLOY_HOOK="/etc/letsencrypt/renewal-hooks/deploy/citus-nginx-reload.sh"
+readonly APT_FORCE_IPV4="${CITUS_APT_FORCE_IPV4:-1}"
+readonly APT_RETRIES="${CITUS_APT_RETRIES:-5}"
+readonly APT_HTTP_TIMEOUT="${CITUS_APT_HTTP_TIMEOUT:-30}"
+readonly APT_PRIMARY_MIRROR="${CITUS_APT_PRIMARY_MIRROR:-http://archive.ubuntu.com/ubuntu}"
+readonly APT_SECURITY_MIRROR="${CITUS_APT_SECURITY_MIRROR:-http://security.ubuntu.com/ubuntu}"
 
 log() {
   printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -26,6 +32,88 @@ log() {
 fail() {
   echo "ERROR: $*" >&2
   exit 1
+}
+
+print_usage() {
+  cat <<'EOF'
+Usage:
+  sudo ./install.sh [options]
+  sudo ./upgrade.sh [options]
+
+Options:
+  --domain NAME              Public DNS name for nginx and optional SSL.
+  --server-name NAME         Alias for --domain.
+  --ssl, --https             Enable Let's Encrypt HTTPS automation.
+  --no-ssl, --no-https       Disable HTTPS automation.
+  --http-only                Disable HTTPS automation.
+  --email ADDRESS            Let's Encrypt contact email.
+  --certbot-email ADDRESS    Alias for --email.
+  --redirect-http            Redirect HTTP to HTTPS after a certificate exists.
+  --no-redirect-http         Keep HTTP proxying enabled after SSL is active.
+  --start                    Start/restart Citus services after deployment.
+  --no-start                 Leave Citus services stopped after deployment.
+  -h, --help                 Show this help.
+
+Examples:
+  sudo ./install.sh
+  sudo ./install.sh --domain app.example.com --ssl --email ops@example.com
+  sudo CITUS_SERVER_NAME=app.example.com CITUS_ENABLE_HTTPS=1 CITUS_CERTBOT_EMAIL=ops@example.com ./install.sh
+EOF
+}
+
+set_cli_override() {
+  local key="$1"
+  local value="$2"
+  export "${key}=${value}"
+  export "CLI_OVERRIDE_${key}=1"
+}
+
+parse_runtime_args() {
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --domain|--server-name)
+        [[ "$#" -ge 2 ]] || fail "$1 requires a value."
+        set_cli_override "CITUS_SERVER_NAME" "$2"
+        shift 2
+        ;;
+      --ssl|--https)
+        set_cli_override "CITUS_ENABLE_HTTPS" "1"
+        shift
+        ;;
+      --no-ssl|--no-https|--http-only)
+        set_cli_override "CITUS_ENABLE_HTTPS" "0"
+        shift
+        ;;
+      --email|--certbot-email)
+        [[ "$#" -ge 2 ]] || fail "$1 requires a value."
+        set_cli_override "CITUS_CERTBOT_EMAIL" "$2"
+        shift 2
+        ;;
+      --redirect-http)
+        set_cli_override "CITUS_HTTPS_REDIRECT" "1"
+        shift
+        ;;
+      --no-redirect-http)
+        set_cli_override "CITUS_HTTPS_REDIRECT" "0"
+        shift
+        ;;
+      --start)
+        set_cli_override "CITUS_AUTO_START" "1"
+        shift
+        ;;
+      --no-start)
+        set_cli_override "CITUS_AUTO_START" "0"
+        shift
+        ;;
+      -h|--help)
+        print_usage
+        exit 0
+        ;;
+      *)
+        fail "Unknown option: $1. Run with --help for usage."
+        ;;
+    esac
+  done
 }
 
 require_root() {
@@ -68,6 +156,7 @@ load_env_file() {
   : "${CITUS_FRONTEND_PORT:?Missing CITUS_FRONTEND_PORT}"
   : "${CITUS_ACCOUNTING_API_PORT:?Missing CITUS_ACCOUNTING_API_PORT}"
   : "${CITUS_SYSADMIN_API_PORT:?Missing CITUS_SYSADMIN_API_PORT}"
+  CITUS_SYSADMIN_WEB_PORT="${CITUS_SYSADMIN_WEB_PORT:-3010}"
   : "${CITUS_FRONTEND_HOST:?Missing CITUS_FRONTEND_HOST}"
   : "${CITUS_API_HOST:?Missing CITUS_API_HOST}"
   : "${CITUS_DB_HOST:?Missing CITUS_DB_HOST}"
@@ -75,9 +164,18 @@ load_env_file() {
   : "${CITUS_DB_NAME:?Missing CITUS_DB_NAME}"
   : "${CITUS_DB_USER:?Missing CITUS_DB_USER}"
   : "${CITUS_DB_PASSWORD:?Missing CITUS_DB_PASSWORD}"
-  : "${DATABASE_URL:?Missing DATABASE_URL}"
   : "${CITUS_ACCOUNTING_DB:?Missing CITUS_ACCOUNTING_DB}"
   : "${CITUS_SERVER_NAME:?Missing CITUS_SERVER_NAME}"
+
+  AppHost__PublicBaseUrl="${AppHost__PublicBaseUrl:-http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/}"
+  AppHost__AccountingApiBaseUrl="${AppHost__AccountingApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/}"
+  AppHost__SysAdminApiBaseUrl="${AppHost__SysAdminApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/}"
+  AppHost__BusinessAppBaseUrl="${AppHost__BusinessAppBaseUrl:-http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/}"
+  AppHost__PathBase="${AppHost__PathBase:-/sysadmin}"
+  DOTNET_ROOT="${DOTNET_ROOT:-${DOTNET_INSTALL_DIR}}"
+  DOTNET_CLI_TELEMETRY_OPTOUT="${DOTNET_CLI_TELEMETRY_OPTOUT:-1}"
+  DOTNET_PRINT_TELEMETRY_MESSAGE="${DOTNET_PRINT_TELEMETRY_MESSAGE:-false}"
+  export AppHost__PublicBaseUrl AppHost__AccountingApiBaseUrl AppHost__SysAdminApiBaseUrl AppHost__BusinessAppBaseUrl AppHost__PathBase DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
 
   validate_identifier "${CITUS_DB_NAME}" "CITUS_DB_NAME"
   validate_identifier "${CITUS_DB_USER}" "CITUS_DB_USER"
@@ -104,6 +202,21 @@ set_env_value() {
   rm -f "${temp_file}"
 }
 
+apply_cli_overrides_to_env_file() {
+  local key
+  for key in \
+    CITUS_SERVER_NAME \
+    CITUS_ENABLE_HTTPS \
+    CITUS_CERTBOT_EMAIL \
+    CITUS_HTTPS_REDIRECT \
+    CITUS_AUTO_START; do
+    local marker="CLI_OVERRIDE_${key}"
+    if [[ "${!marker:-0}" == "1" ]]; then
+      set_env_value "${key}" "${!key}"
+    fi
+  done
+}
+
 ensure_env_defaults() {
   mkdir -p "${ENV_DIR}"
   touch "${ENV_FILE}"
@@ -111,6 +224,13 @@ ensure_env_defaults() {
   append_env_if_missing "CITUS_HTTPS_REDIRECT" "1"
   append_env_if_missing "CITUS_CERTBOT_EMAIL" ""
   append_env_if_missing "CITUS_AUTO_START" "1"
+  append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "3010"
+  append_env_if_missing "AppHost__SysAdminApiBaseUrl" "http://127.0.0.1:5089/"
+  append_env_if_missing "AppHost__BusinessAppBaseUrl" "http://127.0.0.1:3000/"
+  append_env_if_missing "AppHost__PathBase" "/sysadmin"
+  append_env_if_missing "ASPNETCORE_FORWARDEDHEADERS_ENABLED" "true"
+  append_env_if_missing "DOTNET_CLI_TELEMETRY_OPTOUT" "1"
+  append_env_if_missing "DOTNET_PRINT_TELEMETRY_MESSAGE" "false"
   chmod 640 "${ENV_FILE}"
 }
 
@@ -133,12 +253,15 @@ ensure_env_file() {
   local frontend_port="${CITUS_FRONTEND_PORT:-3000}"
   local accounting_port="${CITUS_ACCOUNTING_API_PORT:-5088}"
   local sysadmin_port="${CITUS_SYSADMIN_API_PORT:-5089}"
+  local sysadmin_web_port="${CITUS_SYSADMIN_WEB_PORT:-3010}"
   local server_name="${CITUS_SERVER_NAME:-_}"
-  local sqlite_path="${RUNTIME_DIR}/frontend/citus.sqlite"
 
   cat > "${ENV_FILE}" <<EOF
 NODE_ENV=production
 ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+DOTNET_CLI_TELEMETRY_OPTOUT=1
+DOTNET_PRINT_TELEMETRY_MESSAGE=false
 NEXT_TELEMETRY_DISABLED=1
 CITUS_SERVER_NAME=${server_name}
 CITUS_FRONTEND_HOST=${frontend_host}
@@ -146,13 +269,18 @@ CITUS_FRONTEND_PORT=${frontend_port}
 CITUS_API_HOST=${api_host}
 CITUS_ACCOUNTING_API_PORT=${accounting_port}
 CITUS_SYSADMIN_API_PORT=${sysadmin_port}
+CITUS_SYSADMIN_WEB_PORT=${sysadmin_web_port}
 CITUS_DB_HOST=${db_host}
 CITUS_DB_PORT=${db_port}
 CITUS_DB_NAME=${db_name}
 CITUS_DB_USER=${db_user}
 CITUS_DB_PASSWORD=${db_password}
-DATABASE_URL=file:${sqlite_path}
 CITUS_ACCOUNTING_DB=Host=${db_host};Port=${db_port};Database=${db_name};Username=${db_user};Password=${db_password};Pooling=true
+AppHost__PublicBaseUrl=http://${frontend_host}:${frontend_port}/
+AppHost__AccountingApiBaseUrl=http://${api_host}:${accounting_port}/
+AppHost__SysAdminApiBaseUrl=http://${api_host}:${sysadmin_port}/
+AppHost__BusinessAppBaseUrl=http://${frontend_host}:${frontend_port}/
+AppHost__PathBase=/sysadmin
 EOF
 
   chmod 640 "${ENV_FILE}"
@@ -224,6 +352,20 @@ prompt_nonempty_value() {
   done
 }
 
+prompt_optional_value() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local answer
+
+  if [[ -n "${default_value}" ]]; then
+    read -r -p "${prompt} [${default_value}] " answer || return 1
+    printf '%s\n' "${answer:-${default_value}}"
+  else
+    read -r -p "${prompt} " answer || return 1
+    printf '%s\n' "${answer}"
+  fi
+}
+
 looks_like_ip_address() {
   local value="$1"
   [[ "${value}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "${value}" == *:* ]]
@@ -252,40 +394,78 @@ validate_https_configuration() {
     fail "CITUS_CERTBOT_EMAIL is required when HTTPS automation is enabled."
 }
 
+get_public_frontend_url() {
+  load_env_file
+
+  if supports_public_tls_server_name "${CITUS_SERVER_NAME}"; then
+    if is_truthy "${CITUS_ENABLE_HTTPS}"; then
+      printf 'https://%s/\n' "${CITUS_SERVER_NAME}"
+    else
+      printf 'http://%s/\n' "${CITUS_SERVER_NAME}"
+    fi
+    return
+  fi
+
+  local public_ip
+  public_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf 'http://%s/\n' "${public_ip}"
+}
+
 configure_runtime_preferences() {
+  local deployment_mode="${1:-install}"
+
   ensure_env_defaults
+  apply_cli_overrides_to_env_file
   load_env_file
 
   local enable_https="${CITUS_ENABLE_HTTPS}"
   local https_redirect="${CITUS_HTTPS_REDIRECT}"
   local certbot_email="${CITUS_CERTBOT_EMAIL}"
   local auto_start="${CITUS_AUTO_START}"
+  local server_name="${CITUS_SERVER_NAME}"
 
   if is_interactive_session; then
-    if supports_public_tls_server_name "${CITUS_SERVER_NAME}"; then
-      local https_prompt
-      if is_truthy "${enable_https}"; then
-        https_prompt="Keep HTTPS enabled and request or renew a Let's Encrypt certificate for ${CITUS_SERVER_NAME}?"
-      else
-        https_prompt="Enable HTTPS and request a Let's Encrypt certificate for ${CITUS_SERVER_NAME}?"
+    if [[ "${deployment_mode}" == "upgrade" ]]; then
+      log "Skipping HTTPS prompts during upgrade; using saved settings from ${ENV_FILE} plus any CLI overrides."
+    else
+      if ! supports_public_tls_server_name "${server_name}"; then
+        local prompted_server_name
+        prompted_server_name="$(
+          prompt_optional_value \
+            "Public domain for Citus; leave blank for HTTP/IP-only deployment:" \
+            ""
+        )"
+        if [[ -n "${prompted_server_name}" ]]; then
+          server_name="${prompted_server_name}"
+          set_env_value "CITUS_SERVER_NAME" "${server_name}"
+        fi
       fi
 
-      if prompt_yes_no "${https_prompt}" "$(default_prompt_choice "${enable_https}")"; then
-        enable_https="1"
-        certbot_email="$(prompt_nonempty_value "Let's Encrypt contact email:" "${certbot_email}")"
-        if prompt_yes_no "Redirect plain HTTP traffic to HTTPS for ${CITUS_SERVER_NAME}?" "$(default_prompt_choice "${https_redirect}")"; then
-          https_redirect="1"
+      if supports_public_tls_server_name "${server_name}"; then
+        local https_prompt
+        if is_truthy "${enable_https}"; then
+          https_prompt="Keep HTTPS enabled and request or renew a Let's Encrypt certificate for ${server_name}?"
         else
-          https_redirect="0"
+          https_prompt="Enable HTTPS and request a Let's Encrypt certificate for ${server_name}?"
+        fi
+
+        if prompt_yes_no "${https_prompt}" "$(default_prompt_choice "${enable_https}")"; then
+          enable_https="1"
+          certbot_email="$(prompt_nonempty_value "Let's Encrypt contact email:" "${certbot_email}")"
+          if prompt_yes_no "Redirect plain HTTP traffic to HTTPS for ${server_name}?" "$(default_prompt_choice "${https_redirect}")"; then
+            https_redirect="1"
+          else
+            https_redirect="0"
+          fi
+        else
+          enable_https="0"
         fi
       else
+        log "Skipping HTTPS certificate prompt because CITUS_SERVER_NAME=${server_name} is not a public DNS name."
         enable_https="0"
+        https_redirect="1"
+        certbot_email=""
       fi
-    else
-      log "Skipping HTTPS certificate prompt because CITUS_SERVER_NAME=${CITUS_SERVER_NAME} is not a public DNS name."
-      enable_https="0"
-      https_redirect="1"
-      certbot_email=""
     fi
 
     if prompt_yes_no "Start the Citus application services when deployment finishes?" "$(default_prompt_choice "${auto_start}")"; then
@@ -300,24 +480,109 @@ configure_runtime_preferences() {
     set_env_value "CITUS_AUTO_START" "${auto_start}"
   fi
 
+  set_env_value "AppHost__PublicBaseUrl" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
+  set_env_value "AppHost__AccountingApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/"
+  append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "${CITUS_SYSADMIN_WEB_PORT:-3010}"
+  set_env_value "AppHost__SysAdminApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/"
+  set_env_value "AppHost__BusinessAppBaseUrl" "$(get_public_frontend_url)"
+  set_env_value "AppHost__PathBase" "/sysadmin"
   validate_https_configuration
 }
 
 apt_install() {
   local packages=("$@")
-  DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing "${packages[@]}"
+}
+
+configure_apt_network_resilience() {
+  cat > /etc/apt/apt.conf.d/99citus-network <<EOF
+Acquire::Retries "${APT_RETRIES}";
+Acquire::http::Timeout "${APT_HTTP_TIMEOUT}";
+Acquire::https::Timeout "${APT_HTTP_TIMEOUT}";
+Acquire::ForceIPv4 "$(is_truthy "${APT_FORCE_IPV4}" && printf 'true' || printf 'false')";
+EOF
+}
+
+configure_ubuntu_mirrors() {
+  local ubuntu_sources="/etc/apt/sources.list.d/ubuntu.sources"
+  local backup_suffix=".citus.bak"
+
+  if [[ -f "${ubuntu_sources}" ]]; then
+    if [[ ! -f "${ubuntu_sources}${backup_suffix}" ]]; then
+      cp "${ubuntu_sources}" "${ubuntu_sources}${backup_suffix}"
+    fi
+
+    local rewritten_sources
+    rewritten_sources="$(mktemp)"
+    awk -v primary="${APT_PRIMARY_MIRROR}" -v security="${APT_SECURITY_MIRROR}" '
+      BEGIN { RS = ""; ORS = ""; }
+      {
+        mirror = ($0 ~ /(^|\n)Suites:[^\n]*noble-security/) ? security : primary;
+        line_count = split($0, lines, "\n");
+        for (line_index = 1; line_index <= line_count; line_index++) {
+          if (lines[line_index] ~ /^URIs: /) {
+            lines[line_index] = "URIs: " mirror;
+          }
+
+          print lines[line_index];
+          if (line_index < line_count) {
+            print "\n";
+          }
+        }
+
+        if (NR > 0) {
+          print "\n\n";
+        }
+      }
+    ' "${ubuntu_sources}" > "${rewritten_sources}"
+    cat "${rewritten_sources}" > "${ubuntu_sources}"
+    rm -f "${rewritten_sources}"
+    return
+  fi
+
+  if [[ -f /etc/apt/sources.list ]]; then
+    if [[ ! -f /etc/apt/sources.list${backup_suffix} ]]; then
+      cp /etc/apt/sources.list /etc/apt/sources.list${backup_suffix}
+    fi
+
+    sed -i \
+      -e "s|http://[a-zA-Z0-9.-]*/ubuntu|${APT_PRIMARY_MIRROR}|g" \
+      -e "s|https://[a-zA-Z0-9.-]*/ubuntu|${APT_PRIMARY_MIRROR}|g" \
+      /etc/apt/sources.list
+  fi
+}
+
+apt_update_with_retry() {
+  local attempt
+  local max_attempts=3
+
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    if apt-get update; then
+      return 0
+    fi
+
+    if (( attempt == max_attempts )); then
+      break
+    fi
+
+    log "apt-get update failed on attempt ${attempt}/${max_attempts}; retrying in 5 seconds."
+    sleep 5
+  done
+
+  fail "apt-get update failed after ${max_attempts} attempts. Check Ubuntu mirror reachability or set CITUS_APT_PRIMARY_MIRROR."
 }
 
 ensure_base_packages() {
   log "Installing Ubuntu packages."
-  apt-get update
+  configure_apt_network_resilience
+  configure_ubuntu_mirrors
+  apt_update_with_retry
   apt_install \
     ca-certificates \
     curl \
     git \
     rsync \
     xz-utils \
-    sqlite3 \
     openssl \
     snapd \
     nginx \
@@ -330,51 +595,124 @@ ensure_base_packages() {
   systemctl enable --now snapd.socket
 }
 
-ensure_dotnet() {
-  log "Installing .NET 11 from the Ubuntu 24.04 package feeds."
-  apt_install dotnet-sdk-11.0 aspnetcore-runtime-11.0
-}
-
-detect_node_arch() {
-  case "$(dpkg --print-architecture)" in
-    amd64) echo "x64" ;;
-    arm64) echo "arm64" ;;
-    *) fail "Unsupported architecture for the official Node.js binary tarball." ;;
-  esac
-}
-
-ensure_nodejs() {
-  local node_major="${CITUS_NODE_MAJOR:-22}"
-  local node_arch
-  node_arch="$(detect_node_arch)"
-  local latest_series
-  latest_series="$(curl -fsSL "https://nodejs.org/dist/latest-v${node_major}.x/SHASUMS256.txt")"
-  local latest_version
-  latest_version="$(printf '%s\n' "${latest_series}" | sed -n "s/.*node-\\(v[0-9.]*\\)-linux-${node_arch}\\.tar\\.xz/\\1/p" | head -n 1)"
-  [[ -n "${latest_version}" ]] || fail "Unable to resolve the latest Node.js v${node_major}.x version."
-
-  local archive="node-${latest_version}-linux-${node_arch}.tar.xz"
-  local expected_sha
-  expected_sha="$(printf '%s\n' "${latest_series}" | grep -F "  ${archive}" | awk '{print $1}')"
-  [[ -n "${expected_sha}" ]] || fail "Unable to resolve the SHA256 for ${archive}."
-
-  local install_dir="/usr/local/lib/nodejs/node-${latest_version}-linux-${node_arch}"
-  if [[ ! -d "${install_dir}" ]]; then
-    local archive_path="/tmp/${archive}"
-    log "Installing Node.js ${latest_version}."
-    mkdir -p /usr/local/lib/nodejs
-    curl -fsSL "https://nodejs.org/dist/${latest_version}/${archive}" -o "${archive_path}"
-    printf '%s  %s\n' "${expected_sha}" "${archive_path}" | sha256sum -c -
-    tar -xJf "${archive_path}" -C /usr/local/lib/nodejs
-    rm -f "${archive_path}"
+append_package_if_available() {
+  local -n package_list_ref="$1"
+  local package_name="$2"
+  if apt-cache show "${package_name}" >/dev/null 2>&1; then
+    package_list_ref+=("${package_name}")
+    return 0
   fi
 
-  ln -sfn "${install_dir}" /usr/local/lib/nodejs/citus-node
-  ln -sfn /usr/local/lib/nodejs/citus-node/bin/node /usr/local/bin/node
-  ln -sfn /usr/local/lib/nodejs/citus-node/bin/npm /usr/local/bin/npm
-  ln -sfn /usr/local/lib/nodejs/citus-node/bin/npx /usr/local/bin/npx
-  if [[ -x /usr/local/lib/nodejs/citus-node/bin/corepack ]]; then
-    ln -sfn /usr/local/lib/nodejs/citus-node/bin/corepack /usr/local/bin/corepack
+  return 1
+}
+
+ensure_dotnet_dependencies() {
+  local packages=(
+    ca-certificates
+    libc6
+    libgcc-s1
+    libgssapi-krb5-2
+    libstdc++6
+    tzdata
+    zlib1g
+  )
+
+  append_package_if_available packages "libicu74" ||
+    append_package_if_available packages "libicu76" ||
+    fail "Unable to find a supported libicu package for .NET on this Ubuntu 24.04 host."
+
+  append_package_if_available packages "libssl3t64" ||
+    append_package_if_available packages "libssl3" ||
+    fail "Unable to find a supported libssl package for .NET on this Ubuntu 24.04 host."
+
+  apt_install "${packages[@]}"
+}
+
+dotnet_sdk_version_from_global_json() {
+  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_ROOT}/global.json" | head -n 1
+}
+
+dotnet_sdk_tarball_url() {
+  local sdk_version="$1"
+
+  if [[ -n "${CITUS_DOTNET_SDK_TARBALL_URL:-}" ]]; then
+    printf '%s\n' "${CITUS_DOTNET_SDK_TARBALL_URL}"
+    return 0
+  fi
+
+  [[ -n "${sdk_version}" ]] || return 0
+  printf 'https://builds.dotnet.microsoft.com/dotnet/Sdk/%s/dotnet-sdk-%s-linux-x64.tar.gz\n' "${sdk_version}" "${sdk_version}"
+}
+
+dotnet_sdk_is_installed() {
+  local sdk_version="$1"
+  [[ -x "${DOTNET_INSTALL_DIR}/dotnet" ]] || return 1
+
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" \
+    "${DOTNET_INSTALL_DIR}/dotnet" --list-sdks 2>/dev/null |
+    grep -q "^${sdk_version}[[:space:]]"
+}
+
+install_dotnet_sdk_from_tarball() {
+  local sdk_version="$1"
+  local tarball_url="$2"
+  local archive="/tmp/citus-dotnet-sdk-${sdk_version}.tar.gz"
+
+  log "Installing .NET SDK ${sdk_version} from tarball fallback."
+  curl -fL "${tarball_url}" -o "${archive}"
+  tar -xzf "${archive}" -C "${DOTNET_INSTALL_DIR}"
+  rm -f "${archive}"
+}
+
+ensure_dotnet() {
+  ensure_dotnet_dependencies
+
+  local sdk_version="${CITUS_DOTNET_SDK_VERSION:-$(dotnet_sdk_version_from_global_json)}"
+  local dotnet_channel="${CITUS_DOTNET_CHANNEL:-11.0}"
+  local dotnet_quality="${CITUS_DOTNET_QUALITY:-preview}"
+  local allow_channel_fallback="${CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK:-1}"
+  local install_script="/tmp/citus-dotnet-install.sh"
+  local tarball_url=""
+
+  log "Installing .NET SDK into ${DOTNET_INSTALL_DIR}."
+  mkdir -p "${DOTNET_INSTALL_DIR}"
+  curl -fsSL "https://dot.net/v1/dotnet-install.sh" -o "${install_script}"
+  chmod 755 "${install_script}"
+
+  if [[ -n "${sdk_version}" ]]; then
+    if ! "${install_script}" --version "${sdk_version}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path; then
+      tarball_url="$(dotnet_sdk_tarball_url "${sdk_version}")"
+
+      if [[ -n "${tarball_url}" ]]; then
+        log "Exact SDK ${sdk_version} was not installed through dotnet-install.sh; trying tarball fallback ${tarball_url}."
+        if ! install_dotnet_sdk_from_tarball "${sdk_version}" "${tarball_url}"; then
+          if is_truthy "${allow_channel_fallback}"; then
+            log "Tarball fallback for ${sdk_version} failed; falling back to channel ${dotnet_channel} (${dotnet_quality})."
+            "${install_script}" --channel "${dotnet_channel}" --quality "${dotnet_quality}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path
+          else
+            fail "Unable to install .NET SDK ${sdk_version} through dotnet-install.sh or tarball fallback."
+          fi
+        fi
+      elif is_truthy "${allow_channel_fallback}"; then
+        log "Exact SDK ${sdk_version} was not installed; falling back to channel ${dotnet_channel} (${dotnet_quality})."
+        "${install_script}" --channel "${dotnet_channel}" --quality "${dotnet_quality}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path
+      else
+        fail "Unable to install .NET SDK ${sdk_version}."
+      fi
+    fi
+  else
+    "${install_script}" --channel "${dotnet_channel}" --quality "${dotnet_quality}" --install-dir "${DOTNET_INSTALL_DIR}" --no-path
+  fi
+
+  ln -sfn "${DOTNET_INSTALL_DIR}/dotnet" /usr/local/bin/dotnet
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet --info >/dev/null
+
+  if [[ -n "${sdk_version}" ]] && ! dotnet_sdk_is_installed "${sdk_version}"; then
+    if is_truthy "${allow_channel_fallback}"; then
+      log "Exact SDK ${sdk_version} is still not present after fallback. Continuing with the installed SDK because global.json allows roll-forward."
+    else
+      fail "Expected .NET SDK ${sdk_version} was not installed into ${DOTNET_INSTALL_DIR}."
+    fi
   fi
 }
 
@@ -409,7 +747,7 @@ ensure_app_user() {
 }
 
 ensure_layout() {
-  mkdir -p "${SOURCE_DIR}" "${PUBLISH_DIR}" "${RUNTIME_DIR}/frontend" "${BACKUP_DIR}"
+  mkdir -p "${SOURCE_DIR}" "${PUBLISH_DIR}" "${RUNTIME_DIR}" "${BACKUP_DIR}"
   chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_ROOT}"
 }
 
@@ -436,25 +774,17 @@ ensure_postgres_database() {
     -v ON_ERROR_STOP=1 \
     --set=citus_db_user="${CITUS_DB_USER}" \
     --set=citus_db_password="${CITUS_DB_PASSWORD}" <<'SQL'
-DO \$\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'citus_db_user') THEN
-    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password');
-  ELSE
-    EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password');
-  END IF;
+SELECT CASE
+  WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'citus_db_user')
+    THEN format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password')
+  ELSE format('CREATE ROLE %I LOGIN PASSWORD %L', :'citus_db_user', :'citus_db_password')
 END
-\$\$;
+\gexec
 SQL
 
   if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${CITUS_DB_NAME}'" | grep -q 1; then
     sudo -u postgres createdb --owner="${CITUS_DB_USER}" "${CITUS_DB_NAME}"
   fi
-}
-
-frontend_sqlite_path() {
-  load_env_file
-  printf '%s\n' "${DATABASE_URL#file:}"
 }
 
 apply_backend_baseline_if_needed() {
@@ -502,81 +832,29 @@ apply_backend_baseline_if_needed() {
       -f "${SOURCE_DIR}/CITUS_POSTGRESQL_MIGRATION_DRAFT.sql"
 }
 
-seed_frontend_if_empty() {
-  local sqlite_path
-  sqlite_path="$(frontend_sqlite_path)"
-
-  local user_table_exists
-  user_table_exists="$(sqlite3 "${sqlite_path}" "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'User';" 2>/dev/null || echo "0")"
-  if [[ "${user_table_exists}" != "1" ]]; then
-    return
-  fi
-
-  local user_count
-  user_count="$(sqlite3 "${sqlite_path}" "SELECT COUNT(*) FROM User;" 2>/dev/null || echo "0")"
-  if [[ "${user_count}" != "0" ]]; then
-    log "Frontend database already contains users; skipping prisma seed."
-    return
-  fi
-
-  log "Seeding the frontend SQLite database."
-  (
-    cd "${SOURCE_DIR}"
-    export DATABASE_URL
-    npm run db:seed
-  )
-}
-
-build_frontend() {
-  load_env_file
-
-  local sqlite_path
-  sqlite_path="$(frontend_sqlite_path)"
-  mkdir -p "$(dirname "${sqlite_path}")"
-  touch "${sqlite_path}"
-  chown -R "${APP_USER}:${APP_GROUP}" "${RUNTIME_DIR}"
-
-  log "Installing frontend dependencies."
-  (
-    cd "${SOURCE_DIR}"
-    export DATABASE_URL
-    export NODE_ENV=production
-    export NEXT_TELEMETRY_DISABLED=1
-    npm ci
-    npx prisma generate
-    npx prisma db push
-  )
-}
-
-build_frontend_production_bundle() {
-  load_env_file
-  log "Building the Next.js production bundle."
-  (
-    cd "${SOURCE_DIR}"
-    export DATABASE_URL
-    export NODE_ENV=production
-    export NEXT_TELEMETRY_DISABLED=1
-    npm run build
-  )
-
-  chown -R "${APP_USER}:${APP_GROUP}" \
-    "${SOURCE_DIR}/.next" \
-    "${SOURCE_DIR}/node_modules" \
-    "${RUNTIME_DIR}"
-}
-
 publish_backends() {
   load_env_file
 
-  log "Publishing .NET services."
-  mkdir -p \
+  log "Publishing .NET services and Web.Shell."
+  rm -rf \
+    "${PUBLISH_DIR}/web-shell" \
     "${PUBLISH_DIR}/accounting-api" \
     "${PUBLISH_DIR}/sysadmin-api" \
+    "${PUBLISH_DIR}/sysadmin-web" \
     "${PUBLISH_DIR}/consoleapp"
 
-  dotnet publish "${SOURCE_DIR}/backend/src/Citus.Accounting.Api/Citus.Accounting.Api.csproj" -c Release -o "${PUBLISH_DIR}/accounting-api"
-  dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Api/Citus.SysAdmin.Api.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-api"
-  dotnet publish "${SOURCE_DIR}/backend/src/Citus.ConsoleApp/Citus.ConsoleApp.csproj" -c Release -o "${PUBLISH_DIR}/consoleapp"
+  mkdir -p \
+    "${PUBLISH_DIR}/web-shell" \
+    "${PUBLISH_DIR}/accounting-api" \
+    "${PUBLISH_DIR}/sysadmin-api" \
+    "${PUBLISH_DIR}/sysadmin-web" \
+    "${PUBLISH_DIR}/consoleapp"
+
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Web/Shell/Web.Shell.csproj" -c Release -o "${PUBLISH_DIR}/web-shell"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.Accounting.Api/Citus.Accounting.Api.csproj" -c Release -o "${PUBLISH_DIR}/accounting-api"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Api/Citus.SysAdmin.Api.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-api"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Blazor/Citus.SysAdmin.Blazor.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-web"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.ConsoleApp/Citus.ConsoleApp.csproj" -c Release -o "${PUBLISH_DIR}/consoleapp"
 
   chown -R "${APP_USER}:${APP_GROUP}" "${PUBLISH_DIR}"
 }
@@ -587,7 +865,7 @@ bootstrap_platform_core() {
   (
     cd "${PUBLISH_DIR}/consoleapp"
     export CITUS_ACCOUNTING_DB
-    dotnet ./Citus.ConsoleApp.dll bootstrap-core
+    DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet ./Citus.ConsoleApp.dll bootstrap-core
   )
 }
 
@@ -597,22 +875,53 @@ write_systemd_units() {
 
   cat > "${SYSTEMD_DIR}/citus-web.service" <<EOF
 [Unit]
-Description=Citus Next.js frontend
-After=network.target
+Description=Citus Web.Shell Blazor frontend
+After=network.target citus-accounting-api.service
 Wants=network.target
+Wants=citus-accounting-api.service
 
 [Service]
 Type=simple
 User=${APP_USER}
 Group=${APP_GROUP}
-WorkingDirectory=${SOURCE_DIR}
+WorkingDirectory=${PUBLISH_DIR}/web-shell
 EnvironmentFile=${ENV_FILE}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/local/bin/npm start -- --hostname ${CITUS_FRONTEND_HOST} --port ${CITUS_FRONTEND_PORT}
+Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
+Environment=AppHost__PublicBaseUrl=http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/
+Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
+ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/web-shell/Web.Shell.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
 Restart=always
 RestartSec=5
-KillSignal=SIGINT
 SyslogIdentifier=citus-web
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat > "${SYSTEMD_DIR}/citus-sysadmin-web.service" <<EOF
+[Unit]
+Description=Citus SysAdmin Blazor frontend
+After=network.target citus-sysadmin-api.service
+Wants=network.target
+Wants=citus-sysadmin-api.service
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_GROUP}
+WorkingDirectory=${PUBLISH_DIR}/sysadmin-web
+EnvironmentFile=${ENV_FILE}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
+Environment=AppHost__PathBase=/sysadmin
+Environment=AppHost__SysAdminApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/
+Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
+Environment=AppHost__BusinessAppBaseUrl=${AppHost__BusinessAppBaseUrl}
+ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/sysadmin-web/Citus.SysAdmin.Blazor.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}
+Restart=always
+RestartSec=5
+SyslogIdentifier=citus-sysadmin-web
 
 [Install]
 WantedBy=multi-user.target
@@ -631,8 +940,9 @@ User=${APP_USER}
 Group=${APP_GROUP}
 WorkingDirectory=${PUBLISH_DIR}/accounting-api
 EnvironmentFile=${ENV_FILE}
-Environment=PATH=/usr/bin:/bin
-ExecStart=/usr/bin/dotnet ${PUBLISH_DIR}/accounting-api/Citus.Accounting.Api.dll --urls http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
+ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/accounting-api/Citus.Accounting.Api.dll --urls http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}
 Restart=always
 RestartSec=5
 SyslogIdentifier=citus-accounting-api
@@ -654,8 +964,9 @@ User=${APP_USER}
 Group=${APP_GROUP}
 WorkingDirectory=${PUBLISH_DIR}/sysadmin-api
 EnvironmentFile=${ENV_FILE}
-Environment=PATH=/usr/bin:/bin
-ExecStart=/usr/bin/dotnet ${PUBLISH_DIR}/sysadmin-api/Citus.SysAdmin.Api.dll --urls http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
+ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/sysadmin-api/Citus.SysAdmin.Api.dll --urls http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}
 Restart=always
 RestartSec=5
 SyslogIdentifier=citus-sysadmin-api
@@ -702,6 +1013,9 @@ write_proxy_locations() {
   proxy_set_header X-Forwarded-Proto \$scheme;
   proxy_set_header Upgrade \$http_upgrade;
   proxy_set_header Connection \$connection_upgrade;
+  proxy_read_timeout 300s;
+  proxy_send_timeout 300s;
+  proxy_cache_bypass \$http_upgrade;
 
   location = /health/accounting {
     proxy_pass http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/health;
@@ -709,6 +1023,18 @@ write_proxy_locations() {
 
   location = /health/sysadmin {
     proxy_pass http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/health;
+  }
+
+  location = /health/sysadmin-web {
+    proxy_pass http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin/system/health;
+  }
+
+  location = /sysadmin {
+    return 302 /sysadmin/;
+  }
+
+  location /sysadmin/ {
+    proxy_pass http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT};
   }
 
   location = /core {
@@ -827,7 +1153,7 @@ EOF
 reload_systemd_units() {
   log "Reloading systemd service definitions."
   systemctl daemon-reload
-  systemctl enable citus-web.service citus-accounting-api.service citus-sysadmin-api.service
+  systemctl enable citus-web.service citus-accounting-api.service citus-sysadmin-api.service citus-sysadmin-web.service
 }
 
 restart_nginx_service() {
@@ -839,12 +1165,14 @@ restart_application_services() {
   log "Restarting application services."
   systemctl restart citus-accounting-api.service
   systemctl restart citus-sysadmin-api.service
+  systemctl restart citus-sysadmin-web.service
   systemctl restart citus-web.service
 }
 
 stop_application_services() {
   log "Stopping current application services."
   systemctl stop citus-web.service 2>/dev/null || true
+  systemctl stop citus-sysadmin-web.service 2>/dev/null || true
   systemctl stop citus-accounting-api.service 2>/dev/null || true
   systemctl stop citus-sysadmin-api.service 2>/dev/null || true
 }
@@ -870,7 +1198,8 @@ verify_runtime_health() {
   load_env_file
   wait_for_http "citus-accounting-api" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/health"
   wait_for_http "citus-sysadmin-api" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/health"
-  wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/"
+  wait_for_http "citus-sysadmin-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin/system/health"
+  wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/health"
 }
 
 obtain_or_renew_tls_certificate() {
@@ -906,13 +1235,6 @@ backup_datastores() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   mkdir -p "${BACKUP_DIR}"
 
-  local sqlite_path
-  sqlite_path="$(frontend_sqlite_path)"
-  if [[ -f "${sqlite_path}" ]]; then
-    cp -a "${sqlite_path}" "${BACKUP_DIR}/frontend-${timestamp}.sqlite"
-    log "Backed up the frontend SQLite database."
-  fi
-
   if command -v pg_dump >/dev/null 2>&1; then
     PGPASSWORD="${CITUS_DB_PASSWORD}" \
       pg_dump \
@@ -928,72 +1250,64 @@ backup_datastores() {
 
 print_install_summary() {
   load_env_file
-  local sqlite_path
-  sqlite_path="$(frontend_sqlite_path)"
-  local public_ip
-  public_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  local frontend_url="http://${public_ip}/"
-
-  if is_truthy "${CITUS_ENABLE_HTTPS}" && certificate_files_exist; then
-    frontend_url="https://${CITUS_SERVER_NAME}/"
-  fi
+  local frontend_url
+  frontend_url="$(get_public_frontend_url)"
 
   cat <<EOF
 
 Deployment complete.
 
-Frontend:
+Web.Shell:
   ${frontend_url}
+
+SysAdmin:
+  ${frontend_url%/}/sysadmin/
 
 Reverse-proxied endpoints:
   /accounting -> accounting API
   /core       -> sysadmin API
+  /sysadmin   -> sysadmin setup/admin UI
   /health/accounting
   /health/sysadmin
+  /health/sysadmin-web
 
 Local service ports:
   Frontend:      http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
+  SysAdmin UI:   http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin
   Accounting:    http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}
   SysAdmin:      http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}
 
 Runtime files:
   Source:        ${SOURCE_DIR}
   Publish:       ${PUBLISH_DIR}
-  Frontend DB:   ${sqlite_path}
   Env file:      ${ENV_FILE}
+  .NET root:     ${DOTNET_INSTALL_DIR}
   ACME webroot:  ${ACME_WEBROOT}
 
-Seeded frontend login on first install:
-  Email:         owner@example.com
-  Username:      owner
-  Password:      password123
-
 Important note:
-  The frontend schema is applied with \`prisma db push\`.
   The backend PostgreSQL draft baseline is only applied automatically to an empty database.
+  Web.Shell currently uses CompanyAccess/bootstrap shell context; production identity hardening is still pending.
   Citus services auto-start: ${CITUS_AUTO_START}
   HTTPS enabled:             ${CITUS_ENABLE_HTTPS}
 EOF
 }
 
 install_main() {
+  parse_runtime_args "$@"
   require_root
   require_ubuntu_24_04
   ensure_base_packages
   ensure_dotnet
-  ensure_nodejs
   ensure_app_user
   ensure_layout
   ensure_env_file
   ensure_env_defaults
-  configure_runtime_preferences
+  configure_runtime_preferences "install"
   load_env_file
+  stop_application_services
   sync_source_tree
   ensure_postgres_database
   apply_backend_baseline_if_needed
-  build_frontend
-  seed_frontend_if_empty
-  build_frontend_production_bundle
   publish_backends
   bootstrap_platform_core
   write_systemd_units
@@ -1011,24 +1325,22 @@ install_main() {
 }
 
 upgrade_main() {
+  parse_runtime_args "$@"
   require_root
   require_ubuntu_24_04
   [[ -f "${ENV_FILE}" ]] || fail "Missing ${ENV_FILE}. Run install.sh before upgrade.sh."
   ensure_base_packages
   ensure_dotnet
-  ensure_nodejs
   ensure_app_user
   ensure_layout
   ensure_env_defaults
-  configure_runtime_preferences
+  configure_runtime_preferences "upgrade"
   load_env_file
   stop_application_services
   backup_datastores
   sync_source_tree
   ensure_postgres_database
   apply_backend_baseline_if_needed
-  build_frontend
-  build_frontend_production_bundle
   publish_backends
   bootstrap_platform_core
   write_systemd_units

@@ -1,0 +1,1075 @@
+@page "/documents/source-browser"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Web.Shell.Services
+@using Web.Business.AR.SettlementLookup
+@using Web.Business.AP.SettlementLookup
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellAccountingDocumentBrowserClient BrowserClient
+@inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSalesCommercialDocumentClient CommercialDocuments
+@inject IArSettlementLookupService ArLookupService
+@inject IApSettlementLookupService ApLookupService
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+        @if (HasReturnLink)
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="@ResolvedReturnHref" StartIcon="@Icons.Material.Filled.ArrowBack">
+                @ResolvedReturnLabel
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.Home">
+            Back to shell
+        </MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Source document browser</MudChip>
+    </div>
+
+    <h1 style="margin:0 0 0.75rem 0;">AR/AP Source Documents</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:60rem;">
+        This browser gives source documents and purchase orders a formal company-scoped read surface. It stays read-only and drills into the existing backend-owned detail pages.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(QueryOrigin))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @($"Navigation context: {QueryOrigin}")
+        </MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:0.75rem;align-items:end;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Source Type" Variant="Variant.Outlined" @bind-Value="_selectedSourceType">
+            @foreach (var option in _sourceTypeOptions)
+            {
+                <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Label="Counterparty Role" Variant="Variant.Outlined" Value="_selectedCounterpartyRole" ValueChanged="OnCounterpartyRoleChangedAsync">
+            @foreach (var option in _counterpartyRoleOptions)
+            {
+                <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Label="Counterparty" Variant="Variant.Outlined" @bind-Value="_selectedCounterpartyIdText" Disabled="_counterpartyOptions.Count == 0">
+            @foreach (var option in _counterpartyOptions)
+            {
+                <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isLoading" OnClick="LoadAsync">
+            Refresh
+        </MudButton>
+    </div>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (string.Equals(_selectedSourceType, "purchase_order", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/documents/purchase-order/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.AddBusiness">
+                New Purchase Order
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Warning"
+                       Href="/documents/purchase-orders/approval-requests"
+                       StartIcon="@Icons.Material.Filled.Approval">
+                Approval Requests
+            </MudButton>
+        </div>
+    }
+    else if (string.Equals(_selectedSourceType, "receipt", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/documents/receipt/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.MoveToInbox">
+                New Receipt
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       Href="/company/inventory-purchase-receipt"
+                       StartIcon="@Icons.Material.Filled.Inventory">
+                Receipt Control
+            </MudButton>
+        </div>
+    }
+    else if (string.Equals(_selectedSourceType, "shipment", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/company/inventory-shipment"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.LocalShipping">
+                New Shipment
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Warning"
+                       Href="/company/inventory-sales-issue"
+                       StartIcon="@Icons.Material.Filled.Output">
+                Sales Issue
+            </MudButton>
+        </div>
+    }
+    else if (string.Equals(_selectedSourceType, "quote", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/documents/quote/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.RequestQuote">
+                New Quote
+            </MudButton>
+        </div>
+    }
+    else if (string.Equals(_selectedSourceType, "sales_order", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/documents/sales-order/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.AssignmentTurnedIn">
+                New Sales Order
+            </MudButton>
+        </div>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Active Company</MudText>
+            <MudText Typo="Typo.h6">@ShellState.ActiveCompany.CompanyCode</MudText>
+            <MudText Typo="Typo.body2">@ShellState.ActiveCompany.CompanyName</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Business Focus</MudText>
+            <MudText Typo="Typo.h6">@CurrentFocusLabel</MudText>
+            <MudText Typo="Typo.body2">@CurrentFocusDescription</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Applied Filter</MudText>
+            <MudText Typo="Typo.h6">@CurrentFilterLabel</MudText>
+            <MudText Typo="Typo.body2">@($"{_items.Count} document(s)")</MudText>
+        </MudPaper>
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="0">
+        <MudText Typo="Typo.h6" Class="mb-3">Documents</MudText>
+        @if (_items.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                No source documents matched the current company context and filter.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_items" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Type</MudTh>
+                    <MudTh>Display</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Date</MudTh>
+                    <MudTh>Counterparty</MudTh>
+                    <MudTh>Total</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.SourceTypeLabel</MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.DisplayNumber</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@context.EntityNumber</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.Status</MudText>
+                            @if (HasBillReceiptPostingGate(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetBillReceiptPostingGateColor(context)"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    @context.BillReceiptPostingGateLabel
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @context.BillReceiptPostingGateSummary
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.BillReceiptInvestigationSummary))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.15rem;">
+                                        @context.BillReceiptInvestigationSummary
+                                    </MudText>
+                                }
+                            }
+                            @if (HasInvoiceShipmentPostingGate(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetInvoiceShipmentPostingGateColor(context)"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    @context.InvoiceShipmentPostingGateLabel
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @context.InvoiceShipmentPostingGateSummary
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.InvoiceCoverageSummary))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                        @context.InvoiceCoverageSummary
+                                    </MudText>
+                                }
+                            }
+                            @if (HasPurchaseOrderAnchorGate(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="Color.Info"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    Anchor Governance
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @context.AnchorGovernanceSummary
+                                </MudText>
+                            }
+                            @if (HasReceiptControlStatuses(context))
+                            {
+                                <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem;">
+                                    @foreach (var status in BuildReceiptControlStatusChips(context))
+                                    {
+                                        <MudChip T="string"
+                                                 Variant="Variant.Outlined"
+                                                 Color="@GetReceiptControlStatusColor(status.Value)"
+                                                 Size="Size.Small">
+                                            @status.Label
+                                        </MudChip>
+                                    }
+                                </div>
+                            }
+                            @if (HasShipmentControlStatuses(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetShipmentIssueStatusColor(context.ShipmentIssueMatchStatus)"
+                                         Size="Size.Small"
+                                         Style="margin-top:.35rem;width:max-content;">
+                                    @($"ISSUE: {FormatControlStatus(context.ShipmentIssueMatchStatus ?? "review")}")
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @BuildShipmentIssueSummary(context)
+                                </MudText>
+                            }
+                            @if (HasSalesOrderOutboundStatuses(context))
+                            {
+                                <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem;">
+                                    <MudChip T="string"
+                                             Variant="Variant.Filled"
+                                             Color="@GetSalesOrderOutboundStatusColor(context.SalesOrderAggregateStatus)"
+                                             Size="Size.Small">
+                                        @($"OUTBOUND: {FormatControlStatus(context.SalesOrderAggregateStatus ?? "review")}")
+                                    </MudChip>
+                                    <MudChip T="string"
+                                             Variant="Variant.Outlined"
+                                             Color="@GetSalesOrderOutboundStatusColor(context.SalesOrderShipmentCoverageStatus)"
+                                             Size="Size.Small">
+                                        @($"SHIP: {FormatControlStatus(context.SalesOrderShipmentCoverageStatus ?? "review")}")
+                                    </MudChip>
+                                    <MudChip T="string"
+                                             Variant="Variant.Outlined"
+                                             Color="@GetSalesOrderOutboundStatusColor(context.SalesOrderInvoiceCoverageStatus)"
+                                             Size="Size.Small">
+                                        @($"INV: {FormatControlStatus(context.SalesOrderInvoiceCoverageStatus ?? "review")}")
+                                    </MudChip>
+                                </div>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @BuildSalesOrderOutboundSummary(context)
+                                </MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@context.DocumentDate.ToString("yyyy-MM-dd")</MudText>
+                            <MudText Typo="Typo.caption" Class="text-secondary">@($"Due {context.DueDate?.ToString("yyyy-MM-dd") ?? "n/a"}")</MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body2">@($"{context.CounterpartyLabel}: {context.CounterpartyDisplayName ?? "Unavailable"}")</MudText>
+                            @if (context.CounterpartyId.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.CounterpartyId.Value.ToString("D")</MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
+                            @if (IsPurchaseOrder(context))
+                            {
+                                <MudText Typo="Typo.body2">@((context.TotalOrderedQuantity ?? 0m).ToString("N2"))</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.LineCount ?? 0} line(s) | ordered qty")</MudText>
+                            }
+                            else if (IsReceipt(context))
+                            {
+                                <MudText Typo="Typo.body2">@((context.TotalOrderedQuantity ?? 0m).ToString("N2"))</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.LineCount ?? 0} line(s) | received qty")</MudText>
+                            }
+                            else if (IsShipment(context))
+                            {
+                                <MudText Typo="Typo.body2">@((context.TotalOrderedQuantity ?? 0m).ToString("N2"))</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.LineCount ?? 0} line(s) | shipped qty")</MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@context.TotalAmount.ToString("N2")</MudText>
+                                <MudText Typo="Typo.caption" Class="text-secondary">@($"{context.TransactionCurrencyCode} | base {context.BaseCurrencyCode}")</MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildDocumentOpenHref(context)">
+                                Open Detail
+                            </MudButton>
+                            @if (TryBuildShipmentWorkspaceHref(context.SourceType, context.Id, context.CounterpartyId, out var shipmentHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@shipmentHref" Disabled="WritesBlocked">
+                                    Open Shipment Workspace
+                                </MudButton>
+                            }
+                            @if (TryBuildSalesIssueWorkspaceHref(context.SourceType, context.Id, context.CounterpartyId, out var issueHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@issueHref" Disabled="WritesBlocked">
+                                    Open Sales Issue
+                                </MudButton>
+                            }
+                            @if (TryBuildInvoiceCoverageHref(context.SourceType, context.Id, context.CounterpartyId, out var invoiceCoverageHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Success" Href="@invoiceCoverageHref" Disabled="WritesBlocked">
+                                    Open Invoice Coverage
+                                </MudButton>
+                            }
+                            @if (TryBuildDraftEditorHref(context.SourceType, context.Status, context.Id, out var editHref))
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Success" Href="@editHref" Disabled="WritesBlocked">
+                                    @GetDraftWorkbenchLabel(context.SourceType, context.Status)
+                                </MudButton>
+                            }
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</div>
+
+@code
+{
+    [SupplyParameterFromQuery(Name = "sourceType")]
+    public string? QuerySourceType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "counterpartyRole")]
+    public string? QueryCounterpartyRole { get; set; }
+
+    [SupplyParameterFromQuery(Name = "counterpartyId")]
+    public Guid? QueryCounterpartyId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? QueryOrigin { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnHref")]
+    public string? QueryReturnHref { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnLabel")]
+    public string? QueryReturnLabel { get; set; }
+
+    private readonly IReadOnlyList<SourceTypeOption> _sourceTypeOptions =
+    [
+        new(string.Empty, "All Source Documents"),
+        new("invoice", "Invoices"),
+        new("credit_note", "Credit Notes"),
+        new("bill", "Bills"),
+        new("vendor_credit", "Vendor Credits"),
+        new("purchase_order", "Purchase Orders"),
+        new("receipt", "Receipts"),
+        new("shipment", "Shipments"),
+        new("quote", "Quotes"),
+        new("sales_order", "Sales Orders")
+    ];
+
+    private readonly IReadOnlyList<SourceTypeOption> _counterpartyRoleOptions =
+    [
+        new(string.Empty, "All Counterparties"),
+        new("customer", "Customers"),
+        new("vendor", "Vendors")
+    ];
+
+    private bool _isLoading;
+    private string? _errorText;
+    private string _selectedSourceType = string.Empty;
+    private string _selectedCounterpartyRole = string.Empty;
+    private string _selectedCounterpartyIdText = string.Empty;
+    private IReadOnlyList<ShellAccountingSourceDocumentBrowserItem> _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+    private IReadOnlyList<SourceTypeOption> _counterpartyOptions = Array.Empty<SourceTypeOption>();
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private bool _queryFiltersApplied;
+    private bool HasReturnLink => !string.IsNullOrWhiteSpace(ResolvedReturnHref);
+    private string? ResolvedReturnHref => TryNormalizeReturnHref(QueryReturnHref, out var href) ? href : null;
+    private string ResolvedReturnLabel => string.IsNullOrWhiteSpace(QueryReturnLabel) ? "Back to previous drill-down" : QueryReturnLabel.Trim();
+
+    private string CurrentFilterLabel =>
+        BuildFilterLabel();
+    private string CurrentFocusLabel => BuildFocusLabel();
+    private string CurrentFocusDescription => BuildFocusDescription();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApplyQueryFiltersOnce();
+
+        if (!await LoadCounterpartyOptionsAsync())
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+
+        if (!await EnsureWriteGateStateAsync())
+        {
+            _isLoading = false;
+            return;
+        }
+
+        if (string.Equals(_selectedSourceType, "shipment", StringComparison.OrdinalIgnoreCase))
+        {
+            await LoadShipmentDocumentsAsync();
+            return;
+        }
+
+        if (_selectedSourceType is "quote" or "sales_order")
+        {
+            await LoadCommercialDocumentsAsync();
+            return;
+        }
+
+        var result = await BrowserClient.GetDocumentsAsync(
+            ShellState.ActiveCompany.Id,
+            string.IsNullOrWhiteSpace(_selectedSourceType) ? null : _selectedSourceType,
+            string.IsNullOrWhiteSpace(_selectedCounterpartyRole) ? null : _selectedCounterpartyRole,
+            TryGetSelectedCounterpartyId(out var counterpartyId) ? counterpartyId : null,
+            100);
+
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+            _isLoading = false;
+            return;
+        }
+
+        _items = result.Value ?? Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            _errorText = result.ErrorMessage;
+        }
+
+        if (_items.Count == 0)
+        {
+            _errorText = string.IsNullOrWhiteSpace(_errorText) ? null : _errorText;
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task LoadShipmentDocumentsAsync()
+    {
+        try
+        {
+            if (string.Equals(_selectedCounterpartyRole, "vendor", StringComparison.OrdinalIgnoreCase))
+            {
+                _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+                return;
+            }
+
+            var dashboard = await InventoryShipment.GetDashboardAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            var items = dashboard.RecentShipments
+                .Where(item => !TryGetSelectedCounterpartyId(out var counterpartyId) || item.CustomerId == counterpartyId)
+                .OrderByDescending(item => item.PostedAt ?? item.CreatedAt)
+                .Take(100)
+                .Select(item => MapShipment(dashboard, item))
+                .ToArray();
+
+            _items = items;
+        }
+        catch
+        {
+            _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+            _errorText = "Unable to load shipments right now.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static ShellAccountingSourceDocumentBrowserItem MapShipment(
+        InventoryShipmentDashboard dashboard,
+        InventoryShipmentSummary item) =>
+        new()
+        {
+            SourceType = "shipment",
+            SourceTypeLabel = "Shipment",
+            Id = item.DocumentId,
+            CompanyId = item.CompanyId,
+            EntityNumber = item.DocumentNumber,
+            DisplayNumber = item.DocumentNumber,
+            Status = item.Status,
+            DocumentDate = item.PostingDate,
+            CounterpartyLabel = "Customer",
+            CounterpartyId = item.CustomerId,
+            CounterpartyDisplayName = item.CustomerDisplayName,
+            BaseCurrencyCode = dashboard.BaseCurrencyCode,
+            TotalOrderedQuantity = item.TotalQuantity,
+            LineCount = item.LineCount,
+            ShipmentIssueMatchStatus = item.IssueMatchStatus,
+            ShipmentIssuedQuantity = item.IssuedQuantity,
+            ShipmentRemainingToIssueQuantity = item.RemainingToIssueQuantity,
+            ShipmentCarrierName = item.CarrierName,
+            ShipmentTrackingNumber = item.TrackingNumber
+        };
+
+    private async Task LoadCommercialDocumentsAsync()
+    {
+        try
+        {
+            if (string.Equals(_selectedCounterpartyRole, "vendor", StringComparison.OrdinalIgnoreCase))
+            {
+                _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+                return;
+            }
+
+            var rows = await CommercialDocuments.ListAsync(
+                ShellState.ActiveCompany.Id,
+                _selectedSourceType,
+                TryGetSelectedCounterpartyId(out var counterpartyId) ? counterpartyId : null,
+                100,
+                CancellationToken.None);
+            var mapped = new List<ShellAccountingSourceDocumentBrowserItem>(rows.Count);
+            foreach (var row in rows)
+            {
+                ShellSalesOrderOutboundControlSummary? outboundControl = null;
+                if (string.Equals(row.DocumentType, "sales_order", StringComparison.OrdinalIgnoreCase))
+                {
+                    outboundControl = await CommercialDocuments.GetSalesOrderOutboundControlAsync(
+                        ShellState.ActiveCompany.Id,
+                        row.Id,
+                        CancellationToken.None);
+                }
+
+                mapped.Add(MapCommercialDocument(row, outboundControl));
+            }
+
+            _items = mapped;
+        }
+        catch
+        {
+            _items = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+            _errorText = "Unable to load commercial documents right now.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static ShellAccountingSourceDocumentBrowserItem MapCommercialDocument(
+        ShellSalesCommercialDocumentSummary item,
+        ShellSalesOrderOutboundControlSummary? outboundControl) =>
+        new()
+        {
+            SourceType = item.DocumentType,
+            SourceTypeLabel = item.DocumentType == "quote" ? "Quote" : "Sales Order",
+            Id = item.Id,
+            CompanyId = item.CompanyId,
+            EntityNumber = item.EntityNumber,
+            DisplayNumber = item.DisplayNumber,
+            Status = item.Status,
+            DocumentDate = item.DocumentDate,
+            DueDate = item.DocumentType == "quote" ? item.ExpiresOn : item.RequestedShipDate,
+            CounterpartyLabel = "Customer",
+            CounterpartyId = item.CustomerId,
+            CounterpartyDisplayName = item.CustomerId.ToString("D"),
+            TransactionCurrencyCode = item.TransactionCurrencyCode,
+            BaseCurrencyCode = item.BaseCurrencyCode,
+            TotalAmount = item.TotalAmount,
+            LineCount = item.LineCount,
+            SalesOrderAggregateStatus = outboundControl?.AggregateStatus,
+            SalesOrderShipmentCoverageStatus = outboundControl?.ShipmentCoverageStatus,
+            SalesOrderShippableQuantity = outboundControl?.ShippableQuantity,
+            SalesOrderShippedQuantity = outboundControl?.ShippedQuantity,
+            SalesOrderRemainingToShipQuantity = outboundControl?.RemainingToShipQuantity,
+            SalesOrderInvoiceCoverageStatus = outboundControl?.InvoiceCoverageStatus,
+            SalesOrderInvoicedQuantity = outboundControl?.InvoicedQuantity,
+            SalesOrderRemainingToInvoiceQuantity = outboundControl?.RemainingToInvoiceQuantity
+        };
+
+    private async Task OnCounterpartyRoleChangedAsync(string value)
+    {
+        _selectedCounterpartyRole = value;
+        _selectedCounterpartyIdText = string.Empty;
+        await LoadCounterpartyOptionsAsync();
+    }
+
+    private async Task<bool> LoadCounterpartyOptionsAsync()
+    {
+        if (!await EnsureWriteGateStateAsync())
+        {
+            return false;
+        }
+
+        if (_selectedCounterpartyRole == "customer")
+        {
+            var customers = await ArLookupService.ListCustomersAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            _counterpartyOptions = customers
+                .Select(item => new SourceTypeOption(item.Id.ToString("D"), item.DisplayLabel))
+                .ToArray();
+            return true;
+        }
+
+        if (_selectedCounterpartyRole == "vendor")
+        {
+            var vendors = await ApLookupService.ListVendorsAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            _counterpartyOptions = vendors
+                .Select(item => new SourceTypeOption(item.Id.ToString("D"), item.DisplayLabel))
+                .ToArray();
+            return true;
+        }
+
+        _counterpartyOptions = Array.Empty<SourceTypeOption>();
+        return true;
+    }
+
+    private void ApplyQueryFiltersOnce()
+    {
+        if (_queryFiltersApplied)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(QuerySourceType))
+        {
+            _selectedSourceType = QuerySourceType.Trim().ToLowerInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(QueryCounterpartyRole))
+        {
+            _selectedCounterpartyRole = QueryCounterpartyRole.Trim().ToLowerInvariant();
+        }
+
+        if (QueryCounterpartyId.HasValue)
+        {
+            _selectedCounterpartyIdText = QueryCounterpartyId.Value.ToString("D");
+        }
+
+        _queryFiltersApplied = true;
+    }
+
+    private async Task<bool> EnsureWriteGateStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
+        {
+            _errorText = probe.ErrorMessage;
+        }
+
+        return true;
+    }
+
+    private bool TryGetSelectedCounterpartyId(out Guid counterpartyId)
+    {
+        return Guid.TryParse(_selectedCounterpartyIdText, out counterpartyId);
+    }
+
+    private string BuildFilterLabel()
+    {
+        var sourceLabel = _sourceTypeOptions.FirstOrDefault(option => option.Value == _selectedSourceType)?.Label
+            ?? "All Source Documents";
+        var roleLabel = _counterpartyRoleOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyRole)?.Label
+            ?? "All Counterparties";
+        var counterpartyLabel = _counterpartyOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyIdText)?.Label;
+
+        return string.IsNullOrWhiteSpace(counterpartyLabel)
+            ? $"{sourceLabel} | {roleLabel}"
+            : $"{sourceLabel} | {roleLabel}: {counterpartyLabel}";
+    }
+
+    private string BuildFocusLabel() =>
+        QueryOrigin?.Trim() switch
+        {
+            "Open item detail" => "Open-item related source history",
+            "Current source detail" => "Adjacent source-document slice",
+            "Reverse blocker: blocked source type" => "Reverse-blocker follow-up",
+            "Settlement application reversal history" => "Governed unapply history slice",
+            "Settlement application line source" => "Settlement line source follow-up",
+            "Settlement application line target" => "Settlement line target follow-up",
+            _ => "General source browser"
+        };
+
+    private string BuildFocusDescription()
+    {
+        var sourceLabel = _sourceTypeOptions.FirstOrDefault(option => option.Value == _selectedSourceType)?.Label
+            ?? "all source documents";
+        var roleLabel = _counterpartyRoleOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyRole)?.Label
+            ?? "all counterparties";
+        var counterpartyLabel = _counterpartyOptions.FirstOrDefault(option => option.Value == _selectedCounterpartyIdText)?.Label;
+        var counterpartyScope = string.IsNullOrWhiteSpace(counterpartyLabel)
+            ? $"{roleLabel.ToLowerInvariant()}"
+            : $"{roleLabel.TrimEnd('s')}: {counterpartyLabel}";
+
+        return QueryOrigin?.Trim() switch
+        {
+            "Open item detail" =>
+                $"Browsing {sourceLabel.ToLowerInvariant()} for {counterpartyScope} linked to the current open-item drill-down.",
+            "Current source detail" =>
+                $"Browsing the {sourceLabel.ToLowerInvariant()} slice nearest the current source-document review context.",
+            "Reverse blocker: blocked source type" =>
+                $"Browsing the blocked {sourceLabel.ToLowerInvariant()} subset while resolving AR/AP reverse blockers.",
+            "Settlement application reversal history" =>
+                $"Browsing source documents referenced by governed settlement-application reversal history for {counterpartyScope}.",
+            "Settlement application line source" =>
+                $"Browsing source-side {sourceLabel.ToLowerInvariant()} reached from a settlement application line.",
+            "Settlement application line target" =>
+                $"Browsing target-side {sourceLabel.ToLowerInvariant()} reached from a settlement application line.",
+            _ =>
+                $"Browsing {sourceLabel.ToLowerInvariant()} under the current company scope for {counterpartyScope}."
+        };
+    }
+
+    private static bool TryBuildDraftEditorHref(string? sourceType, string? status, Guid documentId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase) &&
+            !(sourceType?.Trim().ToLowerInvariant() is "bill" or "invoice" &&
+              string.Equals(status, "submitted", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        href = sourceType?.Trim().ToLowerInvariant() switch
+        {
+            "invoice" => $"/documents/invoice/draft-editor?draftId={documentId:D}",
+            "credit_note" => $"/documents/credit-note/draft-editor?draftId={documentId:D}",
+            "bill" => $"/documents/bill/draft-editor?draftId={documentId:D}",
+            "vendor_credit" => $"/documents/vendor-credit/draft-editor?draftId={documentId:D}",
+            "purchase_order" => $"/documents/purchase-order/draft-editor?draftId={documentId:D}",
+            "receipt" => $"/documents/receipt/draft-editor?draftId={documentId:D}",
+            "quote" => $"/documents/quote/draft-editor?draftId={documentId:D}",
+            "sales_order" => $"/documents/sales-order/draft-editor?draftId={documentId:D}",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static string GetDraftWorkbenchLabel(string? sourceType, string? status) =>
+        string.Equals(status, "submitted", StringComparison.OrdinalIgnoreCase)
+            ? sourceType?.Trim().ToLowerInvariant() switch
+            {
+                "bill" => "Open Bill Workbench",
+                "invoice" => "Open Invoice Workbench",
+                "receipt" => "Open Receipt Workbench",
+                "quote" => "Open Quote Workbench",
+                "sales_order" => "Open SO Workbench",
+                _ => "Open Workbench"
+            }
+            : sourceType?.Trim().ToLowerInvariant() switch
+            {
+                "receipt" => "Open Receipt Workbench",
+                "quote" => "Open Quote Workbench",
+                "sales_order" => "Open SO Workbench",
+                _ => "Edit Draft"
+            };
+
+    private static bool TryBuildShipmentWorkspaceHref(string? sourceType, Guid documentId, Guid? counterpartyId, out string href)
+    {
+        href = string.Empty;
+        if (string.Equals(sourceType, "invoice", StringComparison.OrdinalIgnoreCase))
+        {
+            href = $"/company/inventory-shipment?sourceType=invoice&invoiceId={documentId:D}";
+            return true;
+        }
+
+        if (string.Equals(sourceType, "sales_order", StringComparison.OrdinalIgnoreCase))
+        {
+            href = counterpartyId.HasValue
+                ? $"/company/inventory-shipment?sourceType=sales_order&salesOrderId={documentId:D}&customerId={counterpartyId.Value:D}"
+                : $"/company/inventory-shipment?sourceType=sales_order&salesOrderId={documentId:D}";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryBuildSalesIssueWorkspaceHref(string? sourceType, Guid documentId, Guid? counterpartyId, out string href)
+    {
+        href = string.Empty;
+        if (!string.Equals(sourceType, "shipment", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        href = counterpartyId.HasValue
+            ? $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={documentId:D}&customerId={counterpartyId.Value:D}"
+            : $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={documentId:D}";
+        return true;
+    }
+
+    private static bool TryBuildInvoiceCoverageHref(string? sourceType, Guid documentId, Guid? counterpartyId, out string href)
+    {
+        href = string.Empty;
+        if (string.Equals(sourceType, "shipment", StringComparison.OrdinalIgnoreCase))
+        {
+            href = counterpartyId.HasValue
+                ? $"/documents/invoice/draft-editor?origin=shipment-invoice-handoff&shipmentId={documentId:D}&customerId={counterpartyId.Value:D}"
+                : $"/documents/invoice/draft-editor?origin=shipment-invoice-handoff&shipmentId={documentId:D}";
+            return true;
+        }
+
+        if (string.Equals(sourceType, "sales_order", StringComparison.OrdinalIgnoreCase))
+        {
+            href = counterpartyId.HasValue
+                ? $"/documents/invoice/draft-editor?origin=sales-order-invoice-handoff&salesOrderId={documentId:D}&customerId={counterpartyId.Value:D}"
+                : $"/documents/invoice/draft-editor?origin=sales-order-invoice-handoff&salesOrderId={documentId:D}";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasBillReceiptPostingGate(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(item.BillReceiptPostingGateLabel);
+
+    private static Color GetBillReceiptPostingGateColor(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.BillReceiptAllowsPost switch
+        {
+            true => Color.Success,
+            false => Color.Info,
+            _ => Color.Default
+        };
+
+    private static bool HasInvoiceShipmentPostingGate(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "invoice", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(item.InvoiceShipmentPostingGateLabel);
+
+    private static bool IsPurchaseOrder(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "purchase_order", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsReceipt(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "receipt", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsShipment(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "shipment", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildDocumentOpenHref(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.SourceType.Trim().ToLowerInvariant() switch
+        {
+            "receipt" => $"/documents/receipt/draft-editor?draftId={item.Id:D}",
+            "shipment" => $"/company/inventory-shipment?shipmentId={item.Id:D}",
+            "quote" => $"/documents/quote/draft-editor?draftId={item.Id:D}",
+            "sales_order" => $"/documents/sales-order/draft-editor?draftId={item.Id:D}",
+            _ => $"/documents/{item.SourceType}/{item.Id:D}"
+        };
+
+    private static bool HasPurchaseOrderAnchorGate(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsPurchaseOrder(item) &&
+        !string.IsNullOrWhiteSpace(item.AnchorGovernanceSummary);
+
+    private static bool HasReceiptControlStatuses(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsReceipt(item) &&
+        (!string.IsNullOrWhiteSpace(item.ReceiptActivationStatus) ||
+         !string.IsNullOrWhiteSpace(item.ReceiptValuationStatus) ||
+         !string.IsNullOrWhiteSpace(item.ReceiptCostLayerEmissionStatus) ||
+         !string.IsNullOrWhiteSpace(item.ReceiptGrIrBridgeStatus) ||
+         !string.IsNullOrWhiteSpace(item.ReceiptGrIrSettlementStatus) ||
+         !string.IsNullOrWhiteSpace(item.ReceiptPurchaseVarianceStatus));
+
+    private static bool HasShipmentControlStatuses(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsShipment(item) &&
+        (!string.IsNullOrWhiteSpace(item.ShipmentIssueMatchStatus) ||
+         item.ShipmentIssuedQuantity.HasValue ||
+         item.ShipmentRemainingToIssueQuantity.HasValue);
+
+    private static bool HasSalesOrderOutboundStatuses(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.SourceType, "sales_order", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(item.SalesOrderAggregateStatus);
+
+    private static IReadOnlyList<(string Label, string Value)> BuildReceiptControlStatusChips(ShellAccountingSourceDocumentBrowserItem item)
+    {
+        var statuses = new List<(string Label, string Value)>(6);
+        AddReceiptStatus(statuses, "INV", item.ReceiptActivationStatus);
+        AddReceiptStatus(statuses, "VAL", item.ReceiptValuationStatus);
+        AddReceiptStatus(statuses, "LAYER", item.ReceiptCostLayerEmissionStatus);
+        AddReceiptStatus(statuses, "GR/IR", item.ReceiptGrIrBridgeStatus);
+        AddReceiptStatus(statuses, "SETTLE", item.ReceiptGrIrSettlementStatus);
+        AddReceiptStatus(statuses, "PPV", item.ReceiptPurchaseVarianceStatus);
+        return statuses;
+    }
+
+    private static void AddReceiptStatus(List<(string Label, string Value)> statuses, string label, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            statuses.Add(($"{label}: {FormatControlStatus(value)}", value));
+        }
+    }
+
+    private static string FormatControlStatus(string status) =>
+        status.Replace('_', ' ').Trim();
+
+    private static Color GetReceiptControlStatusColor(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        if (normalized is null)
+        {
+            return Color.Default;
+        }
+
+        if (normalized.Contains("posted", StringComparison.Ordinal) ||
+            normalized.Contains("settled", StringComparison.Ordinal) ||
+            normalized.Contains("cleared", StringComparison.Ordinal) ||
+            normalized.Contains("emitted", StringComparison.Ordinal) ||
+            normalized.Contains("valued", StringComparison.Ordinal) ||
+            normalized.Contains("activated", StringComparison.Ordinal) ||
+            normalized.Contains("no_variance", StringComparison.Ordinal))
+        {
+            return Color.Success;
+        }
+
+        if (normalized.Contains("blocked", StringComparison.Ordinal) ||
+            normalized.Contains("failed", StringComparison.Ordinal) ||
+            normalized.Contains("stale", StringComparison.Ordinal) ||
+            normalized.Contains("exceeded", StringComparison.Ordinal))
+        {
+            return Color.Warning;
+        }
+
+        return Color.Info;
+    }
+
+    private static string BuildShipmentIssueSummary(ShellAccountingSourceDocumentBrowserItem item)
+    {
+        var issued = item.ShipmentIssuedQuantity ?? 0m;
+        var remaining = item.ShipmentRemainingToIssueQuantity ?? 0m;
+        var tracking = string.IsNullOrWhiteSpace(item.ShipmentTrackingNumber)
+            ? "no tracking"
+            : $"tracking {item.ShipmentTrackingNumber}";
+
+        return $"{issued:N2} issued, {remaining:N2} remaining | {tracking}";
+    }
+
+    private static Color GetShipmentIssueStatusColor(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "fully_issued" => Color.Success,
+            "over_issued" => Color.Warning,
+            "partially_issued" => Color.Info,
+            "no_issue" => Color.Default,
+            _ => Color.Info
+        };
+    }
+
+    private static string BuildSalesOrderOutboundSummary(ShellAccountingSourceDocumentBrowserItem item)
+    {
+        var shipped = item.SalesOrderShippedQuantity ?? 0m;
+        var shippable = item.SalesOrderShippableQuantity ?? 0m;
+        var remainingShip = item.SalesOrderRemainingToShipQuantity ?? 0m;
+        var invoiced = item.SalesOrderInvoicedQuantity ?? 0m;
+        var remainingInvoice = item.SalesOrderRemainingToInvoiceQuantity ?? 0m;
+        return $"{shipped:N2}/{shippable:N2} shipped, {remainingShip:N2} to ship | {invoiced:N2} invoiced, {remainingInvoice:N2} to invoice";
+    }
+
+    private static Color GetSalesOrderOutboundStatusColor(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "closed" or "fully_shipped" or "fully_invoiced" => Color.Success,
+            "over_shipped" or "over_invoiced" => Color.Warning,
+            "partially_shipped" or "partially_invoiced" or "issued" => Color.Info,
+            "draft" or "not_shipped" or "not_invoiced" or "no_inventory_handoff" => Color.Default,
+            _ => Color.Info
+        };
+    }
+
+    private static Color GetInvoiceShipmentPostingGateColor(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.InvoiceShipmentAllowsPost switch
+        {
+            true => Color.Success,
+            false => string.Equals(item.InvoiceShipmentMatchStatus, "over_shipped", StringComparison.OrdinalIgnoreCase)
+                ? Color.Warning
+                : Color.Info,
+            _ => Color.Default
+        };
+
+    private static bool TryNormalizeReturnHref(string? href, out string normalizedHref)
+    {
+        normalizedHref = string.Empty;
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return false;
+        }
+
+        var trimmed = href.Trim();
+        if (!trimmed.StartsWith('/', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        normalizedHref = trimmed;
+        return true;
+    }
+
+    private sealed record SourceTypeOption(string Value, string Label);
+}

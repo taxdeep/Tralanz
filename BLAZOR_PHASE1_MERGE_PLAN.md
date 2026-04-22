@@ -12,6 +12,27 @@ This plan is governed by:
 - [CITUS_PRODUCT_ENGINEERING_AUTHORITY.md](./CITUS_PRODUCT_ENGINEERING_AUTHORITY.md)
 - [WEBVELLA_CORE_ADAPTATION.md](./WEBVELLA_CORE_ADAPTATION.md)
 
+## UI Theme Decision
+
+`Volo.Abp.LeptonXLiteTheme.SourceCode` can be used as reference material, but it is not the primary Citus product UI system.
+
+Use it for:
+
+- ABP-governed account/admin surface references
+- shell and layout density ideas
+- theme-token organization
+- selective source-level learning where it helps the Blazor/MudBlazor shell
+
+Do not use it to replace:
+
+- Citus accounting workflow navigation
+- company-context and backend-readiness panels
+- source-document review flows
+- AR/AP control-layer UI
+- MudBlazor-based Citus component primitives
+
+The product UI direction remains Citus-owned Blazor Web App + MudBlazor, with LeptonX absorbed selectively rather than adopted as the controlling system.
+
 ## 1. Phase 1 Goal
 
 Phase 1 is not a full accounting UI migration.

@@ -33,11 +33,27 @@
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
+            Label="Company status"
+            Value="@FormatCompanyStatus(ShellState.ActiveCompany.Status)"
+            Description="Active company lifecycle gates whether business writes remain available."
+            Icon="@Icons.Material.Filled.Policy"
+            Color="@(ShellState.ActiveCompany.IsReadOnly ? Color.Warning : Color.Success)" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
             Label="Maintenance"
             Value="@(ShellState.MaintenanceState.Enabled ? "Active" : "Normal")"
             Description="Business write behavior must reflect platform maintenance state."
             Icon="@Icons.Material.Filled.BuildCircle"
             Color="Color.Secondary" />
+    </MudItem>
+    <MudItem xs="12" md="6" lg="3">
+        <CitusStatCard
+            Label="Write mode"
+            Value="@(ShellState.AreWritesBlocked ? "Blocked" : "Writable")"
+            Description="@ShellState.WriteBlockMessage"
+            Icon="@Icons.Material.Filled.EditOff"
+            Color="@(ShellState.AreWritesBlocked ? Color.Warning : Color.Info)" />
     </MudItem>
 </MudGrid>
 
@@ -112,11 +128,27 @@
         new("Company", $"{ShellState.ActiveCompany.CompanyName} ({ShellState.ActiveCompany.CompanyCode})"),
         new("Base currency", ShellState.ActiveCompany.BaseCurrencyCode),
         new("Multi-currency", ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled"),
+        new("Company status", FormatCompanyStatus(ShellState.ActiveCompany.Status)),
+        new("Company write mode", ShellState.ActiveCompany.IsReadOnly ? "Read-only" : "Writable"),
         new("Available companies", ShellState.AvailableCompanies.Count.ToString()),
-        new("Maintenance mode", ShellState.MaintenanceState.Enabled ? ShellState.MaintenanceState.Message : "Disabled")
+        new("Maintenance mode", ShellState.MaintenanceState.Enabled ? ShellState.MaintenanceState.Message : "Disabled"),
+        new("Effective write gate", ShellState.WriteBlockMessage)
     ];
 
     private sealed record class DomainRow(string Title, string Stage, string Description, Color Color);
 
     private sealed record class SnapshotRow(string Field, string Value);
+
+    private static string FormatCompanyStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return "Active";
+        }
+
+        return string.Join(' ',
+            status.Trim()
+                .Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(static part => char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant()));
+    }
 }

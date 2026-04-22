@@ -1,13 +1,19 @@
 using Citus.Ui.Shared.Platform;
+using Citus.Ui.Shared.Control;
+using Citus.SysAdmin.Blazor.State;
 
 namespace Citus.SysAdmin.Blazor.Services;
 
-public sealed class PlatformCoreClient(HttpClient httpClient, ILogger<PlatformCoreClient> logger)
+public sealed class PlatformCoreClient(
+    HttpClient httpClient,
+    AppShellState shellState,
+    ILogger<PlatformCoreClient> logger)
 {
     public async Task<PlatformBootstrapReportSummary?> BootstrapAsync(CancellationToken cancellationToken = default)
     {
         try
         {
+            ApplySessionHeader();
             using var response = await httpClient.PostAsync("core/bootstrap", content: null, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -31,6 +37,7 @@ public sealed class PlatformCoreClient(HttpClient httpClient, ILogger<PlatformCo
     {
         try
         {
+            ApplySessionHeader();
             return await httpClient.GetFromJsonAsync<PlatformOverviewSummary>("core", cancellationToken);
         }
         catch (Exception ex)
@@ -44,6 +51,7 @@ public sealed class PlatformCoreClient(HttpClient httpClient, ILogger<PlatformCo
     {
         try
         {
+            ApplySessionHeader();
             return await httpClient.GetFromJsonAsync<IReadOnlyList<PlatformModuleSummary>>("core/modules", cancellationToken) ??
                 Array.Empty<PlatformModuleSummary>();
         }
@@ -58,6 +66,7 @@ public sealed class PlatformCoreClient(HttpClient httpClient, ILogger<PlatformCo
     {
         try
         {
+            ApplySessionHeader();
             return await httpClient.GetFromJsonAsync<IReadOnlyList<PlatformEntitySummary>>("core/entities", cancellationToken) ??
                 Array.Empty<PlatformEntitySummary>();
         }
@@ -77,6 +86,7 @@ public sealed class PlatformCoreClient(HttpClient httpClient, ILogger<PlatformCo
 
         try
         {
+            ApplySessionHeader();
             return await httpClient.GetFromJsonAsync<PlatformEntityDetail>(
                 $"core/entities/{Uri.EscapeDataString(entityName.Trim())}",
                 cancellationToken);
@@ -85,6 +95,16 @@ public sealed class PlatformCoreClient(HttpClient httpClient, ILogger<PlatformCo
         {
             logger.LogWarning(ex, "Unable to load platform entity detail for {EntityName}.", entityName);
             return null;
+        }
+    }
+
+    private void ApplySessionHeader()
+    {
+        httpClient.DefaultRequestHeaders.Remove(SysAdminAuthConstants.SessionHeaderName);
+
+        if (shellState.IsAuthenticated)
+        {
+            httpClient.DefaultRequestHeaders.Add(SysAdminAuthConstants.SessionHeaderName, shellState.SessionToken);
         }
     }
 }

@@ -211,6 +211,11 @@ public sealed class DefaultPostingValidator : IPostingValidator
                 throw new InvalidOperationException("FX revaluation document must target a foreign transaction currency.");
             }
 
+            if (fxRevaluation.RevaluationLines.Count == 0)
+            {
+                throw new InvalidOperationException("FX revaluation document must contain at least one revaluation line.");
+            }
+
             if (fxRevaluation.FxSnapshot is null)
             {
                 throw new InvalidOperationException("FX revaluation document requires a stored FX snapshot.");
@@ -229,6 +234,45 @@ public sealed class DefaultPostingValidator : IPostingValidator
             if (fxRevaluation.RevaluationLines.Any(static line => line.OffsetAccountId == Guid.Empty))
             {
                 throw new InvalidOperationException("FX revaluation document contains a line without an unrealized FX offset account.");
+            }
+        }
+
+        if (document is OpenItemAdjustmentDocument adjustment)
+        {
+            if (adjustment.AdjustmentLines.Count == 0)
+            {
+                throw new InvalidOperationException("Open item adjustment document must contain at least one line before posting.");
+            }
+
+            if (adjustment.AdjustmentLines.Any(static line => line.AdjustmentAmountTx <= 0m || line.AdjustmentAmountBase <= 0m))
+            {
+                throw new InvalidOperationException("Open item adjustment lines must carry positive transaction and base amounts.");
+            }
+        }
+
+        if (document is ReceiptGrIrPostingDocument grIrPosting)
+        {
+            if (grIrPosting.TotalAmountBase <= 0m)
+            {
+                throw new InvalidOperationException("Receipt GR/IR posting must carry a positive base amount.");
+            }
+
+            if (grIrPosting.GrIrLines.Any(static line => line.AmountBase <= 0m))
+            {
+                throw new InvalidOperationException("Receipt GR/IR posting lines must carry positive base amounts.");
+            }
+        }
+
+        if (document is ReceiptGrIrSettlementPostingDocument grIrSettlement)
+        {
+            if (grIrSettlement.TotalAmountBase <= 0m)
+            {
+                throw new InvalidOperationException("Receipt GR/IR settlement posting must carry a positive base amount.");
+            }
+
+            if (grIrSettlement.SettlementLines.Any(static line => line.AmountBase <= 0m))
+            {
+                throw new InvalidOperationException("Receipt GR/IR settlement posting lines must carry positive base amounts.");
             }
         }
 
@@ -276,6 +320,12 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildPayBillFragments(payBill, fxResult).AsReadOnly()),
             FxRevaluationDocument fxRevaluation => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildFxRevaluationFragments(fxRevaluation).AsReadOnly()),
+            OpenItemAdjustmentDocument adjustment => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildOpenItemAdjustmentFragments(adjustment).AsReadOnly()),
+            ReceiptGrIrPostingDocument grIrPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildReceiptGrIrPostingFragments(grIrPosting).AsReadOnly()),
+            ReceiptGrIrSettlementPostingDocument grIrSettlement => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -666,6 +716,147 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
         return fragments;
     }
 
+    private static List<PostingFragment> BuildOpenItemAdjustmentFragments(
+        OpenItemAdjustmentDocument adjustment)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var line in adjustment.AdjustmentLines)
+        {
+            if (line.ReducesDebitBalance)
+            {
+                fragments.Add(new PostingFragment(
+                    line.OffsetAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    0m,
+                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}"));
+                fragments.Add(new PostingFragment(
+                    line.ControlAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    0m,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    line.Description,
+                    ControlRole: line.ControlRole,
+                    PartyId: line.PartyId));
+            }
+            else
+            {
+                fragments.Add(new PostingFragment(
+                    line.ControlAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    0m,
+                    line.Description,
+                    ControlRole: line.ControlRole,
+                    PartyId: line.PartyId));
+                fragments.Add(new PostingFragment(
+                    line.OffsetAccountId,
+                    adjustment.TransactionCurrencyCode,
+                    0m,
+                    line.AdjustmentAmountTx,
+                    0m,
+                    line.AdjustmentAmountBase,
+                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}"));
+            }
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    private static List<PostingFragment> BuildReceiptGrIrPostingFragments(
+        ReceiptGrIrPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var accountGroup in document.GrIrLines.GroupBy(static line => line.InventoryAssetAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"Inventory asset recognition for {document.DisplayNumber.Value}",
+                ControlRole: "inventory_asset"));
+        }
+
+        var creditAmount = Round6(document.GrIrLines.Sum(static line => line.AmountBase));
+        fragments.Add(new PostingFragment(
+            document.GrIrClearingAccountId,
+            document.BaseCurrencyCode,
+            0m,
+            creditAmount,
+            0m,
+            creditAmount,
+            $"GR/IR clearing for receipt {document.ReceiptDocumentId}",
+            ControlRole: "grir_clearing"));
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    private static List<PostingFragment> BuildReceiptGrIrSettlementPostingFragments(
+        ReceiptGrIrSettlementPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.GrIrClearingAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"GR/IR settlement clearing for {document.DisplayNumber.Value}",
+                ControlRole: "grir_clearing"));
+        }
+
+        foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.BillOffsetAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                0m,
+                amount,
+                0m,
+                amount,
+                $"Bill-side GR/IR settlement offset for {document.DisplayNumber.Value}",
+                ControlRole: "grir_bill_offset"));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
     private static void AppendReceivePaymentRealizedFxFragment(
         ReceivePaymentDocument receivePayment,
         List<PostingFragment> fragments,
@@ -926,6 +1117,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 $"Posting fragments are not balanced in base currency after FX conversion. Delta: {delta:0.00####}.");
         }
     }
+
+    private static decimal Round6(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
 }
 
 public sealed class DefaultJournalAggregator : IJournalAggregator
@@ -938,6 +1132,7 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(fragments);
         ArgumentNullException.ThrowIfNull(fxResult);
+        EnsureJournalInvariants(document, fragments, fxResult);
 
         var lines = fragments
             .Select((fragment, index) => new JournalEntryDraftLine(
@@ -961,6 +1156,80 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
             document.BaseCurrencyCode,
             fxResult.Snapshot,
             lines);
+    }
+
+    private static void EnsureJournalInvariants(
+        IPostingDocument document,
+        IReadOnlyList<PostingFragment> fragments,
+        FxResolutionResult fxResult)
+    {
+        if (fragments.Count == 0)
+        {
+            throw new InvalidOperationException("Posting fragments must contain at least one journal line.");
+        }
+
+        if (fxResult.Snapshot.BaseCurrencyCode != document.BaseCurrencyCode ||
+            fxResult.Snapshot.QuoteCurrencyCode != document.TransactionCurrencyCode)
+        {
+            throw new InvalidOperationException(
+                "FX snapshot currency pair does not match the posting document currency context.");
+        }
+
+        if (document.TransactionCurrencyCode == document.BaseCurrencyCode && fxResult.Snapshot.Rate != 1m)
+        {
+            throw new InvalidOperationException(
+                "Base-currency posting requires an identity FX rate.");
+        }
+
+        foreach (var fragment in fragments)
+        {
+            if (fragment.AccountId == Guid.Empty)
+            {
+                throw new InvalidOperationException("Posting fragment account id is required.");
+            }
+
+            if (fragment.CurrencyCode != document.TransactionCurrencyCode)
+            {
+                throw new InvalidOperationException(
+                    "Posting fragment currency does not match the posting document transaction currency.");
+            }
+
+            if (fragment.TxDebit < 0m ||
+                fragment.TxCredit < 0m ||
+                fragment.Debit < 0m ||
+                fragment.Credit < 0m)
+            {
+                throw new InvalidOperationException("Posting fragments cannot contain negative debit or credit amounts.");
+            }
+
+            if (fragment.TxDebit > 0m && fragment.TxCredit > 0m)
+            {
+                throw new InvalidOperationException(
+                    "Posting fragment cannot carry both transaction debit and transaction credit amounts.");
+            }
+
+            if (fragment.Debit > 0m && fragment.Credit > 0m)
+            {
+                throw new InvalidOperationException(
+                    "Posting fragment cannot carry both base debit and base credit amounts.");
+            }
+        }
+
+        var transactionDelta = fragments.Sum(static fragment => fragment.TxDebit) -
+            fragments.Sum(static fragment => fragment.TxCredit);
+        if (transactionDelta != 0m)
+        {
+            throw new InvalidOperationException(
+                $"Posting fragments are not balanced in transaction currency. Delta: {transactionDelta:0.00####}.");
+        }
+
+        var baseDelta = fragments.Sum(static fragment => fragment.Debit) -
+            fragments.Sum(static fragment => fragment.Credit);
+        if (baseDelta != 0m)
+        {
+            throw new InvalidOperationException(
+                $"Posting fragments are not balanced in base currency. Delta: {baseDelta:0.00####}.");
+        }
     }
 }
 

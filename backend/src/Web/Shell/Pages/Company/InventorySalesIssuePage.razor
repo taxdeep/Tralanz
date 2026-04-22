@@ -1,0 +1,1156 @@
+@page "/company/inventory-sales-issue"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellCounterpartyOnboardingClient CounterpartyClient
+@inject ShellInventoryIssueClient InventoryIssue
+@inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSourceDocumentDraftClient Drafts
+@inject ISnackbar Snackbar
+
+<PageTitle>Sales Issue</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D</MudText>
+            <MudText Typo="Typo.h4">Sales Issue</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Record outbound inventory and cost truth directly inside Inventory. Shipment remains the fulfillment/source authority, while Sales Issue consumes either invoice-origin intent or shipment-origin fulfillment into inventory and cost truth.
+            </MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
+            Company-ready hand-off brought you into the first outbound inventory workspace. Confirm customer, warehouse, item, and quantity here before AR-to-Inventory shipment bridging lands later.
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_sourceDocumentDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            @GetSourceHandoffNotice()
+        </MudAlert>
+    }
+    @if (_invoiceIssueHandoffSummary is not null)
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       Disabled="@(_isSaving || WritesBlocked)"
+                       OnClick="ReloadInvoiceRemainingLinesAsync">
+                Load Remaining From Invoice
+            </MudButton>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Invoice hand-off qty</MudText>
+                <MudText Typo="Typo.h6">@_invoiceIssueHandoffSummary.InvoiceOutboundQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceIssueHandoffSummary.InvoiceOutboundLineCount inventory-grade line(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Already issued</MudText>
+                <MudText Typo="Typo.h6">@_invoiceIssueHandoffSummary.IssuedQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_invoiceIssueHandoffSummary.IssueCount anchored issue(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Current form qty</MudText>
+                <MudText Typo="Typo.h6">@CurrentIssueDraftQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">Projected total after this issue: @ProjectedIssuedQuantity.ToString("N2")</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Projected status</MudText>
+                <MudText Typo="Typo.h6">@ProjectedInvoiceIssueStatusLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ProjectedInvoiceIssueStatusSummary</MudText>
+            </MudPaper>
+        </div>
+        @if (_invoiceIssueHandoffSummary.LineSummaries.Count > 0)
+        {
+            <MudTable Items="_invoiceIssueHandoffSummary.LineSummaries" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Item</MudTh>
+                    <MudTh>Warehouse</MudTh>
+                    <MudTh>UOM</MudTh>
+                    <MudTh>Invoice Qty</MudTh>
+                    <MudTh>Issued Qty</MudTh>
+                    <MudTh>Remaining</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                    <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                    <MudTd>@context.UomCode</MudTd>
+                    <MudTd>@context.InvoiceQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.IssuedQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.RemainingQuantity.ToString("N2")</MudTd>
+                    <MudTd>@FormatInvoiceIssueLineStatus(context.MatchStatus)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        @if (_invoiceIssueHandoffSummary.RecentIssues.Count > 0)
+        {
+            <MudTable Items="_invoiceIssueHandoffSummary.RecentIssues" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Issue</MudTh>
+                    <MudTh>Date</MudTh>
+                    <MudTh>Qty</MudTh>
+                    <MudTh>Cost (Base)</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.DocumentNumber</MudTd>
+                    <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                    <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
+                    <MudTd>@context.Status</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    }
+    @if (_shipmentIssueHandoffSummary is not null)
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       Disabled="@(_isSaving || WritesBlocked)"
+                       OnClick="ReloadShipmentRemainingLinesAsync">
+                Load Remaining From Shipment
+            </MudButton>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Shipment qty</MudText>
+                <MudText Typo="Typo.h6">@_shipmentIssueHandoffSummary.TotalQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@_shipmentIssueHandoffSummary.LineCount shipment line(s)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Already issued</MudText>
+                <MudText Typo="Typo.h6">@_shipmentIssueHandoffSummary.IssuedQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@FormatInvoiceIssueLineStatus(_shipmentIssueHandoffSummary.IssueMatchStatus)</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Current form qty</MudText>
+                <MudText Typo="Typo.h6">@CurrentIssueDraftQuantity.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">Projected total after this issue: @ProjectedShipmentIssuedQuantity.ToString("N2")</MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.caption" Class="text-secondary">Projected status</MudText>
+                <MudText Typo="Typo.h6">@ProjectedShipmentIssueStatusLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ProjectedShipmentIssueStatusSummary</MudText>
+            </MudPaper>
+        </div>
+        @if (_shipmentIssueHandoffSummary.IssueLineSummaries.Count > 0)
+        {
+            <MudTable Items="_shipmentIssueHandoffSummary.IssueLineSummaries" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Item</MudTh>
+                    <MudTh>Warehouse</MudTh>
+                    <MudTh>UOM</MudTh>
+                    <MudTh>Shipment Qty</MudTh>
+                    <MudTh>Issued Qty</MudTh>
+                    <MudTh>Remaining</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@($"{context.ItemCode} - {context.ItemName}")</MudTd>
+                    <MudTd>@($"{context.WarehouseCode} - {context.WarehouseName}")</MudTd>
+                    <MudTd>@context.UomCode</MudTd>
+                    <MudTd>@context.ShipmentQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.IssuedQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.RemainingToIssueQuantity.ToString("N2")</MudTd>
+                    <MudTd>@FormatInvoiceIssueLineStatus(context.MatchStatus)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        @if (_shipmentIssueHandoffSummary.RecentIssues.Count > 0)
+        {
+            <MudTable Items="_shipmentIssueHandoffSummary.RecentIssues" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Issue</MudTh>
+                    <MudTh>Date</MudTh>
+                    <MudTh>Qty</MudTh>
+                    <MudTh>Cost (Base)</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.DocumentNumber</MudTd>
+                    <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                    <MudTd>@context.TotalQuantity.ToString("N2")</MudTd>
+                    <MudTd>@context.TotalCostBase.ToString("N2")</MudTd>
+                    <MudTd>@context.Status</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    }
+    @if (_shipmentIssueHandoffSummary is not null && !HasOutstandingShipmentIssueQuantity)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            The current shipment is already fully covered by anchored sales issue truth. The issue form stays empty by default so the operator does not create an accidental over-issue.
+        </MudAlert>
+    }
+    @if (_invoiceIssueHandoffSummary is not null && !HasOutstandingInvoiceIssueQuantity)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            The current invoice hand-off is already fully covered by anchored sales issue truth. The issue form stays empty by default so the operator does not create an accidental over-issue.
+        </MudAlert>
+    }
+    @if (_lastPostedIssue is not null)
+    {
+        <MudPaper Elevation="0" Class="pa-4">
+            <MudText Typo="Typo.h6">Posted Sales Issue Review</MudText>
+            <MudText Typo="Typo.body2">Issue: @_lastPostedIssue.DocumentNumber</MudText>
+            <MudText Typo="Typo.body2">Posting date: @_lastPostedIssue.PostingDate.ToString("yyyy-MM-dd")</MudText>
+            <MudText Typo="Typo.body2">Qty: @_lastPostedIssue.TotalQuantity.ToString("N2")</MudText>
+            <MudText Typo="Typo.body2">Cost (Base): @_lastPostedIssue.TotalCostBase.ToString("N2")</MudText>
+            @if (_invoiceIssueHandoffSummary is not null)
+            {
+                <MudAlert Severity="@GetInvoiceIssueProjectedSeverity(_invoiceIssueHandoffSummary.MatchStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-top:.75rem;">
+                    @BuildInvoiceIssuePostedNotice(_invoiceIssueHandoffSummary)
+                </MudAlert>
+            }
+            else if (_shipmentIssueHandoffSummary is not null)
+            {
+                <MudAlert Severity="@GetInvoiceIssueProjectedSeverity(_shipmentIssueHandoffSummary.IssueMatchStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-top:.75rem;">
+                    @BuildShipmentIssuePostedNotice(_shipmentIssueHandoffSummary)
+                </MudAlert>
+            }
+        </MudPaper>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            @_error
+        </MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Sales Issue is closed by default for <strong>@_onboardingSummary.Industry</strong> companies. Keep using lighter service-led setup until company governance opens inventory-managed trading flow.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/product-service-setup">
+                    Open Product & Service Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @if (_onboardingSummary is not null && _onboardingSummary.SupportsInventoryFoundation && WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+    }
+    else if (_dashboard is null || _counterpartySummary is null)
+    {
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active stock items</MudText>
+                    <MudText Typo="Typo.h5">@OperationalItems.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Only warehouse-managed stock items can be issued out of inventory in this stage.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active warehouses</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.ActiveWarehouses.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Sales issue lines must leave from one active warehouse.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Recent issues</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.RecentIssues.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        Base currency is @_dashboard.BaseCurrencyCode and outbound cost is derived from inventory layers.
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Operational guardrail: tracked lot/serial outbound selection is not being opened yet. Sales Issue currently exposes only warehouse-managed stock items until tracked shipment and issue inputs are ready.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Issue header</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="5">
+                        <MudSelect T="Guid?"
+                                   Label="Customer"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(_isSaving || WritesBlocked)"
+                                   Value="_selectedCustomerId"
+                                   ValueChanged="OnCustomerChangedAsync">
+                            @foreach (var customer in ActiveCustomers)
+                            {
+                                <MudSelectItem T="Guid?" Value="@customer.Id">@customer.DisplayName (@customer.DefaultCurrencyCode)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudDatePicker Label="Posting date"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       @bind-Date="_postingDate" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string"
+                                      Label="Memo"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(_isSaving || WritesBlocked)"
+                                      @bind-Value="_memo" />
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    Sales Issue derives outbound cost from inventory cost layers. Shipment stays the semantic owner of carrier, tracking, and shipping-slip meaning and can feed this workspace as a downstream anchor.
+                </MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">Issue lines</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="AddLine">
+                        Add Line
+                    </MudButton>
+                </MudStack>
+
+                @if (_lineEditors.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        Start with at least one stock item line before posting the sales issue.
+                    </MudAlert>
+                }
+                else
+                {
+                    @foreach (var line in _lineEditors.OrderBy(line => line.LineNo))
+                    {
+                        <MudPaper Elevation="0" Class="pa-4" Outlined="true">
+                            <MudGrid>
+                                <MudItem xs="12" md="1">
+                                    <MudTextField T="int"
+                                                  Label="Line"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="true"
+                                                  Value="@line.LineNo" />
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudSelect T="Guid?"
+                                               Label="Item"
+                                               Variant="Variant.Outlined"
+                                               Margin="Margin.Dense"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               Value="line.ItemId"
+                                               ValueChanged="@((Guid? itemId) => OnItemChangedAsync(line, itemId))">
+                                        @foreach (var item in OperationalItems)
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudSelect T="Guid?"
+                                               Label="Warehouse"
+                                               Variant="Variant.Outlined"
+                                               Margin="Margin.Dense"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               @bind-Value="line.WarehouseId">
+                                        @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="1">
+                                    <MudTextField T="string"
+                                                  Label="UOM"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="@(_isSaving || WritesBlocked)"
+                                                  @bind-Value="line.UomCode" />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudNumericField T="decimal"
+                                                     Label="Qty"
+                                                     Variant="Variant.Outlined"
+                                                     Margin="Margin.Dense"
+                                                     Disabled="@(_isSaving || WritesBlocked)"
+                                                     @bind-Value="line.Quantity" />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudText Typo="Typo.caption" Class="text-secondary">Costing</MudText>
+                                    <MudText Typo="Typo.body2" Class="text-secondary">
+                                        FIFO / moving-average cost is derived from open inventory layers when you post.
+                                    </MudText>
+                                </MudItem>
+                                <MudItem xs="12" md="4">
+                                    <MudTextField T="string"
+                                                  Label="Reason code"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="@(_isSaving || WritesBlocked)"
+                                                  @bind-Value="line.ReasonCode" />
+                                </MudItem>
+                                <MudItem xs="12" md="6">
+                                    <MudTextField T="string"
+                                                  Label="Line memo"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Disabled="@(_isSaving || WritesBlocked)"
+                                                  @bind-Value="line.Memo" />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Warning"
+                                               Disabled="@(_isSaving || WritesBlocked || _lineEditors.Count <= 1)"
+                                               OnClick="@(() => RemoveLine(line))">
+                                        Remove
+                                    </MudButton>
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                    }
+                }
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isSaving || WritesBlocked)"
+                               OnClick="PostIssueAsync">
+                        @(_isSaving ? "Posting..." : "Post Sales Issue")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recent sales issues</MudText>
+            @if (_dashboard.RecentIssues.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No inventory sales issues have been posted yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.RecentIssues" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Issue</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Customer</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Cost (Base)</MudTh>
+                        <MudTh>Status</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.DocumentNumber</MudTd>
+                        <MudTd>@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                        <MudTd>@context.CustomerDisplayName</MudTd>
+                        <MudTd>@context.TotalQuantity</MudTd>
+                        <MudTd>@context.TotalCostBase</MudTd>
+                        <MudTd>@context.Status</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/inventory-foundation">
+                    Back To Inventory Foundation
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/company/customer-vendor-setup">
+                    Customer & Vendor Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
+                    Back To Workspace
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+
+    [SupplyParameterFromQuery(Name = "customerId")]
+    public Guid? CustomerIdQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sourceType")]
+    public string? SourceType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "invoiceId")]
+    public Guid? InvoiceIdQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "shipmentId")]
+    public Guid? ShipmentIdQuery { get; set; }
+
+    private InventorySalesIssueDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private ShellCounterpartyOnboardingSummary? _counterpartySummary;
+    private string? _error;
+    private bool _isSaving;
+    private Guid? _selectedCustomerId;
+    private DateTime? _postingDate = DateTime.Today;
+    private string? _memo;
+    private List<IssueLineEditorState> _lineEditors = [];
+    private Guid? _loadedSourceInvoiceId;
+    private Guid? _loadedSourceShipmentId;
+    private string? _sourceDocumentDisplayNumber;
+    private InventoryInvoiceIssueHandoffSummary? _invoiceIssueHandoffSummary;
+    private InventoryShipmentSummary? _shipmentIssueHandoffSummary;
+    private InventorySalesIssueSummary? _lastPostedIssue;
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems =>
+        _dashboard?.ActiveItems.Where(item => item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).ToList() ?? [];
+    private IReadOnlyList<ShellManagedCounterpartySummary> ActiveCustomers => _counterpartySummary?.ActiveCustomers ?? [];
+    private bool HasOutstandingInvoiceIssueQuantity => _invoiceIssueHandoffSummary?.LineSummaries.Any(static line => line.RemainingQuantity > 0m) == true;
+    private bool HasOutstandingShipmentIssueQuantity => _shipmentIssueHandoffSummary?.IssueLineSummaries.Any(static line => line.RemainingToIssueQuantity > 0m) == true;
+    private decimal CurrentIssueDraftQuantity => decimal.Round(_lineEditors.Sum(static line => line.Quantity), 6, MidpointRounding.AwayFromZero);
+    private decimal ProjectedIssuedQuantity => decimal.Round((_invoiceIssueHandoffSummary?.IssuedQuantity ?? 0m) + CurrentIssueDraftQuantity, 6, MidpointRounding.AwayFromZero);
+    private decimal ProjectedShipmentIssuedQuantity => decimal.Round((_shipmentIssueHandoffSummary?.IssuedQuantity ?? 0m) + CurrentIssueDraftQuantity, 6, MidpointRounding.AwayFromZero);
+    private string ProjectedInvoiceIssueStatusLabel => ComputeProjectedInvoiceIssueStatus().Label;
+    private string ProjectedInvoiceIssueStatusSummary => ComputeProjectedInvoiceIssueStatus().Summary;
+    private string ProjectedShipmentIssueStatusLabel => ComputeProjectedShipmentIssueStatus().Label;
+    private string ProjectedShipmentIssueStatusSummary => ComputeProjectedShipmentIssueStatus().Summary;
+
+    private static string FormatInvoiceIssueLineStatus(string? matchStatus) => matchStatus switch
+    {
+        "no_issue" => "No issue yet",
+        "partially_issued" => "Partial",
+        "fully_issued" => "Full",
+        "over_issued" => "Over",
+        _ => "Review"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+            {
+                return;
+            }
+
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!onboardingResult.RequiresSignIn &&
+                !onboardingResult.IsNotFound &&
+                string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+            {
+                _onboardingSummary = onboardingResult.Value;
+            }
+
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+            {
+                return;
+            }
+
+            _dashboard = await InventoryIssue.GetDashboardAsync(ShellState.ActiveCompany.Id);
+            _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+
+            SeedHeaderDefaults();
+            await LoadSourceHandoffAsync();
+            SeedLinesIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SeedHeaderDefaults()
+    {
+        if (_counterpartySummary is null)
+        {
+            return;
+        }
+
+        var preferredCustomer = CustomerIdQuery.HasValue
+            ? _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == CustomerIdQuery.Value)
+            : null;
+        var defaultCustomer = preferredCustomer ?? _counterpartySummary.ActiveCustomers.FirstOrDefault();
+        _selectedCustomerId ??= defaultCustomer?.Id;
+    }
+
+    private void SeedLinesIfNeeded()
+    {
+        if (_dashboard is null || _lineEditors.Count > 0)
+        {
+            return;
+        }
+
+        if (_invoiceIssueHandoffSummary is not null && !HasOutstandingInvoiceIssueQuantity)
+        {
+            return;
+        }
+
+        if (_shipmentIssueHandoffSummary is not null && !HasOutstandingShipmentIssueQuantity)
+        {
+            return;
+        }
+
+        var defaultItem = OperationalItems.FirstOrDefault();
+        _lineEditors.Add(new IssueLineEditorState
+        {
+            LineNo = 1,
+            ItemId = defaultItem?.Id,
+            WarehouseId = _dashboard.ActiveWarehouses.FirstOrDefault()?.Id,
+            UomCode = defaultItem?.StockUomCode ?? "EA",
+            Quantity = 1m
+        });
+    }
+
+    private async Task OnCustomerChangedAsync(Guid? customerId)
+    {
+        _selectedCustomerId = customerId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnItemChangedAsync(IssueLineEditorState line, Guid? itemId)
+    {
+        line.ItemId = itemId;
+        if (_dashboard is not null)
+        {
+            var item = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId);
+            if (!string.IsNullOrWhiteSpace(item?.StockUomCode))
+            {
+                line.UomCode = item.StockUomCode!;
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AddLine()
+    {
+        var nextLineNo = _lineEditors.Count == 0 ? 1 : _lineEditors.Max(line => line.LineNo) + 1;
+        var defaultItem = OperationalItems.FirstOrDefault();
+        _lineEditors.Add(new IssueLineEditorState
+        {
+            LineNo = nextLineNo,
+            ItemId = defaultItem?.Id,
+            WarehouseId = _dashboard?.ActiveWarehouses.FirstOrDefault()?.Id,
+            UomCode = defaultItem?.StockUomCode ?? "EA",
+            Quantity = 1m
+        });
+    }
+
+    private void RemoveLine(IssueLineEditorState line)
+    {
+        _lineEditors.Remove(line);
+        for (var index = 0; index < _lineEditors.Count; index++)
+        {
+            _lineEditors[index].LineNo = index + 1;
+        }
+    }
+
+    private async Task ReloadInvoiceRemainingLinesAsync()
+    {
+        if (!string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) ||
+            !InvoiceIdQuery.HasValue)
+        {
+            return;
+        }
+
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _invoiceIssueHandoffSummary = await InventoryIssue.GetInvoiceHandoffSummaryAsync(
+            ShellState.ActiveCompany.Id,
+            InvoiceIdQuery.Value,
+            CancellationToken.None);
+        _lineEditors = BuildIssueLinesFromInvoiceHandoff(_invoiceIssueHandoffSummary);
+        if (_lineEditors.Count == 0)
+        {
+            Snackbar.Add("No remaining invoice quantity is outstanding. The sales issue form stays empty by default.", Severity.Info);
+        }
+    }
+
+    private async Task ReloadShipmentRemainingLinesAsync()
+    {
+        if (!string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) ||
+            !ShipmentIdQuery.HasValue)
+        {
+            return;
+        }
+
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        _shipmentIssueHandoffSummary = await InventoryShipment.GetAsync(
+            ShellState.ActiveCompany.Id,
+            ShipmentIdQuery.Value,
+            CancellationToken.None);
+        if (_shipmentIssueHandoffSummary is null)
+        {
+            return;
+        }
+
+        _lineEditors = BuildIssueLinesFromShipmentHandoff(_shipmentIssueHandoffSummary);
+        if (_lineEditors.Count == 0)
+        {
+            Snackbar.Add("No remaining shipment quantity is outstanding. The sales issue form stays empty by default.", Severity.Info);
+        }
+    }
+
+    private async Task PostIssueAsync()
+    {
+        if (TryBlockWrites() || _dashboard is null || _counterpartySummary is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+
+            var request = new InventorySalesIssuePostRequest(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                _selectedCustomerId ?? Guid.Empty,
+                DateOnly.FromDateTime((_postingDate ?? DateTime.Today).Date),
+                SourceModule: ResolveSourceModule(),
+                SourceDocumentId: ResolveSourceDocumentId(),
+                SourceDocumentNumber: _sourceDocumentDisplayNumber,
+                _memo,
+                _lineEditors.Select(line => new InventorySalesIssueLineInput(
+                    line.LineNo,
+                    line.ItemId ?? Guid.Empty,
+                    line.WarehouseId ?? Guid.Empty,
+                    line.UomCode,
+                    line.Quantity,
+                    line.ReasonCode,
+                    line.Memo)).ToArray());
+
+            _lastPostedIssue = await InventoryIssue.PostAsync(request, _dashboard, _counterpartySummary);
+            await ReloadDashboardAsync();
+            if (string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue)
+            {
+                _invoiceIssueHandoffSummary = await InventoryIssue.GetInvoiceHandoffSummaryAsync(
+                    ShellState.ActiveCompany.Id,
+                    InvoiceIdQuery.Value,
+                    CancellationToken.None);
+            }
+            else if (string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && ShipmentIdQuery.HasValue)
+            {
+                _shipmentIssueHandoffSummary = await InventoryShipment.GetAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShipmentIdQuery.Value,
+                    CancellationToken.None);
+            }
+
+            ResetForm(preserveSourceContext: true);
+            Snackbar.Add($"Sales issue {_lastPostedIssue.DocumentNumber} posted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ReloadDashboardAsync()
+    {
+        _dashboard = await InventoryIssue.GetDashboardAsync(ShellState.ActiveCompany.Id);
+        _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+    }
+
+    private void ResetForm(bool preserveSourceContext = false)
+    {
+        _postingDate = DateTime.Today;
+        _memo = ResolveDefaultMemo();
+        _lineEditors = [];
+        if (preserveSourceContext && _invoiceIssueHandoffSummary is not null)
+        {
+            _lineEditors = BuildIssueLinesFromInvoiceHandoff(_invoiceIssueHandoffSummary);
+        }
+        else if (preserveSourceContext && _shipmentIssueHandoffSummary is not null)
+        {
+            _lineEditors = BuildIssueLinesFromShipmentHandoff(_shipmentIssueHandoffSummary);
+        }
+
+        if (!preserveSourceContext)
+        {
+            _loadedSourceInvoiceId = null;
+            _loadedSourceShipmentId = null;
+            _sourceDocumentDisplayNumber = null;
+            _invoiceIssueHandoffSummary = null;
+            _shipmentIssueHandoffSummary = null;
+        }
+
+        SeedHeaderDefaults();
+        SeedLinesIfNeeded();
+    }
+
+    private async Task LoadSourceHandoffAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        if (string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) &&
+            ShipmentIdQuery.HasValue &&
+            ShipmentIdQuery != _loadedSourceShipmentId)
+        {
+            var shipment = await InventoryShipment.GetAsync(ShellState.ActiveCompany.Id, ShipmentIdQuery.Value, CancellationToken.None);
+            if (shipment is null)
+            {
+                return;
+            }
+
+            _loadedSourceShipmentId = shipment.DocumentId;
+            _shipmentIssueHandoffSummary = shipment;
+            _sourceDocumentDisplayNumber = shipment.DocumentNumber;
+            _memo ??= $"Sales issue anchored from shipment {shipment.DocumentNumber}";
+
+            if (_counterpartySummary is not null)
+            {
+                var preferredCustomer = _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == shipment.CustomerId);
+                if (preferredCustomer is not null)
+                {
+                    _selectedCustomerId = preferredCustomer.Id;
+                }
+            }
+
+            var handoffLines = BuildIssueLinesFromShipmentHandoff(shipment);
+            if (handoffLines.Count > 0)
+            {
+                _lineEditors = handoffLines;
+            }
+            else
+            {
+                _lineEditors = [];
+            }
+
+            return;
+        }
+
+        if (!string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) ||
+            !InvoiceIdQuery.HasValue ||
+            InvoiceIdQuery == _loadedSourceInvoiceId)
+        {
+            return;
+        }
+
+        var invoiceResult = await Drafts.GetInvoiceDraftAsync(ShellState.ActiveCompany.Id, InvoiceIdQuery.Value, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(invoiceResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var invoice = invoiceResult.Value;
+        if (invoice is null)
+        {
+            return;
+        }
+
+        _loadedSourceInvoiceId = invoice.Id;
+        _sourceDocumentDisplayNumber = invoice.DisplayNumber;
+        _memo ??= $"Sales issue anchored from invoice {invoice.DisplayNumber}";
+        _invoiceIssueHandoffSummary = await InventoryIssue.GetInvoiceHandoffSummaryAsync(
+            ShellState.ActiveCompany.Id,
+            invoice.Id,
+            CancellationToken.None);
+
+        if (_counterpartySummary is not null)
+        {
+            var preferredCustomer = _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == invoice.CustomerId);
+            if (preferredCustomer is not null)
+            {
+                _selectedCustomerId = preferredCustomer.Id;
+            }
+        }
+
+        var invoiceHandoffLines = BuildIssueLinesFromInvoiceHandoff(_invoiceIssueHandoffSummary);
+
+        if (invoiceHandoffLines.Count > 0)
+        {
+            _lineEditors = invoiceHandoffLines;
+        }
+        else
+        {
+            _lineEditors = [];
+        }
+    }
+
+    private static List<IssueLineEditorState> BuildIssueLinesFromInvoiceHandoff(InventoryInvoiceIssueHandoffSummary summary) =>
+        summary.LineSummaries
+            .Where(static line => line.RemainingQuantity > 0m)
+            .Select((line, index) => new IssueLineEditorState
+            {
+                LineNo = index + 1,
+                ItemId = line.ItemId,
+                WarehouseId = line.WarehouseId,
+                UomCode = line.UomCode,
+                Quantity = line.RemainingQuantity,
+                ReasonCode = "invoice_handoff",
+                Memo = $"{line.ItemCode} invoice issue hand-off"
+            })
+            .OrderBy(static line => line.LineNo)
+            .ToList();
+
+    private static List<IssueLineEditorState> BuildIssueLinesFromShipmentHandoff(InventoryShipmentSummary summary)
+    {
+        if (summary.IssueLineSummaries.Count > 0)
+        {
+            return summary.IssueLineSummaries
+                .Where(static line => line.RemainingToIssueQuantity > 0m)
+                .Select((line, index) => new IssueLineEditorState
+                {
+                    LineNo = index + 1,
+                    ItemId = line.ItemId,
+                    WarehouseId = line.WarehouseId,
+                    UomCode = line.UomCode,
+                    Quantity = line.RemainingToIssueQuantity,
+                    ReasonCode = "shipment_handoff",
+                    Memo = $"{line.ItemCode} shipment issue hand-off"
+                })
+                .OrderBy(static line => line.LineNo)
+                .ToList();
+        }
+
+        if (summary.RemainingToIssueQuantity <= 0m)
+        {
+            return [];
+        }
+
+        return summary.Lines
+            .Select(line => new IssueLineEditorState
+            {
+                LineNo = line.LineNo,
+                ItemId = line.ItemId,
+                WarehouseId = line.WarehouseId,
+                UomCode = line.UomCode,
+                Quantity = line.Quantity,
+                ReasonCode = "shipment_handoff",
+                Memo = line.Memo
+            })
+            .OrderBy(static line => line.LineNo)
+            .ToList();
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private string? ResolveSourceModule() =>
+        string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && ShipmentIdQuery.HasValue
+            ? "inventory_shipment"
+            : string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue
+                ? "ar_invoice"
+                : "web_shell_inventory";
+
+    private Guid? ResolveSourceDocumentId() =>
+        string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && ShipmentIdQuery.HasValue
+            ? ShipmentIdQuery.Value
+            : string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue
+                ? InvoiceIdQuery.Value
+                : null;
+
+    private string? ResolveDefaultMemo() =>
+        string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_sourceDocumentDisplayNumber)
+            ? $"Sales issue anchored from shipment {_sourceDocumentDisplayNumber}"
+            : string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_sourceDocumentDisplayNumber)
+                ? $"Sales issue anchored from invoice {_sourceDocumentDisplayNumber}"
+                : null;
+
+    private (string Label, string Summary) ComputeProjectedInvoiceIssueStatus()
+    {
+        if (_invoiceIssueHandoffSummary is null)
+        {
+            return ("Awaiting invoice truth", "No invoice-assisted issue projection is active in the current context.");
+        }
+
+        if (_invoiceIssueHandoffSummary.InvoiceOutboundLineCount == 0)
+        {
+            return ("No inventory hand-off", "The invoice has no complete inventory-grade outbound lines, so issue projection is not active.");
+        }
+
+        var projectedRemaining = decimal.Round(
+            _invoiceIssueHandoffSummary.InvoiceOutboundQuantity - ProjectedIssuedQuantity,
+            6,
+            MidpointRounding.AwayFromZero);
+
+        if (ProjectedIssuedQuantity <= 0m)
+        {
+            return ("No issue yet", "No outbound quantity has been issued yet against this invoice anchor.");
+        }
+
+        if (projectedRemaining > 0m)
+        {
+            return ("Still partial", "Posting the current issue would still leave some invoice hand-off quantity unissued.");
+        }
+
+        if (projectedRemaining == 0m)
+        {
+            return ("Would fully issue", "Posting the current issue would bring the invoice hand-off quantity into full issue coverage.");
+        }
+
+        return ("Would over-issue", "Posting the current issue would push total issued quantity above the invoice hand-off quantity and should be reviewed carefully.");
+    }
+
+    private (string Label, string Summary) ComputeProjectedShipmentIssueStatus()
+    {
+        if (_shipmentIssueHandoffSummary is null)
+        {
+            return ("Awaiting shipment truth", "No shipment-assisted issue projection is active in the current context.");
+        }
+
+        if (_shipmentIssueHandoffSummary.LineCount == 0)
+        {
+            return ("No shipment lines", "The shipment has no outbound lines, so issue projection is not active.");
+        }
+
+        var projectedRemaining = decimal.Round(
+            _shipmentIssueHandoffSummary.TotalQuantity - ProjectedShipmentIssuedQuantity,
+            6,
+            MidpointRounding.AwayFromZero);
+
+        if (ProjectedShipmentIssuedQuantity <= 0m)
+        {
+            return ("No issue yet", "No outbound quantity has been issued yet against this shipment anchor.");
+        }
+
+        if (projectedRemaining > 0m)
+        {
+            return ("Still partial", "Posting the current issue would still leave some shipment quantity unissued.");
+        }
+
+        if (projectedRemaining == 0m)
+        {
+            return ("Would fully issue", "Posting the current issue would bring the shipment quantity into full issue coverage.");
+        }
+
+        return ("Would over-issue", "Posting the current issue would push total issued quantity above the shipment quantity and should be reviewed carefully.");
+    }
+
+    private static Severity GetInvoiceIssueProjectedSeverity(string? matchStatus) =>
+        matchStatus switch
+        {
+            "fully_issued" => Severity.Success,
+            "over_issued" => Severity.Warning,
+            "partially_issued" => Severity.Info,
+            "no_issue" => Severity.Info,
+            _ => Severity.Info
+        };
+
+    private static string BuildInvoiceIssuePostedNotice(InventoryInvoiceIssueHandoffSummary summary) =>
+        summary.MatchStatus switch
+        {
+            "fully_issued" => "This posted sales issue brings the invoice hand-off into full issue coverage.",
+            "partially_issued" => $"This posted sales issue advanced issue truth, but {summary.RemainingQuantity:N2} quantity still remains outstanding on the invoice hand-off.",
+            "over_issued" => "Sales issue truth now exceeds the invoice hand-off quantity. Review the outbound matching trail before continuing.",
+            "no_inventory_handoff" => "The invoice still has no complete inventory hand-off lines, so this issue remains inventory-owned without invoice-side quantity matching.",
+            _ => "Sales issue truth was posted successfully. Review the anchored invoice match status before continuing AR-side work."
+        };
+
+    private static string BuildShipmentIssuePostedNotice(InventoryShipmentSummary summary) =>
+        summary.IssueMatchStatus switch
+        {
+            "fully_issued" => "This posted sales issue brings the shipment into full inventory/cost issue coverage.",
+            "partially_issued" => $"This posted sales issue advanced issue truth, but {summary.RemainingToIssueQuantity:N2} quantity still remains outstanding on the shipment.",
+            "over_issued" => "Sales issue truth now exceeds the shipment quantity. Review the outbound matching trail before continuing.",
+            _ => "Sales issue truth was posted successfully. Review the anchored shipment match status before continuing AR-side work."
+        };
+
+    private MarkupString GetSourceHandoffNotice()
+    {
+        if (string.Equals(SourceType, "shipment", StringComparison.OrdinalIgnoreCase))
+        {
+            return new MarkupString($"Shipment hand-off <strong>{_sourceDocumentDisplayNumber}</strong> prefilled this workspace. Shipment remains the fulfillment truth; Sales Issue now consumes that shipped truth into inventory and cost truth.");
+        }
+
+        return new MarkupString($"Invoice hand-off <strong>{_sourceDocumentDisplayNumber}</strong> prefilled this workspace. Shipment and Sales Issue still remain the authoritative outbound truth; the invoice only carries outbound intent into this seam.");
+    }
+
+    private sealed class IssueLineEditorState
+    {
+        public int LineNo { get; set; }
+        public Guid? ItemId { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string UomCode { get; set; } = "EA";
+        public decimal Quantity { get; set; } = 1m;
+        public string? ReasonCode { get; set; }
+        public string? Memo { get; set; }
+    }
+}

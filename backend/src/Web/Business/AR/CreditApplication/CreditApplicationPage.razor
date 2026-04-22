@@ -21,6 +21,13 @@
         Current user: @ShellSession.CurrentUserId
     </MudAlert>
 
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellSession.WriteBlockMessage
+        </MudAlert>
+    }
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
         <MudSelect T="string" Label="Customer" Variant="Variant.Outlined" @bind-Value="_selectedCustomerIdText">
             @foreach (var customer in _customers)
@@ -34,7 +41,7 @@
 
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
         <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="_isBusy" OnClick="LoadCandidatesAsync">Load Open Items</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _sourceCredits.Count == 0 || _targetInvoices.Count == 0)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _sourceCredits.Count == 0 || _targetInvoices.Count == 0 || WritesBlocked)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_errorText))
@@ -146,7 +153,7 @@
                 </MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Success"
-                           Disabled="_isBusy"
+                           Disabled="@(_isBusy || WritesBlocked)"
                            OnClick="PostDraftAsync">
                     Post Draft
                 </MudButton>
@@ -221,6 +228,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await EnsureWriteGateStateAsync();
         try
         {
             _customers = (await LookupService.ListCustomersAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
@@ -266,6 +274,11 @@
 
     private async Task PrepareDraftAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         _errorText = null;
         _preparedDraft = null;
         _postedResult = null;
@@ -304,6 +317,11 @@
 
     private async Task PostDraftAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         if (_preparedDraft is null)
         {
             _errorText = "Prepare a draft before posting.";
@@ -342,6 +360,24 @@
         if (Guid.TryParse(text, out value)) return true;
         _errorText = $"{label} must be a valid GUID.";
         return false;
+    }
+
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
+
+    private async Task EnsureWriteGateStateAsync()
+    {
+        await ShellSession.RefreshAsync(CancellationToken.None);
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _errorText = ShellSession.WriteBlockMessage;
+        return true;
     }
 
     private sealed class RowState

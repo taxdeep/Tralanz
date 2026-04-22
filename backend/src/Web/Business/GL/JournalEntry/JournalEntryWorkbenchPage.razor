@@ -1,0 +1,1094 @@
+@page "/gl/journal-entries"
+@using Microsoft.AspNetCore.Components.Web
+@using Modules.CompanyAccess.SessionContext
+@using Modules.GL.JournalEntry
+@using MudBlazor
+@inject ICompanyAccessShellSession ShellSession
+@inject IJournalEntryReviewStore JournalEntryReviewStore
+@inject JournalEntryFxRevaluationClient FxRevaluationClient
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Journal entries | Citus Web Shell</PageTitle>
+
+<div class="je-workbench">
+    <div class="je-workbench-shell">
+        <div class="je-workbench-title">
+            <div>
+                <div class="je-workbench-title__eyebrow">General Ledger</div>
+                <h1>Journal Entries</h1>
+                <p>Posted GL truth across source documents, manual journals, lifecycle compensation, and multi-currency postings.</p>
+            </div>
+            <div class="je-workbench-title__actions">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Info"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           Disabled="_isLoading"
+                           OnClick="LoadAsync">
+                    Refresh
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           StartIcon="@Icons.Material.Filled.EditNote"
+                           Href="/gl/journal-entry/editor"
+                           Disabled="WritesBlocked">
+                    New JE
+                </MudButton>
+            </div>
+        </div>
+
+        @if (WritesBlocked)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                @ShellSession.WriteBlockMessage
+            </MudAlert>
+        }
+
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+        }
+        else if (!string.IsNullOrWhiteSpace(_errorText))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                @_errorText
+            </MudAlert>
+        }
+        else
+        {
+            <div class="je-workbench-kpis">
+                <div class="je-workbench-kpi">
+                    <span class="je-workbench-kpi__label">Recent JEs</span>
+                    <strong>@_items.Count</strong>
+                    <small>@FilteredItems.Count() shown</small>
+                </div>
+                <div class="je-workbench-kpi">
+                    <span class="je-workbench-kpi__label">Foreign currency</span>
+                    <strong>@_items.Count(static item => item.IsForeignCurrency)</strong>
+                    <small>@string.Join(", ", CurrencyOptions.Where(code => code != BaseCurrencyCode).Take(5))</small>
+                </div>
+                <div class="je-workbench-kpi">
+                    <span class="je-workbench-kpi__label">Base currency</span>
+                    <strong>@BaseCurrencyCode</strong>
+                    <small>@_items.Count(item => !item.IsForeignCurrency) base postings</small>
+                </div>
+                <div class="je-workbench-kpi @(_items.Any(static item => !item.IsBalanced) ? "je-workbench-kpi--warning" : string.Empty)">
+                    <span class="je-workbench-kpi__label">Balance guard</span>
+                    <strong>@_items.Count(static item => !item.IsBalanced)</strong>
+                    <small>unbalanced recent JE(s)</small>
+                </div>
+            </div>
+
+            <div class="je-workbench-filters">
+                <MudTextField T="string"
+                              @bind-Value="_searchText"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Placeholder="Search JE, source, currency"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true" />
+                <MudSelect T="string"
+                           @bind-Value="_statusFilter"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Dense="true">
+                    @foreach (var option in StatusOptions)
+                    {
+                        <MudSelectItem T="string" Value="@option">@FormatOption(option)</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="string"
+                           @bind-Value="_currencyFilter"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Dense="true">
+                    @foreach (var option in CurrencyOptionsWithAll)
+                    {
+                        <MudSelectItem T="string" Value="@option">@FormatOption(option)</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSwitch T="bool"
+                           @bind-Value="_foreignOnly"
+                           Color="Color.Info"
+                           Label="Foreign only" />
+            </div>
+
+            <MudTable Items="FilteredItems"
+                      Dense="true"
+                      Hover="true"
+                      Class="je-workbench-table">
+                <HeaderContent>
+                    <MudTh>Journal</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Source</MudTh>
+                    <MudTh>Currency</MudTh>
+                    <MudTh>Tx total</MudTh>
+                    <MudTh>Base total</MudTh>
+                    <MudTh>FX</MudTh>
+                    <MudTh>Posted</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Journal">
+                        <div class="je-workbench-entry">
+                            <strong>@context.DisplayNumber</strong>
+                            <small>@context.EntityNumber</small>
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetStatusColor(context.Status)">
+                            @context.Status
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Source">
+                        <div class="je-workbench-entry">
+                            <span>@context.SourceTypeLabel</span>
+                            <small>@context.SourceIdShort</small>
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Currency">
+                        <div class="je-workbench-currency">
+                            <span>@context.TransactionCurrencyCode</span>
+                            <small>@(context.IsForeignCurrency ? $"base {context.BaseCurrencyCode}" : "base posting")</small>
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Tx total">@FormatMoney(context.TotalTransactionDebit) @context.TransactionCurrencyCode</MudTd>
+                    <MudTd DataLabel="Base total">@FormatMoney(context.TotalDebit) @context.BaseCurrencyCode</MudTd>
+                    <MudTd DataLabel="FX">
+                        <div class="je-workbench-entry">
+                            <span>@(context.IsForeignCurrency ? context.ExchangeRate.ToString("0.######") : "1")</span>
+                            <small>@context.FxTraceLabel</small>
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Posted">@FormatTimestamp(context.PostedAt)</MudTd>
+                    <MudTd DataLabel="">
+                        <div class="je-workbench-row-actions">
+                            @if (TryBuildSourceHref(context, out var sourceHref))
+                            {
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           Href="@sourceHref">
+                                    Source
+                                </MudButton>
+                            }
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Info"
+                                       Size="Size.Small"
+                                       Href="@BuildReviewHref(context.Id)">
+                                Review
+                            </MudButton>
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="je-workbench-empty">No journal entries match the current filters.</div>
+                </NoRecordsContent>
+            </MudTable>
+
+            <div class="je-workbench-fx">
+                <div class="je-workbench-section-head">
+                    <div>
+                        <h2>FX Revaluation</h2>
+                        <p>Prepare unrealized FX batches from foreign AR/AP exposure, then post the generated JE back into the ledger.</p>
+                    </div>
+                    @if (_isPreparingFx || _isPostingFx || _isFxBatchesLoading)
+                    {
+                        <MudProgressCircular Indeterminate="true" Color="Color.Info" Size="Size.Small" />
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_fxErrorText))
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                        @_fxErrorText
+                    </MudAlert>
+                }
+
+                <div class="je-workbench-fx__grid">
+                    <MudSelect T="string"
+                               Label="Currency"
+                               @bind-Value="_fxCurrencyCode"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true"
+                               Disabled="@(!FxRevaluationCurrencyOptions.Any() || _isPreparingFx || _isPostingFx || WritesBlocked)">
+                        @foreach (var option in FxRevaluationCurrencyOptions)
+                        {
+                            <MudSelectItem T="string" Value="@option">@option</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudDatePicker Label="Revaluation date"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Date="@_fxRevaluationDatePicker"
+                                   DateChanged="OnFxRevaluationDateChanged"
+                                   Disabled="@(_isPreparingFx || _isPostingFx || WritesBlocked)" />
+                    <MudTextField T="string"
+                                  Label="Memo"
+                                  @bind-Value="_fxMemo"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Disabled="@(_isPreparingFx || _isPostingFx || WritesBlocked)" />
+                    <div class="je-workbench-fx__scope">
+                        <MudCheckBox T="bool"
+                                     Label="AR"
+                                     Color="Color.Info"
+                                     @bind-Value="_fxIncludeAr"
+                                     Disabled="@(_isPreparingFx || _isPostingFx || WritesBlocked)" />
+                        <MudCheckBox T="bool"
+                                     Label="AP"
+                                     Color="Color.Info"
+                                     @bind-Value="_fxIncludeAp"
+                                     Disabled="@(_isPreparingFx || _isPostingFx || WritesBlocked)" />
+                    </div>
+                </div>
+
+                <div class="je-workbench-fx__actions">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Calculate"
+                               Disabled="@(!CanPrepareFxRevaluation)"
+                               OnClick="PrepareFxRevaluationAsync">
+                        Prepare batch
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.Publish"
+                               Disabled="@(!CanPostFxRevaluation)"
+                               OnClick="PostFxRevaluationAsync">
+                        Post JE
+                    </MudButton>
+                </div>
+
+                @if (_preparedFxRevaluation is not null)
+                {
+                    <div class="je-workbench-fx__result">
+                        <div>
+                            <span>Prepared</span>
+                            <strong>@_preparedFxRevaluation.DisplayNumber</strong>
+                            <small>@_preparedFxRevaluation.PreparedLineCount line(s), @_preparedFxRevaluation.Status</small>
+                        </div>
+                        <div>
+                            <span>Governance</span>
+                            <strong>@DisplayPolicy(_preparedFxRevaluation.AccountingStandard)</strong>
+                            <small>@DisplayPolicy(_preparedFxRevaluation.RevaluationProfile) / @DisplayPolicy(_preparedFxRevaluation.FxRoundingPolicy)</small>
+                        </div>
+                    </div>
+                }
+
+                @if (_postedFxRevaluation is not null)
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-3">
+                        Posted @_postedFxRevaluation.JournalEntryDisplayNumber at @FormatTimestamp(_postedFxRevaluation.PostedAt).
+                        <MudLink Href="@BuildReviewHref(_postedFxRevaluation.JournalEntryId)">Open JE review</MudLink>
+                    </MudAlert>
+                }
+
+                <div class="je-workbench-fx__history">
+                    <div class="je-workbench-section-head">
+                        <div>
+                            <h2>Recent FX Batches</h2>
+                            <p>Draft, posted, and unwind batches remain reachable before and after JE posting.</p>
+                        </div>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Info"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh"
+                                   Disabled="_isFxBatchesLoading"
+                                   OnClick="LoadFxBatchesAsync">
+                            Refresh batches
+                        </MudButton>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_fxBatchErrorText))
+                    {
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+                            @_fxBatchErrorText
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <div class="je-workbench-fx__summary">
+                            <div>
+                                <span>Total batches</span>
+                                <strong>@_fxBatches.Count</strong>
+                            </div>
+                            <div>
+                                <span>Draft</span>
+                                <strong>@_fxBatches.Count(static batch => string.Equals(batch.Status, "draft", StringComparison.OrdinalIgnoreCase))</strong>
+                            </div>
+                            <div>
+                                <span>Posted</span>
+                                <strong>@_fxBatches.Count(static batch => string.Equals(batch.Status, "posted", StringComparison.OrdinalIgnoreCase))</strong>
+                            </div>
+                            <div>
+                                <span>Unwind</span>
+                                <strong>@_fxBatches.Count(static batch => string.Equals(batch.BatchKind, "next_period_unwind", StringComparison.OrdinalIgnoreCase))</strong>
+                            </div>
+                        </div>
+
+                        <div class="je-workbench-fx__filters">
+                            <MudTextField T="string"
+                                          @bind-Value="_fxBatchSearchText"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Placeholder="Search batch, JE, currency"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Immediate="true" />
+                            <MudSelect T="string"
+                                       @bind-Value="_fxBatchStatusFilter"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true">
+                                @foreach (var option in FxBatchStatusOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@option">@FormatOption(option)</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudSelect T="string"
+                                       @bind-Value="_fxBatchKindFilter"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true">
+                                @foreach (var option in FxBatchKindOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@option">@FormatBatchKindOption(option)</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudSelect T="string"
+                                       @bind-Value="_fxBatchCurrencyFilter"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true">
+                                @foreach (var option in FxBatchCurrencyOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@option">@FormatOption(option)</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </div>
+
+                        <MudTable Items="FilteredFxBatches"
+                                  Dense="true"
+                                  Hover="true"
+                                  Class="je-workbench-table">
+                            <HeaderContent>
+                                <MudTh>Batch</MudTh>
+                                <MudTh>Status</MudTh>
+                                <MudTh>Kind</MudTh>
+                                <MudTh>Date</MudTh>
+                                <MudTh>Currency</MudTh>
+                                <MudTh>Unrealized</MudTh>
+                                <MudTh>Linked JE</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Batch">
+                                    <div class="je-workbench-entry">
+                                        <strong>@context.DisplayNumber</strong>
+                                        <small>@context.EntityNumber</small>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="Status">
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetStatusColor(context.Status)">
+                                        @context.Status
+                                    </MudChip>
+                                </MudTd>
+                                <MudTd DataLabel="Kind">@FormatBatchKind(context.BatchKind)</MudTd>
+                                <MudTd DataLabel="Date">@context.DocumentDate.ToString("yyyy-MM-dd")</MudTd>
+                                <MudTd DataLabel="Currency">@context.TransactionCurrencyCode / @context.BaseCurrencyCode</MudTd>
+                                <MudTd DataLabel="Unrealized">@FormatSigned(context.UnrealizedTotalBase)</MudTd>
+                                <MudTd DataLabel="Linked JE">
+                                    @if (context.LinkedJournalEntryId.HasValue)
+                                    {
+                                        <MudLink Href="@BuildReviewHref(context.LinkedJournalEntryId.Value)">
+                                            @context.LinkedJournalEntryDisplayNumber
+                                        </MudLink>
+                                    }
+                                    else
+                                    {
+                                        <span class="je-workbench-muted">Not posted</span>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Info"
+                                               Size="Size.Small"
+                                               Href="@BuildFxReviewHref(context.Id)">
+                                        Review
+                                    </MudButton>
+                                </MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <div class="je-workbench-empty">No FX revaluation batches match the current filters.</div>
+                            </NoRecordsContent>
+                        </MudTable>
+                    }
+                </div>
+            </div>
+
+            <div class="je-workbench-ledger">
+                <div class="je-workbench-section-head">
+                    <div>
+                        <h2>Account Balances</h2>
+                        <p>Base-currency balances with transaction-currency exposure through @_throughDate.ToString("yyyy-MM-dd").</p>
+                    </div>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               Disabled="_isLedgerLoading"
+                               OnClick="LoadLedgerAsync">
+                        Refresh balances
+                    </MudButton>
+                </div>
+
+                @if (_isLedgerLoading)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+                }
+                else if (!string.IsNullOrWhiteSpace(_ledgerErrorText))
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                        @_ledgerErrorText
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_accountBalances"
+                              Dense="true"
+                              Hover="true"
+                              Class="je-workbench-table">
+                        <HeaderContent>
+                            <MudTh>Account</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Net debit</MudTh>
+                            <MudTh>Net credit</MudTh>
+                            <MudTh>Currency exposure</MudTh>
+                            <MudTh>Rows</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Account">
+                                <div class="je-workbench-entry">
+                                    <strong>@context.AccountCode</strong>
+                                    <small>@context.AccountName</small>
+                                </div>
+                            </MudTd>
+                            <MudTd DataLabel="Type">
+                                <div class="je-workbench-entry">
+                                    <span>@context.RootType</span>
+                                    <small>@context.DetailType</small>
+                                </div>
+                            </MudTd>
+                            <MudTd DataLabel="Net debit">@FormatMoney(context.NetDebit)</MudTd>
+                            <MudTd DataLabel="Net credit">@FormatMoney(context.NetCredit)</MudTd>
+                            <MudTd DataLabel="Currency exposure">
+                                <div class="je-workbench-exposures">
+                                    @foreach (var exposure in context.CurrencyExposures.Take(4))
+                                    {
+                                        <span>@exposure.CurrencyCode @FormatSigned(exposure.TransactionNet)</span>
+                                    }
+                                </div>
+                            </MudTd>
+                            <MudTd DataLabel="Rows">@context.LedgerEntryCount</MudTd>
+                            <MudTd DataLabel="">
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Info"
+                                           Size="Size.Small"
+                                           Disabled="_isDrillDownLoading"
+                                           OnClick="@(() => LoadDrillDownAsync(context))">
+                                    Drill down
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <div class="je-workbench-empty">No ledger balances are available yet.</div>
+                        </NoRecordsContent>
+                    </MudTable>
+                }
+
+                @if (_selectedAccount is not null)
+                {
+                    <div class="je-workbench-drilldown">
+                        <div class="je-workbench-section-head">
+                            <div>
+                                <h2>@_selectedAccount.AccountCode @_selectedAccount.AccountName</h2>
+                                <p>Recent ledger rows with journal, source, and FX trace links.</p>
+                            </div>
+                            @if (_isDrillDownLoading)
+                            {
+                                <MudProgressCircular Indeterminate="true" Color="Color.Info" Size="Size.Small" />
+                            }
+                        </div>
+
+                        <MudTable Items="_ledgerEntries"
+                                  Dense="true"
+                                  Hover="true"
+                                  Class="je-workbench-table">
+                            <HeaderContent>
+                                <MudTh>Date</MudTh>
+                                <MudTh>Journal</MudTh>
+                                <MudTh>Source</MudTh>
+                                <MudTh>FX trace</MudTh>
+                                <MudTh>Tx debit</MudTh>
+                                <MudTh>Tx credit</MudTh>
+                                <MudTh>Debit</MudTh>
+                                <MudTh>Credit</MudTh>
+                                <MudTh>Description</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Date">@context.PostingDate.ToString("yyyy-MM-dd")</MudTd>
+                                <MudTd DataLabel="Journal">
+                                    <div class="je-workbench-entry">
+                                        <strong>@context.JournalEntryDisplayNumber</strong>
+                                        <small>@context.JournalEntryStatus</small>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="Source">
+                                    <div class="je-workbench-entry">
+                                        <span>@context.SourceTypeLabel</span>
+                                        <small>@context.SourceIdShort</small>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="FX trace">
+                                    <div class="je-workbench-entry">
+                                        <span>@(context.IsForeignCurrency ? context.ExchangeRate.ToString("0.######") : "1")</span>
+                                        <small>@context.FxTraceLabel</small>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="Tx debit">@FormatMoney(context.TransactionDebit) @context.TransactionCurrencyCode</MudTd>
+                                <MudTd DataLabel="Tx credit">@FormatMoney(context.TransactionCredit) @context.TransactionCurrencyCode</MudTd>
+                                <MudTd DataLabel="Debit">@FormatMoney(context.Debit)</MudTd>
+                                <MudTd DataLabel="Credit">@FormatMoney(context.Credit)</MudTd>
+                                <MudTd DataLabel="Description">@DisplayDescription(context.Description)</MudTd>
+                                <MudTd DataLabel="">
+                                    <div class="je-workbench-row-actions">
+                                        @if (TryBuildSourceHref(context, out var ledgerSourceHref))
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Color="Color.Default"
+                                                       Size="Size.Small"
+                                                       Href="@ledgerSourceHref">
+                                                Source
+                                            </MudButton>
+                                        }
+                                        <MudButton Variant="Variant.Text"
+                                                   Color="Color.Info"
+                                                   Size="Size.Small"
+                                                   Href="@BuildReviewHref(context.JournalEntryId)">
+                                            Review
+                                        </MudButton>
+                                    </div>
+                                </MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <div class="je-workbench-empty">No recent ledger rows are available for this account.</div>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string AllOption = "all";
+    private IReadOnlyList<JournalEntryReviewListItem> _items = Array.Empty<JournalEntryReviewListItem>();
+    private IReadOnlyList<JournalEntryFxRevaluationBatchListItem> _fxBatches = Array.Empty<JournalEntryFxRevaluationBatchListItem>();
+    private IReadOnlyList<JournalLedgerAccountBalance> _accountBalances = Array.Empty<JournalLedgerAccountBalance>();
+    private IReadOnlyList<JournalLedgerEntryReviewItem> _ledgerEntries = Array.Empty<JournalLedgerEntryReviewItem>();
+    private JournalLedgerAccountBalance? _selectedAccount;
+    private bool _isLoading;
+    private bool _isLedgerLoading;
+    private bool _isDrillDownLoading;
+    private bool _isFxBatchesLoading;
+    private bool _isPreparingFx;
+    private bool _isPostingFx;
+    private bool _foreignOnly;
+    private bool _fxIncludeAr = true;
+    private bool _fxIncludeAp = true;
+    private string _searchText = string.Empty;
+    private string _statusFilter = AllOption;
+    private string _currencyFilter = AllOption;
+    private string _fxCurrencyCode = string.Empty;
+    private string _fxBatchStatusFilter = AllOption;
+    private string _fxBatchKindFilter = AllOption;
+    private string _fxBatchCurrencyFilter = AllOption;
+    private string _fxBatchSearchText = string.Empty;
+    private string? _fxMemo;
+    private string? _errorText;
+    private string? _ledgerErrorText;
+    private string? _fxErrorText;
+    private string? _fxBatchErrorText;
+    private DateOnly _throughDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateTime? _fxRevaluationDatePicker = DateTime.Today;
+    private JournalEntryFxRevaluationPrepareResult? _preparedFxRevaluation;
+    private JournalEntryFxRevaluationPostResult? _postedFxRevaluation;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
+
+    private bool CanPrepareFxRevaluation =>
+        !WritesBlocked &&
+        !_isPreparingFx &&
+        !_isPostingFx &&
+        !string.IsNullOrWhiteSpace(_fxCurrencyCode) &&
+        (_fxIncludeAr || _fxIncludeAp);
+
+    private bool CanPostFxRevaluation =>
+        !WritesBlocked &&
+        !_isPreparingFx &&
+        !_isPostingFx &&
+        _preparedFxRevaluation is not null &&
+        _postedFxRevaluation is null;
+
+    private string BaseCurrencyCode =>
+        _items.FirstOrDefault()?.BaseCurrencyCode ?? "Base";
+
+    private IEnumerable<string> StatusOptions =>
+        new[] { AllOption }
+            .Concat(_items.Select(static item => item.Status).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(static value => value));
+
+    private IEnumerable<string> CurrencyOptions =>
+        _items.Select(static item => item.TransactionCurrencyCode)
+            .Concat(_items.Select(static item => item.BaseCurrencyCode))
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static value => value);
+
+    private IEnumerable<string> CurrencyOptionsWithAll =>
+        new[] { AllOption }.Concat(CurrencyOptions);
+
+    private IEnumerable<string> FxRevaluationCurrencyOptions =>
+        _accountBalances
+            .SelectMany(static balance => balance.CurrencyExposures)
+            .Select(static exposure => exposure.CurrencyCode)
+            .Concat(CurrencyOptions.Where(code => !string.Equals(code, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)))
+            .Where(code => !string.IsNullOrWhiteSpace(code) && !string.Equals(code, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static code => code);
+
+    private IEnumerable<string> FxBatchStatusOptions =>
+        new[] { AllOption }
+            .Concat(_fxBatches.Select(static batch => batch.Status).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(static value => value));
+
+    private IEnumerable<string> FxBatchKindOptions =>
+        new[] { AllOption }
+            .Concat(_fxBatches.Select(static batch => batch.BatchKind).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(static value => value));
+
+    private IEnumerable<string> FxBatchCurrencyOptions =>
+        new[] { AllOption }
+            .Concat(
+                _fxBatches
+                    .Select(static batch => batch.TransactionCurrencyCode)
+                    .Concat(_fxBatches.Select(static batch => batch.BaseCurrencyCode))
+                    .Where(static value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(static value => value));
+
+    private IEnumerable<JournalEntryReviewListItem> FilteredItems =>
+        _items.Where(MatchesFilters);
+
+    private IEnumerable<JournalEntryFxRevaluationBatchListItem> FilteredFxBatches =>
+        _fxBatches.Where(MatchesFxBatchFilters);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        await LoadLedgerAsync();
+        await LoadFxBatchesAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            _items = await JournalEntryReviewStore.ListRecentAsync(ShellSession.ActiveCompanyId, 100, CancellationToken.None);
+            EnsureFxCurrencySelection();
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadLedgerAsync()
+    {
+        _isLedgerLoading = true;
+        _ledgerErrorText = null;
+        _selectedAccount = null;
+        _ledgerEntries = Array.Empty<JournalLedgerEntryReviewItem>();
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            _throughDate = DateOnly.FromDateTime(DateTime.Today);
+            _accountBalances = await JournalEntryReviewStore.ListAccountBalancesAsync(
+                ShellSession.ActiveCompanyId,
+                _throughDate,
+                CancellationToken.None);
+            EnsureFxCurrencySelection();
+        }
+        catch (Exception ex)
+        {
+            _ledgerErrorText = ex.Message;
+        }
+        finally
+        {
+            _isLedgerLoading = false;
+        }
+    }
+
+    private async Task LoadFxBatchesAsync()
+    {
+        _isFxBatchesLoading = true;
+        _fxBatchErrorText = null;
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            var result = await FxRevaluationClient.ListRecentAsync(
+                ShellSession.ActiveCompanyId,
+                50,
+                CancellationToken.None);
+
+            if (HandleFxAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _fxBatchErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? "FX revaluation batch history is unavailable."
+                    : result.ErrorMessage;
+                return;
+            }
+
+            _fxBatches = result.Value;
+        }
+        catch (Exception ex)
+        {
+            _fxBatchErrorText = ex.Message;
+        }
+        finally
+        {
+            _isFxBatchesLoading = false;
+        }
+    }
+
+    private async Task PrepareFxRevaluationAsync()
+    {
+        if (!CanPrepareFxRevaluation)
+        {
+            return;
+        }
+
+        _isPreparingFx = true;
+        _fxErrorText = null;
+        _preparedFxRevaluation = null;
+        _postedFxRevaluation = null;
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            var revaluationDate = DateOnly.FromDateTime((_fxRevaluationDatePicker ?? DateTime.Today).Date);
+            var result = await FxRevaluationClient.PrepareAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                revaluationDate,
+                _fxCurrencyCode,
+                _fxIncludeAr,
+                _fxIncludeAp,
+                string.IsNullOrWhiteSpace(_fxMemo) ? null : _fxMemo.Trim(),
+                cancellationToken: CancellationToken.None);
+
+            if (HandleFxAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _fxErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? "FX revaluation batch could not be prepared."
+                    : result.ErrorMessage;
+                return;
+            }
+
+            _preparedFxRevaluation = result.Value;
+            Snackbar.Add($"Prepared FX batch {_preparedFxRevaluation.DisplayNumber}.", Severity.Success);
+            await LoadFxBatchesAsync();
+        }
+        catch (Exception ex)
+        {
+            _fxErrorText = ex.Message;
+        }
+        finally
+        {
+            _isPreparingFx = false;
+        }
+    }
+
+    private async Task PostFxRevaluationAsync()
+    {
+        if (!CanPostFxRevaluation || _preparedFxRevaluation is null)
+        {
+            return;
+        }
+
+        _isPostingFx = true;
+        _fxErrorText = null;
+
+        try
+        {
+            await ShellSession.RefreshAsync(CancellationToken.None);
+            var result = await FxRevaluationClient.PostAsync(
+                ShellSession.ActiveCompanyId,
+                ShellSession.CurrentUserId,
+                _preparedFxRevaluation.DocumentId,
+                cancellationToken: CancellationToken.None);
+
+            if (HandleFxAuthenticationResult(result))
+            {
+                return;
+            }
+
+            if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _fxErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? "FX revaluation batch could not be posted."
+                    : result.ErrorMessage;
+                return;
+            }
+
+            _postedFxRevaluation = result.Value;
+            Snackbar.Add($"Posted {_postedFxRevaluation.JournalEntryDisplayNumber}.", Severity.Success);
+            await LoadAsync();
+            await LoadLedgerAsync();
+            await LoadFxBatchesAsync();
+        }
+        catch (Exception ex)
+        {
+            _fxErrorText = ex.Message;
+        }
+        finally
+        {
+            _isPostingFx = false;
+        }
+    }
+
+    private void OnFxRevaluationDateChanged(DateTime? value)
+    {
+        _fxRevaluationDatePicker = value ?? DateTime.Today;
+    }
+
+    private void EnsureFxCurrencySelection()
+    {
+        var currencies = FxRevaluationCurrencyOptions.ToArray();
+        if (currencies.Length == 0)
+        {
+            _fxCurrencyCode = string.Empty;
+            return;
+        }
+
+        if (!currencies.Contains(_fxCurrencyCode, StringComparer.OrdinalIgnoreCase))
+        {
+            _fxCurrencyCode = currencies[0];
+        }
+    }
+
+    private bool HandleFxAuthenticationResult<T>(JournalEntryFxRevaluationApiResult<T> result)
+    {
+        if (!result.RequiresSignIn)
+        {
+            return false;
+        }
+
+        Snackbar.Add(result.ErrorMessage ?? "Your business session has expired. Please sign in again.", Severity.Warning);
+        NavigationManager.NavigateTo("login", replace: true);
+        return true;
+    }
+
+    private async Task LoadDrillDownAsync(JournalLedgerAccountBalance account)
+    {
+        _selectedAccount = account;
+        _isDrillDownLoading = true;
+
+        try
+        {
+            _ledgerEntries = await JournalEntryReviewStore.ListLedgerEntriesAsync(
+                ShellSession.ActiveCompanyId,
+                account.AccountId,
+                50,
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _ledgerErrorText = ex.Message;
+        }
+        finally
+        {
+            _isDrillDownLoading = false;
+        }
+    }
+
+    private bool MatchesFilters(JournalEntryReviewListItem item)
+    {
+        if (_foreignOnly && !item.IsForeignCurrency)
+        {
+            return false;
+        }
+
+        if (!string.Equals(_statusFilter, AllOption, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(item.Status, _statusFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(_currencyFilter, AllOption, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(item.TransactionCurrencyCode, _currencyFilter, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(item.BaseCurrencyCode, _currencyFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            return true;
+        }
+
+        var text = _searchText.Trim();
+        return item.DisplayNumber.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               item.EntityNumber.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               item.SourceTypeLabel.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               item.TransactionCurrencyCode.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               item.BaseCurrencyCode.Contains(text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool MatchesFxBatchFilters(JournalEntryFxRevaluationBatchListItem batch)
+    {
+        if (!string.Equals(_fxBatchStatusFilter, AllOption, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(batch.Status, _fxBatchStatusFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(_fxBatchKindFilter, AllOption, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(batch.BatchKind, _fxBatchKindFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(_fxBatchCurrencyFilter, AllOption, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(batch.TransactionCurrencyCode, _fxBatchCurrencyFilter, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(batch.BaseCurrencyCode, _fxBatchCurrencyFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_fxBatchSearchText))
+        {
+            return true;
+        }
+
+        var text = _fxBatchSearchText.Trim();
+        return batch.DisplayNumber.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               batch.EntityNumber.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               batch.Status.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               batch.BatchKind.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               batch.TransactionCurrencyCode.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               batch.BaseCurrencyCode.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+               (batch.LinkedJournalEntryDisplayNumber?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static string BuildReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private static string BuildFxReviewHref(Guid documentId) =>
+        $"/gl/fx-revaluation/{documentId:D}";
+
+    private static bool TryBuildSourceHref(JournalEntryReviewListItem item, out string href)
+    {
+        return TryBuildSourceHref(item.SourceType, item.SourceId, out href);
+    }
+
+    private static bool TryBuildSourceHref(JournalLedgerEntryReviewItem item, out string href)
+    {
+        return TryBuildSourceHref(item.SourceType, item.SourceId, out href);
+    }
+
+    private static bool TryBuildSourceHref(string sourceType, Guid sourceId, out string href)
+    {
+        href = sourceType switch
+        {
+            "manual_journal" => $"/gl/journal-entry/source/{sourceId:D}",
+            "invoice" => $"/documents/invoice/{sourceId:D}",
+            "credit_note" => $"/documents/credit_note/{sourceId:D}",
+            "bill" => $"/documents/bill/{sourceId:D}",
+            "vendor_credit" => $"/documents/vendor_credit/{sourceId:D}",
+            "receive_payment" => $"/documents/receive_payment/{sourceId:D}",
+            "credit_application" => $"/documents/credit_application/{sourceId:D}",
+            "pay_bill" => $"/documents/pay_bill/{sourceId:D}",
+            "vendor_credit_application" => $"/documents/vendor_credit_application/{sourceId:D}",
+            "fx_revaluation" => $"/gl/fx-revaluation/{sourceId:D}",
+            _ => string.Empty
+        };
+
+        return sourceId != Guid.Empty && !string.IsNullOrWhiteSpace(href);
+    }
+
+    private static Color GetStatusColor(string status) =>
+        status switch
+        {
+            "posted" => Color.Success,
+            "draft" => Color.Info,
+            "voided" => Color.Warning,
+            "reversed" => Color.Warning,
+            _ => Color.Info
+        };
+
+    private static string FormatBatchKind(string value) =>
+        value switch
+        {
+            "revaluation" => "FX revaluation",
+            "next_period_unwind" => "Next-period unwind",
+            _ => value.Replace('_', ' ')
+        };
+
+    private static string FormatBatchKindOption(string option) =>
+        string.Equals(option, AllOption, StringComparison.OrdinalIgnoreCase)
+            ? "All"
+            : FormatBatchKind(option);
+
+    private static string FormatMoney(decimal amount) =>
+        amount.ToString("N2");
+
+    private static string FormatSigned(decimal amount) =>
+        amount >= 0m ? $"+{amount:N2}" : amount.ToString("N2");
+
+    private static string FormatTimestamp(DateTimeOffset? value) =>
+        value?.ToString("yyyy-MM-dd HH:mm") ?? "Unavailable";
+
+    private static string DisplayDescription(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "No description" : value;
+
+    private static string DisplayPolicy(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Default" : value;
+
+    private static string FormatOption(string option) =>
+        string.Equals(option, AllOption, StringComparison.OrdinalIgnoreCase)
+            ? "All"
+            : option;
+}

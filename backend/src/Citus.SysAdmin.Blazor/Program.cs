@@ -12,6 +12,12 @@ builder.Services.AddRazorComponents()
 builder.Services.AddMudServices();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<AppShellState>();
+builder.Services.AddHttpClient<SysAdminAuthenticationClient>(
+    (serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.SysAdminApiBaseUrl, UriKind.Absolute);
+    });
 builder.Services.AddHttpClient<PlatformCoreClient>(
     (serviceProvider, client) =>
     {

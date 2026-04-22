@@ -40,6 +40,13 @@ internal static class PostgresNumberingSequences
             await seedCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await NormalizeEntityNumberSequenceAsync(
+            scope,
+            companyId,
+            scopeKey,
+            prefix,
+            cancellationToken);
+
         await using var command = scope.CreateCommand(
             """
             update company_numbering_sequences
@@ -69,5 +76,61 @@ internal static class PostgresNumberingSequences
         var issuedPadding = reader.GetInt16(reader.GetOrdinal("padding"));
 
         return $"{issuedPrefix}{issuedNumber.ToString().PadLeft(issuedPadding, '0')}";
+    }
+
+    private static async Task NormalizeEntityNumberSequenceAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        string scopeKey,
+        string prefix,
+        CancellationToken cancellationToken)
+    {
+        var year = TryParseEntityNumberYear(scopeKey, prefix);
+        if (!year.HasValue)
+        {
+            return;
+        }
+
+        var yearFloor = year.Value * 100_000_000L;
+        var yearCeiling = (year.Value + 1L) * 100_000_000L;
+        const long suffixCeiling = 100_000_000L;
+
+        await using var command = scope.CreateCommand(
+            """
+            update company_numbering_sequences
+            set next_number = case
+                  when next_number >= @year_floor and next_number < @year_ceiling
+                    then greatest(next_number - @year_floor, 1)
+                  when next_number >= @suffix_ceiling
+                    then greatest(mod(next_number, @suffix_ceiling), 1)
+                  else next_number
+                end,
+                updated_at = now()
+            where company_id = @company_id
+              and scope_key = @scope_key
+              and (
+                (next_number >= @year_floor and next_number < @year_ceiling)
+                or next_number >= @suffix_ceiling
+              );
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("scope_key", scopeKey);
+        command.Parameters.AddWithValue("year_floor", yearFloor);
+        command.Parameters.AddWithValue("year_ceiling", yearCeiling);
+        command.Parameters.AddWithValue("suffix_ceiling", suffixCeiling);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static int? TryParseEntityNumberYear(string scopeKey, string prefix)
+    {
+        if (!scopeKey.StartsWith("entity-number:", StringComparison.Ordinal) ||
+            prefix.Length != 6 ||
+            !prefix.StartsWith("EN", StringComparison.Ordinal) ||
+            !int.TryParse(prefix.AsSpan(2), out var year))
+        {
+            return null;
+        }
+
+        return year;
     }
 }

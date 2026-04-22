@@ -13,7 +13,7 @@
 
     <MudStack Spacing="3">
         <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Warning">
-            @( _enabled ? "Maintenance enabled" : "Maintenance disabled")
+            @(_enabled ? "Maintenance enabled" : "Maintenance disabled")
         </MudSwitch>
 
         <MudTextField T="string"
@@ -30,22 +30,112 @@
                       @bind-Value="_scheduledUntilInput" />
 
         <MudStack Row="true" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSaving" OnClick="SaveAsync">
-                @(_isSaving ? "Saving..." : "Save maintenance state")
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSavingMaintenance" OnClick="SaveMaintenanceAsync">
+                @(_isSavingMaintenance ? "Saving..." : "Save maintenance state")
             </MudButton>
 
-            <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@_isSaving" OnClick="ResetFromShellState">
+            <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@_isSavingMaintenance" OnClick="ResetMaintenanceFromShellState">
                 Reset
             </MudButton>
         </MudStack>
     </MudStack>
 </MudPaper>
 
+<MudPaper Class="pa-4 mb-6">
+    <MudStack Spacing="1" Class="mb-4">
+        <MudText Typo="Typo.h6">Notification Readiness</MudText>
+        <MudText Typo="Typo.body2" Class="text-secondary">
+            Secure email and password flows must be blocked until configuration exists, test send passes, and verification readiness is explicitly true.
+        </MudText>
+    </MudStack>
+
+    @if (_notificationReadiness is not null)
+    {
+        <MudAlert Severity="@(_notificationReadiness.IsVerificationDeliveryReady ? Severity.Success : Severity.Warning)"
+                  Variant="Variant.Outlined"
+                  Class="mb-4">
+            @(_notificationReadiness.IsVerificationDeliveryReady
+                ? "Verification delivery is ready."
+                : "Verification delivery is blocked.")
+        </MudAlert>
+
+        @if (!string.IsNullOrWhiteSpace(_notificationReadiness.BlockingReason))
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                @_notificationReadiness.BlockingReason
+            </MudAlert>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_notificationReadiness.ConfigurationError))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+                Provider configuration issue: @_notificationReadiness.ConfigurationError
+            </MudAlert>
+        }
+    }
+
+    <MudStack Spacing="3">
+        <MudSwitch T="bool" @bind-Value="_notificationConfigPresent" Color="Color.Info">
+            @(_notificationConfigPresent ? "Notification config present" : "Notification config missing")
+        </MudSwitch>
+
+        <MudSelect T="string"
+                   Label="Test status"
+                   Variant="Variant.Outlined"
+                   @bind-Value="_notificationTestStatus">
+            <MudSelectItem T="string" Value="@("untested")">untested</MudSelectItem>
+            <MudSelectItem T="string" Value="@("passed")">passed</MudSelectItem>
+            <MudSelectItem T="string" Value="@("failed")">failed</MudSelectItem>
+        </MudSelect>
+
+        <MudTextField T="string"
+                      Label="Last tested at (UTC, optional)"
+                      HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z."
+                      Variant="Variant.Outlined"
+                      @bind-Value="_notificationLastTestedInput" />
+
+        <MudSwitch T="bool" @bind-Value="_notificationVerificationReady" Color="Color.Success">
+            @(_notificationVerificationReady ? "Verification ready" : "Verification not ready")
+        </MudSwitch>
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSavingNotificationReadiness" OnClick="SaveNotificationReadinessAsync">
+                @(_isSavingNotificationReadiness ? "Saving..." : "Save notification readiness")
+            </MudButton>
+
+            <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@_isSavingNotificationReadiness" OnClick="ResetNotificationReadinessAsync">
+                Reset
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    <MudDivider Class="my-4" />
+
+    <MudStack Spacing="3">
+        <MudText Typo="Typo.subtitle1">Send Test Email</MudText>
+        <MudText Typo="Typo.body2" Class="text-secondary">
+            This sends a real notification-provider test message without marking verification ready for business users.
+        </MudText>
+
+        <MudTextField T="string"
+                      Label="Test destination email"
+                      HelperText="Defaults to the current SysAdmin operator email."
+                      Variant="Variant.Outlined"
+                      @bind-Value="_notificationTestDestination" />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Secondary"
+                   Disabled="@_isSendingNotificationTest"
+                   OnClick="SendNotificationTestAsync">
+            @(_isSendingNotificationTest ? "Sending..." : "Send notification test")
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
 <MudPaper Class="pa-4">
     <MudText Typo="Typo.h6" Class="mb-2">Control rule</MudText>
     <MudText Typo="Typo.body2" Class="text-secondary">
-        This maintenance switch lives on the SysAdmin control plane and is intentionally separated from business posting flows.
-        The next backend slice will wire the same state into business-login and write guards.
+        Maintenance mode remains separate from business posting flows, while notification readiness now gates password reset issuance on the SysAdmin control plane.
     </MudText>
 </MudPaper>
 
@@ -55,35 +145,66 @@
     {
         Eyebrow = "Operations",
         Title = "Maintenance",
-        Subtitle = "Platform maintenance state and operator messaging."
+        Subtitle = "Platform maintenance state and notification readiness."
     };
 
     private bool _enabled;
-    private bool _isSaving;
+    private bool _isSavingMaintenance;
     private string _message = string.Empty;
     private string _scheduledUntilInput = string.Empty;
 
-    protected override void OnInitialized()
+    private NotificationReadinessSummary? _notificationReadiness;
+    private bool _notificationConfigPresent;
+    private string _notificationTestStatus = "untested";
+    private string _notificationLastTestedInput = string.Empty;
+    private bool _notificationVerificationReady;
+    private bool _isSavingNotificationReadiness;
+    private string _notificationTestDestination = string.Empty;
+    private bool _isSendingNotificationTest;
+
+    protected override async Task OnInitializedAsync()
     {
-        ResetFromShellState();
+        ResetMaintenanceFromShellState();
+        await ResetNotificationReadinessAsync();
     }
 
-    private void ResetFromShellState()
+    private void ResetMaintenanceFromShellState()
     {
         _enabled = ShellState.MaintenanceState.Enabled;
         _message = ShellState.MaintenanceState.Message;
         _scheduledUntilInput = ShellState.MaintenanceState.ScheduledUntilUtc?.ToString("u") ?? string.Empty;
     }
 
-    private async Task SaveAsync()
+    private async Task ResetNotificationReadinessAsync()
     {
-        if (!TryParseScheduledUntil(out var scheduledUntilUtc))
+        _notificationReadiness = await SysAdminControlClient.GetNotificationReadinessAsync() ??
+            new NotificationReadinessSummary
+            {
+                ConfigPresent = false,
+                TestStatus = "untested",
+                VerificationReady = false,
+                IsVerificationDeliveryReady = false
+            };
+
+        _notificationConfigPresent = _notificationReadiness.ConfigPresent;
+        _notificationTestStatus = _notificationReadiness.TestStatus;
+        _notificationLastTestedInput = _notificationReadiness.LastTestedAtUtc?.ToString("u") ?? string.Empty;
+        _notificationVerificationReady = _notificationReadiness.VerificationReady;
+        if (string.IsNullOrWhiteSpace(_notificationTestDestination))
+        {
+            _notificationTestDestination = ShellState.Operator.Email;
+        }
+    }
+
+    private async Task SaveMaintenanceAsync()
+    {
+        if (!TryParseDateTimeOffset(_scheduledUntilInput, out var scheduledUntilUtc))
         {
             Snackbar.Add("Planned until must be empty or parseable as a UTC date/time.", Severity.Warning);
             return;
         }
 
-        _isSaving = true;
+        _isSavingMaintenance = true;
 
         try
         {
@@ -102,30 +223,110 @@
             }
 
             ShellState.SetMaintenanceState(state);
-            ResetFromShellState();
+            ResetMaintenanceFromShellState();
             Snackbar.Add("Maintenance state updated.", Severity.Success);
         }
         finally
         {
-            _isSaving = false;
+            _isSavingMaintenance = false;
         }
     }
 
-    private bool TryParseScheduledUntil(out DateTimeOffset? scheduledUntilUtc)
+    private async Task SaveNotificationReadinessAsync()
     {
-        if (string.IsNullOrWhiteSpace(_scheduledUntilInput))
+        if (!TryParseDateTimeOffset(_notificationLastTestedInput, out var lastTestedAtUtc))
         {
-            scheduledUntilUtc = null;
+            Snackbar.Add("Last tested at must be empty or parseable as a UTC date/time.", Severity.Warning);
+            return;
+        }
+
+        _isSavingNotificationReadiness = true;
+
+        try
+        {
+            var readiness = await SysAdminControlClient.UpdateNotificationReadinessAsync(
+                new NotificationReadinessUpdateRequest
+                {
+                    ConfigPresent = _notificationConfigPresent,
+                    TestStatus = _notificationTestStatus,
+                    LastTestedAtUtc = lastTestedAtUtc,
+                    VerificationReady = _notificationVerificationReady
+                });
+
+            if (readiness is null)
+            {
+                Snackbar.Add("Unable to update notification readiness.", Severity.Warning);
+                return;
+            }
+
+            _notificationReadiness = readiness;
+            await ResetNotificationReadinessAsync();
+            Snackbar.Add("Notification readiness updated.", Severity.Success);
+        }
+        finally
+        {
+            _isSavingNotificationReadiness = false;
+        }
+    }
+
+    private async Task SendNotificationTestAsync()
+    {
+        _isSendingNotificationTest = true;
+
+        try
+        {
+            var (result, error) = await SysAdminControlClient.SendNotificationTestAsync(
+                new NotificationTestSendRequest
+                {
+                    Destination = _notificationTestDestination,
+                    RecipientDisplayName = ShellState.Operator.DisplayName
+                });
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                Snackbar.Add(error, Severity.Warning);
+                return;
+            }
+
+            if (result is null)
+            {
+                Snackbar.Add("Notification test send returned no result.", Severity.Warning);
+                return;
+            }
+
+            _notificationReadiness = result.Readiness;
+            _notificationConfigPresent = result.Readiness.ConfigPresent;
+            _notificationTestStatus = result.Readiness.TestStatus;
+            _notificationLastTestedInput = result.Readiness.LastTestedAtUtc?.ToString("u") ?? string.Empty;
+            _notificationVerificationReady = result.Readiness.VerificationReady;
+
+            Snackbar.Add(
+                result.Succeeded
+                    ? $"Notification test sent to {result.Destination} via {result.ProviderKey}."
+                    : $"Notification test failed: {result.FailureMessage}",
+                result.Succeeded ? Severity.Success : Severity.Error);
+        }
+        finally
+        {
+            _isSendingNotificationTest = false;
+        }
+    }
+
+    private static bool TryParseDateTimeOffset(string input, out DateTimeOffset? value)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            value = null;
             return true;
         }
 
-        if (DateTimeOffset.TryParse(_scheduledUntilInput, out var parsed))
+        if (DateTimeOffset.TryParse(input, out var parsed))
         {
-            scheduledUntilUtc = parsed;
+            value = parsed;
             return true;
         }
 
-        scheduledUntilUtc = null;
+        value = null;
         return false;
     }
 }

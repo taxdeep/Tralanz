@@ -1,0 +1,263 @@
+@page "/login"
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellState ShellState
+@inject ILogger<BusinessLoginPage> Logger
+
+<PageTitle>Login | Citus Web Shell</PageTitle>
+
+<MudPaper Class="pa-0 mt-10 ws-login">
+    <div class="ws-login__bar">
+        <MudText Typo="Typo.body2" Class="ws-login__bar-title">
+            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
+            User Login
+        </MudText>
+        <MudText Typo="Typo.caption" Class="ws-login__bar-meta">Business App</MudText>
+    </div>
+
+    <div class="ws-login__body">
+        <div class="ws-login__mascot" aria-hidden="true">
+            <div class="ws-login__envelope"></div>
+            <div class="ws-login__badge">C</div>
+        </div>
+
+        <MudStack Spacing="1">
+            <MudText Typo="Typo.h5" Class="ws-login__title">Citus business login</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Sign in with a business platform account. CompanyAccess resolves the active company after authentication.
+            </MudText>
+        </MudStack>
+
+        <div class="ws-login__rule"></div>
+
+        <MudForm Class="mt-4" @ref="_form">
+            <MudStack Spacing="3">
+            <MudTextField @bind-Value="_login"
+                          Label="Email address or username"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Person"
+                          Required="true"
+                          Immediate="true"
+                          autocomplete="username"
+                          ShrinkLabel="true" />
+            <MudTextField @bind-Value="_password"
+                          Label="Password"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Lock"
+                          InputType="InputType.Password"
+                          Required="true"
+                          autocomplete="current-password"
+                          ShrinkLabel="true" />
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Class="ws-login__primary-action"
+                       Disabled="_isSubmitting"
+                       OnClick="SignInAsync">
+                @(_isSubmitting ? "Signing in..." : "Sign in")
+            </MudButton>
+
+            @if (_mfaChallengeId.HasValue)
+            {
+                <MudDivider />
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    @GetSecondFactorPrompt()
+                    @if (_mfaChallengeExpiresAtUtc.HasValue)
+                    {
+                        <text> Challenge expires @_mfaChallengeExpiresAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").</text>
+                    }
+                </MudAlert>
+                <MudTextField @bind-Value="_mfaVerificationCode"
+                              Label="@GetSecondFactorFieldLabel()"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              autocomplete="one-time-code"
+                              ShrinkLabel="true" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           Disabled="_isSubmitting"
+                           OnClick="CompleteSecondFactorAsync">
+                    @(_isSubmitting ? "Verifying..." : "Complete MFA")
+                </MudButton>
+            }
+            </MudStack>
+        </MudForm>
+    </div>
+
+    <div class="ws-login__switcher">
+        <MudText Typo="Typo.caption" Class="text-secondary">Not the correct login?</MudText>
+        <MudLink Href="/sysadmin/login" Class="ws-login__switch-link">
+            Create or sign in to SysAdmin
+        </MudLink>
+    </div>
+</MudPaper>
+
+@code
+{
+    private MudForm? _form;
+    private string _login = string.Empty;
+    private string _password = string.Empty;
+    private Guid? _mfaChallengeId;
+    private DateTimeOffset? _mfaChallengeExpiresAtUtc;
+    private string _mfaVerificationCode = string.Empty;
+    private string _requiredSecondFactor = string.Empty;
+    private bool _isSubmitting;
+
+    private async Task SignInAsync()
+    {
+        if (_form is not null)
+        {
+            await _form.ValidateAsync();
+            if (!_form.IsValid)
+            {
+                return;
+            }
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var (result, error) = await SessionClient.SignInAsync(_login, _password);
+            if (result?.RequiresSecondFactor == true)
+            {
+                _mfaChallengeId = Guid.TryParse(result.MfaChallengeId, out var challengeId) ? challengeId : null;
+                _mfaChallengeExpiresAtUtc = result.MfaChallengeExpiresAtUtc;
+                _mfaVerificationCode = string.Empty;
+                _requiredSecondFactor = result.AvailableSecondFactors.FirstOrDefault()?.Trim().ToLowerInvariant() ?? string.Empty;
+                var availableFactors = result.AvailableSecondFactors.Count == 0
+                    ? "configured second factor"
+                    : string.Join(", ", result.AvailableSecondFactors.Select(FormatSecondFactor));
+                Snackbar.Add(
+                    $"Primary authentication succeeded. MFA challenge is required before session issuance. Available factor(s): {availableFactors}.",
+                    Severity.Info);
+                return;
+            }
+
+            if (result is null || string.IsNullOrWhiteSpace(result.SessionToken) || result.Context is null)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(error)
+                        ? "Unable to sign in. Check account status, credentials, and company membership."
+                        : error,
+                    Severity.Warning);
+                return;
+            }
+
+            await CompleteAuthenticatedSessionAsync(result);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unhandled Web.Shell business sign-in failure.");
+            Snackbar.Add(
+                "Sign-in failed before the workspace could load. The server log has the exact error.",
+                Severity.Error);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task CompleteSecondFactorAsync()
+    {
+        if (!_mfaChallengeId.HasValue)
+        {
+            Snackbar.Add("No active MFA challenge is pending.", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_mfaVerificationCode))
+        {
+            Snackbar.Add("Verification code is required.", Severity.Warning);
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var (result, error) = await SessionClient.CompleteSecondFactorAsync(
+                _mfaChallengeId.Value,
+                _mfaVerificationCode);
+
+            if (result is null || string.IsNullOrWhiteSpace(result.SessionToken) || result.Context is null)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(error)
+                        ? "Unable to complete MFA verification."
+                        : error,
+                    Severity.Warning);
+                return;
+            }
+
+            await CompleteAuthenticatedSessionAsync(result);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unhandled Web.Shell business MFA completion failure.");
+            Snackbar.Add(
+                "MFA completed, but the workspace could not load. The server log has the exact error.",
+                Severity.Error);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task CompleteAuthenticatedSessionAsync(Web.Shell.Services.WebShellBusinessSignInResponse result)
+    {
+        _mfaChallengeId = null;
+        _mfaChallengeExpiresAtUtc = null;
+        _mfaVerificationCode = string.Empty;
+        _requiredSecondFactor = string.Empty;
+
+        ShellState.ApplyAuthenticatedSession(result.SessionToken, result.Context!, result.ExpiresAtUtc);
+        await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", result.SessionToken);
+
+        var destination = "/";
+        var onboardingResult = await OnboardingClient.GetAsync();
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (!onboardingResult.RequiresSignIn &&
+            !onboardingResult.IsNotFound &&
+            string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage) &&
+            onboardingResult.Value?.RequiresOnboarding == true)
+        {
+            destination = "/company/ready";
+        }
+
+        Snackbar.Add(
+            $"Signed in as {result.Context!.User.DisplayName} in {result.Context.ActiveCompany.CompanyName}.",
+            Severity.Success);
+        NavigationManager.NavigateTo(destination);
+    }
+
+    private static string FormatSecondFactor(string factor) =>
+        factor.Trim().ToLowerInvariant() switch
+        {
+            "email_code" => "Email verification code",
+            "totp_app" => "Authenticator app (TOTP)",
+            _ => factor
+        };
+
+    private string GetSecondFactorPrompt() =>
+        string.Equals(_requiredSecondFactor, "totp_app", StringComparison.OrdinalIgnoreCase)
+            ? "Authenticator app confirmation is required before session issuance."
+            : "Second factor is required before session issuance.";
+
+    private string GetSecondFactorFieldLabel() =>
+        string.Equals(_requiredSecondFactor, "totp_app", StringComparison.OrdinalIgnoreCase)
+            ? "Authenticator app code"
+            : "Verification code";
+}

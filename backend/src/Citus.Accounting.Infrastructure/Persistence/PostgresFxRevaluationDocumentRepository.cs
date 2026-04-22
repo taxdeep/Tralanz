@@ -35,6 +35,14 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         return GetCascadeUnwindPlanCoreAsync(companyId, documentId, cancellationToken);
     }
 
+    public Task<IReadOnlyList<FxRevaluationBatchListItem>> ListRecentAsync(
+        CompanyId companyId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        return ListRecentCoreAsync(companyId, take, cancellationToken);
+    }
+
     public Task<FxRevaluationDraftPreparationResult> PrepareDraftAsync(
         FxRevaluationDraftPreparation request,
         CancellationToken cancellationToken)
@@ -326,6 +334,145 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             accountingStandard,
             revaluationProfile,
             fxRoundingPolicy);
+    }
+
+    private async Task<IReadOnlyList<FxRevaluationBatchListItem>> ListRecentCoreAsync(
+        CompanyId companyId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var effectiveTake = Math.Clamp(take, 1, 250);
+        var items = new List<FxRevaluationBatchListItem>();
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              b.id,
+              b.entity_number,
+              b.display_number,
+              b.status,
+              b.batch_kind,
+              b.reversal_of_fx_revaluation_batch_id,
+              b.company_book_id,
+              b.book_code,
+              b.accounting_standard,
+              b.revaluation_profile,
+              b.fx_rounding_policy,
+              b.revaluation_date,
+              b.transaction_currency_code,
+              b.base_currency_code,
+              b.fx_rate_snapshot_id,
+              b.fx_rate,
+              count(l.id)::int as line_count,
+              coalesce(sum(l.unrealized_fx_amount), 0) as unrealized_total_base,
+              linked_je.id as linked_journal_entry_id,
+              linked_je.display_number as linked_journal_entry_display_number,
+              linked_je.posted_at as linked_journal_posted_at,
+              b.created_at,
+              b.updated_at
+            from fx_revaluation_batches b
+            left join fx_revaluation_batch_lines l
+              on l.company_id = b.company_id
+             and l.fx_revaluation_batch_id = b.id
+            left join lateral (
+              select
+                je.id,
+                je.display_number,
+                je.posted_at,
+                je.created_at
+              from journal_entries je
+              where je.company_id = b.company_id
+                and je.source_type = 'fx_revaluation'
+                and je.source_id = b.id
+              order by coalesce(je.posted_at, je.created_at) desc
+              limit 1
+            ) linked_je on true
+            where b.company_id = @company_id
+            group by
+              b.id,
+              b.entity_number,
+              b.display_number,
+              b.status,
+              b.batch_kind,
+              b.reversal_of_fx_revaluation_batch_id,
+              b.company_book_id,
+              b.book_code,
+              b.accounting_standard,
+              b.revaluation_profile,
+              b.fx_rounding_policy,
+              b.revaluation_date,
+              b.transaction_currency_code,
+              b.base_currency_code,
+              b.fx_rate_snapshot_id,
+              b.fx_rate,
+              linked_je.id,
+              linked_je.display_number,
+              linked_je.posted_at,
+              linked_je.created_at,
+              b.created_at,
+              b.updated_at
+            order by coalesce(linked_je.posted_at, linked_je.created_at, b.updated_at, b.created_at) desc,
+                     b.display_number desc
+            limit @take;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+        command.Parameters.AddWithValue("take", effectiveTake);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new FxRevaluationBatchListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("display_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetString(reader.GetOrdinal("batch_kind")),
+                reader.IsDBNull(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id")),
+                reader.IsDBNull(reader.GetOrdinal("company_book_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("company_book_id")),
+                reader.IsDBNull(reader.GetOrdinal("book_code"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("book_code")),
+                reader.IsDBNull(reader.GetOrdinal("accounting_standard"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("accounting_standard")),
+                reader.IsDBNull(reader.GetOrdinal("revaluation_profile"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("revaluation_profile")),
+                reader.IsDBNull(reader.GetOrdinal("fx_rounding_policy"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("fx_rounding_policy")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("revaluation_date")),
+                reader.GetString(reader.GetOrdinal("transaction_currency_code")),
+                reader.GetString(reader.GetOrdinal("base_currency_code")),
+                reader.IsDBNull(reader.GetOrdinal("fx_rate_snapshot_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("fx_rate_snapshot_id")),
+                reader.GetDecimal(reader.GetOrdinal("fx_rate")),
+                reader.GetInt32(reader.GetOrdinal("line_count")),
+                reader.GetDecimal(reader.GetOrdinal("unrealized_total_base")),
+                reader.IsDBNull(reader.GetOrdinal("linked_journal_entry_id"))
+                    ? null
+                    : reader.GetGuid(reader.GetOrdinal("linked_journal_entry_id")),
+                reader.IsDBNull(reader.GetOrdinal("linked_journal_entry_display_number"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("linked_journal_entry_display_number")),
+                reader.IsDBNull(reader.GetOrdinal("linked_journal_posted_at"))
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("linked_journal_posted_at")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at"))));
+        }
+
+        return items;
     }
 
     private async Task<FxRevaluationCascadeUnwindPlanResult> GetCascadeUnwindPlanCoreAsync(

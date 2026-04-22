@@ -1,6 +1,7 @@
 @page "/"
 @page "/overview"
 
+@inject AppShellState ShellState
 @inject ISnackbar Snackbar
 @inject PlatformCoreClient PlatformCoreClient
 @inject SysAdminHealthClient SysAdminHealthClient
@@ -31,6 +32,29 @@
         </MudButton>
     </MudStack>
 </MudStack>
+
+@if (!ShellState.BusinessReady)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle1">Business setup is not complete yet</MudText>
+            <MudText Typo="Typo.body2">
+                @GetSetupMessage()
+            </MudText>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="setup/company-decision">
+                    First company setup
+                </MudButton>
+                @if (ShellState.FirstCompanySetupRequired && ShellState.HasAnyCompany)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="setup/first-company">
+                        Continue company wizard
+                    </MudButton>
+                }
+            </MudStack>
+        </MudStack>
+    </MudAlert>
+}
 
 @if (_lastBootstrapReport is not null)
 {
@@ -257,5 +281,22 @@ else
         {
             _isBootstrapping = false;
         }
+    }
+
+    private string GetSetupMessage()
+    {
+        if (ShellState.FirstCompanySetupDeferred)
+        {
+            return "Platform governance is ready. Business initialization is currently deferred until you choose to create the first company.";
+        }
+
+        if (ShellState.FirstCompanySetupRequired)
+        {
+            return ShellState.HasAnyCompany
+                ? "A company record exists, but the first business-ready owner bootstrap is not complete yet."
+                : "Create the first company and first business owner before using the Business App.";
+        }
+
+        return "Platform setup is still being assessed.";
     }
 }

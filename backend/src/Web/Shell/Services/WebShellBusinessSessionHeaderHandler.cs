@@ -11,6 +11,13 @@ public sealed class WebShellBusinessSessionHeaderHandler(WebShellState shellStat
     {
         await shellState.EnsureHydratedAsync(cancellationToken);
 
+        if (!shellState.IsAuthenticated ||
+            shellState.CurrentUserId == Guid.Empty ||
+            shellState.ActiveCompany.Id == Guid.Empty)
+        {
+            return await base.SendAsync(request, cancellationToken);
+        }
+
         request.Headers.Remove(BusinessSessionHeaderNames.UserId);
         request.Headers.Remove(BusinessSessionHeaderNames.ActiveCompanyId);
         request.Headers.Add(BusinessSessionHeaderNames.UserId, shellState.CurrentUserId.ToString());

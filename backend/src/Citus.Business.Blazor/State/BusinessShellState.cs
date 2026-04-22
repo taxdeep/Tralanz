@@ -49,6 +49,17 @@ public sealed class BusinessShellState
         Message = "Platform runtime is accepting interactive changes."
     };
 
+    public bool IsCompanyReadOnly => ActiveCompany.IsReadOnly;
+
+    public bool AreWritesBlocked => MaintenanceState.Enabled || ActiveCompany.IsReadOnly;
+
+    public string WriteBlockMessage =>
+        MaintenanceState.Enabled
+            ? MaintenanceState.Message
+            : ActiveCompany.IsReadOnly
+                ? $"Company {ActiveCompany.CompanyName} is {NormalizeStatus(ActiveCompany.Status)} and currently read-only."
+                : "Business writes are available.";
+
     public IReadOnlyList<NavSection> NavigationSections { get; } =
     [
         new NavSection
@@ -122,4 +133,9 @@ public sealed class BusinessShellState
         AvailableCompanies = context.AvailableCompanies;
         MaintenanceState = context.MaintenanceState;
     }
+
+    private static string NormalizeStatus(string? status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "inactive"
+            : status.Trim().ToLowerInvariant();
 }

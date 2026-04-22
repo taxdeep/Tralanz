@@ -1,0 +1,353 @@
+@page "/setup/first-company"
+
+@inject AppShellState ShellState
+@inject NavigationManager NavigationManager
+@inject SysAdminAuthenticationClient AuthClient
+
+<PageTitle>First Company Wizard | Citus SysAdmin</PageTitle>
+
+<MudStack Spacing="2">
+    <MudText Typo="Typo.overline" Class="text-secondary">First-time setup</MudText>
+    <MudText Typo="Typo.h4">First Company Wizard</MudText>
+    <MudText Typo="Typo.body1" Class="text-secondary">
+        Provision the first business owner, company profile, default primary book, and starter chart-of-accounts binding. This is the hand-off from platform-ready to business-ready.
+    </MudText>
+</MudStack>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">
+        @_error
+    </MudAlert>
+}
+
+@if (!string.IsNullOrWhiteSpace(_success))
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-4">
+        @_success
+    </MudAlert>
+}
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12" xl="7">
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.h6" Class="mb-4">1. First business owner</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_ownerDisplayName" Label="Display name" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_ownerEmail" Label="Email" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_ownerPassword" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_ownerPasswordConfirm" Label="Confirm password" Variant="Variant.Outlined" InputType="InputType.Password" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.h6" Class="mb-4">2. Company profile</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_companyName" Label="Company name" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" Value="@EntityType" ValueChanged="OnEntityTypeChanged" Label="Entity type" Variant="Variant.Outlined">
+                        <MudSelectItem T="string" Value="@("corporation")">Corporation</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("partnership")">Partnership</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("sole_proprietorship")">Sole proprietorship</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" Value="@Industry" ValueChanged="OnIndustryChanged" Label="Industry" Variant="Variant.Outlined">
+                        <MudSelectItem T="string" Value="@("general_services")">General services</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("trading")">Trading</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("property_rental")">Property rental</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_incorporatedOn" Label="Incorporated date" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_fiscalYearEnd" Label="Fiscal year end (MM-DD)" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_businessNumber" Label="Business number" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_accountCodeLength" Label="Account code length" Variant="Variant.Outlined">
+                        <MudSelectItem T="int" Value="4">4</MudSelectItem>
+                        <MudSelectItem T="int" Value="5">5</MudSelectItem>
+                        <MudSelectItem T="int" Value="6">6</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_phone" Label="Phone (optional)" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_companyEmail" Label="Company email" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_addressLine" Label="Address line" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_city" Label="City" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_province" Label="Province / State" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_postalCode" Label="Postal code" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Value="@Country" ValueChanged="OnCountryChanged" Label="Country" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-4">3. Chart template and multi-currency reserve preview</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" Value="@TemplateKey" ValueChanged="OnTemplateChanged" Label="Template" Variant="Variant.Outlined">
+                        <MudSelectItem T="string" Value="@("ca_general_small_business")">Canada general small business</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("ca_property_rental")">Canada property rental</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_baseCurrencyCode" Label="Base currency" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Text" Dense="true" Class="mt-3">
+                Suggested template from company profile: <strong>@GetTemplateLabel(GetSuggestedTemplateKey())</strong>
+            </MudAlert>
+
+            <MudTable Items="_reservedFamilies" Dense="true" Hover="true" Class="mt-4">
+                <HeaderContent>
+                    <MudTh>Reserved family</MudTh>
+                    <MudTh>Purpose</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Reserved family">@context.CodeRange</MudTd>
+                    <MudTd DataLabel="Purpose">@context.Purpose</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" xl="5">
+        <MudPaper Class="pa-4 mb-4">
+            <MudText Typo="Typo.h6" Class="mb-3">4. Review</MudText>
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.body2"><strong>Business owner:</strong> @FormatReview(_ownerDisplayName, _ownerEmail)</MudText>
+                <MudText Typo="Typo.body2"><strong>Company:</strong> @FormatReview(_companyName, _country)</MudText>
+                <MudText Typo="Typo.body2"><strong>Profile:</strong> @($"{EntityType} / {Industry} / FY {_fiscalYearEnd}")</MudText>
+                <MudText Typo="Typo.body2"><strong>COA template:</strong> @TemplateKey</MudText>
+                <MudText Typo="Typo.body2"><strong>Account code length:</strong> @_accountCodeLength</MudText>
+                <MudText Typo="Typo.body2"><strong>Base currency:</strong> @_baseCurrencyCode</MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">Finish</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary mb-4">
+                Finish will create the first business owner, create the company, assign the first owner membership, seed the default primary book, and provision the selected starter chart with multi-currency reserve families.
+            </MudText>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="setup/company-decision">
+                    Back
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_submitting" OnClick="FinishSetupAsync">
+                    @(_submitting ? "Provisioning..." : "Finish setup")
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code
+{
+    private string _ownerDisplayName = "Business Owner";
+    private string _ownerEmail = string.Empty;
+    private string _ownerPassword = string.Empty;
+    private string _ownerPasswordConfirm = string.Empty;
+    private string _companyName = string.Empty;
+    private string _entityType = "corporation";
+    private string _industry = "general_services";
+    private DateTime? _incorporatedOn = DateTime.Today;
+    private string _fiscalYearEnd = "12-31";
+    private string _businessNumber = string.Empty;
+    private int _accountCodeLength = 4;
+    private string _phone = string.Empty;
+    private string _companyEmail = string.Empty;
+    private string _addressLine = string.Empty;
+    private string _city = string.Empty;
+    private string _province = string.Empty;
+    private string _postalCode = string.Empty;
+    private string _country = "Canada";
+    private string _templateKey = "ca_general_small_business";
+    private string _baseCurrencyCode = "CAD";
+    private bool _templateWasManuallySelected;
+    private bool _submitting;
+    private string _error = string.Empty;
+    private string _success = string.Empty;
+
+    private readonly IReadOnlyList<ReservedCodeFamily> _reservedFamilies =
+    [
+        new("1000-1099", "Cash and bank family"),
+        new("1200", "Base accounts receivable control"),
+        new("1210-1249", "Multi-currency AR reserve"),
+        new("3000", "Base accounts payable control"),
+        new("3010-3049", "Multi-currency AP reserve"),
+        new("5600-5699", "FX gain/loss and translation reserve family")
+    ];
+
+    protected override void OnInitialized()
+    {
+        if (ShellState.BusinessReady)
+        {
+            NavigationManager.NavigateTo("overview");
+            return;
+        }
+
+        if (ShellState.FirstCompanySetupDeferred && !ShellState.HasAnyCompany)
+        {
+            NavigationManager.NavigateTo("setup/company-decision");
+        }
+
+        _templateKey = GetSuggestedTemplateKey();
+    }
+
+    private string EntityType => _entityType;
+
+    private string Industry => _industry;
+
+    private string Country => _country;
+
+    private string TemplateKey => _templateKey;
+
+    private Task OnEntityTypeChanged(string value)
+    {
+        _entityType = value;
+        ApplyTemplateSuggestion();
+        return Task.CompletedTask;
+    }
+
+    private Task OnIndustryChanged(string value)
+    {
+        _industry = value;
+        ApplyTemplateSuggestion();
+        return Task.CompletedTask;
+    }
+
+    private Task OnCountryChanged(string value)
+    {
+        _country = value;
+        ApplyTemplateSuggestion();
+        return Task.CompletedTask;
+    }
+
+    private Task OnTemplateChanged(string value)
+    {
+        _templateKey = value;
+        _templateWasManuallySelected = true;
+        return Task.CompletedTask;
+    }
+
+    private void ApplyTemplateSuggestion()
+    {
+        if (_templateWasManuallySelected)
+        {
+            return;
+        }
+
+        _templateKey = GetSuggestedTemplateKey();
+    }
+
+    private string GetSuggestedTemplateKey()
+    {
+        if (string.Equals(_country, "Canada", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(_industry, "property_rental", StringComparison.OrdinalIgnoreCase))
+        {
+            return "ca_property_rental";
+        }
+
+        return "ca_general_small_business";
+    }
+
+    private static string GetTemplateLabel(string templateKey) =>
+        templateKey switch
+        {
+            "ca_property_rental" => "Canada property rental",
+            _ => "Canada general small business"
+        };
+
+    private async Task FinishSetupAsync()
+    {
+        _error = string.Empty;
+        _success = string.Empty;
+        _submitting = true;
+
+        try
+        {
+            var result = await AuthClient.ProvisionFirstCompanyAsync(
+                ShellState.SessionToken,
+                new SysAdminAuthenticationClient.FirstCompanyProvisioningRequest
+                {
+                    OwnerDisplayName = _ownerDisplayName,
+                    OwnerEmail = _ownerEmail,
+                    OwnerPassword = _ownerPassword,
+                    CompanyName = _companyName,
+                    EntityType = _entityType,
+                    Industry = _industry,
+                    IncorporatedOn = _incorporatedOn,
+                    FiscalYearEnd = _fiscalYearEnd,
+                    BusinessNumber = _businessNumber,
+                    AccountCodeLength = _accountCodeLength,
+                    Phone = _phone,
+                    CompanyEmail = _companyEmail,
+                    AddressLine = _addressLine,
+                    City = _city,
+                    ProvinceState = _province,
+                    PostalCode = _postalCode,
+                    Country = _country,
+                    TemplateKey = _templateKey,
+                    BaseCurrencyCode = _baseCurrencyCode
+                });
+
+            if (!result.Succeeded)
+            {
+                _error = string.IsNullOrWhiteSpace(result.FailureMessage)
+                    ? "Unable to provision the first company."
+                    : result.FailureMessage;
+                return;
+            }
+
+            _success = $"Provisioned {result.CompanyName} ({result.CompanyEntityNumber}) with owner {result.OwnerEmail}.";
+
+            var setupStatus = await AuthClient.GetSetupStatusAsync();
+            if (setupStatus is not null)
+            {
+                ShellState.ApplySetupStatus(setupStatus);
+            }
+
+            ShellState.SetFirstCompanyCompletion(result);
+            NavigationManager.NavigateTo("setup/completed");
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private static string FormatReview(string primary, string secondary) =>
+        string.IsNullOrWhiteSpace(primary) && string.IsNullOrWhiteSpace(secondary)
+            ? "Not entered yet"
+            : $"{(string.IsNullOrWhiteSpace(primary) ? "Unspecified" : primary)} / {(string.IsNullOrWhiteSpace(secondary) ? "Unspecified" : secondary)}";
+
+    private sealed record ReservedCodeFamily(string CodeRange, string Purpose);
+}

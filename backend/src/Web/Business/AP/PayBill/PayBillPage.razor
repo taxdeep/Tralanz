@@ -15,11 +15,128 @@
         Prepare governed AP payment drafts from open vendor payables in the active company context.
     </p>
 
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            Company-ready hand-off opened the AP settlement workbench so you can continue from the first bill stage into the first vendor payment stage once vendors, bank accounts, and posted payables exist.
+        </MudAlert>
+
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">First-company continuity</MudText>
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/bill/draft-editor?origin=company-ready">
+                    Start First Bill
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="/company/customer-vendor-setup?origin=company-ready">
+                    Review Vendor Truth
+                </MudButton>
+                @if (SelectedVendorId.HasValue)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildVendorBrowserHref()">
+                        Browse Selected Vendor Documents
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/company/bank-and-cash-setup?origin=company-ready">
+                    Review Bank &amp; Cash Setup
+                </MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/company/ready">
+                    Back to Company Ready
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
     <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
         Active company: @ShellSession.ActiveCompanyId
         <br />
         Current user: @ShellSession.CurrentUserId
     </MudAlert>
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellSession.WriteBlockMessage
+        </MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Bank Readiness</MudText>
+            <MudText Typo="Typo.h6">@BankReadinessLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@BankReadinessSummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Vendor Readiness</MudText>
+            <MudText Typo="Typo.h6">@VendorReadinessLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@VendorReadinessSummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Payable Trail</MudText>
+            <MudText Typo="Typo.h6">@PayableTrailLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@PayableTrailSummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Settlement Availability</MudText>
+            <MudText Typo="Typo.h6">@SettlementAvailabilityLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@SettlementAvailabilitySummary</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Source Follow-up</MudText>
+            <MudText Typo="Typo.h6">@SourceFollowUpLabel</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">@SourceFollowUpSummary</MudText>
+        </MudPaper>
+    </div>
+
+    @if (IsCompanyReadyHandOff)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Recommended next operator steps</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem Text="1">
+                    <ChildContent><MudText Typo="Typo.body2">@GetFirstCompanyStepOne()</MudText></ChildContent>
+                </MudListItem>
+                <MudListItem Text="2">
+                    <ChildContent><MudText Typo="Typo.body2">@GetFirstCompanyStepTwo()</MudText></ChildContent>
+                </MudListItem>
+                <MudListItem Text="3">
+                    <ChildContent><MudText Typo="Typo.body2">@GetFirstCompanyStepThree()</MudText></ChildContent>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+        @if (ShouldShowSettlementGapPanel)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">First vendor payment gap</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3">@VendorPaymentGapSummary</MudText>
+                <MudList T="string" Dense="true" Class="mb-3">
+                    @foreach (var step in VendorPaymentGapChecklist)
+                    {
+                        <MudListItem>
+                            <ChildContent><MudText Typo="Typo.body2">@step</MudText></ChildContent>
+                        </MudListItem>
+                    }
+                </MudList>
+                <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                    @if (_vendors.Count == 0)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/company/customer-vendor-setup?origin=company-ready">
+                            Create First Vendor
+                        </MudButton>
+                    }
+                    else if (SelectedVendorId.HasValue)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Info" Href="@BuildVendorBillHref()">
+                            Open Matching Bill Flow
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@BuildVendorBrowserHref()">
+                            Browse Matching Source Documents
+                        </MudButton>
+                    }
+                </div>
+            </MudPaper>
+        }
+    }
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
         <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_selectedVendorIdText">
@@ -40,7 +157,7 @@
 
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
         <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="_isBusy" OnClick="LoadCandidatesAsync">Load Open Payables</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _rows.Count == 0)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _rows.Count == 0 || WritesBlocked)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_errorText))
@@ -123,7 +240,7 @@
                 </MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Success"
-                           Disabled="_isBusy"
+                           Disabled="@(_isBusy || WritesBlocked)"
                            OnClick="PostDraftAsync">
                     Post Draft
                 </MudButton>
@@ -200,9 +317,104 @@
     private PayBillDraftResult? _preparedDraft;
     private ApSettlementPostingResult? _postedResult;
     private IReadOnlyList<RowState> SelectedRows => _rows.Where(static row => row.AppliedAmountTx > 0m).ToArray();
+    [SupplyParameterFromQuery(Name = "origin")]
+    public string? Origin { get; set; }
+    [SupplyParameterFromQuery(Name = "vendorId")]
+    public Guid? VendorId { get; set; }
+
+    private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private Guid? SelectedVendorId => Guid.TryParse(_selectedVendorIdText, out var value) ? value : null;
+    private string BankReadinessLabel => _bankAccounts.Count > 0 ? $"{_bankAccounts.Count} active bank account(s)" : "Bank setup required";
+    private string BankReadinessSummary => _bankAccounts.Count > 0
+        ? "An active bank-detail account is available, so vendor payment drafts can anchor against a real settlement account."
+        : "No active bank-detail account is available yet. Complete Bank & Cash Setup before preparing the first pay-bill draft.";
+    private string VendorReadinessLabel => _vendors.Count > 0 ? $"{_vendors.Count} vendor option(s)" : "Vendor setup pending";
+    private string VendorReadinessSummary => _vendors.Count > 0
+        ? VendorId.HasValue && SelectedVendorId == VendorId
+            ? "The vendor carried forward from the first-bill flow is already selected. Load payables to check whether the first posted document is ready to settle."
+            : "Vendor lookups are available. Select one vendor, then load open payables to see what can be settled."
+        : "No vendors are available yet. Post the first bill before expecting payable settlement candidates here.";
+    private string PayableTrailLabel => _rows.Count switch
+    {
+        > 0 => $"{_rows.Count} open payable candidate(s)",
+        _ when SelectedVendorId is null => "Vendor not selected",
+        _ => "No open payables loaded"
+    };
+    private string PayableTrailSummary => _rows.Count switch
+    {
+        > 0 => "Open payable candidates are loaded. Enter apply amounts, prepare the draft, and continue into posting.",
+        _ when SelectedVendorId is null => "Select a vendor first so the workbench can check for posted bills or vendor credits that still have open payables.",
+        _ => "The selected vendor currently has no open payable candidates loaded. If the first bill has not been posted yet, start there before returning here."
+    };
+    private string SettlementAvailabilityLabel => _rows.Count switch
+    {
+        > 0 => "Ready to settle",
+        _ when _bankAccounts.Count == 0 => "Bank anchor missing",
+        _ when _vendors.Count == 0 => "Vendor truth missing",
+        _ when SelectedVendorId is null => "Counterparty not selected",
+        _ when VendorId.HasValue && SelectedVendorId == VendorId => "Likely waiting for first post",
+        _ => "Needs source-document review"
+    };
+    private string SettlementAvailabilitySummary => _rows.Count switch
+    {
+        > 0 => "At least one payable open item is available, so the first vendor-payment chain can proceed legally.",
+        _ when _bankAccounts.Count == 0 => "Settlement cannot begin until one active bank-detail account exists to anchor the cash side of the vendor payment.",
+        _ when _vendors.Count == 0 => "There is no company-scoped vendor truth yet, so no payable owner can appear in the settlement workbench.",
+        _ when SelectedVendorId is null => "The workbench still needs one concrete vendor selection before it can look for open payables.",
+        _ when VendorId.HasValue && SelectedVendorId == VendorId => "The selected vendor came from the first-bill flow. If no candidate appears, the most likely gap is that the bill is not posted yet or already fully consumed.",
+        _ => "A vendor is selected, but settlement still needs a posted bill or vendor credit that currently carries an open payable."
+    };
+    private string SourceFollowUpLabel => _rows.Count switch
+    {
+        > 0 => "Posted source confirmed",
+        _ when _vendors.Count == 0 => "Create vendor truth first",
+        _ when SelectedVendorId is null => "Choose one payable owner",
+        _ when VendorId.HasValue && SelectedVendorId == VendorId => "Check first bill status",
+        _ => "Review matching source history"
+    };
+    private string SourceFollowUpSummary => _rows.Count switch
+    {
+        > 0 => "Open-item truth already exists for the selected vendor, so source posting is no longer the blocker.",
+        _ when _vendors.Count == 0 => "Without a real vendor record, the first bill cannot produce a payable owner that later appears in Pay Bill.",
+        _ when SelectedVendorId is null => "Pick the vendor tied to the posted bill or vendor credit before diagnosing why no settlement candidate is visible.",
+        _ when VendorId.HasValue && SelectedVendorId == VendorId => "Because this vendor came from the first-bill hand-off, the next check is whether the first bill is still draft, has been reversed, or was already consumed by another vendor-payment path.",
+        _ => "The next legal check is the matching source-document history for this vendor: posted bill, posted vendor credit, reversal trail, or prior payment consumption."
+    };
+    private bool ShouldShowSettlementGapPanel => _vendors.Count == 0 || SelectedVendorId is null || (_rows.Count == 0 && SelectedVendorId.HasValue);
+    private string VendorPaymentGapSummary => _vendors.Count switch
+    {
+        0 => "No vendor truth exists yet, so there is no legal payable owner to carry into the first vendor-payment flow.",
+        _ when SelectedVendorId is null => "A vendor list exists, but no specific vendor is selected yet, so the workbench cannot look for matching payable open items.",
+        _ when VendorId.HasValue && SelectedVendorId == VendorId => "The selected vendor came directly from the first-bill flow, but no open payables are visible yet. In practice that usually means the first bill still needs posting, or that the payable was already consumed by another vendor-payment path.",
+        _ => "The selected vendor is set, but no open payables are visible yet. Usually that means the first bill has not been posted for this same vendor, or the payable has already been consumed."
+    };
+    private IReadOnlyList<string> VendorPaymentGapChecklist => _vendors.Count switch
+    {
+        0 =>
+        [
+            "Create one real vendor record first so the first bill can bind to company-scoped payable truth.",
+            "Return to the bill workbench after vendor setup, then post the first bill before opening Pay Bill again."
+        ],
+        _ when SelectedVendorId is null =>
+        [
+            "Select the vendor that owns the first posted bill or vendor credit.",
+            "Then load open payables to confirm whether that counterparty now has a settlement candidate."
+        ],
+        _ when VendorId.HasValue && SelectedVendorId == VendorId =>
+        [
+            "Open the matching bill flow and confirm the first bill is already posted rather than just saved as draft.",
+            "If it is posted, browse matching source documents to check whether another vendor payment already consumed the open payable."
+        ],
+        _ =>
+        [
+            "Browse matching source documents for this vendor and confirm at least one bill or vendor credit is posted.",
+            "If posted source exists, check whether the resulting open payable has already been settled or reversed elsewhere."
+        ]
+    };
 
     protected override async Task OnInitializedAsync()
     {
+        await EnsureWriteGateStateAsync();
         await LoadLookupOptionsAsync();
     }
 
@@ -212,6 +424,12 @@
         {
             _vendors = (await LookupService.ListVendorsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
             _bankAccounts = (await LookupService.ListBankAccountsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
+
+            if (VendorId.HasValue &&
+                _vendors.Any(item => item.Id == VendorId.Value))
+            {
+                _selectedVendorIdText = VendorId.Value.ToString();
+            }
 
             if (_vendors.Count == 1)
             {
@@ -255,6 +473,11 @@
 
     private async Task PrepareDraftAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         _errorText = null;
         _preparedDraft = null;
         _postedResult = null;
@@ -289,6 +512,11 @@
 
     private async Task PostDraftAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         if (_preparedDraft is null)
         {
             _errorText = "Prepare a draft before posting.";
@@ -329,6 +557,53 @@
         _errorText = $"{label} must be selected.";
         return false;
     }
+
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
+
+    private async Task EnsureWriteGateStateAsync()
+    {
+        await ShellSession.RefreshAsync(CancellationToken.None);
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _errorText = ShellSession.WriteBlockMessage;
+        return true;
+    }
+
+    private string GetFirstCompanyStepOne() =>
+        _bankAccounts.Count == 0
+            ? "Provision at least one active bank-detail account first so the pay-bill draft has a valid settlement anchor."
+            : "Keep the active starter bank selected unless you intentionally want to pay vendors from another cash account.";
+
+    private string GetFirstCompanyStepTwo() =>
+        _vendors.Count == 0
+            ? "Create and post the first bill before expecting any payable settlement candidates here."
+            : VendorId.HasValue && SelectedVendorId == VendorId
+                ? "The vendor from the first posted bill is already selected. Load payables now to confirm the new open item is available for settlement."
+                : SelectedVendorId is null
+                ? "Pick the vendor that owns the first posted bill or vendor credit, then load open payables."
+                : "Load open payables for the selected vendor to confirm there is a posted source document waiting to be settled.";
+
+    private string GetFirstCompanyStepThree() =>
+        _rows.Count > 0
+            ? "Once the right payables appear, enter applied amounts and continue through draft preparation and posting."
+            : "If no payables appear after loading, go back to the bill workbench, post the first bill, then return here.";
+
+    private string BuildVendorBillHref() =>
+        SelectedVendorId.HasValue
+            ? $"/documents/bill/draft-editor?origin=company-ready&vendorId={SelectedVendorId.Value:D}"
+            : "/documents/bill/draft-editor?origin=company-ready";
+
+    private string BuildVendorBrowserHref() =>
+        SelectedVendorId.HasValue
+            ? $"/documents/source-browser?origin=company-ready&sourceType=bill&counterpartyRole=vendor&counterpartyId={SelectedVendorId.Value:D}"
+            : "/documents/source-browser?origin=company-ready&sourceType=bill&counterpartyRole=vendor";
 
     private sealed class RowState
     {

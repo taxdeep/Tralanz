@@ -26,6 +26,13 @@
         Preference owner: @ShellSession.CurrentUserId
     </MudAlert>
 
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellSession.WriteBlockMessage
+        </MudAlert>
+    }
+
     <div class="setup-page__grid">
         <div class="setup-card">
             <div class="setup-card__title">Number Display Mode</div>
@@ -36,6 +43,7 @@
                 {
                     <button type="button"
                             class="setup-option @(option.Mode == _selectedMode ? "setup-option--selected" : string.Empty)"
+                            disabled="@(_isSaving || WritesBlocked)"
                             @onclick="() => SelectMode(option.Mode)">
                         <div class="setup-option__row">
                             <span class="setup-option__label">@option.Label</span>
@@ -54,7 +62,7 @@
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/">Cancel</MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Success"
-                           Disabled="_isSaving"
+                           Disabled="@(_isSaving || WritesBlocked)"
                            OnClick="SaveAsync">
                     Save preference
                 </MudButton>
@@ -89,20 +97,33 @@
 {
     private NumberDisplayMode _selectedMode = NumberDisplayModeDefaults.Default;
     private bool _isSaving;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
 
     protected override async Task OnInitializedAsync()
     {
+        await EnsureWriteGateStateAsync();
         var preference = await SystemSetupWorkflow.GetAsync(ShellSession.CurrentUserId, CancellationToken.None);
         _selectedMode = preference.NumberDisplayMode;
     }
 
     private void SelectMode(NumberDisplayMode mode)
     {
+        if (WritesBlocked)
+        {
+            Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
+            return;
+        }
+
         _selectedMode = mode;
     }
 
     private async Task SaveAsync()
     {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
         try
         {
             _isSaving = true;
@@ -122,5 +143,21 @@
         {
             _isSaving = false;
         }
+    }
+
+    private async Task EnsureWriteGateStateAsync()
+    {
+        await ShellSession.RefreshAsync(CancellationToken.None);
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
+        return true;
     }
 }

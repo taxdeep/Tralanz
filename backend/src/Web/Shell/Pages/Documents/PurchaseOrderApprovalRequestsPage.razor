@@ -1,0 +1,459 @@
+@page "/documents/purchase-orders/approval-requests"
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellAccountingDocumentReviewClient ReviewClient
+@inject IJSRuntime JS
+
+<PageTitle>PO Approval Requests | Citus Web Shell</PageTitle>
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" StartIcon="@Icons.Material.Filled.ArrowBack">
+            Back to shell
+        </MudButton>
+        <MudButton Variant="Variant.Text" Color="Color.Info" Href="/documents/source-browser?sourceType=purchase_order" StartIcon="@Icons.Material.Filled.Assignment">
+            Purchase orders
+        </MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only queue</MudChip>
+    </div>
+
+    <h1 style="margin:0 0 0.75rem 0;">Purchase Order Approval Requests</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:64rem;">
+        Approval requests are audit-backed review records. This queue shows request, amount threshold, and rejection state without moving purchase order lifecycle authority into the Shell.
+    </p>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @ShellState.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (_isCommandRunning)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Warning" Style="margin-bottom:1rem;" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_commandMessage))
+    {
+        <MudAlert Severity="_commandSeverity" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            @_commandMessage
+        </MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Active Company</MudText>
+            <MudText Typo="Typo.h6">@ShellState.ActiveCompany.CompanyCode</MudText>
+            <MudText Typo="Typo.body2">@ShellState.ActiveCompany.CompanyName</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Pending Requests</MudText>
+            <MudText Typo="Typo.h6">@PendingCount</MudText>
+            <MudText Typo="Typo.body2">Open approval intent</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Governance Threshold</MudText>
+            <MudText Typo="Typo.h6">@GovernanceCount</MudText>
+            <MudText Typo="Typo.body2">Request(s) above temporary threshold</MudText>
+        </MudPaper>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudText Typo="Typo.caption">Closed Records</MudText>
+            <MudText Typo="Typo.h6">@ClosedCount</MudText>
+            <MudText Typo="Typo.body2">Approved, rejected, or cancelled context</MudText>
+        </MudPaper>
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;gap:0.75rem;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                <MudCheckBox T="bool" Label="Include closed" @bind-Value="_includeClosed" Dense="true" Color="Color.Info" />
+                <MudSelect T="int" Label="Take" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="_take" Style="width:9rem;">
+                    <MudSelectItem T="int" Value="25">25</MudSelectItem>
+                    <MudSelectItem T="int" Value="50">50</MudSelectItem>
+                    <MudSelectItem T="int" Value="100">100</MudSelectItem>
+                    <MudSelectItem T="int" Value="200">200</MudSelectItem>
+                </MudSelect>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_isLoading" OnClick="LoadAsync" StartIcon="@Icons.Material.Filled.Refresh">
+                Refresh
+            </MudButton>
+        </div>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="0">
+        <MudText Typo="Typo.h6" Class="mb-3">Approval Request Queue</MudText>
+        @if (_requests.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                No purchase order approval requests matched the active company context and queue filter.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_requests" Dense="true" Hover="true" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Purchase Order</MudTh>
+                    <MudTh>PO Status</MudTh>
+                    <MudTh>Request</MudTh>
+                    <MudTh>Approval</MudTh>
+                    <MudTh>Amount</MudTh>
+                    <MudTh>Actors</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudText Typo="Typo.body2">@context.DisplayNumber</MudText>
+                        <MudText Typo="Typo.caption">@context.EntityNumber</MudText>
+                    </MudTd>
+                    <MudTd>@FormatStatus(context.PurchaseOrderStatus)</MudTd>
+                    <MudTd>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="@GetRequestStatusColor(context.RequestStatus)" Size="Size.Small">
+                            @FormatStatus(context.RequestStatus)
+                        </MudChip>
+                        <MudText Typo="Typo.caption">@context.RequestedAt.ToString("yyyy-MM-dd HH:mm zzz")</MudText>
+                    </MudTd>
+                    <MudTd>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="@GetApprovalStatusColor(context.ApprovalStatus)" Size="Size.Small">
+                            @FormatStatus(context.ApprovalStatus)
+                        </MudChip>
+                        <MudText Typo="Typo.caption">@GetApprovalNote(context)</MudText>
+                    </MudTd>
+                    <MudTd>
+                        <MudText Typo="Typo.body2">@FormatAmount(context.EstimatedAmount)</MudText>
+                        <MudText Typo="Typo.caption">@GetThresholdNote(context)</MudText>
+                    </MudTd>
+                    <MudTd>
+                        <MudText Typo="Typo.body2">@FormatActor(context.RequestedByActorType, context.RequestedByActorId)</MudText>
+                        <MudText Typo="Typo.caption">@GetTransitionActorNote(context)</MudText>
+                    </MudTd>
+                    <MudTd>
+                        <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Href="@BuildPurchaseOrderHref(context.PurchaseOrderId)">
+                            Open
+                        </MudButton>
+                        @if (CanApprove(context))
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       Size="Size.Small"
+                                       Disabled="@(_isCommandRunning || WritesBlocked)"
+                                       OnClick="@(() => ApproveAsync(context))">
+                                Approve
+                            </MudButton>
+                        }
+                        @if (CanReject(context))
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       Disabled="@(_isCommandRunning || WritesBlocked)"
+                                       OnClick="@(() => RejectAsync(context))">
+                                Reject
+                            </MudButton>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</div>
+
+@code {
+    private bool _isLoading;
+    private bool _includeClosed;
+    private bool _isCommandRunning;
+    private int _take = 50;
+    private string? _errorText;
+    private string? _commandMessage;
+    private Severity _commandSeverity = Severity.Info;
+    private IReadOnlyList<ShellPurchaseOrderApprovalRequestSummary> _requests = Array.Empty<ShellPurchaseOrderApprovalRequestSummary>();
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private int PendingCount => _requests.Count(static item => string.Equals(item.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase));
+    private int GovernanceCount => _requests.Count(static item => item.RequiresGovernanceApproval);
+    private int ClosedCount => _requests.Count(static item => !string.Equals(item.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorText = null;
+
+        var result = await ReviewClient.ListPurchaseOrderApprovalRequestsAsync(
+            ShellState.ActiveCompany.Id,
+            _take,
+            _includeClosed,
+            CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _requests = result.Value ?? Array.Empty<ShellPurchaseOrderApprovalRequestSummary>();
+        _errorText = result.ErrorMessage;
+        _isLoading = false;
+    }
+
+    private async Task RejectAsync(ShellPurchaseOrderApprovalRequestSummary request)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        if (!CanReject(request))
+        {
+            return;
+        }
+
+        if (!await ConfirmApprovalQueueCommandAsync("Reject this purchase order approval request? Rejection closes the request trail but does not mutate ordered truth."))
+        {
+            return;
+        }
+
+        _isCommandRunning = true;
+        _commandMessage = null;
+        _commandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await ReviewClient.RejectPurchaseOrderApprovalRequestAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                request.PurchaseOrderId,
+                request.RequestId,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _commandSeverity = Severity.Warning;
+                _commandMessage = result.ErrorMessage ?? "The approval request reject command did not return a response.";
+            }
+            else
+            {
+                _commandSeverity = string.Equals(result.Value.OutcomeCode, "rejected", StringComparison.OrdinalIgnoreCase)
+                    ? Severity.Success
+                    : Severity.Warning;
+                _commandMessage = string.IsNullOrWhiteSpace(result.Value.Message)
+                    ? "Purchase order approval request rejected."
+                    : result.Value.Message;
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _commandSeverity = Severity.Error;
+            _commandMessage = ex.Message;
+        }
+        finally
+        {
+            _isCommandRunning = false;
+        }
+    }
+
+    private async Task ApproveAsync(ShellPurchaseOrderApprovalRequestSummary request)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        if (!CanApprove(request))
+        {
+            return;
+        }
+
+        if (!await ConfirmApprovalQueueCommandAsync("Approve this purchase order from the submitted request queue? Backend threshold and authority gates still apply."))
+        {
+            return;
+        }
+
+        _isCommandRunning = true;
+        _commandMessage = null;
+        _commandSeverity = Severity.Info;
+
+        try
+        {
+            var result = await ReviewClient.ApprovePurchaseOrderAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                request.PurchaseOrderId,
+                CancellationToken.None);
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _commandSeverity = Severity.Warning;
+                _commandMessage = result.ErrorMessage ?? "The purchase order approve command did not return a response.";
+            }
+            else
+            {
+                _commandSeverity = string.Equals(result.Value.Status, "approved", StringComparison.OrdinalIgnoreCase)
+                    ? Severity.Success
+                    : Severity.Warning;
+                _commandMessage = $"Purchase order {result.Value.DisplayNumber} moved to {FormatStatus(result.Value.Status)}.";
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _commandSeverity = Severity.Error;
+            _commandMessage = ex.Message;
+        }
+        finally
+        {
+            _isCommandRunning = false;
+        }
+    }
+
+    private static string BuildPurchaseOrderHref(Guid purchaseOrderId) =>
+        $"/documents/purchase_order/{purchaseOrderId:D}";
+
+    private static string FormatAmount(decimal? amount) =>
+        amount.HasValue ? amount.Value.ToString("N2") : "n/a";
+
+    private static string FormatStatus(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Draft",
+            "submitted" => "Submitted",
+            "approved" => "Approved",
+            "issued" => "Issued",
+            "closed" => "Closed",
+            "cancelled" => "Cancelled",
+            "pending" => "Pending",
+            "rejected" => "Rejected",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static Color GetRequestStatusColor(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "submitted" => Color.Info,
+            "draft" => Color.Warning,
+            "rejected" => Color.Error,
+            _ => Color.Default
+        };
+
+    private static Color GetApprovalStatusColor(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => Color.Success,
+            "rejected" => Color.Error,
+            "pending" => Color.Warning,
+            "cancelled" => Color.Default,
+            _ => Color.Default
+        };
+
+    private bool CanReject(ShellPurchaseOrderApprovalRequestSummary request) =>
+        HasPurchaseOrderApprovalAuthority(request) &&
+        string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanApprove(ShellPurchaseOrderApprovalRequestSummary request) =>
+        HasPurchaseOrderApprovalAuthority(request) &&
+        string.Equals(request.PurchaseOrderStatus, "draft", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(request.RequestStatus, "submitted", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(request.ApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<bool> ConfirmApprovalQueueCommandAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+
+    private bool HasPurchaseOrderApprovalAuthority(ShellPurchaseOrderApprovalRequestSummary request) =>
+        HasAnyRole("owner", "approve", "book_governance", "company_book_governance", "company_accounting_settings") &&
+        (!request.RequiresGovernanceApproval || HasAnyRole("owner", "book_governance", "company_book_governance", "company_accounting_settings"));
+
+    private bool HasAnyRole(params string[] roles) =>
+        ShellState.User.Roles.Any(userRole =>
+            !string.IsNullOrWhiteSpace(userRole) &&
+            roles.Contains(userRole.Trim().ToLowerInvariant(), StringComparer.Ordinal));
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _commandSeverity = Severity.Warning;
+        _commandMessage = ShellState.WriteBlockMessage;
+        return true;
+    }
+
+    private static string GetThresholdNote(ShellPurchaseOrderApprovalRequestSummary request) =>
+        request.RequiresGovernanceApproval
+            ? $"Governance required above {request.ThresholdAmount:N2}"
+            : $"Within {request.ThresholdAmount:N2} threshold";
+
+    private static string GetApprovalNote(ShellPurchaseOrderApprovalRequestSummary request)
+    {
+        if (request.RejectedAt.HasValue)
+        {
+            return $"Rejected {request.RejectedAt.Value:yyyy-MM-dd HH:mm zzz}";
+        }
+
+        if (string.Equals(request.ApprovalStatus, "approved", StringComparison.OrdinalIgnoreCase))
+        {
+            return "PO lifecycle is approved or beyond approval.";
+        }
+
+        return string.IsNullOrWhiteSpace(request.Reason)
+            ? "Awaiting review"
+            : request.Reason;
+    }
+
+    private static string GetTransitionActorNote(ShellPurchaseOrderApprovalRequestSummary request)
+    {
+        if (request.RejectedByActorId.HasValue)
+        {
+            return $"Rejected by {FormatActor(request.RejectedByActorType, request.RejectedByActorId)}";
+        }
+
+        if (request.SubmittedByActorId.HasValue)
+        {
+            return $"Submitted by {FormatActor(request.SubmittedByActorType, request.SubmittedByActorId)}";
+        }
+
+        return "Not submitted";
+    }
+
+    private static string FormatActor(string? actorType, Guid? actorId)
+    {
+        var type = string.IsNullOrWhiteSpace(actorType) ? "actor" : actorType.Trim();
+        return actorId.HasValue ? $"{type}:{actorId.Value:D}" : type;
+    }
+}

@@ -1,0 +1,337 @@
+@page "/company/membership-permissions"
+@using Modules.CompanyAccess.Memberships
+@using Modules.CompanyAccess.SessionContext
+@using MudBlazor
+@inject ICompanyAccessShellSession ShellSession
+@inject ICompanyMembershipPermissionWorkflow MembershipPermissionWorkflow
+@inject ISnackbar Snackbar
+
+<PageTitle>Membership Permissions</PageTitle>
+
+<div class="membership-page">
+    <div class="membership-page__header">
+        <div>
+            <div class="membership-page__eyebrow">CompanyAccess / Membership Control</div>
+            <h1>Membership Permissions</h1>
+            <p>
+                Manage company-scoped permission tokens from CompanyAccess truth. These grants feed session roles and downstream backend authority checks.
+            </p>
+        </div>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+            Company: @ShellSession.ActiveCompanyId
+        </MudChip>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="membership-page__notice">
+        Owner-governed surface. Saving changes does not mutate accounting truth; it only updates membership permission tokens used by backend authorization.
+    </MudAlert>
+
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="membership-page__notice">
+            @ShellSession.WriteBlockMessage
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="membership-page__notice">
+            @_error
+        </MudAlert>
+    }
+
+    <div class="membership-page__actions">
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Info"
+                   Disabled="_isLoading"
+                   OnClick="LoadAsync">
+            Reload membership truth
+        </MudButton>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="membership-card">
+            <MudProgressCircular Indeterminate="true" Color="Color.Info" />
+            <span>Loading CompanyAccess memberships...</span>
+        </div>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="membership-card membership-card--empty">
+            No active or inactive memberships were found for this company.
+        </div>
+    }
+    else
+    {
+        <div class="membership-grid">
+            @foreach (var row in _rows)
+            {
+                <section class="membership-card">
+                    <div class="membership-card__top">
+                        <div>
+                            <div class="membership-card__name">@row.DisplayName</div>
+                            <div class="membership-card__meta">@row.Email</div>
+                        </div>
+                        <div class="membership-card__chips">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(row.Role == "owner" ? Color.Success : Color.Default)">
+                                @row.Role
+                            </MudChip>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(row.IsActive ? Color.Info : Color.Warning)">
+                                @(row.IsActive ? "active" : "inactive")
+                            </MudChip>
+                        </div>
+                    </div>
+
+                    <div class="membership-permissions">
+                        @foreach (var option in _options)
+                        {
+                            <label class="membership-permission @(IsSelected(row, option.Token) ? "membership-permission--selected" : string.Empty)">
+                                <input type="checkbox"
+                                       checked="@IsSelected(row, option.Token)"
+                                       disabled="@(!row.IsActive || row.IsSaving || WritesBlocked)"
+                                       @onchange="eventArgs => TogglePermission(row, option.Token, eventArgs)" />
+                                <span>
+                                    <strong>@option.Label</strong>
+                                    <small>@option.Description</small>
+                                    @if (option.IsGovernancePermission)
+                                    {
+                                        <em>Governance</em>
+                                    }
+                                </span>
+                            </label>
+                        }
+                    </div>
+
+                    <div class="membership-card__footer">
+                        <span>Updated @row.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   Disabled="@(!row.IsActive || row.IsSaving || WritesBlocked)"
+                                   OnClick="() => SaveAsync(row)">
+                            @(row.IsSaving ? "Saving..." : "Save permissions")
+                        </MudButton>
+                    </div>
+                </section>
+            }
+        </div>
+    }
+
+    <section class="membership-audit">
+        <div class="membership-audit__header">
+            <div>
+                <div class="membership-audit__eyebrow">Audit Trail</div>
+                <h2>Recent Permission Changes</h2>
+            </div>
+            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+                @_auditRows.Count events
+            </MudChip>
+        </div>
+
+        @if (_auditRows.Count == 0)
+        {
+            <div class="membership-audit__empty">
+                No membership permission changes have been recorded yet.
+            </div>
+        }
+        else
+        {
+            <div class="membership-audit__list">
+                @foreach (var audit in _auditRows)
+                {
+                    <article class="membership-audit__row">
+                        <div>
+                            <div class="membership-audit__title">
+                                @(string.IsNullOrWhiteSpace(audit.ActorDisplayName) ? "Unknown actor" : audit.ActorDisplayName)
+                                updated
+                                @(string.IsNullOrWhiteSpace(audit.TargetDisplayName) ? audit.MembershipId : audit.TargetDisplayName)
+                            </div>
+                            <div class="membership-audit__meta">
+                                @audit.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · role @audit.TargetRole
+                            </div>
+                        </div>
+                        <div class="membership-audit__diff">
+                            <span class="membership-audit__token membership-audit__token--added">
+                                + @FormatTokens(audit.AddedPermissionTokens)
+                            </span>
+                            <span class="membership-audit__token membership-audit__token--removed">
+                                - @FormatTokens(audit.RemovedPermissionTokens)
+                            </span>
+                            <span class="membership-audit__token">
+                                now @FormatTokens(audit.SavedPermissionTokens)
+                            </span>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@code
+{
+    private IReadOnlyList<CompanyMembershipPermissionOption> _options = Array.Empty<CompanyMembershipPermissionOption>();
+    private readonly List<MembershipPermissionRow> _rows = [];
+    private readonly List<CompanyMembershipPermissionAuditRecord> _auditRows = [];
+    private bool _isLoading;
+    private string? _error;
+    private bool WritesBlocked => ShellSession.AreWritesBlocked;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _options = MembershipPermissionWorkflow.GetAvailablePermissions();
+        await EnsureWriteGateStateAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _error = null;
+            await EnsureWriteGateStateAsync();
+            var memberships = await MembershipPermissionWorkflow.ListAsync(
+                ShellSession.ActiveCompanyId,
+                CancellationToken.None);
+            var audits = await MembershipPermissionWorkflow.ListRecentAuditAsync(
+                ShellSession.ActiveCompanyId,
+                12,
+                CancellationToken.None);
+
+            _rows.Clear();
+            _rows.AddRange(memberships.Select(static membership => MembershipPermissionRow.From(membership)));
+            _auditRows.Clear();
+            _auditRows.AddRange(audits);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static bool IsSelected(MembershipPermissionRow row, string token) =>
+        row.SelectedTokens.Contains(token);
+
+    private static void TogglePermission(
+        MembershipPermissionRow row,
+        string token,
+        ChangeEventArgs eventArgs)
+    {
+        var selected = eventArgs.Value is bool boolValue && boolValue;
+        if (selected)
+        {
+            row.SelectedTokens.Add(token);
+            return;
+        }
+
+        row.SelectedTokens.Remove(token);
+    }
+
+    private async Task SaveAsync(MembershipPermissionRow row)
+    {
+        if (TryBlockWrites())
+        {
+            return;
+        }
+
+        try
+        {
+            row.IsSaving = true;
+            var result = await MembershipPermissionWorkflow.SavePermissionsAsync(
+                ShellSession.ActiveCompanyId,
+                row.MembershipId,
+                ShellSession.CurrentUserId,
+                row.SelectedTokens.ToArray(),
+                CancellationToken.None);
+
+            row.Apply(result.Membership);
+            await LoadAuditAsync();
+            Snackbar.Add(result.Message, Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            row.IsSaving = false;
+        }
+    }
+
+    private async Task EnsureWriteGateStateAsync()
+    {
+        await ShellSession.RefreshAsync(CancellationToken.None);
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked)
+        {
+            return false;
+        }
+
+        _error = ShellSession.WriteBlockMessage;
+        Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private async Task LoadAuditAsync()
+    {
+        var audits = await MembershipPermissionWorkflow.ListRecentAuditAsync(
+            ShellSession.ActiveCompanyId,
+            12,
+            CancellationToken.None);
+
+        _auditRows.Clear();
+        _auditRows.AddRange(audits);
+    }
+
+    private static string FormatTokens(IReadOnlyList<string> tokens) =>
+        tokens.Count == 0 ? "none" : string.Join(", ", tokens);
+
+    private sealed class MembershipPermissionRow
+    {
+        public Guid MembershipId { get; private set; }
+
+        public string DisplayName { get; private set; } = string.Empty;
+
+        public string Email { get; private set; } = string.Empty;
+
+        public string Role { get; private set; } = string.Empty;
+
+        public bool IsActive { get; private set; }
+
+        public DateTimeOffset UpdatedAt { get; private set; }
+
+        public HashSet<string> SelectedTokens { get; } = new(StringComparer.Ordinal);
+
+        public bool IsSaving { get; set; }
+
+        public static MembershipPermissionRow From(CompanyMembershipPermissionListItem membership)
+        {
+            var row = new MembershipPermissionRow();
+            row.Apply(membership);
+            return row;
+        }
+
+        public void Apply(CompanyMembershipPermissionListItem membership)
+        {
+            MembershipId = membership.MembershipId;
+            DisplayName = membership.DisplayName;
+            Email = membership.Email;
+            Role = membership.Role;
+            IsActive = membership.IsActive;
+            UpdatedAt = membership.UpdatedAt;
+            SelectedTokens.Clear();
+            foreach (var token in membership.PermissionTokens)
+            {
+                SelectedTokens.Add(token);
+            }
+        }
+    }
+}

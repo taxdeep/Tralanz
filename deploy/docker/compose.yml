@@ -1,0 +1,119 @@
+name: citus
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CITUS_DB_NAME:-citus_accounting}
+      POSTGRES_USER: ${CITUS_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${CITUS_DB_PASSWORD:-change-me}
+      CITUS_ENABLE_DEMO_SEED: ${CITUS_ENABLE_DEMO_SEED:-false}
+    ports:
+      - "${CITUS_DB_PORT:-5432}:5432"
+    volumes:
+      - citus-postgres-data:/var/lib/postgresql/data
+      - ../../CITUS_POSTGRESQL_MIGRATION_DRAFT.sql:/docker-entrypoint-initdb.d/001-citus.sql:ro
+      - ./010-demo-seed.sh:/docker-entrypoint-initdb.d/010-demo-seed.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  accounting-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT_PATH: backend/src/Citus.Accounting.Api/Citus.Accounting.Api.csproj
+        PROJECT_DLL: Citus.Accounting.Api.dll
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__AccountingCore: Host=postgres;Port=5432;Database=${CITUS_DB_NAME:-citus_accounting};Username=${CITUS_DB_USER:-postgres};Password=${CITUS_DB_PASSWORD:-change-me}
+    ports:
+      - "${CITUS_ACCOUNTING_API_PORT:-5088}:8080"
+
+  web-shell:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT_PATH: backend/src/Web/Shell/Web.Shell.csproj
+        PROJECT_DLL: Web.Shell.dll
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      accounting-api:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__AccountingCore: Host=postgres;Port=5432;Database=${CITUS_DB_NAME:-citus_accounting};Username=${CITUS_DB_USER:-postgres};Password=${CITUS_DB_PASSWORD:-change-me}
+      AppHost__AccountingApiBaseUrl: http://accounting-api:8080/
+      PlatformIdentity__TotpProtectionKey: ${CITUS_TOTP_PROTECTION_KEY:-replace-this-before-production}
+    ports:
+      - "${CITUS_WEB_PORT:-8080}:8080"
+
+  sysadmin-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT_PATH: backend/src/Citus.SysAdmin.Api/Citus.SysAdmin.Api.csproj
+        PROJECT_DLL: Citus.SysAdmin.Api.dll
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__AccountingCore: Host=postgres;Port=5432;Database=${CITUS_DB_NAME:-citus_accounting};Username=${CITUS_DB_USER:-postgres};Password=${CITUS_DB_PASSWORD:-change-me}
+      PlatformNotifications__Provider: ${CITUS_NOTIFICATION_PROVIDER:-disabled}
+      PlatformNotifications__FromEmail: ${CITUS_NOTIFICATION_FROM_EMAIL:-}
+      PlatformNotifications__FromDisplayName: ${CITUS_NOTIFICATION_FROM_NAME:-Citus}
+      PlatformNotifications__Smtp__Host: ${CITUS_SMTP_HOST:-}
+      PlatformNotifications__Smtp__Port: ${CITUS_SMTP_PORT:-587}
+      PlatformNotifications__Smtp__UseSsl: ${CITUS_SMTP_USE_SSL:-true}
+      PlatformNotifications__Smtp__Username: ${CITUS_SMTP_USERNAME:-}
+      PlatformNotifications__Smtp__Password: ${CITUS_SMTP_PASSWORD:-}
+      SysAdminAuthentication__Bootstrap__Enabled: ${CITUS_SYSADMIN_BOOTSTRAP_ENABLED:-false}
+      SysAdminAuthentication__Bootstrap__AllowInNonDevelopment: ${CITUS_SYSADMIN_BOOTSTRAP_ALLOW_IN_NON_DEVELOPMENT:-false}
+      SysAdminAuthentication__Bootstrap__Email: ${CITUS_SYSADMIN_BOOTSTRAP_EMAIL:-sysadmin@citus.local}
+      SysAdminAuthentication__Bootstrap__DisplayName: ${CITUS_SYSADMIN_BOOTSTRAP_DISPLAY_NAME:-Platform Administrator}
+      SysAdminAuthentication__Bootstrap__Password: ${CITUS_SYSADMIN_BOOTSTRAP_PASSWORD:-change-me-now}
+    ports:
+      - "${CITUS_SYSADMIN_API_PORT:-5089}:8080"
+
+  sysadmin-web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        PROJECT_PATH: backend/src/Citus.SysAdmin.Blazor/Citus.SysAdmin.Blazor.csproj
+        PROJECT_DLL: Citus.SysAdmin.Blazor.dll
+    restart: unless-stopped
+    depends_on:
+      accounting-api:
+        condition: service_started
+      sysadmin-api:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      AppHost__PathBase: ""
+      AppHost__SysAdminApiBaseUrl: http://sysadmin-api:8080/
+      AppHost__AccountingApiBaseUrl: http://accounting-api:8080/
+    ports:
+      - "${CITUS_SYSADMIN_WEB_PORT:-8090}:8080"
+
+volumes:
+  citus-postgres-data:

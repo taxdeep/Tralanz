@@ -16,6 +16,127 @@ Authority order:
 
 ## 2. Core Model
 
+### 2.0 User Permission System Boundary
+
+Citus uses four cooperating boundaries for identity, entitlement, company access, and business authority.
+
+These boundaries must remain separate:
+
+- Platform Identity / Account
+- Platform Billing / Subscription
+- CompanyAccess
+- Business App Domains
+
+#### Platform Identity / Account
+
+Platform Identity / Account owns account-level identity truth.
+
+It is responsible for:
+
+- registration
+- login
+- password
+- email verification
+- reset password
+- platform account status
+- account lock / disable state
+
+It is not responsible for company membership, active company, company-scoped permissions, owner/user assignment, or accounting authority.
+
+#### Platform Billing / Subscription
+
+Platform Billing / Subscription owns commercial entitlement truth.
+
+It is responsible for:
+
+- plan
+- trial
+- subscription
+- renewal
+- cancellation
+- payment failure state
+- seat entitlement
+- feature entitlement
+- usage limits
+
+Feature and subscription gates may enable, disable, or limit capabilities.
+
+They must not rewrite posted accounting truth or replace domain legality.
+
+#### CompanyAccess
+
+The Business App does not own an independent user-management business domain.
+
+The Business App owns `CompanyAccess` only.
+
+`CompanyAccess` resolves an already-authenticated account into:
+
+- active company
+- company membership
+- company role
+- company-scoped permissions
+- company status gate
+- business access legality in the current company context
+- at-least-one-owner invariant
+
+The Business App may reference platform account identifiers as actor references.
+
+The Business App must not create business root modules centered on:
+
+- `Users`
+- `UserManagement`
+- `Identity`
+
+#### Business App Domains
+
+Business App Domains own business truth.
+
+Examples:
+
+- AP
+- AR
+- GL
+- Inventory
+- Tax
+- Reports
+- Reconciliation
+- Tasks
+
+Business domains consume identity actor references, CompanyAccess context, and entitlement allow/deny signals.
+
+Business domains decide domain legality and must remain authoritative for posting, approval, accounting, tax, FX, inventory, reporting, and reconciliation truth.
+
+#### SysAdmin
+
+SysAdmin is an independent PlatformOps / SysAdmin boundary with its own entry and session.
+
+SysAdmin is a governance entry point.
+
+SysAdmin may trigger user lock, password reset, membership adjustment, and owner/user assignment, but the authoritative truth remains with the proper owner:
+
+- account and credential truth belongs to Account / Identity infrastructure
+- company membership truth belongs to `CompanyAccess`
+- posting and approval truth belongs to Citus accounting modules and engines
+
+SysAdmin must not bypass business membership and become a business posting user.
+
+#### Identity Infrastructure
+
+Account / Identity infrastructure may carry login, password, account UI, session, and basic permission infrastructure.
+
+It may not become the source of business authorization truth.
+
+Citus must own and enforce:
+
+- company membership
+- active company
+- company-scoped permissions
+- at-least-one-owner rule
+- company inactive write restrictions
+- maintenance-mode business restrictions
+- business action legality
+- posting / approval / accounting authority
+
 ### 2.1 Business Session
 
 Every authenticated business session must include:
@@ -46,6 +167,82 @@ Minimum permission domains:
 - `reports`
 - `settings`
 - `reconciliation`
+
+### 2.4 Business Login Flow
+
+Business login is not complete after credential validation.
+
+Required flow:
+
+1. Platform Identity / Account validates account credentials.
+2. Account status is checked: active, not locked, not disabled.
+3. Maintenance mode is checked for normal Business App access.
+4. CompanyAccess resolves available active memberships.
+5. User selects or resumes an active company.
+6. CompanyAccess resolves role, company-scoped permissions, company status, and permission version.
+7. Business session is established with active company context.
+8. Business APIs validate server-side context before reads and writes.
+
+No business read or write may use a global user scope as a fallback.
+
+If no active membership exists, the Business App may show a no-company / invitation-required state, but business data access is blocked.
+
+### 2.5 SysAdmin Login Flow
+
+SysAdmin login must use a separate PlatformOps / SysAdmin session.
+
+SysAdmin sessions must not carry:
+
+- active company for business operations
+- company membership role
+- company-scoped business permissions
+- posting authority
+
+SysAdmin may trigger governance actions, but must route truth-changing work to the owning boundary:
+
+- account lock / disable / password reset -> Platform Identity / Account
+- plan / entitlement changes -> Platform Billing / Subscription
+- owner / user assignment -> CompanyAccess
+- company lifecycle state -> company lifecycle governance
+- accounting outcomes -> business modules and engines
+
+SysAdmin must not become a super-owner inside Business App posting flows.
+
+### 2.6 Business Authorization Decision Order
+
+Every business action must be evaluated in this order:
+
+1. Platform account is authenticated.
+2. Account is active and not locked / disabled.
+3. Maintenance mode allows the requested business access.
+4. Active company is resolved.
+5. Active membership exists for account + active company.
+6. Company status allows the requested operation.
+7. Subscription / feature entitlement allows the capability where applicable.
+8. Company-scoped permission allows the attempt.
+9. Business domain rules decide whether the action is legal.
+10. Posting / Tax / FX / Reconciliation engines decide formal accounting truth where applicable.
+
+Rules:
+
+- permission allows an attempt
+- entitlement enables a capability
+- company status gates mutation
+- business domains decide lifecycle legality
+- accounting engines decide accounting truth
+
+### 2.7 Company Status Gate
+
+Company status must be enforced on the backend.
+
+Recommended behavior:
+
+- `active`: reads and writes may proceed subject to authorization and domain rules
+- `inactive`: reads may proceed, writes are blocked
+- `suspended`: access is restricted by platform policy
+- `archived`: normal writes are blocked; read/export behavior must be explicit
+
+Frontend disabled controls are not sufficient enforcement.
 
 ## 3. Mandatory Data Rules
 

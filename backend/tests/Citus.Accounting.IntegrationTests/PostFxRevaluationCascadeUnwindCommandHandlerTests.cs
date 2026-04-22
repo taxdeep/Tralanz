@@ -136,6 +136,12 @@ public sealed class PostFxRevaluationCascadeUnwindCommandHandlerTests
             return Task.FromResult(document);
         }
 
+        public Task<IReadOnlyList<FxRevaluationBatchListItem>> ListRecentAsync(
+            CompanyId companyId,
+            int take,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<FxRevaluationBatchListItem>>(Array.Empty<FxRevaluationBatchListItem>());
+
         public Task<FxRevaluationCascadeUnwindPlanResult> GetCascadeUnwindPlanAsync(
             CompanyId companyId,
             Guid documentId,

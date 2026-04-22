@@ -7,6 +7,20 @@ namespace Citus.SysAdmin.Api.Tests;
 public sealed class SysAdminControlStateTests
 {
     [Fact]
+    public void GetContext_UsesSystemScope_WhenNoCompaniesAreConfigured()
+    {
+        var state = CreateState(new SysAdminControlOptions());
+
+        var context = state.GetContext();
+
+        Assert.True(context.ActiveCompany.IsSystemScope);
+        Assert.Equal("SYS", context.ActiveCompany.CompanyCode);
+        Assert.Empty(context.AvailableCompanies);
+        Assert.Empty(state.GetCompanies());
+        Assert.Empty(state.GetUsers());
+    }
+
+    [Fact]
     public void GetContext_UsesConfiguredActiveCompany()
     {
         var companyId = Guid.Parse("f0d92d91-6074-4ddd-af3f-c350ddca3217");

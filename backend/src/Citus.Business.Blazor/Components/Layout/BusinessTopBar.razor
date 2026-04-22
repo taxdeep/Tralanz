@@ -8,6 +8,13 @@
         @PrimaryRole
     </MudChip>
 
+    @if (ShellState.IsCompanyReadOnly)
+    {
+        <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled">
+            Read-only company
+        </MudChip>
+    }
+
     <MudStack Spacing="0">
         <MudText Typo="Typo.caption" Class="text-secondary">User</MudText>
         <MudText Typo="Typo.body2">@ShellState.User.DisplayName</MudText>
@@ -23,7 +30,7 @@
             @foreach (var company in ShellState.AvailableCompanies)
             {
                 <MudSelectItem T="Guid" Value="@company.Id">
-                    @company.CompanyName (@company.CompanyCode)
+                    @company.CompanyName (@company.CompanyCode)@(company.IsReadOnly ? " | read-only" : string.Empty)
                 </MudSelectItem>
             }
         </MudSelect>

@@ -1,0 +1,17 @@
+.git
+.github
+.vscode
+.vs
+node_modules
+.next
+out
+TestResults
+backend/.tmp
+backend/**/bin
+backend/**/obj
+deploy/docker/.env
+src
+prisma
+*.tsbuildinfo
+*.stdout.log
+*.stderr.log

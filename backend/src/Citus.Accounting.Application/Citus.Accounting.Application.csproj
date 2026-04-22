@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\Citus.Accounting.Domain\Citus.Accounting.Domain.csproj" />
+    <ProjectReference Include="..\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
   </ItemGroup>
 </Project>

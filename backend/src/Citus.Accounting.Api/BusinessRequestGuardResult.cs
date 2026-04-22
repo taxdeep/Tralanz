@@ -10,6 +10,8 @@ public sealed record class BusinessRequestGuardResult
 
     public BusinessSessionContext? Session { get; init; }
 
+    public BusinessSessionResolution? Resolution { get; init; }
+
     public static BusinessRequestGuardResult Allow() =>
         new()
         {

@@ -1,0 +1,568 @@
+@page "/company/inventory-manufacturing"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.Inventory.Domain.Shared
+@using Web.Shell.Services
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject WebShellCompanyOnboardingClient OnboardingClient
+@inject ShellInventoryManufacturingClient InventoryManufacturing
+@inject ISnackbar Snackbar
+
+<PageTitle>Inventory Manufacturing</PageTitle>
+
+<div style="padding:1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.overline" Class="text-secondary">Inventory Phase D / D5</MudText>
+            <MudText Typo="Typo.h4">Manufacturing</MudText>
+            <MudText Typo="Typo.body1" Class="text-secondary">
+                Maintain BOM truth and post manufacturing issue/receipt directly inside Inventory. Component cost stays inventory-owned and rolls forward into finished goods.
+            </MudText>
+        </MudStack>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_error</MudAlert>
+    }
+    else if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Manufacturing is closed by default for <strong>@_onboardingSummary.Industry</strong> companies. Keep using lighter service-led setup until company governance opens inventory-managed trading flow.
+        </MudAlert>
+    }
+
+    @if (_dashboard is null || (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation))
+    {
+        if (_onboardingSummary is null || _onboardingSummary.SupportsInventoryFoundation)
+        {
+            <MudPaper Elevation="0" Class="pa-5">
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+            </MudPaper>
+        }
+    }
+    else
+    {
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Active BOMs</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.Boms.Count(bom => bom.IsActive)</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">Inventory-owned bill of materials.</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Recent runs</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.RecentRuns.Count</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">Issue and receipt stay paired inside Inventory.</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                    <MudText Typo="Typo.caption" Class="text-secondary">Base currency</MudText>
+                    <MudText Typo="Typo.h5">@_dashboard.BaseCurrencyCode</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">Estimated BOM roll-up uses current open cost layers.</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Operational guardrail: tracked build remains closed in this stage. Manufacturing currently exposes only warehouse-managed stock items until tracked component issue and output-identity paths are ready.
+        </MudAlert>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">BOM editor</MudText>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@_isSaving" OnClick="StartNewBom">
+                        New BOM
+                    </MudButton>
+                </MudStack>
+
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="Existing BOM"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@_isSaving"
+                                   Value="@_editingBomId"
+                                   ValueChanged="OnSelectedBomChanged">
+                            <MudSelectItem T="Guid?" Value="@(null)">Create new BOM</MudSelectItem>
+                            @foreach (var bom in _dashboard.Boms)
+                            {
+                                <MudSelectItem T="Guid?" Value="@bom.BomId">@bom.BomCode - @bom.OutputItemCode @bom.OutputItemName</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string" Label="BOM code" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isSaving" @bind-Value="_bomCode" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudNumericField T="decimal" Label="Output qty" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isSaving" @bind-Value="_outputQuantity" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudSwitch T="bool" Color="Color.Primary" Disabled="@_isSaving" @bind-Value="_bomIsActive">Active BOM</MudSwitch>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Guid?"
+                                   Label="Output item"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@_isSaving"
+                                   @bind-Value="_outputItemId">
+                            @foreach (var item in OperationalItems)
+                            {
+                                <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.subtitle2">Component lines</MudText>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@_isSaving" OnClick="AddComponent">
+                        Add Component
+                    </MudButton>
+                </MudStack>
+
+                @foreach (var component in _componentEditors.OrderBy(component => component.LineNo))
+                {
+                    <MudPaper Elevation="0" Class="pa-4" Outlined="true">
+                        <MudGrid>
+                            <MudItem xs="12" md="1">
+                                <MudTextField T="int" Label="Line" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" Value="@component.LineNo" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudSelect T="Guid?"
+                                           Label="Component item"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Disabled="@_isSaving"
+                                           Value="@component.ComponentItemId"
+                                           ValueChanged="@((Guid? value) => component.ComponentItemId = value)">
+                                    @foreach (var item in OperationalItems)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudNumericField T="decimal" Label="Qty" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isSaving" @bind-Value="component.Quantity" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudNumericField T="decimal" Label="Wastage %" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isSaving" @bind-Value="component.WastagePercent" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isSaving" @bind-Value="component.Memo" />
+                            </MudItem>
+                            <MudItem xs="12" md="1">
+                                <MudButton Variant="Variant.Text" Color="Color.Warning" Disabled="@(_isSaving || _componentEditors.Count <= 1)" OnClick="@(() => RemoveComponent(component))">
+                                    Remove
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                }
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSaving" OnClick="SaveBomAsync">
+                        @(_isSaving ? "Saving..." : "Save BOM")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Manufacturing run</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="BOM"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@_isPosting"
+                                   @bind-Value="_postBomId">
+                            @foreach (var bom in _dashboard.Boms.Where(bom => bom.IsActive))
+                            {
+                                <MudSelectItem T="Guid?" Value="@bom.BomId">@bom.BomCode - @bom.OutputItemCode @bom.OutputItemName</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="Guid?"
+                                   Label="Warehouse"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Disabled="@_isPosting"
+                                   @bind-Value="_warehouseId">
+                            @foreach (var warehouse in _dashboard.ActiveWarehouses)
+                            {
+                                <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudDatePicker Label="Posting date" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isPosting" @bind-Date="_postingDate" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudNumericField T="decimal" Label="Output qty" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isPosting" @bind-Value="_runOutputQuantity" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_isPosting" @bind-Value="_runMemo" />
+                    </MudItem>
+                </MudGrid>
+
+                @if (SelectedRunBom is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        BOM <strong>@SelectedRunBom.BomCode</strong> estimated unit cost is @SelectedRunBom.CostRollup.EstimatedUnitCostBase @(_dashboard.BaseCurrencyCode).
+                        @if (!SelectedRunBom.CostRollup.IsComplete && !string.IsNullOrWhiteSpace(SelectedRunBom.CostRollup.Note))
+                        {
+                            <span>@SelectedRunBom.CostRollup.Note</span>
+                        }
+                    </MudAlert>
+                }
+
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isPosting" OnClick="PostManufacturingAsync">
+                        @(_isPosting ? "Posting..." : "Post Manufacturing")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">BOM review</MudText>
+            @if (_dashboard.Boms.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No BOMs have been configured yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.Boms" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>BOM</MudTh>
+                        <MudTh>Output</MudTh>
+                        <MudTh>Components</MudTh>
+                        <MudTh>Estimated cost</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.BomCode</MudTd>
+                        <MudTd>@context.OutputItemCode - @context.OutputItemName (@context.OutputQuantity @context.OutputUomCode)</MudTd>
+                        <MudTd>@context.Components.Count</MudTd>
+                        <MudTd>@context.CostRollup.EstimatedUnitCostBase</MudTd>
+                        <MudTd>@(context.IsActive ? "Active" : "Inactive")</MudTd>
+                        <MudTd>
+                            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => LoadBomIntoEditor(context))">
+                                Edit
+                            </MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="0" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="mb-3">Recent manufacturing runs</MudText>
+            @if (_dashboard.RecentRuns.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-secondary">No manufacturing runs have posted yet.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_dashboard.RecentRuns" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Run</MudTh>
+                        <MudTh>Output</MudTh>
+                        <MudTh>Warehouse</MudTh>
+                        <MudTh>Qty</MudTh>
+                        <MudTh>Total cost</MudTh>
+                        <MudTh>Docs</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.RunNumber</MudTd>
+                        <MudTd>@context.OutputItemCode - @context.OutputItemName</MudTd>
+                        <MudTd>@context.WarehouseCode</MudTd>
+                        <MudTd>@context.OutputQuantity</MudTd>
+                        <MudTd>@context.TotalConsumedCostBase</MudTd>
+                        <MudTd>@context.IssueDocumentNumber / @context.ReceiptDocumentNumber</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private InventoryManufacturingDashboard? _dashboard;
+    private WebShellCompanyOnboardingSummary? _onboardingSummary;
+    private string? _error;
+    private bool _isSaving;
+    private bool _isPosting;
+    private Guid? _editingBomId;
+    private string? _bomCode;
+    private Guid? _outputItemId;
+    private decimal _outputQuantity = 1m;
+    private bool _bomIsActive = true;
+    private List<ComponentEditorState> _componentEditors = [];
+    private Guid? _postBomId;
+    private Guid? _warehouseId;
+    private DateTime? _postingDate = DateTime.Today;
+    private decimal _runOutputQuantity = 1m;
+    private string? _runMemo;
+
+    private IReadOnlyList<InventoryManagedItemSummary> OperationalItems =>
+        _dashboard?.ActiveItems.Where(item => item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).ToList() ?? [];
+
+    private InventoryBomSummary? SelectedRunBom =>
+        _dashboard?.Boms.FirstOrDefault(bom => bom.BomId == _postBomId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _error = null;
+            await ShellState.EnsureHydratedAsync();
+
+            var probe = await SessionClient.ProbeContextAsync();
+            if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+            {
+                return;
+            }
+
+            var onboardingResult = await OnboardingClient.GetAsync();
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(onboardingResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            if (!onboardingResult.RequiresSignIn &&
+                !onboardingResult.IsNotFound &&
+                string.IsNullOrWhiteSpace(onboardingResult.ErrorMessage))
+            {
+                _onboardingSummary = onboardingResult.Value;
+            }
+
+            if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation)
+            {
+                return;
+            }
+
+            _dashboard = await InventoryManufacturing.GetDashboardAsync(ShellState.ActiveCompany.Id);
+            SeedDefaultsIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SeedDefaultsIfNeeded()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        _warehouseId ??= _dashboard.ActiveWarehouses.FirstOrDefault()?.Id;
+        _postBomId ??= _dashboard.Boms.FirstOrDefault(bom => bom.IsActive)?.BomId;
+
+        if (_componentEditors.Count == 0)
+        {
+            AddComponent();
+        }
+
+        if (string.IsNullOrWhiteSpace(_bomCode) && _dashboard.Boms.Count > 0)
+        {
+            LoadBomIntoEditor(_dashboard.Boms[0]);
+        }
+    }
+
+    private void StartNewBom()
+    {
+        _editingBomId = null;
+        _bomCode = string.Empty;
+        _outputItemId = OperationalItems.FirstOrDefault()?.Id;
+        _outputQuantity = 1m;
+        _bomIsActive = true;
+        _componentEditors =
+        [
+            new ComponentEditorState
+            {
+                LineNo = 1,
+                ComponentItemId = OperationalItems.Skip(1).FirstOrDefault()?.Id ?? OperationalItems.FirstOrDefault()?.Id,
+                Quantity = 1m
+            }
+        ];
+    }
+
+    private Task OnSelectedBomChanged(Guid? bomId)
+    {
+        if (_dashboard is null || bomId is null)
+        {
+            StartNewBom();
+            return Task.CompletedTask;
+        }
+
+        var bom = _dashboard.Boms.FirstOrDefault(candidate => candidate.BomId == bomId.Value);
+        if (bom is not null)
+        {
+            LoadBomIntoEditor(bom);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void LoadBomIntoEditor(InventoryBomSummary bom)
+    {
+        _editingBomId = bom.BomId;
+        _bomCode = bom.BomCode;
+        _outputItemId = bom.OutputItemId;
+        _outputQuantity = bom.OutputQuantity;
+        _bomIsActive = bom.IsActive;
+        _componentEditors = bom.Components
+            .OrderBy(component => component.LineNo)
+            .Select(component => new ComponentEditorState
+            {
+                LineNo = component.LineNo,
+                ComponentItemId = component.ComponentItemId,
+                Quantity = component.Quantity,
+                WastagePercent = component.WastagePercent,
+                Memo = component.Memo
+            })
+            .ToList();
+        _postBomId = bom.BomId;
+    }
+
+    private void AddComponent()
+    {
+        var nextLineNo = _componentEditors.Count == 0 ? 1 : _componentEditors.Max(component => component.LineNo) + 1;
+        var defaultItemId = OperationalItems.FirstOrDefault(item => item.Id != _outputItemId)?.Id
+            ?? OperationalItems.FirstOrDefault()?.Id;
+        _componentEditors.Add(new ComponentEditorState
+        {
+            LineNo = nextLineNo,
+            ComponentItemId = defaultItemId,
+            Quantity = 1m
+        });
+    }
+
+    private void RemoveComponent(ComponentEditorState component)
+    {
+        _componentEditors.Remove(component);
+        for (var index = 0; index < _componentEditors.Count; index++)
+        {
+            _componentEditors[index].LineNo = index + 1;
+        }
+    }
+
+    private async Task SaveBomAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isSaving = true;
+            var request = new InventoryBomUpsertRequest(
+                ShellState.ActiveCompany.Id,
+                ShellState.User.Id,
+                _editingBomId,
+                _bomCode ?? string.Empty,
+                _outputItemId ?? Guid.Empty,
+                _outputQuantity,
+                _bomIsActive,
+                _componentEditors
+                    .OrderBy(component => component.LineNo)
+                    .Select(component => new InventoryBomComponentInput(
+                        component.LineNo,
+                        component.ComponentItemId ?? Guid.Empty,
+                        component.Quantity,
+                        component.WastagePercent,
+                        component.Memo))
+                    .ToList());
+
+            var bom = await InventoryManufacturing.SaveBomAsync(request, _dashboard);
+            Snackbar.Add($"Saved BOM {bom.BomCode}.", Severity.Success);
+            await LoadAsync();
+            if (_dashboard is not null)
+            {
+                var reloaded = _dashboard.Boms.FirstOrDefault(candidate => candidate.BomId == bom.BomId);
+                if (reloaded is not null)
+                {
+                    LoadBomIntoEditor(reloaded);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task PostManufacturingAsync()
+    {
+        if (_dashboard is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _isPosting = true;
+            var summary = await InventoryManufacturing.PostAsync(
+                new InventoryManufacturingPostRequest(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.User.Id,
+                    _postBomId ?? Guid.Empty,
+                    _warehouseId ?? Guid.Empty,
+                    DateOnly.FromDateTime(_postingDate ?? DateTime.Today),
+                    _runOutputQuantity,
+                    _runMemo),
+                _dashboard);
+            Snackbar.Add($"Posted manufacturing run {summary.RunNumber}.", Severity.Success);
+            _runMemo = null;
+            _runOutputQuantity = 1m;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isPosting = false;
+        }
+    }
+
+    private sealed class ComponentEditorState
+    {
+        public int LineNo { get; set; }
+
+        public Guid? ComponentItemId { get; set; }
+
+        public decimal Quantity { get; set; }
+
+        public decimal WastagePercent { get; set; }
+
+        public string? Memo { get; set; }
+    }
+}

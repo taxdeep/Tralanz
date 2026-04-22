@@ -19,6 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Citus.Accounting.Application\Citus.Accounting.Application.csproj" />
+    <ProjectReference Include="..\..\Citus.Accounting.Infrastructure\Citus.Accounting.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\AR\Modules.AR.csproj" />
     <ProjectReference Include="..\..\Modules\Company\Modules.Company.csproj" />
     <ProjectReference Include="..\..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />

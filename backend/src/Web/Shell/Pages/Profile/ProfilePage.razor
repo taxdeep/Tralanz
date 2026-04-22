@@ -1,0 +1,956 @@
+@page "/profile"
+@using Citus.Platform.Core.Accounts
+@using Citus.Ui.Shared.Control
+@rendermode InteractiveServer
+@inject WebShellState ShellState
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.PlatformProfileClient ProfileClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Profile</PageTitle>
+
+<div style="padding:1.5rem 1.75rem;display:grid;gap:1rem;">
+    <MudPaper Elevation="0" Class="pa-5">
+        <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+            <div style="max-width:52rem;">
+                <div style="font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--mud-palette-text-secondary);">Profile</div>
+                <h1 style="margin:0.35rem 0 0.65rem 0;">Platform Account & Verification</h1>
+                <p style="margin:0;color:var(--mud-palette-text-secondary);max-width:48rem;">
+                    Manage your platform display name directly, and route email or password changes through governed verification delivery.
+                    This page stays platform-owned even when the shell is operating inside a specific active company context.
+                </p>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
+                </MudChip>
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                    @ShellState.User.DisplayName
+                </MudChip>
+                <MudChip T="string" Color="@(ShellState.MaintenanceState.Enabled ? Color.Warning : Color.Success)" Variant="Variant.Outlined" Size="Size.Small">
+                    @(ShellState.MaintenanceState.Enabled ? "Maintenance On" : "Maintenance Off")
+                </MudChip>
+            </div>
+        </div>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_errorText))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true">
+            @_errorText
+        </MudAlert>
+    }
+
+    @if (ShellState.MaintenanceState.Enabled)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+            @ShellState.MaintenanceState.Message
+        </MudAlert>
+    }
+
+    @if (_profile is not null && !_profile.NotificationVerificationReady)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Verification delivery is currently blocked. @_profile.NotificationBlockingReason
+        </MudAlert>
+    }
+
+    @if (_notificationReadiness is not null)
+    {
+        <MudPaper Elevation="0" Class="pa-4">
+            <h2 style="margin-top:0;">Notification Readiness</h2>
+            <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                Email and password verification depend on platform notification readiness. This is visible here, but governed on the SysAdmin side.
+            </p>
+            <div style="display:grid;gap:0.75rem;">
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <MudChip T="string" Color="@(_notificationReadiness.ConfigPresent ? Color.Info : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                        @(_notificationReadiness.ConfigPresent ? "Config Present" : "Config Missing")
+                    </MudChip>
+                    <MudChip T="string" Color="@(_notificationReadiness.IsVerificationDeliveryReady ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                        @(_notificationReadiness.IsVerificationDeliveryReady ? "Delivery Ready" : "Delivery Blocked")
+                    </MudChip>
+                    <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">
+                        Test: @_notificationReadiness.TestStatus
+                    </MudChip>
+                    <MudChip T="string" Color="@(_notificationReadiness.VerificationReady ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                        @(_notificationReadiness.VerificationReady ? "Verification Ready" : "Verification Not Ready")
+                    </MudChip>
+                </div>
+                @if (_notificationReadiness.LastTestedAtUtc.HasValue)
+                {
+                    <div>
+                        <div style="font-size:0.8rem;color:var(--mud-palette-text-secondary);">Last tested</div>
+                        <strong>@_notificationReadiness.LastTestedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</strong>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_notificationReadiness.BlockingReason))
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        @_notificationReadiness.BlockingReason
+                    </MudAlert>
+                }
+                @if (!string.IsNullOrWhiteSpace(_notificationReadiness.ConfigurationError))
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                        Provider configuration issue: @_notificationReadiness.ConfigurationError
+                    </MudAlert>
+                }
+            </div>
+        </MudPaper>
+    }
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Current Account</h2>
+                @if (_profile is null)
+                {
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <div style="display:grid;gap:0.75rem;">
+                        <div>
+                            <div style="font-size:0.8rem;color:var(--mud-palette-text-secondary);">Username</div>
+                            <strong>@_profile.Username</strong>
+                        </div>
+                        <div>
+                            <div style="font-size:0.8rem;color:var(--mud-palette-text-secondary);">Email</div>
+                            <strong>@_profile.Email</strong>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                            <MudChip T="string" Color="@(_profile.IsEmailVerified ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                                @(_profile.IsEmailVerified ? "Email Verified" : "Email Unverified")
+                            </MudChip>
+                            <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                                Status: @_profile.Status
+                            </MudChip>
+                        </div>
+                        @if (_profile.HasPendingEmailChange)
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                                Pending email change: @_profile.PendingEmailChangeMaskedDestination
+                                until @_profile.PendingEmailChangeExpiresAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            </MudAlert>
+                        }
+                        @if (_profile.HasPendingPasswordChange)
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                                Pending password change verification:
+                                @_profile.PendingPasswordChangeMaskedDestination
+                                until @_profile.PendingPasswordChangeExpiresAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            </MudAlert>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Display Name</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    Display name updates apply immediately to your platform account summary and future shell context hydration.
+                </p>
+                <MudTextField T="string"
+                              Label="Display Name"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_displayName"
+                              ValueChanged="@(value => _displayName = value ?? string.Empty)"
+                              Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled)" />
+                <div style="margin-top:0.75rem;">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled)"
+                               OnClick="SaveDisplayNameAsync">
+                        Save Display Name
+                    </MudButton>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Multi-Factor Authentication</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    MFA belongs to the platform identity layer. This profile now supports `none`, `email_code`, and governed
+                    `totp_app` enrollment. Email-code MFA still depends on verified delivery readiness. TOTP enrollment is
+                    challenge-first: start enrollment, bind your authenticator app, then confirm the six-digit code before
+                    future business sign-ins can require it.
+                </p>
+                @if (_profile is not null)
+                {
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+                        <MudChip T="string" Color="@(_profile.IsMfaEnabled ? Color.Success : Color.Default)" Variant="Variant.Outlined" Size="Size.Small">
+                            Current: @_profile.MfaModeLabel
+                        </MudChip>
+                        <MudChip T="string" Color="@(_profile.IsEmailVerified ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                            @(_profile.IsEmailVerified ? "Email Verified" : "Email Verification Required")
+                        </MudChip>
+                        <MudChip T="string" Color="@(_profile.NotificationVerificationReady ? Color.Success : Color.Warning)" Variant="Variant.Outlined" Size="Size.Small">
+                            @(_profile.NotificationVerificationReady ? "Verification Delivery Ready" : "Verification Delivery Blocked")
+                        </MudChip>
+                    </div>
+                    @if (_profile.LastMfaModeChangedAtUtc.HasValue)
+                    {
+                        <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                            Most recent MFA mode change:
+                            @(!string.IsNullOrWhiteSpace(_profile.PreviousMfaModeLabel)
+                                ? $"{_profile.PreviousMfaModeLabel} -> {_profile.MfaModeLabel}"
+                                : _profile.MfaModeLabel)
+                            at @_profile.LastMfaModeChangedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                        </MudAlert>
+                    }
+                    @if (_profile.HasRecordedMfaReset)
+                    {
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                            Most recent MFA reset:
+                            @(!string.IsNullOrWhiteSpace(_profile.LastMfaResetByDisplayName)
+                                ? $"{_profile.LastMfaResetByDisplayName} reset MFA"
+                                : "A SysAdmin operator reset MFA")
+                            at @_profile.LastMfaResetAtUtc!.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            @if (!string.IsNullOrWhiteSpace(_profile.LastMfaResetReason))
+                            {
+                                <span> Reason: @_profile.LastMfaResetReason</span>
+                            }
+                        </MudAlert>
+                    }
+                    @if (_profile.HasActiveMfaRecoveryRequest)
+                    {
+                        <MudAlert Severity="@GetMfaRecoverySeverity(_profile.ActiveMfaRecoveryStatus)"
+                                  Variant="Variant.Outlined"
+                                  Dense="true"
+                                  Class="mb-3">
+                            MFA recovery request status: @_profile.ActiveMfaRecoveryStatus
+                            requested @_profile.ActiveMfaRecoveryRequestedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            @if (!string.IsNullOrWhiteSpace(_profile.ActiveMfaRecoveryRequestReason))
+                            {
+                                <span> Request reason: @_profile.ActiveMfaRecoveryRequestReason</span>
+                            }
+                            @if (_profile.ActiveMfaRecoveryReviewedAtUtc.HasValue)
+                            {
+                                <span>
+                                    Review:
+                                    @(!string.IsNullOrWhiteSpace(_profile.ActiveMfaRecoveryReviewedByDisplayName)
+                                        ? _profile.ActiveMfaRecoveryReviewedByDisplayName
+                                        : "SysAdmin")
+                                    at @_profile.ActiveMfaRecoveryReviewedAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                                </span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_profile.ActiveMfaRecoveryReviewReason))
+                            {
+                                <span> Review reason: @_profile.ActiveMfaRecoveryReviewReason</span>
+                            }
+                        </MudAlert>
+                    }
+                }
+                @if (!string.IsNullOrWhiteSpace(MfaBlockingReason))
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        @MfaBlockingReason
+                    </MudAlert>
+                }
+                <MudSelect T="string"
+                           Label="MFA Mode"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Value="@_selectedMfaMode"
+                           ValueChanged="OnMfaModeChanged"
+                           Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled || _profile is null)">
+                    <MudSelectItem T="string" Value="@("none")">Disabled</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("email_code")">Email verification code</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("totp_app")">Authenticator app (TOTP)</MudSelectItem>
+                </MudSelect>
+                @if (string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) &&
+                     !string.Equals(_profile?.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase))
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                        Starting TOTP enrollment generates a new authenticator secret for this account. Confirmation is required
+                        before `totp_app` becomes the active MFA mode.
+                    </MudAlert>
+                }
+                <div style="margin-top:0.75rem;">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="@MfaSaveDisabled"
+                               OnClick="SaveMfaModeAsync">
+                        @GetSaveMfaButtonLabel()
+                    </MudButton>
+                </div>
+                @if (_profile?.HasActiveTotpEnrollment == true && _activeTotpEnrollment is null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                        A pending TOTP enrollment already exists and expires
+                        @_profile.ActiveTotpEnrollmentExpiresAtUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                        Start enrollment again to rotate the secret and receive a fresh bootstrap value.
+                    </MudAlert>
+                }
+                @if (_activeTotpEnrollment is not null)
+                {
+                    <MudPaper Elevation="0" Class="pa-3 mt-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                        <MudStack Spacing="2">
+                            <MudText Typo="Typo.subtitle2">Authenticator app enrollment</MudText>
+                            <MudText Typo="Typo.body2" Class="text-secondary">
+                                Add this secret to your authenticator app. The bootstrap secret is shown once per start/restart action.
+                                Enrollment expires @_activeTotpEnrollment.ExpiresAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'").
+                            </MudText>
+                            <MudTextField T="string"
+                                          Label="Manual entry key"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Value="@_activeTotpEnrollment.SecretBase32"
+                                          ReadOnly="true" />
+                            <MudTextField T="string"
+                                          Label="OTPAuth URI"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Lines="2"
+                                          Value="@_activeTotpEnrollment.OtpAuthUri"
+                                          ReadOnly="true" />
+                            <MudTextField T="string"
+                                          Label="Authenticator app code"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Value="@_totpVerificationCode"
+                                          ValueChanged="@(value => _totpVerificationCode = value ?? string.Empty)"
+                                          Disabled="@(_isBusy || ShellState.MaintenanceState.Enabled)" />
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Disabled="@TotpConfirmationDisabled"
+                                       OnClick="ConfirmTotpEnrollmentAsync">
+                                Confirm TOTP Enrollment
+                            </MudButton>
+                        </MudStack>
+                    </MudPaper>
+                }
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle2">Lost second factor access?</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary" Style="margin-bottom:0.75rem;">
+                    Recovery policy is request-first. You can submit the request here, but MFA does not change immediately:
+                    SysAdmin must review it first, then execute the approved reset as a separate governed action.
+                </MudText>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(_profile?.CanRequestMfaRecovery == true ? Color.Info : Color.Default)">
+                        Self-service request
+                    </MudChip>
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="Color.Warning">
+                        SysAdmin review required
+                    </MudChip>
+                    <MudChip T="string"
+                             Variant="Variant.Outlined"
+                             Color="@(_profile?.IsSysAdminEmergencyMfaResetBlocked == true ? Color.Warning : Color.Secondary)">
+                        Emergency reset is SysAdmin-only
+                    </MudChip>
+                </div>
+                @if (_profile is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        @_profile.MfaRecoveryPolicyReason
+                    </MudAlert>
+                    <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                        @_profile.EmergencyMfaResetPolicyReason
+                    </MudAlert>
+                }
+                <MudTextField T="string"
+                              Label="Recovery Reason"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Lines="3"
+                              Value="@_mfaRecoveryReason"
+                              ValueChanged="@(value => _mfaRecoveryReason = value ?? string.Empty)"
+                              Disabled="@MfaRecoveryDisabled" />
+                <div style="margin-top:0.75rem;">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Warning"
+                               Disabled="@MfaRecoveryDisabled"
+                               OnClick="RequestMfaRecoveryAsync">
+                        Request MFA Recovery Review
+                    </MudButton>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Email Change</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    Requesting a new code replaces any prior pending email-change verification.
+                </p>
+                <MudTextField T="string"
+                              Label="New Email"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_newEmail"
+                              ValueChanged="@(value => _newEmail = value ?? string.Empty)"
+                              Disabled="@RequestActionsDisabled" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Secondary"
+                           Disabled="@RequestActionsDisabled"
+                           OnClick="RequestEmailChangeAsync">
+                    Send Email Change Code
+                </MudButton>
+                <MudDivider Class="my-4" />
+                <MudTextField T="string"
+                              Label="Email Change Code"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_emailChangeCode"
+                              ValueChanged="@(value => _emailChangeCode = value ?? string.Empty)"
+                              Disabled="@ConfirmActionsDisabled" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           Disabled="@ConfirmActionsDisabled"
+                           OnClick="ConfirmEmailChangeAsync">
+                    Confirm Email Change
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
+                <h2 style="margin-top:0;">Password Change</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    Password updates are staged as hashed pending changes until you confirm the verification code.
+                </p>
+                <MudTextField T="string"
+                              Label="New Password"
+                              InputType="InputType.Password"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_newPassword"
+                              ValueChanged="@(value => _newPassword = value ?? string.Empty)"
+                              Disabled="@RequestActionsDisabled" />
+                <MudTextField T="string"
+                              Label="Confirm New Password"
+                              InputType="InputType.Password"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_confirmPassword"
+                              ValueChanged="@(value => _confirmPassword = value ?? string.Empty)"
+                              Disabled="@RequestActionsDisabled" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Warning"
+                           Disabled="@RequestActionsDisabled"
+                           OnClick="RequestPasswordChangeAsync">
+                    Send Password Change Code
+                </MudButton>
+                <MudDivider Class="my-4" />
+                <MudTextField T="string"
+                              Label="Password Change Code"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Value="@_passwordChangeCode"
+                              ValueChanged="@(value => _passwordChangeCode = value ?? string.Empty)"
+                              Disabled="@ConfirmActionsDisabled" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           Disabled="@ConfirmActionsDisabled"
+                           OnClick="ConfirmPasswordChangeAsync">
+                    Confirm Password Change
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudPaper Elevation="0" Class="pa-4">
+                <h2 style="margin-top:0;">MFA Governance Timeline</h2>
+                <p style="margin-top:0;color:var(--mud-palette-text-secondary);">
+                    This timeline shows platform-owned MFA events for your account: mode changes, recovery requests, reviews, and governed resets.
+                </p>
+                @if (_mfaTimeline.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        No MFA governance events have been recorded for this platform account yet.
+                    </MudAlert>
+                }
+                else
+                {
+                    <div style="display:grid;gap:0.75rem;">
+                        @foreach (var entry in _mfaTimeline)
+                        {
+                            <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                                <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                                    <div style="display:grid;gap:0.35rem;">
+                                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                                            <MudChip T="string"
+                                                     Variant="Variant.Outlined"
+                                                     Color="@GetTimelineColor(entry.Action)">
+                                                @entry.ActionLabel
+                                            </MudChip>
+                                            <MudChip T="string" Variant="Variant.Text" Color="Color.Default">
+                                                @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
+                                            </MudChip>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(entry.Detail))
+                                        {
+                                            <MudText Typo="Typo.body2">@entry.Detail</MudText>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                        {
+                                            <MudText Typo="Typo.caption" Class="text-secondary">Reason: @entry.Reason</MudText>
+                                        }
+                                    </div>
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        @entry.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")
+                                    </MudText>
+                                </div>
+                            </MudPaper>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</div>
+
+@code {
+    private PlatformAccountProfileSummary? _profile;
+    private NotificationReadinessSummary? _notificationReadiness;
+    private IReadOnlyList<PlatformMfaTimelineEntry> _mfaTimeline = Array.Empty<PlatformMfaTimelineEntry>();
+    private string _displayName = string.Empty;
+    private string _selectedMfaMode = "none";
+    private PlatformTotpEnrollmentStartResult? _activeTotpEnrollment;
+    private string _totpVerificationCode = string.Empty;
+    private string _mfaRecoveryReason = string.Empty;
+    private string _newEmail = string.Empty;
+    private string _emailChangeCode = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private string _passwordChangeCode = string.Empty;
+    private string? _errorText;
+    private bool _isBusy;
+
+    private bool RequestActionsDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null ||
+        !_profile.NotificationVerificationReady;
+
+    private bool ConfirmActionsDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null;
+
+    private bool MfaSaveDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null ||
+        (string.Equals(_selectedMfaMode, _profile.MfaMode, StringComparison.OrdinalIgnoreCase) &&
+         !(string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) && _profile.HasActiveTotpEnrollment)) ||
+        (!string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase) &&
+         !string.IsNullOrWhiteSpace(MfaBlockingReason));
+
+    private bool TotpConfirmationDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _activeTotpEnrollment is null ||
+        string.IsNullOrWhiteSpace(_totpVerificationCode);
+
+    private bool MfaRecoveryDisabled =>
+        _isBusy ||
+        ShellState.MaintenanceState.Enabled ||
+        _profile is null ||
+        !_profile.CanRequestMfaRecovery ||
+        string.IsNullOrWhiteSpace(_mfaRecoveryReason);
+
+    private string? MfaBlockingReason =>
+        _profile is null
+            ? null
+            : string.Equals(_selectedMfaMode, "none", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                : !_profile.IsEmailVerified
+                    ? "Verify your platform email before enabling email-code MFA."
+                    : !_profile.NotificationVerificationReady
+                        ? $"Verification delivery is blocked. {_profile.NotificationBlockingReason}".Trim()
+                        : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _errorText = null;
+        await RefreshShellStateAsync();
+        var profileResult = await ProfileClient.GetAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(profileResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var notificationResult = await ProfileClient.GetNotificationReadinessAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(notificationResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        var timelineResult = await ProfileClient.GetMfaTimelineAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(timelineResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(profileResult.ErrorMessage))
+        {
+            _errorText = profileResult.ErrorMessage;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(notificationResult.ErrorMessage))
+        {
+            _errorText = notificationResult.ErrorMessage;
+        }
+
+        if (!string.IsNullOrWhiteSpace(timelineResult.ErrorMessage))
+        {
+            _errorText = timelineResult.ErrorMessage;
+        }
+
+        _profile = profileResult.Value;
+        _notificationReadiness = notificationResult.Value;
+        _mfaTimeline = timelineResult.Value ?? Array.Empty<PlatformMfaTimelineEntry>();
+        if (_profile is not null)
+        {
+            _displayName = _profile.DisplayName;
+            _selectedMfaMode = _profile.MfaMode;
+            if (!_profile.HasActiveTotpEnrollment &&
+                !string.Equals(_profile.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeTotpEnrollment = null;
+                _totpVerificationCode = string.Empty;
+            }
+        }
+    }
+
+    private async Task SaveDisplayNameAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.SaveDisplayNameAsync(_displayName, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                await RefreshShellStateAsync();
+                await RefreshMfaTimelineAsync();
+                Snackbar.Add("Display name saved.", Severity.Success);
+            });
+    }
+
+    private async Task SaveMfaModeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                if (string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(_profile?.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase))
+                {
+                    var enrollmentResult = await ProfileClient.BeginTotpEnrollmentAsync(CancellationToken.None);
+                    if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(enrollmentResult, CancellationToken.None))
+                    {
+                        return;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(enrollmentResult.ErrorMessage))
+                    {
+                        throw new InvalidOperationException(enrollmentResult.ErrorMessage);
+                    }
+
+                    _activeTotpEnrollment = enrollmentResult.Value ?? throw new InvalidOperationException("TOTP enrollment could not be started.");
+                    _profile = _activeTotpEnrollment.Profile;
+                    _totpVerificationCode = string.Empty;
+                    await RefreshMfaTimelineAsync();
+                    Snackbar.Add("TOTP enrollment started. Add the secret to your authenticator app, then confirm the code.", Severity.Success);
+                    return;
+                }
+
+                var result = await ProfileClient.SaveMfaModeAsync(_selectedMfaMode, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                _profile = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _selectedMfaMode = _profile.MfaMode;
+                _activeTotpEnrollment = null;
+                _totpVerificationCode = string.Empty;
+                await RefreshMfaTimelineAsync();
+                Snackbar.Add(
+                    string.Equals(_profile.MfaMode, "none", StringComparison.OrdinalIgnoreCase)
+                        ? "MFA disabled for future business sign-ins."
+                        : $"MFA mode saved: {_profile.MfaModeLabel}. Future business sign-ins will require a second factor.",
+                    Severity.Success);
+            });
+    }
+
+    private async Task ConfirmTotpEnrollmentAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                if (_activeTotpEnrollment is null)
+                {
+                    throw new InvalidOperationException("No active TOTP enrollment is pending confirmation.");
+                }
+
+                var result = await ProfileClient.ConfirmTotpEnrollmentAsync(
+                    _activeTotpEnrollment.EnrollmentId,
+                    _totpVerificationCode,
+                    CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                var value = result.Value ?? throw new InvalidOperationException("TOTP enrollment confirmation did not return a result.");
+                _profile = value.Profile;
+                _selectedMfaMode = _profile.MfaMode;
+                _activeTotpEnrollment = null;
+                _totpVerificationCode = string.Empty;
+                await RefreshMfaTimelineAsync();
+                Snackbar.Add("Authenticator-app MFA is now enabled for future business sign-ins.", Severity.Success);
+            });
+    }
+
+    private void OnMfaModeChanged(string? value)
+    {
+        _selectedMfaMode = value ?? "none";
+    }
+
+    private async Task RequestMfaRecoveryAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.RequestMfaRecoveryAsync(_mfaRecoveryReason, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                var value = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _profile = value.Profile;
+                _mfaRecoveryReason = string.Empty;
+                await RefreshMfaTimelineAsync();
+                Snackbar.Add(
+                    $"MFA recovery request recorded at {value.RequestedAtUtc:yyyy-MM-dd HH:mm:ss} UTC. Wait for SysAdmin review before retrying sign-in.",
+                    Severity.Success);
+            });
+    }
+
+    private async Task RequestEmailChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.RequestEmailChangeAsync(_newEmail, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                var value = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _profile = value.Profile;
+                _newEmail = string.Empty;
+                Snackbar.Add(
+                    $"Email change code sent to {value.MaskedDestination}. Expires {value.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
+                    Severity.Success);
+            });
+    }
+
+    private async Task ConfirmEmailChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.ConfirmEmailChangeAsync(_emailChangeCode, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                _profile = result.Value?.Profile ?? throw new InvalidOperationException("Platform account was not found.");
+                _emailChangeCode = string.Empty;
+                await RefreshShellStateAsync();
+                Snackbar.Add("Email change confirmed.", Severity.Success);
+            });
+    }
+
+    private async Task RequestPasswordChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                if (!string.Equals(_newPassword, _confirmPassword, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("New password and confirmation must match.");
+                }
+
+                var result = await ProfileClient.RequestPasswordChangeAsync(_newPassword, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                var value = result.Value ?? throw new InvalidOperationException("Platform account was not found.");
+                _profile = value.Profile;
+                _newPassword = string.Empty;
+                _confirmPassword = string.Empty;
+                Snackbar.Add(
+                    $"Password change code sent to {value.MaskedDestination}. Expires {value.ExpiresAtUtc:yyyy-MM-dd HH:mm:ss} UTC.",
+                    Severity.Success);
+            });
+    }
+
+    private async Task ConfirmPasswordChangeAsync()
+    {
+        await RunBusyAsync(
+            async () =>
+            {
+                var result = await ProfileClient.ConfirmPasswordChangeAsync(_passwordChangeCode, CancellationToken.None);
+                if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
+                    throw new InvalidOperationException(result.ErrorMessage);
+                }
+
+                _profile = result.Value?.Profile ?? throw new InvalidOperationException("Platform account was not found.");
+                _passwordChangeCode = string.Empty;
+                await RefreshShellStateAsync();
+                Snackbar.Add("Password change confirmed.", Severity.Success);
+            });
+    }
+
+    private async Task RunBusyAsync(Func<Task> action)
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        _isBusy = true;
+        _errorText = null;
+
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _errorText = ex.Message;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RefreshShellStateAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+    }
+
+    private async Task RefreshMfaTimelineAsync()
+    {
+        var timelineResult = await ProfileClient.GetMfaTimelineAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(timelineResult, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(timelineResult.ErrorMessage))
+        {
+            throw new InvalidOperationException(timelineResult.ErrorMessage);
+        }
+
+        _mfaTimeline = timelineResult.Value ?? Array.Empty<PlatformMfaTimelineEntry>();
+    }
+
+    private static Severity GetMfaRecoverySeverity(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => Severity.Success,
+            "rejected" => Severity.Error,
+            _ => Severity.Warning
+        };
+
+    private static Color GetTimelineColor(string? action) =>
+        action?.Trim().ToLowerInvariant() switch
+        {
+            "profile_mfa_mode_saved" => Color.Primary,
+            "account_totp_enrollment_started" => Color.Info,
+            "account_totp_enrollment_confirmed" => Color.Success,
+            "account_mfa_recovery_requested" => Color.Warning,
+            "account_mfa_recovery_approved" => Color.Success,
+            "account_mfa_recovery_rejected" => Color.Error,
+            "account_mfa_recovery_executed" => Color.Secondary,
+            "account_mfa_reset" => Color.Warning,
+            _ => Color.Default
+        };
+
+    private string GetSaveMfaButtonLabel() =>
+        string.Equals(_selectedMfaMode, "totp_app", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_profile?.MfaMode, "totp_app", StringComparison.OrdinalIgnoreCase)
+            ? _profile?.HasActiveTotpEnrollment == true ? "Restart TOTP Enrollment" : "Start TOTP Enrollment"
+            : "Save MFA Mode";
+}

@@ -1,0 +1,359 @@
+@page "/documents/quote/draft-editor"
+@using Citus.Modules.Inventory.Application.Contracts
+@using Modules.CompanyAccess.SessionContext
+@using Modules.GL.JournalEntry
+@using Web.Business.AR.SettlementLookup
+@using Web.Shell.Services
+@inject Web.Shell.State.WebShellState ShellState
+@inject ICompanyAccessShellSession ShellSession
+@inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject IArSettlementLookupService Customers
+@inject IJournalEntryAccountCatalog Accounts
+@inject ShellProductServiceCatalogClient ProductServices
+@inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSalesCommercialDocumentClient CommercialDocuments
+@inject ISnackbar Snackbar
+
+<PageTitle>Quote Draft</PageTitle>
+
+<div style="padding:2rem 2.25rem;color:#d9e2ea;">
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <MudButton Variant="Variant.Text" Href="/documents/source-browser?sourceType=quote">Back</MudButton>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Quote draft</MudChip>
+    </div>
+    <h1 style="margin:0 0 .75rem 0;">Quote Draft</h1>
+    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:58rem;">
+        Capture customer-facing offer truth before it becomes a sales order. Quote does not post accounting or inventory truth.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_error</MudAlert>
+    }
+    @if (WritesBlocked)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">@ShellState.WriteBlockMessage</MudAlert>
+    }
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+        <MudSelect T="string" Label="Customer" Variant="Variant.Outlined" @bind-Value="_customerIdText" Disabled="WritesBlocked">
+            @foreach (var customer in _customers)
+            {
+                <MudSelectItem T="string" Value="@customer.Id.ToString("D")">@customer.DisplayLabel</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="Quote date" Variant="Variant.Outlined" Date="_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="WritesBlocked" />
+        <MudDatePicker Label="Expires on" Variant="Variant.Outlined" Date="_expiresOnPicker" DateChanged="OnExpiresOnChanged" Disabled="WritesBlocked" />
+        <MudTextField T="string" Label="Currency" Variant="Variant.Outlined" @bind-Value="_currencyCode" Disabled="WritesBlocked" />
+        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" Disabled="WritesBlocked" />
+    </div>
+
+    <MudPaper Class="pa-4" Elevation="0">
+        <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudText Typo="Typo.h6">Quote lines</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="WritesBlocked" OnClick="AddLine">Add Line</MudButton>
+        </div>
+        <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>#</MudTh><MudTh>Product / Service</MudTh><MudTh>Revenue</MudTh><MudTh>Description</MudTh><MudTh>Qty</MudTh><MudTh>Price</MudTh><MudTh>Item</MudTh><MudTh>Warehouse</MudTh><MudTh>UOM</MudTh><MudTh>Total</MudTh><MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.LineNumber</MudTd>
+                <MudTd>
+                    <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" Value="context.ProductServiceIdText" ValueChanged="@(value => ApplyProductService(context, value))" Disabled="WritesBlocked">
+                        <MudSelectItem T="string" Value="@string.Empty">Manual</MudSelectItem>
+                        @foreach (var item in _productServices)
+                        {
+                            <MudSelectItem T="string" Value="@item.Id.ToString("D")">@item.DisplayLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.RevenueAccountIdText" Disabled="WritesBlocked">
+                        <MudSelectItem T="string" Value="@string.Empty">Later</MudSelectItem>
+                        @foreach (var account in _revenueAccounts)
+                        {
+                            <MudSelectItem T="string" Value="@account.AccountId.ToString("D")">@account.DisplayText</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.Description" Disabled="WritesBlocked" /></MudTd>
+                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" @bind-Value="context.Quantity" Disabled="WritesBlocked" /></MudTd>
+                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0m" @bind-Value="context.UnitPrice" Disabled="WritesBlocked" /></MudTd>
+                <MudTd>
+                    <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Value="context.ItemId" ValueChanged="@(value => ApplyInventoryItem(context, value))" Disabled="WritesBlocked">
+                        <MudSelectItem T="Guid?" Value="@((Guid?)null)">No item</MudSelectItem>
+                        @foreach (var item in InventoryItems)
+                        {
+                            <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.WarehouseId" Disabled="@(WritesBlocked || context.ItemId is null)">
+                        @foreach (var warehouse in Warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.UomCode" Disabled="@(WritesBlocked || context.ItemId is null)" /></MudTd>
+                <MudTd>@context.LineAmount.ToString("N2")</MudTd>
+                <MudTd><MudButton Variant="Variant.Text" Color="Color.Error" Disabled="@(WritesBlocked || _lines.Count <= 1)" OnClick="@(() => RemoveLine(context))">X</MudButton></MudTd>
+            </RowTemplate>
+        </MudTable>
+        <MudText Typo="Typo.h6" Style="margin-top:1rem;">Total: @TotalAmount.ToString("N2") @_currencyCode</MudText>
+    </MudPaper>
+
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_isSaving || WritesBlocked)" OnClick="SaveAsync">Save Quote</MudButton>
+        @if (_saved is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@(_isSaving || WritesBlocked)" OnClick="AcceptAsync">Mark Accepted</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isSaving || WritesBlocked)" OnClick="ConvertAsync">Convert To SO</MudButton>
+        }
+        @if (_convertedSalesOrder is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@($"/documents/sales-order/draft-editor?draftId={_convertedSalesOrder.Id:D}")">Open SO</MudButton>
+        }
+    </div>
+
+    @if (_saved is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-top:1rem;">
+            <MudText Typo="Typo.h6">@_saved.DisplayNumber</MudText>
+            <MudText Typo="Typo.body2">Status: @_saved.Status</MudText>
+            <MudText Typo="Typo.body2">Document Id: @_saved.Id</MudText>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "draftId")]
+    public Guid? DraftId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "customerId")]
+    public Guid? CustomerId { get; set; }
+
+    private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _customers = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
+    private IReadOnlyList<JournalEntryAccountOption> _revenueAccounts = Array.Empty<JournalEntryAccountOption>();
+    private IReadOnlyList<ShellManagedProductServiceSummary> _productServices = Array.Empty<ShellManagedProductServiceSummary>();
+    private InventoryShipmentDashboard? _inventoryDashboard;
+    private readonly List<CommercialLineState> _lines = [CommercialLineState.Blank(1)];
+    private ShellSalesCommercialDocumentReadModel? _saved;
+    private ShellSalesCommercialDocumentReadModel? _convertedSalesOrder;
+    private string? _customerIdText;
+    private string _currencyCode = string.Empty;
+    private string? _memo;
+    private string? _error;
+    private bool _isSaving;
+    private DateOnly _documentDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? _expiresOn = DateOnly.FromDateTime(DateTime.Today.AddDays(30));
+    private DateTime? _documentDatePicker = DateTime.Today;
+    private DateTime? _expiresOnPicker = DateTime.Today.AddDays(30);
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private IReadOnlyList<InventoryManagedItemSummary> InventoryItems => _inventoryDashboard?.ActiveItems.ToArray() ?? [];
+    private IReadOnlyList<InventoryManagedWarehouseSummary> Warehouses => _inventoryDashboard?.ActiveWarehouses ?? [];
+    private decimal TotalAmount => _lines.Sum(static line => line.LineAmount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLookupAsync();
+        if (DraftId.HasValue)
+        {
+            await LoadDocumentAsync(DraftId.Value);
+        }
+    }
+
+    private async Task LoadLookupAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None)) return;
+
+        _currencyCode = ShellState.ActiveCompany.BaseCurrencyCode;
+        _customers = await Customers.ListCustomersAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
+        _revenueAccounts = (await Accounts.ListManualPostingAccountsAsync(ShellSession.ActiveCompanyId, CancellationToken.None))
+            .Where(static account => account.TypeLabel.Contains("Revenue", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        _productServices = (await ProductServices.GetSummaryAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ActiveSalesItems;
+        _inventoryDashboard = await InventoryShipment.GetDashboardAsync(ShellSession.ActiveCompanyId, CancellationToken.None);
+
+        if (CustomerId.HasValue && _customers.Any(customer => customer.Id == CustomerId.Value))
+        {
+            _customerIdText = CustomerId.Value.ToString("D");
+        }
+        else if (_customers.Count == 1)
+        {
+            _customerIdText = _customers[0].Id.ToString("D");
+        }
+    }
+
+    private async Task LoadDocumentAsync(Guid documentId)
+    {
+        var document = await CommercialDocuments.GetAsync(ShellSession.ActiveCompanyId, documentId, CancellationToken.None);
+        if (document is null || document.DocumentType != "quote")
+        {
+            _error = "The quote could not be found in the active company context.";
+            return;
+        }
+
+        _saved = document;
+        _customerIdText = document.CustomerId.ToString("D");
+        _currencyCode = document.TransactionCurrencyCode;
+        _memo = document.Memo;
+        _documentDate = document.DocumentDate;
+        _expiresOn = document.ExpiresOn;
+        _documentDatePicker = document.DocumentDate.ToDateTime(TimeOnly.MinValue);
+        _expiresOnPicker = document.ExpiresOn?.ToDateTime(TimeOnly.MinValue);
+        _lines.Clear();
+        _lines.AddRange(document.Lines.Select(CommercialLineState.FromReadModel));
+        if (_lines.Count == 0) _lines.Add(CommercialLineState.Blank(1));
+    }
+
+    private async Task SaveAsync()
+    {
+        if (TryBlockWrites() || !TryBuildRequest(out var request)) return;
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            _saved = await CommercialDocuments.SaveAsync(_saved?.Id, request, CancellationToken.None);
+            Snackbar.Add($"Quote {_saved.DisplayNumber} saved.", Severity.Success);
+        }
+        catch (Exception ex) { _error = ex.Message; Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _isSaving = false; }
+    }
+
+    private async Task AcceptAsync()
+    {
+        if (TryBlockWrites() || _saved is null) return;
+        _saved = await CommercialDocuments.AcceptQuoteAsync(ShellSession.ActiveCompanyId, _saved.Id, CancellationToken.None);
+        Snackbar.Add($"Quote {_saved.DisplayNumber} accepted.", Severity.Success);
+    }
+
+    private async Task ConvertAsync()
+    {
+        if (TryBlockWrites() || _saved is null) return;
+        _convertedSalesOrder = await CommercialDocuments.ConvertQuoteToSalesOrderAsync(ShellSession.ActiveCompanyId, _saved.Id, ShellState.CurrentUserId, CancellationToken.None);
+        _saved = await CommercialDocuments.GetAsync(ShellSession.ActiveCompanyId, _saved.Id, CancellationToken.None);
+        Snackbar.Add($"Sales order {_convertedSalesOrder.DisplayNumber} created.", Severity.Success);
+    }
+
+    private bool TryBuildRequest(out ShellSalesCommercialDocumentSaveRequest request)
+    {
+        request = new();
+        if (!Guid.TryParse(_customerIdText, out var customerId))
+        {
+            _error = "Customer is required.";
+            return false;
+        }
+
+        request = new ShellSalesCommercialDocumentSaveRequest
+        {
+            CompanyId = ShellSession.ActiveCompanyId,
+            UserId = ShellState.CurrentUserId,
+            DocumentType = "quote",
+            CustomerId = customerId,
+            DocumentDate = _documentDate,
+            ExpiresOn = _expiresOn,
+            TransactionCurrencyCode = _currencyCode,
+            BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode,
+            Memo = _memo,
+            Lines = _lines.Select(static line => line.ToSaveRequest()).ToArray()
+        };
+        return true;
+    }
+
+    private void AddLine() => _lines.Add(CommercialLineState.Blank(_lines.Count == 0 ? 1 : _lines.Max(static line => line.LineNumber) + 1));
+
+    private void RemoveLine(CommercialLineState line)
+    {
+        _lines.Remove(line);
+        for (var index = 0; index < _lines.Count; index++) _lines[index].LineNumber = index + 1;
+    }
+
+    private void ApplyProductService(CommercialLineState line, string? productServiceIdText)
+    {
+        line.ProductServiceIdText = productServiceIdText ?? string.Empty;
+        var item = _productServices.FirstOrDefault(candidate => string.Equals(candidate.Id.ToString("D"), line.ProductServiceIdText, StringComparison.OrdinalIgnoreCase));
+        if (item is null) return;
+        line.Description = item.EffectiveLineDescription;
+        if (item.SalesRevenueAccountId.HasValue) line.RevenueAccountIdText = item.SalesRevenueAccountId.Value.ToString("D");
+    }
+
+    private void ApplyInventoryItem(CommercialLineState line, Guid? itemId)
+    {
+        line.ItemId = itemId;
+        if (!itemId.HasValue)
+        {
+            line.WarehouseId = null;
+            line.UomCode = string.Empty;
+            return;
+        }
+
+        var item = InventoryItems.FirstOrDefault(candidate => candidate.Id == itemId.Value);
+        line.UomCode = item?.StockUomCode ?? string.Empty;
+        line.WarehouseId ??= Warehouses.FirstOrDefault()?.Id;
+    }
+
+    private void OnDocumentDateChanged(DateTime? value)
+    {
+        _documentDatePicker = value;
+        _documentDate = DateOnly.FromDateTime(value ?? DateTime.Today);
+    }
+
+    private void OnExpiresOnChanged(DateTime? value)
+    {
+        _expiresOnPicker = value;
+        _expiresOn = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private bool TryBlockWrites()
+    {
+        if (!WritesBlocked) return false;
+        _error = ShellState.WriteBlockMessage;
+        Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
+        return true;
+    }
+
+    private sealed class CommercialLineState
+    {
+        public int LineNumber { get; set; }
+        public string ProductServiceIdText { get; set; } = string.Empty;
+        public string RevenueAccountIdText { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Quantity { get; set; } = 1m;
+        public decimal UnitPrice { get; set; } = 1m;
+        public Guid? ItemId { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string UomCode { get; set; } = string.Empty;
+        public decimal LineAmount => decimal.Round(Quantity * UnitPrice, 2, MidpointRounding.AwayFromZero);
+        public static CommercialLineState Blank(int lineNumber) => new() { LineNumber = lineNumber, Description = "Sales line" };
+        public static CommercialLineState FromReadModel(ShellSalesCommercialDocumentLineReadModel line) => new()
+        {
+            LineNumber = line.LineNumber,
+            RevenueAccountIdText = line.RevenueAccountId?.ToString("D") ?? string.Empty,
+            Description = line.Description,
+            Quantity = line.Quantity,
+            UnitPrice = line.UnitPrice,
+            ItemId = line.ItemId,
+            WarehouseId = line.WarehouseId,
+            UomCode = line.UomCode ?? string.Empty
+        };
+
+        public ShellSalesCommercialDocumentLineSaveRequest ToSaveRequest() => new()
+        {
+            LineNumber = LineNumber,
+            RevenueAccountId = Guid.TryParse(RevenueAccountIdText, out var accountId) ? accountId : null,
+            Description = Description,
+            Quantity = Quantity,
+            UnitPrice = UnitPrice,
+            ItemId = ItemId,
+            WarehouseId = WarehouseId,
+            UomCode = UomCode
+        };
+    }
+}

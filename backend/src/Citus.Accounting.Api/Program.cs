@@ -1,8 +1,11 @@
 using Citus.Accounting.Api;
+using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Queries;
 using Citus.Accounting.Application.Repositories;
+using Citus.Accounting.Domain.Common;
+using Citus.Accounting.Domain.Documents;
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Infrastructure.Persistence;
 using Citus.Ui.Shared.Business;
@@ -12,15 +15,27 @@ using Citus.Ui.Shared.Shell;
 using Citus.Accounting.Infrastructure.Fx;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
+using Citus.Modules.Inventory.Application.Contracts;
+using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Company;
+using Infrastructure.PostgreSQL.CompanyAccess;
+using Infrastructure.PostgreSQL.GL;
+using Infrastructure.PostgreSQL.Inventory;
+using Infrastructure.PostgreSQL.Numbering;
+using Microsoft.Extensions.Options;
+using Modules.CompanyAccess.SessionContext;
 using Modules.Company.MultiBook;
 using System.Text;
+using JournalEntryNumberLookup = Engines.Numbering.JournalEntry.IJournalEntryNumberLookup;
+using GlIJournalEntryLifecycleStore = Modules.GL.JournalEntry.IJournalEntryLifecycleStore;
+using GlIJournalEntryLifecycleWorkflow = Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow;
+using GlJournalEntryLifecycleWorkflow = Modules.GL.JournalEntry.JournalEntryLifecycleWorkflow;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString =
-    builder.Configuration.GetConnectionString("AccountingCore") ??
-    builder.Configuration["CITUS_ACCOUNTING_DB"];
+    builder.Configuration["CITUS_ACCOUNTING_DB"] ??
+    builder.Configuration.GetConnectionString("AccountingCore");
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -29,11 +44,25 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddSingleton(new PostgresConnectionFactory(connectionString));
+builder.Services.AddSingleton(new PostgreSqlConnectionFactory(connectionString));
 builder.Services.AddSingleton<PostgresExecutionContextAccessor>();
 builder.Services.AddSingleton(new PlatformPostgresConnectionFactory(connectionString));
 builder.Services.Configure<BusinessSessionOptions>(builder.Configuration.GetSection(BusinessSessionOptions.SectionName));
 builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformRuntimeStateRepository>();
-builder.Services.AddSingleton<BusinessSessionDirectory>();
+builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySessionContextStore>();
+builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
+builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
+builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
+builder.Services.AddSingleton<IReceiptInventoryActivationStore, PostgreSqlReceiptInventoryActivationStore>();
+builder.Services.AddSingleton<IReceiptInventoryValuationStore, PostgreSqlReceiptInventoryValuationStore>();
+builder.Services.AddSingleton<IReceiptInventoryCostLayerEmissionStore, PostgreSqlReceiptInventoryCostLayerEmissionStore>();
+builder.Services.AddSingleton<IReceiptGrIrBridgeStore, PostgreSqlReceiptGrIrBridgeStore>();
+builder.Services.AddSingleton<IInventoryIssueStore, PostgreSqlInventoryIssueStore>();
+builder.Services.AddSingleton<IInventoryShipmentStore, PostgreSqlInventoryShipmentStore>();
+builder.Services.AddSingleton(
+    static services => new BusinessSessionDirectory(
+        services.GetRequiredService<IOptions<BusinessSessionOptions>>(),
+        services.GetService<ICompanySessionContextWorkflow>()));
 builder.Services.AddScoped<BusinessSessionContextAccessor>();
 builder.Services.AddSingleton<BusinessSessionRequestReader>();
 builder.Services.AddSingleton<BusinessRequestContractGuard>();
@@ -42,6 +71,9 @@ builder.Services.AddScoped<IManualJournalDocumentRepository, PostgresManualJourn
 builder.Services.AddScoped<IInvoiceDocumentRepository, PostgresInvoiceDocumentRepository>();
 builder.Services.AddScoped<ICreditNoteDocumentRepository, PostgresCreditNoteDocumentRepository>();
 builder.Services.AddScoped<IBillDocumentRepository, PostgresBillDocumentRepository>();
+builder.Services.AddScoped<IBillReceiptMatchingRepository, PostgresBillReceiptMatchingRepository>();
+builder.Services.AddScoped<IReceiptDocumentRepository, PostgresReceiptDocumentRepository>();
+builder.Services.AddScoped<IPurchaseOrderDocumentRepository, PostgresPurchaseOrderDocumentRepository>();
 builder.Services.AddScoped<IVendorCreditDocumentRepository, PostgresVendorCreditDocumentRepository>();
 builder.Services.AddScoped<IReceivePaymentDocumentRepository, PostgresReceivePaymentDocumentRepository>();
 builder.Services.AddScoped<ICreditApplicationDocumentRepository, PostgresCreditApplicationDocumentRepository>();
@@ -51,11 +83,19 @@ builder.Services.AddScoped<IFxRevaluationDocumentRepository, PostgresFxRevaluati
 builder.Services.AddScoped<IAccountingReportRepository, PostgresAccountingReportRepository>();
 builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccountingDocumentReviewRepository>();
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
+builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
+builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
+builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
+builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
+builder.Services.AddSingleton<JournalEntryNumberLookup, PostgreSqlJournalEntryNumberLookup>();
+builder.Services.AddSingleton<GlIJournalEntryLifecycleStore, PostgreSqlJournalEntryLifecycleStore>();
+builder.Services.AddSingleton<GlIJournalEntryLifecycleWorkflow, GlJournalEntryLifecycleWorkflow>();
 builder.Services.AddScoped<IFxSnapshotRepository, PostgresFxSnapshotRepository>();
 builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyStore>();
 builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
 builder.Services.AddScoped<IArOpenItemRepository, PostgresArOpenItemRepository>();
 builder.Services.AddScoped<IApOpenItemRepository, PostgresApOpenItemRepository>();
+builder.Services.AddScoped<IOpenItemAdjustmentAccountMappingRepository, PostgresOpenItemAdjustmentAccountMappingRepository>();
 builder.Services.AddScoped<ISettlementApplicationRepository, PostgresSettlementApplicationRepository>();
 builder.Services.AddScoped<IFxRevaluationApplyRepository, PostgresFxRevaluationApplyRepository>();
 builder.Services.AddScoped<IUnitOfWork, PostgresUnitOfWork>();
@@ -70,6 +110,12 @@ builder.Services.AddScoped<PostManualJournalCommandHandler>();
 builder.Services.AddScoped<PostInvoiceCommandHandler>();
 builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
+builder.Services.AddScoped<PostReceiptWorkflow>();
+builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
+builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
+builder.Services.AddScoped<PostReceiptGrIrSettlementJournalCommandHandler>();
+builder.Services.AddScoped<ClearReceiptGrIrSettlementOpenItemCommandHandler>();
+builder.Services.AddScoped<ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler>();
 builder.Services.AddScoped<PostVendorCreditCommandHandler>();
 builder.Services.AddScoped<PrepareReceivePaymentDraftCommandHandler>();
 builder.Services.AddScoped<PostReceivePaymentCommandHandler>();
@@ -77,6 +123,8 @@ builder.Services.AddScoped<PostCreditApplicationCommandHandler>();
 builder.Services.AddScoped<PreparePayBillDraftCommandHandler>();
 builder.Services.AddScoped<PostPayBillCommandHandler>();
 builder.Services.AddScoped<PostVendorCreditApplicationCommandHandler>();
+builder.Services.AddScoped<PostArOpenItemAdjustmentCommandHandler>();
+builder.Services.AddScoped<PostApOpenItemAdjustmentCommandHandler>();
 builder.Services.AddScoped<PrepareFxRevaluationBatchCommandHandler>();
 builder.Services.AddScoped<PrepareFxRevaluationUnwindBatchCommandHandler>();
 builder.Services.AddScoped<PrepareFxRevaluationCascadeUnwindBatchCommandHandler>();
@@ -88,7 +136,9 @@ var app = builder.Build();
 await using (var startupScope = app.Services.CreateAsyncScope())
 {
     var runtimeStateRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformRuntimeStateRepository>();
+    var adjustmentAccountMappingRepository = startupScope.ServiceProvider.GetRequiredService<IOpenItemAdjustmentAccountMappingRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
+    await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
 }
 
 var accounting = app.MapGroup("/accounting");
@@ -103,11 +153,12 @@ accounting.AddEndpointFilterFactory(
             var routeGuard = services.GetRequiredService<BusinessRouteGuard>();
             var sessionAccessor = services.GetRequiredService<BusinessSessionContextAccessor>();
             var maintenanceState = await runtimeStateRepository.GetMaintenanceStateAsync(invocationContext.HttpContext.RequestAborted);
-            var guardResult = routeGuard.Evaluate(
+            var guardResult = await routeGuard.EvaluateAsync(
                 invocationContext.HttpContext.Request.Method,
                 invocationContext.HttpContext.Request.Headers,
                 invocationContext.Arguments as IReadOnlyList<object?> ?? invocationContext.Arguments.ToArray(),
-                maintenanceState);
+                maintenanceState,
+                invocationContext.HttpContext.RequestAborted);
 
             if (!guardResult.Allowed)
             {
@@ -129,7 +180,7 @@ accounting.AddEndpointFilterFactory(
 
             if (guardResult.Session is not null)
             {
-                sessionAccessor.Set(guardResult.Session);
+                sessionAccessor.Set(guardResult.Session, guardResult.Resolution);
             }
 
             return await next(invocationContext);
@@ -946,14 +997,21 @@ accounting.MapGet(
         var session = accessor.Current ??
             throw new InvalidOperationException("Business session context was not resolved for the current request.");
         var maintenanceState = await runtimeStateRepository.GetMaintenanceStateAsync(cancellationToken);
-        if (!sessionDirectory.TryResolve(session, out var resolution, out var error) || resolution is null)
+        var resolution = accessor.CurrentResolution;
+        if (resolution is null)
         {
-            return Results.Json(
-                new
-                {
-                    message = error ?? "Business session context could not be resolved for the current environment."
-                },
-                statusCode: StatusCodes.Status403Forbidden);
+            var resolved = await sessionDirectory.ResolveAsync(session, cancellationToken);
+            if (!resolved.Success || resolved.Resolution is null)
+            {
+                return Results.Json(
+                    new
+                    {
+                        message = resolved.Error ?? "Business session context could not be resolved for the current environment."
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            resolution = resolved.Resolution;
         }
 
         return Results.Ok(new BusinessSessionContextSummary
@@ -1281,6 +1339,330 @@ accounting.MapGet(
     });
 
 accounting.MapGet(
+    "/open-item-adjustment-account-mappings",
+    async ([AsParameters] OpenItemAdjustmentAccountMappingLookupQuery query, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.LookupAsync(
+                new OpenItemAdjustmentAccountMappingLookupRequest(
+                    new(query.CompanyId),
+                    query.OpenItemType,
+                    query.AdjustmentType,
+                    query.IncludeInactive == true,
+                    query.BookId,
+                    query.PolicyScope,
+                    query.SearchText,
+                    query.Limit ?? 200),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                CompanyId = query.CompanyId,
+                OpenItemType = query.OpenItemType,
+                AdjustmentType = query.AdjustmentType,
+                IncludeInactive = query.IncludeInactive == true,
+                query.BookId,
+                query.PolicyScope,
+                query.SearchText,
+                Limit = Math.Clamp(query.Limit ?? 200, 1, 500),
+                Summary = result.Summary,
+                Mappings = result.Mappings
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/open-item-adjustment-account-mappings",
+    async (SaveOpenItemAdjustmentAccountMappingHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireOpenItemAdjustmentAccountMappingManagementAuthority(
+            sessionAccessor.Current,
+            "save");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+            var result = await repository.SaveAsync(
+                new OpenItemAdjustmentAccountMappingSaveRequest(
+                    new(request.CompanyId),
+                    request.BookId,
+                    request.OpenItemType,
+                    request.AdjustmentType,
+                    request.AdjustmentAccountId,
+                    actorId),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/open-item-adjustment-account-mappings/{mappingId:guid}/deactivate",
+    async (Guid mappingId, DeactivateOpenItemAdjustmentAccountMappingHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IOpenItemAdjustmentAccountMappingRepository repository, CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireOpenItemAdjustmentAccountMappingManagementAuthority(
+            sessionAccessor.Current,
+            "deactivate");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await repository.DeactivateAsync(
+            new(request.CompanyId),
+            mappingId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "Open-item adjustment account mapping was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapGet(
+    "/open-items/ar/{openItemId:guid}/adjustment-preview",
+    async (Guid openItemId, [AsParameters] OpenItemAdjustmentPreviewLookupQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var adjustmentType = string.IsNullOrWhiteSpace(query.AdjustmentType) ? "write_off" : query.AdjustmentType;
+        var adjustmentDate = query.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var preview = await openItemRepository.GetAdjustmentPreviewAsync(
+            new(query.CompanyId),
+            openItemId,
+            adjustmentType,
+            adjustmentDate,
+            query.AdjustmentAmountTx,
+            cancellationToken);
+
+        return preview is null
+            ? Results.NotFound(new { message = "AR open item was not found in the active company context." })
+            : Results.Ok(preview);
+    });
+
+accounting.MapPost(
+    "/open-items/ar/{openItemId:guid}/adjustment-request",
+    async (Guid openItemId, RequestOpenItemAdjustmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var adjustmentDate = request.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var attempt = await openItemRepository.RequestAdjustmentAsync(
+            new(request.CompanyId),
+            openItemId,
+            request.AdjustmentType,
+            adjustmentDate,
+            request.AdjustmentAmountTx,
+            actorId,
+            request.Reason,
+            cancellationToken);
+
+        return attempt is null
+            ? Results.NotFound(new { message = "AR open item was not found in the active company context." })
+            : Results.Ok(attempt);
+    });
+
+accounting.MapGet(
+    "/open-items/ar/{openItemId:guid}/adjustment-request",
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var request = await openItemRepository.GetLatestAdjustmentRequestAsync(
+            new(query.CompanyId),
+            openItemId,
+            cancellationToken);
+
+        return request is null
+            ? Results.NotFound(new { message = "No AR open item adjustment request was found for the active company context." })
+            : Results.Ok(request);
+    });
+
+accounting.MapPost(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/submit",
+    async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.SubmitAdjustmentRequestAsync(
+            new(request.CompanyId),
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/cancel",
+    async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.CancelAdjustmentRequestAsync(
+            new(request.CompanyId),
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/approve",
+    async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var companyId = new CompanyId(request.CompanyId);
+        var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            cancellationToken);
+
+        if (currentRequest is null || currentRequest.RequestId != requestId)
+        {
+            return Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." });
+        }
+
+        var authorityBlock = RequireOpenItemAdjustmentApprovalAuthority(
+            sessionAccessor.Current,
+            currentRequest,
+            "AR",
+            "approve");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.ApproveAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/reject",
+    async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var companyId = new CompanyId(request.CompanyId);
+        var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            cancellationToken);
+
+        if (currentRequest is null || currentRequest.RequestId != requestId)
+        {
+            return Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." });
+        }
+
+        var authorityBlock = RequireOpenItemAdjustmentApprovalAuthority(
+            sessionAccessor.Current,
+            currentRequest,
+            "AR",
+            "reject");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.RejectAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapGet(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/readiness",
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
+            new(query.CompanyId),
+            openItemId,
+            requestId,
+            asOfDate,
+            cancellationToken);
+
+        return readiness is null
+            ? Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." })
+            : Results.Ok(readiness);
+    });
+
+accounting.MapGet(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/execution-plan",
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IArOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var plan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
+            new(query.CompanyId),
+            openItemId,
+            requestId,
+            asOfDate,
+            cancellationToken);
+
+        return plan is null
+            ? Results.NotFound(new { message = "AR open item adjustment request was not found in the active company context." })
+            : Results.Ok(plan);
+    });
+
+accounting.MapPost(
+    "/open-items/ar/{openItemId:guid}/adjustment-request/{requestId:guid}/execute",
+    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostArOpenItemAdjustmentCommandHandler handler, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        if (!actorId.HasValue)
+        {
+            return Results.BadRequest(new { message = "A user id is required to execute a governed AR open item adjustment." });
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostArOpenItemAdjustmentCommand(
+                    new(request.CompanyId),
+                    openItemId,
+                    requestId,
+                    new(actorId.Value),
+                    request.AdjustmentAccountId,
+                    request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
     "/open-items/ap/{openItemId:guid}",
     async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IApOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
     {
@@ -1346,6 +1728,1072 @@ accounting.MapGet(
     });
 
 accounting.MapGet(
+    "/open-items/ap/{openItemId:guid}/adjustment-preview",
+    async (Guid openItemId, [AsParameters] OpenItemAdjustmentPreviewLookupQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var adjustmentType = string.IsNullOrWhiteSpace(query.AdjustmentType) ? "small_balance_adjustment" : query.AdjustmentType;
+        var adjustmentDate = query.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var preview = await openItemRepository.GetAdjustmentPreviewAsync(
+            new(query.CompanyId),
+            openItemId,
+            adjustmentType,
+            adjustmentDate,
+            query.AdjustmentAmountTx,
+            cancellationToken);
+
+        return preview is null
+            ? Results.NotFound(new { message = "AP open item was not found in the active company context." })
+            : Results.Ok(preview);
+    });
+
+accounting.MapPost(
+    "/open-items/ap/{openItemId:guid}/adjustment-request",
+    async (Guid openItemId, RequestOpenItemAdjustmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var adjustmentDate = request.AdjustmentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var attempt = await openItemRepository.RequestAdjustmentAsync(
+            new(request.CompanyId),
+            openItemId,
+            request.AdjustmentType,
+            adjustmentDate,
+            request.AdjustmentAmountTx,
+            actorId,
+            request.Reason,
+            cancellationToken);
+
+        return attempt is null
+            ? Results.NotFound(new { message = "AP open item was not found in the active company context." })
+            : Results.Ok(attempt);
+    });
+
+accounting.MapGet(
+    "/open-items/ap/{openItemId:guid}/adjustment-request",
+    async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var request = await openItemRepository.GetLatestAdjustmentRequestAsync(
+            new(query.CompanyId),
+            openItemId,
+            cancellationToken);
+
+        return request is null
+            ? Results.NotFound(new { message = "No AP open item adjustment request was found for the active company context." })
+            : Results.Ok(request);
+    });
+
+accounting.MapPost(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/submit",
+    async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.SubmitAdjustmentRequestAsync(
+            new(request.CompanyId),
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/cancel",
+    async (Guid openItemId, Guid requestId, TransitionOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.CancelAdjustmentRequestAsync(
+            new(request.CompanyId),
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/approve",
+    async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var companyId = new CompanyId(request.CompanyId);
+        var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            cancellationToken);
+
+        if (currentRequest is null || currentRequest.RequestId != requestId)
+        {
+            return Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." });
+        }
+
+        var authorityBlock = RequireOpenItemAdjustmentApprovalAuthority(
+            sessionAccessor.Current,
+            currentRequest,
+            "AP",
+            "approve");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.ApproveAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/reject",
+    async (Guid openItemId, Guid requestId, GovernOpenItemAdjustmentApprovalHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var companyId = new CompanyId(request.CompanyId);
+        var currentRequest = await openItemRepository.GetLatestAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            cancellationToken);
+
+        if (currentRequest is null || currentRequest.RequestId != requestId)
+        {
+            return Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." });
+        }
+
+        var authorityBlock = RequireOpenItemAdjustmentApprovalAuthority(
+            sessionAccessor.Current,
+            currentRequest,
+            "AP",
+            "reject");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        var result = await openItemRepository.RejectAdjustmentRequestAsync(
+            companyId,
+            openItemId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        return result is null
+            ? Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." })
+            : Results.Ok(result);
+    });
+
+accounting.MapGet(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/readiness",
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var readiness = await openItemRepository.GetAdjustmentRequestReadinessAsync(
+            new(query.CompanyId),
+            openItemId,
+            requestId,
+            asOfDate,
+            cancellationToken);
+
+        return readiness is null
+            ? Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." })
+            : Results.Ok(readiness);
+    });
+
+accounting.MapGet(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/execution-plan",
+    async (Guid openItemId, Guid requestId, [AsParameters] OpenItemAdjustmentRequestReadinessQuery query, IApOpenItemRepository openItemRepository, CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var plan = await openItemRepository.GetAdjustmentRequestExecutionPlanAsync(
+            new(query.CompanyId),
+            openItemId,
+            requestId,
+            asOfDate,
+            cancellationToken);
+
+        return plan is null
+            ? Results.NotFound(new { message = "AP open item adjustment request was not found in the active company context." })
+            : Results.Ok(plan);
+    });
+
+accounting.MapPost(
+    "/open-items/ap/{openItemId:guid}/adjustment-request/{requestId:guid}/execute",
+    async (Guid openItemId, Guid requestId, ExecuteOpenItemAdjustmentRequestHttpRequest request, BusinessSessionContextAccessor sessionAccessor, PostApOpenItemAdjustmentCommandHandler handler, CancellationToken cancellationToken) =>
+    {
+        var actorId = request.UserId ?? sessionAccessor.Current?.UserId;
+        if (!actorId.HasValue)
+        {
+            return Results.BadRequest(new { message = "A user id is required to execute a governed AP open item adjustment." });
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostApOpenItemAdjustmentCommand(
+                    new(request.CompanyId),
+                    openItemId,
+                    requestId,
+                    new(actorId.Value),
+                    request.AdjustmentAccountId,
+                    request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/documents/source",
+    async (
+        [AsParameters] SourceDocumentBrowserLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        IBillReceiptMatchingRepository billReceiptMatchingRepository,
+        IInventoryShipmentStore inventoryShipmentStore,
+        CancellationToken cancellationToken) =>
+    {
+        var items = await repository.ListSourceDocumentsAsync(
+            new(query.CompanyId),
+            query.SourceType,
+            query.CounterpartyRole,
+            query.CounterpartyId,
+            query.Limit ?? 100,
+            cancellationToken);
+
+        var billIds = items
+            .Where(static item => string.Equals(item.SourceType, "bill", StringComparison.OrdinalIgnoreCase))
+            .Select(static item => item.Id)
+            .Distinct()
+            .ToArray();
+        var billReceiptSummaries = await billReceiptMatchingRepository.GetBillPostingGateSnapshotsAsync(
+            new(query.CompanyId),
+            billIds,
+            cancellationToken);
+        var invoiceIds = items
+            .Where(static item => string.Equals(item.SourceType, "invoice", StringComparison.OrdinalIgnoreCase))
+            .Select(static item => item.Id)
+            .Distinct()
+            .ToArray();
+        var invoiceShipmentSummaries = await inventoryShipmentStore.GetInvoicePostingGateSnapshotsAsync(
+            query.CompanyId,
+            invoiceIds,
+            cancellationToken);
+
+        return Results.Ok(items.Select(item =>
+        {
+            billReceiptSummaries.TryGetValue(item.Id, out var receiptSummary);
+            invoiceShipmentSummaries.TryGetValue(item.Id, out var shipmentSummary);
+            return new
+            {
+                item.SourceType,
+                SourceTypeLabel = MapDocumentReviewSourceLabel(item.SourceType),
+                item.Id,
+                CompanyId = item.CompanyId.Value,
+                item.EntityNumber,
+                item.DisplayNumber,
+                item.Status,
+                item.DocumentDate,
+                item.DueDate,
+                CounterpartyLabel = MapDocumentReviewCounterpartyLabel(item.CounterpartyRole),
+                item.CounterpartyId,
+                item.CounterpartyDisplayName,
+                item.TransactionCurrencyCode,
+                item.BaseCurrencyCode,
+                item.TotalAmount,
+                BillReceiptMatchStatus = receiptSummary?.MatchStatus,
+                BillReceiptPostingGateLabel = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateLabel(receiptSummary),
+                BillReceiptPostingGateSummary = receiptSummary is null ? null : BillReceiptPostingGate.GetPostingGateSummary(receiptSummary),
+                BillReceiptAllowsPost = receiptSummary is null ? (bool?)null : BillReceiptPostingGate.AllowsBillPost(receiptSummary.MatchStatus),
+                BillReceiptOpenDiscrepancyCount = receiptSummary?.OpenDiscrepancyCount,
+                BillReceiptInvestigationSummary = receiptSummary is null ? null : BillReceiptDiscrepancyPolicy.BuildBrowserSummary(receiptSummary.OpenDiscrepancyCount),
+                InvoiceShipmentMatchStatus = shipmentSummary?.MatchStatus,
+                InvoiceShipmentPostingGateLabel = shipmentSummary is null ? null : ShipmentPostingGatePolicy.GetPostingGateLabel(shipmentSummary),
+                InvoiceShipmentPostingGateSummary = shipmentSummary is null ? null : ShipmentPostingGatePolicy.GetPostingGateSummary(shipmentSummary),
+                InvoiceShipmentAllowsPost = shipmentSummary is null ? (bool?)null : ShipmentPostingGatePolicy.AllowsInvoicePost(shipmentSummary.MatchStatus),
+                InvoiceCoverageStatus = shipmentSummary?.InvoiceCoverageStatus,
+                InvoiceCoverageSummary = shipmentSummary is null ? null : BuildInvoiceCoverageSummary(shipmentSummary)
+            };
+        }));
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}",
+    async (
+        string sourceType,
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var preview = await repository.GetLifecyclePreviewAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            cancellationToken);
+
+        if (preview is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Source document lifecycle preview was not found in the active company context."
+            });
+        }
+
+        return Results.Ok(new
+        {
+            preview.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(preview.SourceType),
+            preview.Id,
+            CompanyId = preview.CompanyId.Value,
+            preview.EntityNumber,
+            preview.DisplayNumber,
+            preview.Status,
+            preview.JournalEntryId,
+            preview.JournalEntryDisplayNumber,
+            preview.JournalEntryStatus,
+            preview.JournalEntryPostedAt,
+            preview.JournalEntryVoidedAt,
+            preview.JournalEntryReversedAt,
+            preview.LifecycleMode,
+            preview.CanEditDraft,
+            preview.CanPostDraft,
+            preview.LifecycleReason,
+            LifecycleActions = preview.LifecycleActions.Select(action => new
+            {
+                action.ActionCode,
+                action.ActionLabel,
+                action.AvailabilityMode,
+                action.IsAvailable,
+                action.Reason
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/actions/{actionCode}",
+    async (
+        string sourceType,
+        Guid documentId,
+        string actionCode,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var preview = await repository.GetLifecycleActionPreviewAsync(
+                new(query.CompanyId),
+                sourceType,
+                documentId,
+                actionCode,
+                cancellationToken);
+
+            if (preview is null)
+            {
+                return Results.NotFound(new
+                {
+                    message = "Source document lifecycle action preview was not found in the active company context."
+                });
+            }
+
+            return Results.Ok(new
+            {
+                preview.SourceType,
+                SourceTypeLabel = MapDocumentReviewSourceLabel(preview.SourceType),
+                preview.Id,
+                CompanyId = preview.CompanyId.Value,
+                preview.EntityNumber,
+                preview.DisplayNumber,
+                preview.Status,
+                preview.JournalEntryId,
+                preview.JournalEntryDisplayNumber,
+                preview.JournalEntryStatus,
+                preview.JournalEntryPostedAt,
+                preview.JournalEntryVoidedAt,
+                preview.JournalEntryReversedAt,
+                preview.LifecycleMode,
+                preview.CanEditDraft,
+                preview.CanPostDraft,
+                preview.LifecycleReason,
+                Action = new
+                {
+                    preview.ActionCode,
+                    preview.ActionLabel,
+                    preview.AvailabilityMode,
+                    preview.IsAvailable,
+                    preview.Reason
+                }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new
+            {
+                message = ex.Message
+            });
+        }
+    });
+
+accounting.MapPost(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/void",
+    async (
+        string sourceType,
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var attempt = await repository.AttemptVoidAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            cancellationToken);
+
+        if (attempt is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Source document void attempt could not find the document in the active company context."
+            });
+        }
+
+        var payload = new
+        {
+            attempt.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(attempt.SourceType),
+            attempt.Id,
+            CompanyId = attempt.CompanyId.Value,
+            attempt.EntityNumber,
+            attempt.DisplayNumber,
+            attempt.Status,
+            attempt.JournalEntryId,
+            attempt.JournalEntryDisplayNumber,
+            attempt.JournalEntryStatus,
+            attempt.LifecycleMode,
+            attempt.ActionCode,
+            attempt.ActionLabel,
+            attempt.AvailabilityMode,
+            attempt.ExecutionMode,
+            attempt.CommandAccepted,
+            attempt.Executed,
+            attempt.OutcomeCode,
+            Message = attempt.Message
+        };
+
+        return attempt.OutcomeCode switch
+        {
+            "blocked" => Results.Conflict(payload),
+            "not_implemented" => Results.Json(payload, statusCode: StatusCodes.Status501NotImplemented),
+            "ready_for_implementation" => Results.Json(payload, statusCode: StatusCodes.Status501NotImplemented),
+            _ => Results.Ok(payload)
+        };
+    });
+
+accounting.MapPost(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse",
+    async (
+        string sourceType,
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var actorId = sessionAccessor.Current?.UserId;
+        var attempt = await repository.AttemptReverseAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            actorId,
+            cancellationToken);
+
+        if (attempt is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Source document reverse attempt could not find the document in the active company context."
+            });
+        }
+
+        var payload = new
+        {
+            attempt.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(attempt.SourceType),
+            attempt.Id,
+            CompanyId = attempt.CompanyId.Value,
+            attempt.EntityNumber,
+            attempt.DisplayNumber,
+            attempt.Status,
+            attempt.JournalEntryId,
+            attempt.JournalEntryDisplayNumber,
+            attempt.JournalEntryStatus,
+            attempt.LifecycleMode,
+            attempt.ActionCode,
+            attempt.ActionLabel,
+            attempt.AvailabilityMode,
+            attempt.ExecutionMode,
+            attempt.CommandAccepted,
+            attempt.Executed,
+            attempt.RequestId,
+            attempt.Persisted,
+            attempt.OutcomeCode,
+            Message = attempt.Message
+        };
+
+        return attempt.OutcomeCode switch
+        {
+            "blocked" => Results.Conflict(payload),
+            "request_already_open" => Results.Conflict(payload),
+            "request_recorded" => Results.Json(payload, statusCode: StatusCodes.Status202Accepted),
+            _ => Results.Ok(payload)
+        };
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-request",
+    async (
+        string sourceType,
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var request = await repository.GetLatestReverseRequestAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            cancellationToken);
+
+        if (request is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "No reverse request has been recorded for this source document in the active company context."
+            });
+        }
+
+        return Results.Ok(new
+        {
+            request.RequestId,
+            CompanyId = request.CompanyId.Value,
+            request.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+            Id = request.DocumentId,
+            request.EntityNumber,
+            request.DisplayNumber,
+            request.Status,
+            request.JournalEntryId,
+            request.JournalEntryDisplayNumber,
+            request.JournalEntryStatus,
+            request.LifecycleMode,
+            request.ActionCode,
+            request.ActionLabel,
+            request.AvailabilityMode,
+            request.IsAvailable,
+            request.Reason,
+            request.RequestStatus,
+            RequestedByActorType = request.RequestedByActorType,
+            RequestedByActorId = request.RequestedByActorId,
+            request.RequestedAt,
+            SubmittedByActorType = request.SubmittedByActorType,
+            SubmittedByActorId = request.SubmittedByActorId,
+            request.SubmittedAt,
+            CancelledByActorType = request.CancelledByActorType,
+            CancelledByActorId = request.CancelledByActorId,
+            request.CancelledAt,
+            request.ExecutionStatus,
+            ExecutionRequestedByActorType = request.ExecutionRequestedByActorType,
+            ExecutionRequestedByActorId = request.ExecutionRequestedByActorId,
+            request.ExecutionRequestedAt,
+            ExecutionCompletedByActorType = request.ExecutionCompletedByActorType,
+            ExecutionCompletedByActorId = request.ExecutionCompletedByActorId,
+            request.ExecutionCompletedAt,
+            request.CompensationJournalEntryId,
+            request.CompensationJournalEntryDisplayNumber,
+            request.CompensationSourceType
+        });
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-blockers",
+    async (
+        string sourceType,
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var blockers = await repository.ListSubledgerReverseBlockersAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(blockers.Select(blocker => new
+        {
+            blocker.SettlementApplicationId,
+            blocker.ApplicationType,
+            blocker.SettlementSourceType,
+            SettlementSourceTypeLabel = MapDocumentReviewSourceLabel(blocker.SettlementSourceType),
+            blocker.SettlementSourceId,
+            blocker.SettlementSourceDisplayNumber,
+            blocker.SettlementSourceDocumentDate,
+            blocker.TargetOpenItemType,
+            blocker.TargetOpenItemId,
+            blocker.TargetSourceType,
+            TargetSourceTypeLabel = MapDocumentReviewSourceLabel(blocker.TargetSourceType),
+            blocker.TargetSourceId,
+            blocker.TargetSourceDisplayNumber,
+            blocker.AppliedAmountTx,
+            blocker.AppliedAmountBase,
+            blocker.SettlementFxRate,
+            blocker.RealizedFxAmount,
+            blocker.AppliedAt,
+            blocker.ReverseRequestId,
+            blocker.ReverseRequestStatus,
+            blocker.ReverseExecutionStatus,
+            blocker.ReverseRequestedAt
+        }));
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/settlement-application-reversals",
+    async (
+        string sourceType,
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var reversals = await repository.ListSettlementApplicationReversalsAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(reversals.Select(reversal => new
+        {
+            reversal.ReversalEventId,
+            reversal.RequestId,
+            reversal.SettlementApplicationId,
+            reversal.ApplicationType,
+            reversal.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(reversal.SourceType),
+            reversal.SourceId,
+            reversal.TargetOpenItemType,
+            reversal.TargetOpenItemId,
+            reversal.AppliedAmountTx,
+            reversal.AppliedAmountBase,
+            reversal.SettlementFxRate,
+            reversal.RealizedFxAmount,
+            reversal.OriginalApplicationCreatedAt,
+            reversal.OriginalApplicationCreatedByUserId,
+            reversal.ReversedAt,
+            reversal.ReversedByActorType,
+            reversal.ReversedByActorId,
+            reversal.ReversalMode
+        }));
+    });
+
+accounting.MapPost(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-request/{requestId:guid}/submit",
+    async (
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var actorId = sessionAccessor.Current?.UserId;
+        var result = await repository.SubmitReverseRequestAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Reverse request could not be found in the active company context."
+            });
+        }
+
+        var request = result.Request;
+        var payload = new
+        {
+            result.TransitionCode,
+            result.OutcomeCode,
+            Message = result.Message,
+            request.RequestId,
+            CompanyId = request.CompanyId.Value,
+            request.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+            Id = request.DocumentId,
+            request.EntityNumber,
+            request.DisplayNumber,
+            request.Status,
+            request.JournalEntryId,
+            request.JournalEntryDisplayNumber,
+            request.JournalEntryStatus,
+            request.LifecycleMode,
+            request.ActionCode,
+            request.ActionLabel,
+            request.AvailabilityMode,
+            request.IsAvailable,
+            request.Reason,
+            request.RequestStatus,
+            RequestedByActorType = request.RequestedByActorType,
+            RequestedByActorId = request.RequestedByActorId,
+            request.RequestedAt,
+            SubmittedByActorType = request.SubmittedByActorType,
+            SubmittedByActorId = request.SubmittedByActorId,
+            request.SubmittedAt,
+            CancelledByActorType = request.CancelledByActorType,
+            CancelledByActorId = request.CancelledByActorId,
+            request.CancelledAt,
+            request.ExecutionStatus,
+            ExecutionRequestedByActorType = request.ExecutionRequestedByActorType,
+            ExecutionRequestedByActorId = request.ExecutionRequestedByActorId,
+            request.ExecutionRequestedAt
+        };
+
+        return result.OutcomeCode switch
+        {
+            "submitted" => Results.Ok(payload),
+            _ => Results.Conflict(payload)
+        };
+    });
+
+accounting.MapPost(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-request/{requestId:guid}/cancel",
+    async (
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var actorId = sessionAccessor.Current?.UserId;
+        var result = await repository.CancelReverseRequestAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            requestId,
+            actorId,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Reverse request could not be found in the active company context."
+            });
+        }
+
+        var request = result.Request;
+        var payload = new
+        {
+            result.TransitionCode,
+            result.OutcomeCode,
+            Message = result.Message,
+            request.RequestId,
+            CompanyId = request.CompanyId.Value,
+            request.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+            Id = request.DocumentId,
+            request.EntityNumber,
+            request.DisplayNumber,
+            request.Status,
+            request.JournalEntryId,
+            request.JournalEntryDisplayNumber,
+            request.JournalEntryStatus,
+            request.LifecycleMode,
+            request.ActionCode,
+            request.ActionLabel,
+            request.AvailabilityMode,
+            request.IsAvailable,
+            request.Reason,
+            request.RequestStatus,
+            RequestedByActorType = request.RequestedByActorType,
+            RequestedByActorId = request.RequestedByActorId,
+            request.RequestedAt,
+            SubmittedByActorType = request.SubmittedByActorType,
+            SubmittedByActorId = request.SubmittedByActorId,
+            request.SubmittedAt,
+            CancelledByActorType = request.CancelledByActorType,
+            CancelledByActorId = request.CancelledByActorId,
+            request.CancelledAt,
+            request.ExecutionStatus,
+            ExecutionRequestedByActorType = request.ExecutionRequestedByActorType,
+            ExecutionRequestedByActorId = request.ExecutionRequestedByActorId,
+            request.ExecutionRequestedAt
+        };
+
+        return result.OutcomeCode switch
+        {
+            "cancelled" => Results.Ok(payload),
+            _ => Results.Conflict(payload)
+        };
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-request/{requestId:guid}/apply-readiness",
+    async (
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        [AsParameters] DocumentLifecycleRequestReadinessQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var readiness = await repository.GetReverseRequestApplyReadinessAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            requestId,
+            asOfDate,
+            cancellationToken);
+
+        if (readiness is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Reverse request could not be found in the active company context."
+            });
+        }
+
+        var request = readiness.Request;
+        return Results.Ok(new
+        {
+            request.RequestId,
+            CompanyId = request.CompanyId.Value,
+            request.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+            Id = request.DocumentId,
+            request.EntityNumber,
+            request.DisplayNumber,
+            request.Status,
+            request.RequestStatus,
+            request.LifecycleMode,
+            AsOfDate = readiness.AsOfDate,
+            readiness.GovernanceReady,
+            readiness.ApplyReady,
+            readiness.ExecutionMode,
+            readiness.AvailabilityMode,
+            readiness.IsAvailable,
+            readiness.Reason
+        });
+    });
+
+accounting.MapPost(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-request/{requestId:guid}/execute",
+    async (
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        [AsParameters] DocumentLifecycleRequestReadinessQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingDocumentReviewRepository repository,
+        GlIJournalEntryLifecycleWorkflow journalEntryLifecycleWorkflow,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var actorId = sessionAccessor.Current?.UserId;
+        var result = await repository.ExecuteReverseRequestAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            requestId,
+            actorId,
+            asOfDate,
+            cancellationToken);
+
+        if (result is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Reverse request could not be found in the active company context."
+            });
+        }
+
+        var request = result.Request;
+        var shouldRunLinkedJournalEntryReverse =
+            request.JournalEntryId.HasValue &&
+            string.Equals(request.ExecutionStatus, "execution_requested", StringComparison.Ordinal) &&
+            request.ExecutionCompletedAt is null;
+
+        if (shouldRunLinkedJournalEntryReverse)
+        {
+            if (!actorId.HasValue)
+            {
+                return Results.BadRequest(new
+                {
+                    message = "A business-session user is required before governed reverse execution can reverse the linked journal entry."
+                });
+            }
+
+            try
+            {
+                var lifecycleResult = await journalEntryLifecycleWorkflow.ReverseAsync(
+                    query.CompanyId,
+                    request.JournalEntryId!.Value,
+                    actorId.Value,
+                    cancellationToken);
+
+                result = await repository.CompleteReverseRequestExecutionAsync(
+                        new(query.CompanyId),
+                        sourceType,
+                        documentId,
+                        requestId,
+                        actorId,
+                        lifecycleResult.CompensationJournalEntryId,
+                        lifecycleResult.CompensationDisplayNumber,
+                        lifecycleResult.CompensationSourceType,
+                        lifecycleResult.LifecycleAt,
+                        cancellationToken)
+                    ?? result;
+
+                request = result.Request;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new
+                {
+                    request.RequestId,
+                    CompanyId = request.CompanyId.Value,
+                    request.SourceType,
+                    SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+                    Id = request.DocumentId,
+                    request.EntityNumber,
+                    request.DisplayNumber,
+                    request.Status,
+                    request.RequestStatus,
+                    request.ExecutionStatus,
+                    AsOfDate = asOfDate,
+                    ExecutionMode = "governed_execution_orchestration",
+                    Message = ex.Message
+                });
+            }
+        }
+
+        var payload = new
+        {
+            request.RequestId,
+            CompanyId = request.CompanyId.Value,
+            request.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+            Id = request.DocumentId,
+            request.EntityNumber,
+            request.DisplayNumber,
+            request.Status,
+            request.RequestStatus,
+            request.ExecutionStatus,
+            AsOfDate = result.AsOfDate,
+            result.ExecutionMode,
+            result.CommandAccepted,
+            result.Executed,
+            result.Persisted,
+            result.OutcomeCode,
+            Message = result.Message,
+            ExecutionRequestedByActorType = request.ExecutionRequestedByActorType,
+            ExecutionRequestedByActorId = request.ExecutionRequestedByActorId,
+            request.ExecutionRequestedAt,
+            ExecutionCompletedByActorType = request.ExecutionCompletedByActorType,
+            ExecutionCompletedByActorId = request.ExecutionCompletedByActorId,
+            request.ExecutionCompletedAt,
+            request.CompensationJournalEntryId,
+            request.CompensationJournalEntryDisplayNumber,
+            request.CompensationSourceType
+        };
+
+        return result.OutcomeCode switch
+        {
+            "blocked" or "blocked_by_subledger_truth" or "blocked_by_missing_linked_journal_entry" => Results.BadRequest(payload),
+            "execution_already_requested" or "execution_already_completed" => Results.Conflict(payload),
+            "execution_request_recorded" => Results.Json(payload, statusCode: StatusCodes.Status202Accepted),
+            _ => Results.Ok(payload)
+        };
+    });
+
+accounting.MapGet(
+    "/source-document-lifecycle/{sourceType}/{documentId:guid}/reverse-request/{requestId:guid}/execution-plan",
+    async (
+        string sourceType,
+        Guid documentId,
+        Guid requestId,
+        [AsParameters] DocumentLifecycleRequestReadinessQuery query,
+        IAccountingDocumentReviewRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var asOfDate = query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var plan = await repository.GetReverseRequestExecutionPlanAsync(
+            new(query.CompanyId),
+            sourceType,
+            documentId,
+            requestId,
+            asOfDate,
+            cancellationToken);
+
+        if (plan is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Reverse request could not be found in the active company context."
+            });
+        }
+
+        var request = plan.Request;
+        return Results.Ok(new
+        {
+            request.RequestId,
+            CompanyId = request.CompanyId.Value,
+            request.SourceType,
+            SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
+            Id = request.DocumentId,
+            request.EntityNumber,
+            request.DisplayNumber,
+            request.Status,
+            request.RequestStatus,
+            request.ExecutionStatus,
+            request.LifecycleMode,
+            AsOfDate = plan.AsOfDate,
+            plan.ExecutionMode,
+            plan.CanExecute,
+            plan.OverallStatus,
+            plan.Reason,
+            Steps = plan.Steps.Select(step => new
+            {
+                step.StepNumber,
+                step.StepCode,
+                step.StepLabel,
+                step.StepStatus,
+                step.Reason
+            })
+        });
+    });
+
+accounting.MapGet(
     "/document-review/{sourceType}/{documentId:guid}",
     async (
         string sourceType,
@@ -1383,6 +2831,24 @@ accounting.MapGet(
             review.CounterpartyId,
             ControlAccountLabel = MapDocumentReviewControlAccountLabel(review.CounterpartyRole),
             review.ControlAccountId,
+            review.JournalEntryId,
+            review.JournalEntryDisplayNumber,
+            review.JournalEntryStatus,
+            review.JournalEntryPostedAt,
+            review.JournalEntryVoidedAt,
+            review.JournalEntryReversedAt,
+            review.LifecycleMode,
+            review.CanEditDraft,
+            review.CanPostDraft,
+            review.LifecycleReason,
+            LifecycleActions = review.LifecycleActions.Select(action => new
+            {
+                action.ActionCode,
+                action.ActionLabel,
+                action.AvailabilityMode,
+                action.IsAvailable,
+                action.Reason
+            }),
             review.TransactionCurrencyCode,
             review.BaseCurrencyCode,
             review.SubtotalAmount,
@@ -1631,67 +3097,114 @@ accounting.MapPost(
     });
 
 accounting.MapGet(
+    "/fx-revaluation-batches",
+    async ([AsParameters] FxRevaluationBatchListQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var batches = await repository.ListRecentAsync(
+            new(query.CompanyId),
+            query.Take ?? 50,
+            cancellationToken);
+
+        return Results.Ok(batches.Select(batch => new
+        {
+            batch.Id,
+            batch.EntityNumber,
+            batch.DisplayNumber,
+            batch.Status,
+            batch.BatchKind,
+            batch.ReversalOfDocumentId,
+            batch.BookId,
+            batch.BookCode,
+            batch.AccountingStandard,
+            batch.RevaluationProfile,
+            batch.FxRoundingPolicy,
+            batch.DocumentDate,
+            batch.TransactionCurrencyCode,
+            batch.BaseCurrencyCode,
+            batch.FxSnapshotId,
+            batch.FxRate,
+            batch.LineCount,
+            batch.UnrealizedTotalBase,
+            batch.LinkedJournalEntryId,
+            batch.LinkedJournalEntryDisplayNumber,
+            batch.LinkedJournalPostedAt,
+            batch.CreatedAt,
+            batch.UpdatedAt
+        }));
+    });
+
+accounting.MapGet(
     "/fx-revaluation-batches/{documentId:guid}",
     async (Guid documentId, [AsParameters] FxRevaluationBatchLookupQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var document = await repository.GetForPostingAsync(
-            new(query.CompanyId),
-            documentId,
-            cancellationToken);
-
-        if (document is null)
+        try
         {
-            return Results.NotFound(new
+            var document = await repository.GetForPostingAsync(
+                new(query.CompanyId),
+                documentId,
+                cancellationToken);
+
+            if (document is null)
             {
-                message = "FX revaluation batch was not found in the active company context."
+                return Results.NotFound(new
+                {
+                    message = "FX revaluation batch was not found in the active company context."
+                });
+            }
+
+            return Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.Status,
+                document.BatchKind,
+                document.ReversalOfDocumentId,
+                document.BookId,
+                document.BookCode,
+                document.AccountingStandard,
+                document.RevaluationProfile,
+                document.FxRoundingPolicy,
+                document.DocumentDate,
+                TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+                BaseCurrencyCode = document.BaseCurrencyCode.Value,
+                FxSnapshotId = document.FxSnapshot.SnapshotId == Guid.Empty ? (Guid?)null : document.FxSnapshot.SnapshotId,
+                FxRate = document.FxSnapshot.Rate,
+                FxRateType = document.FxSnapshot.RateType,
+                FxQuoteBasis = document.FxSnapshot.QuoteBasis,
+                FxRateUseCase = document.FxSnapshot.RateUseCase,
+                FxPostingReason = document.FxSnapshot.PostingReason,
+                FxRequestedDate = document.FxSnapshot.RequestedDate,
+                FxEffectiveDate = document.FxSnapshot.EffectiveDate,
+                FxSource = document.FxSnapshot.SourceSemantics,
+                document.UnrealizedFxGainAccountId,
+                document.UnrealizedFxLossAccountId,
+                document.Memo,
+                Lines = document.RevaluationLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.TargetOpenItemType,
+                    line.TargetOpenItemId,
+                    line.TargetBalanceSide,
+                    line.TargetControlAccountId,
+                    line.OffsetAccountId,
+                    line.PartyId,
+                    line.Description,
+                    line.OpenAmountTx,
+                    line.CarryingAmountBase,
+                    line.RevaluedAmountBase,
+                    line.UnrealizedAmountBase
+                })
             });
         }
-
-        return Results.Ok(new
+        catch (InvalidOperationException ex)
         {
-            document.Id,
-            CompanyId = document.CompanyId.Value,
-            EntityNumber = document.EntityNumber.Value,
-            DisplayNumber = document.DisplayNumber.Value,
-            document.Status,
-            document.BatchKind,
-            document.ReversalOfDocumentId,
-            document.BookId,
-            document.BookCode,
-            document.AccountingStandard,
-            document.RevaluationProfile,
-            document.FxRoundingPolicy,
-            document.DocumentDate,
-            TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
-            BaseCurrencyCode = document.BaseCurrencyCode.Value,
-            FxSnapshotId = document.FxSnapshot.SnapshotId == Guid.Empty ? (Guid?)null : document.FxSnapshot.SnapshotId,
-            FxRate = document.FxSnapshot.Rate,
-            FxRateType = document.FxSnapshot.RateType,
-            FxQuoteBasis = document.FxSnapshot.QuoteBasis,
-            FxRateUseCase = document.FxSnapshot.RateUseCase,
-            FxPostingReason = document.FxSnapshot.PostingReason,
-            FxRequestedDate = document.FxSnapshot.RequestedDate,
-            FxEffectiveDate = document.FxSnapshot.EffectiveDate,
-            FxSource = document.FxSnapshot.SourceSemantics,
-            document.UnrealizedFxGainAccountId,
-            document.UnrealizedFxLossAccountId,
-            document.Memo,
-            Lines = document.RevaluationLines.Select(line => new
+            return Results.BadRequest(new
             {
-                line.LineNumber,
-                line.TargetOpenItemType,
-                line.TargetOpenItemId,
-                line.TargetBalanceSide,
-                line.TargetControlAccountId,
-                line.OffsetAccountId,
-                line.PartyId,
-                line.Description,
-                line.OpenAmountTx,
-                line.CarryingAmountBase,
-                line.RevaluedAmountBase,
-                line.UnrealizedAmountBase
-            })
-        });
+                message = ex.Message
+            });
+        }
     });
 
 accounting.MapPost(
@@ -1786,6 +3299,155 @@ accounting.MapPost(
     });
 
 accounting.MapGet(
+    "/invoices/drafts/{documentId:guid}",
+    async (Guid documentId, [AsParameters] InvoiceLookupQuery query, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return document is null || (document.Status != "draft" && document.Status != "submitted")
+            ? Results.NotFound(new { message = "Invoice draft or submitted invoice was not found in the active company context." })
+            : Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.Status,
+                CustomerId = document.PartyId,
+                DocumentDate = document.DocumentDate,
+                DueDate = document.DueDate,
+                TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+                BaseCurrencyCode = document.BaseCurrencyCode.Value,
+                FxSnapshotId = document.FxSnapshot?.SnapshotId,
+                FxRate = document.FxSnapshot?.Rate,
+                FxEffectiveDate = document.FxSnapshot?.EffectiveDate,
+                FxSource = document.FxSnapshot?.SourceSemantics,
+                document.Memo,
+                Lines = document.InvoiceLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.RevenueAccountId,
+                    line.Description,
+                    line.Quantity,
+                    line.UnitPrice,
+                    line.LineAmount,
+                    line.TaxCodeId,
+                    line.TaxAmount,
+                    line.ItemId,
+                    line.WarehouseId,
+                    line.UomCode
+                })
+            });
+    });
+
+accounting.MapPost(
+    "/invoices/drafts",
+    async (SaveInvoiceDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new InvoiceDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.InvoiceDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new InvoiceDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/invoices/drafts/{documentId:guid}",
+    async (Guid documentId, SaveInvoiceDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new InvoiceDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.InvoiceDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new InvoiceDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/invoices/drafts/{documentId:guid}/submit",
+    async (Guid documentId, SubmitBillDraftHttpRequest request, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SubmitDraftAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
     "/invoices/{documentId:guid}",
     async (Guid documentId, [AsParameters] InvoiceLookupQuery query, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
     {
@@ -1856,6 +3518,122 @@ accounting.MapPost(
             {
                 message = ex.Message
             });
+        }
+    });
+
+accounting.MapGet(
+    "/credit-notes/drafts/{documentId:guid}",
+    async (Guid documentId, [AsParameters] CreditNoteLookupQuery query, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        return document is null || document.Status != "draft"
+            ? Results.NotFound(new { message = "Credit note draft was not found in the active company context." })
+            : Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.Status,
+                CustomerId = document.PartyId,
+                DocumentDate = document.DocumentDate,
+                DueDate = document.DueDate,
+                TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+                BaseCurrencyCode = document.BaseCurrencyCode.Value,
+                FxSnapshotId = document.FxSnapshot?.SnapshotId,
+                FxRate = document.FxSnapshot?.Rate,
+                FxEffectiveDate = document.FxSnapshot?.EffectiveDate,
+                FxSource = document.FxSnapshot?.SourceSemantics,
+                document.Memo,
+                Lines = document.CreditNoteLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.RevenueAccountId,
+                    line.Description,
+                    line.Quantity,
+                    line.UnitPrice,
+                    line.LineAmount,
+                    line.TaxCodeId,
+                    line.TaxAmount
+                })
+            });
+    });
+
+accounting.MapPost(
+    "/credit-notes/drafts",
+    async (SaveCreditNoteDraftHttpRequest request, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new CreditNoteDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.CreditNoteDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new CreditNoteDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/credit-notes/drafts/{documentId:guid}",
+    async (Guid documentId, SaveCreditNoteDraftHttpRequest request, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new CreditNoteDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.CreditNoteDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new CreditNoteDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 
@@ -1934,8 +3712,189 @@ accounting.MapPost(
     });
 
 accounting.MapGet(
-    "/bills/{documentId:guid}",
+    "/bills/drafts/{documentId:guid}",
     async (Guid documentId, [AsParameters] BillLookupQuery query, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        return document is null || (document.Status != "draft" && document.Status != "submitted")
+            ? Results.NotFound(new { message = "Bill draft or submitted bill was not found in the active company context." })
+            : Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.Status,
+                VendorId = document.PartyId,
+                DocumentDate = document.DocumentDate,
+                DueDate = document.DueDate,
+                TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+                BaseCurrencyCode = document.BaseCurrencyCode.Value,
+                FxSnapshotId = document.FxSnapshot?.SnapshotId,
+                FxRate = document.FxSnapshot?.Rate,
+                FxEffectiveDate = document.FxSnapshot?.EffectiveDate,
+                FxSource = document.FxSnapshot?.SourceSemantics,
+                document.Memo,
+                Lines = document.BillLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.ExpenseAccountId,
+                    line.Description,
+                    line.LineAmount,
+                    line.TaxCodeId,
+                    line.TaxAmount,
+                    line.IsTaxRecoverable,
+                    line.ItemId,
+                    line.WarehouseId,
+                    line.UomCode,
+                    line.Quantity,
+                    line.UnitCost,
+                    line.PurchaseOrderId,
+                    line.PurchaseOrderLineNumber
+                })
+            });
+    });
+
+accounting.MapPost(
+    "/bills/drafts",
+    async (SaveBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new BillDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.BillDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new BillDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ExpenseAccountId,
+                        line.Description,
+                        line.LineAmount,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        line.IsTaxRecoverable,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode,
+                        line.Quantity,
+                        line.UnitCost,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/bills/drafts/{documentId:guid}",
+    async (Guid documentId, SaveBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new BillDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.BillDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new BillDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ExpenseAccountId,
+                        line.Description,
+                        line.LineAmount,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        line.IsTaxRecoverable,
+                        line.ItemId,
+                        line.WarehouseId,
+                        line.UomCode,
+                        line.Quantity,
+                        line.UnitCost,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/bills/drafts/{documentId:guid}/submit",
+    async (Guid documentId, SubmitBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SubmitDraftAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/bills/drafts/{documentId:guid}/cancel",
+    async (Guid documentId, SubmitBillDraftHttpRequest request, IBillDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.CancelSubmittedAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/bills/{documentId:guid}",
+    async (
+        Guid documentId,
+        [AsParameters] BillLookupQuery query,
+        IBillDocumentRepository repository,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
     {
         var document = await repository.GetForPostingAsync(
             new(query.CompanyId),
@@ -1949,6 +3908,11 @@ accounting.MapGet(
                 message = "Bill document was not found in the active company context."
             });
         }
+
+        var grIrSettlementSummary = await grIrSettlementStore.GetBillSettlementSummaryAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
 
         return Results.Ok(new
         {
@@ -1967,6 +3931,51 @@ accounting.MapGet(
             document.TaxAmount,
             document.TotalAmount,
             document.Memo,
+            GrIrSettlement = grIrSettlementSummary is null
+                ? null
+                : new
+                {
+                    grIrSettlementSummary.SettlementStatus,
+                    grIrSettlementSummary.SettlementLineCount,
+                    grIrSettlementSummary.EligibleLineCount,
+                    grIrSettlementSummary.BlockedLineCount,
+                    grIrSettlementSummary.BlockedGrIrNotPostedLineCount,
+                    grIrSettlementSummary.BlockedBillNotPostedLineCount,
+                    grIrSettlementSummary.BlockedMissingApOpenItemLineCount,
+                    grIrSettlementSummary.BlockedJournalNotPostedLineCount,
+                    grIrSettlementSummary.BlockedAmountExceededLineCount,
+                    grIrSettlementSummary.PartiallySettledLineCount,
+                    grIrSettlementSummary.SettledLineCount,
+                    grIrSettlementSummary.SettlementAmountBase,
+                    grIrSettlementSummary.EligibleAmountBase,
+                    grIrSettlementSummary.SettledAmountBase,
+                    grIrSettlementSummary.RemainingAmountBase,
+                    grIrSettlementSummary.SettlementBatchCount,
+                    grIrSettlementSummary.JournalNotPostedBatchCount,
+                    grIrSettlementSummary.JournalPostedBatchCount,
+                    grIrSettlementSummary.JournalStaleBatchCount,
+                    grIrSettlementSummary.JournalInconsistentBatchCount,
+                    grIrSettlementSummary.JournalReconciliationStatus,
+                    grIrSettlementSummary.LastJournalRefreshedAt,
+                    grIrSettlementSummary.OpenItemNotClearedBatchCount,
+                    grIrSettlementSummary.OpenItemClearedBatchCount,
+                    grIrSettlementSummary.OpenItemReversedBatchCount,
+                    grIrSettlementSummary.OpenItemBlockedBatchCount,
+                    grIrSettlementSummary.OpenItemStaleBatchCount,
+                    grIrSettlementSummary.OpenItemInconsistentBatchCount,
+                    grIrSettlementSummary.OpenItemClearingStatus,
+                    grIrSettlementSummary.LastOpenItemClearedAt,
+                    grIrSettlementSummary.LastOpenItemReversedAt,
+                    grIrSettlementSummary.PurchaseVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceCandidateLineCount,
+                    grIrSettlementSummary.PurchaseVarianceNoVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceBlockedLineCount,
+                    grIrSettlementSummary.PurchaseVarianceStatus,
+                    grIrSettlementSummary.PurchaseVarianceAmountBase,
+                    grIrSettlementSummary.LastPurchaseVarianceRefreshedAt,
+                    grIrSettlementSummary.LastRefreshedAt,
+                    grIrSettlementSummary.LastSettledAt
+                },
             Lines = document.BillLines.Select(line => new
             {
                 line.LineNumber,
@@ -1975,7 +3984,85 @@ accounting.MapGet(
                 line.LineAmount,
                 line.TaxAmount,
                 line.IsTaxRecoverable,
-                line.RecoverableTaxAccountId
+                line.RecoverableTaxAccountId,
+                line.ItemId,
+                line.WarehouseId,
+                line.UomCode,
+                line.Quantity,
+                line.UnitCost,
+                line.PurchaseOrderId,
+                line.PurchaseOrderLineNumber
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/bills/{documentId:guid}/receipt-matching",
+    async (Guid documentId, [AsParameters] BillLookupQuery query, IBillReceiptMatchingRepository repository, CancellationToken cancellationToken) =>
+    {
+        var summary = await repository.GetBillLaneSummaryAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            summary.BillDocumentId,
+            summary.BillInboundLineCount,
+            summary.BillInboundQuantity,
+            summary.ReceiptCount,
+            summary.CoveredQuantity,
+            summary.RemainingQuantity,
+            summary.MatchStatus,
+            summary.LatestReceiptPostedAt,
+            OpenDiscrepancyCount = summary.Discrepancies.Count,
+            RecentReceipts = summary.RecentReceipts.Select(receipt => new
+            {
+                receipt.ReceiptDocumentId,
+                receipt.DisplayNumber,
+                receipt.ReceiptDate,
+                receipt.Status,
+                receipt.ReceiptQuantity,
+                receipt.MatchedQuantity,
+                receipt.VendorReference,
+                receipt.SourceReference,
+                receipt.PostedAt
+            }),
+            LineSummaries = summary.LineSummaries.Select(line => new
+            {
+                line.BillLineNumber,
+                line.ItemId,
+                line.ItemCode,
+                line.ItemName,
+                line.WarehouseId,
+                line.WarehouseCode,
+                line.WarehouseName,
+                line.UomCode,
+                line.BillQuantity,
+                line.CoveredQuantity,
+                line.RemainingQuantity,
+                line.ReceiptCount,
+                line.MatchStatus
+            }),
+            Discrepancies = summary.Discrepancies.Select(discrepancy => new
+            {
+                discrepancy.BillDocumentId,
+                discrepancy.BillLineNumber,
+                discrepancy.DiscrepancyType,
+                discrepancy.InvestigationStatus,
+                discrepancy.ItemId,
+                discrepancy.ItemCode,
+                discrepancy.ItemName,
+                discrepancy.WarehouseId,
+                discrepancy.WarehouseCode,
+                discrepancy.WarehouseName,
+                discrepancy.UomCode,
+                discrepancy.BillQuantity,
+                discrepancy.CoveredQuantity,
+                discrepancy.RemainingQuantity,
+                discrepancy.Summary,
+                discrepancy.FirstDetectedAt,
+                discrepancy.LastDetectedAt
             })
         });
     });
@@ -2003,6 +4090,1521 @@ accounting.MapPost(
             {
                 message = ex.Message
             });
+        }
+    });
+
+accounting.MapGet(
+    "/purchase-orders",
+    async (
+        [AsParameters] PurchaseOrderListQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var documents = await repository.ListAsync(new(query.CompanyId), query.Take ?? 50, cancellationToken);
+        var summaries = await repository.GetThreeQuantitySummariesAsync(
+            new(query.CompanyId),
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+
+        return Results.Ok(documents.Select(document => new
+        {
+            EstimatedAmount = CalculatePurchaseOrderListEstimatedAmount(document),
+            document.DocumentId,
+            document.EntityNumber,
+            document.DisplayNumber,
+            document.Status,
+            document.VendorId,
+            document.OrderDate,
+            document.ExpectedDate,
+            document.LineCount,
+            document.TotalOrderedQuantity,
+            document.VendorReference,
+            document.Memo,
+            document.CreatedAt,
+            document.UpdatedAt,
+            document.ApprovedAt,
+            document.IssuedAt,
+            document.ClosedAt,
+            document.CancelledAt,
+            document.AmendmentStartedAt,
+            AnchorGovernance = new
+            {
+                AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
+                Summary = PurchaseOrderAnchorPolicy.BuildAnchorStatusSummary(document.Status)
+            },
+            ApprovalAuthority = BuildPurchaseOrderApprovalAuthoritySummary(CalculatePurchaseOrderListEstimatedAmount(document)),
+            ThreeQuantity = summaries.TryGetValue(document.DocumentId, out var summary) ? summary : null
+        }));
+    });
+
+accounting.MapGet(
+    "/purchase-orders/approval-requests",
+    async (
+        [AsParameters] PurchaseOrderApprovalRequestListQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var requests = await repository.ListApprovalRequestsAsync(
+            new(query.CompanyId),
+            query.Take ?? 50,
+            query.IncludeClosed ?? false,
+            cancellationToken);
+
+        return Results.Ok(requests);
+    });
+
+accounting.MapGet(
+    "/purchase-orders/{documentId:guid}",
+    async (
+        Guid documentId,
+        [AsParameters] PurchaseOrderLookupQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Purchase order document was not found in the active company context." });
+        }
+
+        var summary = await repository.GetThreeQuantitySummaryAsync(new(query.CompanyId), documentId, cancellationToken);
+        var purchaseVarianceSummary = await repository.GetPurchaseVarianceSummaryAsync(new(query.CompanyId), documentId, cancellationToken);
+        var estimatedAmount = CalculatePurchaseOrderDocumentEstimatedAmount(document);
+        return Results.Ok(new
+        {
+            EstimatedAmount = estimatedAmount,
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            document.VendorId,
+            document.OrderDate,
+            document.ExpectedDate,
+            document.VendorReference,
+            document.Memo,
+            document.ApprovedAt,
+            document.IssuedAt,
+            document.ClosedAt,
+            document.CancelledAt,
+            document.AmendmentStartedAt,
+            AnchorGovernance = new
+            {
+                AllowsNewAnchors = PurchaseOrderAnchorPolicy.AllowsNewAnchor(document.Status),
+                Summary = PurchaseOrderAnchorPolicy.BuildAnchorStatusSummary(document.Status)
+            },
+            ApprovalAuthority = BuildPurchaseOrderApprovalAuthoritySummary(estimatedAmount),
+            ThreeQuantity = summary,
+            PurchaseVariance = purchaseVarianceSummary,
+            Lines = document.PurchaseOrderLines.Select(line => new
+            {
+                line.LineNumber,
+                line.ItemId,
+                line.OrderedQuantity,
+                line.UomCode,
+                line.Description,
+                line.UnitCost
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/purchase-orders/{documentId:guid}/lifecycle-audit",
+    async (
+        Guid documentId,
+        [AsParameters] PurchaseOrderLifecycleAuditQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Purchase order document was not found in the active company context." });
+        }
+
+        var entries = await repository.ListLifecycleAuditAsync(
+            new(query.CompanyId),
+            documentId,
+            query.Take ?? 50,
+            cancellationToken);
+
+        return Results.Ok(entries);
+    });
+
+accounting.MapGet(
+    "/purchase-orders/{documentId:guid}/approval-request",
+    async (
+        Guid documentId,
+        [AsParameters] PurchaseOrderLookupQuery query,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var request = await repository.GetLatestApprovalRequestAsync(new(query.CompanyId), documentId, cancellationToken);
+        return request is null
+            ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
+            : Results.Ok(request);
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval-request",
+    async (
+        Guid documentId,
+        RequestPurchaseOrderApprovalHttpRequest request,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.RequestApprovalAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                request.Reason,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval-request/{requestId:guid}/submit",
+    async (
+        Guid documentId,
+        Guid requestId,
+        SubmitPurchaseOrderApprovalRequestHttpRequest request,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SubmitApprovalRequestAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                requestId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval-request/{requestId:guid}/reject",
+    async (
+        Guid documentId,
+        Guid requestId,
+        RejectPurchaseOrderApprovalRequestHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var current = await repository.GetLatestApprovalRequestAsync(new(request.CompanyId), documentId, cancellationToken);
+        if (current is null || current.RequestId != requestId)
+        {
+            return Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." });
+        }
+
+        var authorityBlock = RequirePurchaseOrderApprovalAuthority(
+            sessionAccessor.Current,
+            "reject_approval_request",
+            current.EstimatedAmount);
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.RejectApprovalRequestAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                requestId,
+                cancellationToken);
+
+            return result is null
+                ? Results.NotFound(new { message = "Purchase order approval request was not found in the active company context." })
+                : Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/drafts",
+    async (SavePurchaseOrderDraftHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.OrderDate,
+                    request.ExpectedDate,
+                    request.VendorReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new PurchaseOrderDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.OrderedQuantity,
+                        line.UomCode,
+                        line.Description,
+                        line.UnitCost)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/purchase-orders/drafts/{documentId:guid}",
+    async (Guid documentId, SavePurchaseOrderDraftHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new PurchaseOrderDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.OrderDate,
+                    request.ExpectedDate,
+                    request.VendorReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new PurchaseOrderDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.OrderedQuantity,
+                        line.UomCode,
+                        line.Description,
+                        line.UnitCost)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approve",
+    async (Guid documentId, ApprovePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(new(request.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Purchase order document was not found in the active company context." });
+        }
+
+        var authorityBlock = RequirePurchaseOrderApprovalAuthority(
+            sessionAccessor.Current,
+            "approve",
+            CalculatePurchaseOrderDocumentEstimatedAmount(document));
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.ApproveAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/approval/reverse",
+    async (
+        Guid documentId,
+        ReversePurchaseOrderApprovalHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderDocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequirePurchaseOrderApprovalReversalAuthority(
+            sessionAccessor.Current,
+            "reverse_approval");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.ReverseApprovalAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/issue",
+    async (Guid documentId, IssuePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequirePurchaseOrderReleaseAuthority(sessionAccessor.Current, "release");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.IssueAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/reopen-for-amendment",
+    async (Guid documentId, ReopenPurchaseOrderForAmendmentHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequirePurchaseOrderAmendmentAuthority(sessionAccessor.Current, "reopen_for_amendment");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.ReopenForAmendmentAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/close",
+    async (Guid documentId, ClosePurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequirePurchaseOrderCloseAuthority(sessionAccessor.Current, "close");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.CloseAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/cancel",
+    async (Guid documentId, CancelPurchaseOrderHttpRequest request, BusinessSessionContextAccessor sessionAccessor, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequirePurchaseOrderCancelAuthority(sessionAccessor.Current, "cancel");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await repository.CancelAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/quantity-discrepancies/refresh",
+    async (Guid documentId, RefreshPurchaseOrderQuantityDiscrepanciesHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var summary = await repository.RefreshQuantityDiscrepanciesAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return summary is null
+                ? Results.NotFound(new { message = "Purchase order document was not found in the active company context." })
+                : Results.Ok(summary);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/purchase-orders/{documentId:guid}/quantity-discrepancies/review",
+    async (Guid documentId, ReviewPurchaseOrderQuantityDiscrepancyHttpRequest request, IPurchaseOrderDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var summary = await repository.ReviewQuantityDiscrepancyAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                request.PurchaseOrderLineNumber,
+                request.DiscrepancyType,
+                request.InvestigationStatus,
+                request.ReviewNote,
+                cancellationToken);
+
+            return summary is null
+                ? Results.NotFound(new { message = "Purchase order document was not found in the active company context." })
+                : Results.Ok(summary);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/receipts",
+    async (
+        [AsParameters] ReceiptListQuery query,
+        IReceiptDocumentRepository repository,
+        IReceiptInventoryActivationStore activationStore,
+        IReceiptInventoryValuationStore valuationStore,
+        IReceiptInventoryCostLayerEmissionStore emissionStore,
+        IReceiptGrIrBridgeStore grIrBridgeStore,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
+    {
+        var documents = await repository.ListAsync(
+            new(query.CompanyId),
+            query.Take ?? 50,
+            cancellationToken);
+        var activationSummaries = await activationStore.GetReceiptActivationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var valuationSummaries = await valuationStore.GetReceiptValuationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var emissionSummaries = await emissionStore.GetReceiptCostLayerEmissionSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var emissionReconciliationSummaries = await emissionStore.GetReceiptCostLayerEmissionReconciliationSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var grIrBridgeSummaries = await grIrBridgeStore.GetReceiptGrIrBridgeSummariesAsync(
+            query.CompanyId,
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+        var grIrSettlementSummaries = await grIrSettlementStore.GetReceiptSettlementSummariesAsync(
+            new(query.CompanyId),
+            documents.Select(static document => document.DocumentId).ToArray(),
+            cancellationToken);
+
+        return Results.Ok(documents.Select(document => new
+        {
+            document.DocumentId,
+            document.EntityNumber,
+            document.DisplayNumber,
+            document.Status,
+            document.VendorId,
+            document.WarehouseId,
+            document.ReceiptDate,
+            document.LineCount,
+            document.TotalQuantity,
+            document.VendorReference,
+            document.SourceReference,
+            document.Memo,
+            document.CreatedAt,
+            document.UpdatedAt,
+            document.PostedAt,
+            InventoryActivation = activationSummaries.TryGetValue(document.DocumentId, out var summary)
+                ? new
+                {
+                    summary.ReceiptStatus,
+                    summary.ActivationStatus,
+                    summary.InventoryDocumentId,
+                    summary.ReceiptLineCount,
+                    summary.ActivatedLineCount,
+                    summary.TotalQuantity,
+                    summary.ActivatedQuantity,
+                    summary.ActivatedAt,
+                    summary.LastFailureMessage,
+                    summary.LastFailureAt
+                }
+                : null,
+            InventoryValuation = valuationSummaries.TryGetValue(document.DocumentId, out var valuationSummary)
+                ? new
+                {
+                    valuationSummary.ValuationStatus,
+                    valuationSummary.ActivatedQuantity,
+                    valuationSummary.BillCoveredQuantity,
+                    valuationSummary.ValuedQuantity,
+                    valuationSummary.UnvaluedQuantity,
+                    valuationSummary.ValuationLineCount,
+                    valuationSummary.ValuationAmountBase,
+                    valuationSummary.LastValuedAt
+                }
+                : null,
+            InventoryCostLayerEmission = emissionSummaries.TryGetValue(document.DocumentId, out var emissionSummary)
+                ? new
+                {
+                    emissionSummary.EmissionStatus,
+                    emissionSummary.ActivatedQuantity,
+                    emissionSummary.ValuationBackedQuantity,
+                    emissionSummary.EmissionEligibleQuantity,
+                    emissionSummary.EmittedQuantity,
+                    emissionSummary.UnemittedQuantity,
+                    emissionSummary.EmissionLineCount,
+                    emissionSummary.EmittedCostBase,
+                    emissionSummary.LastEmittedAt
+                }
+                : null,
+            InventoryCostLayerEmissionReconciliation = emissionReconciliationSummaries.TryGetValue(document.DocumentId, out var reconciliationSummary)
+                ? new
+                {
+                    reconciliationSummary.ReconciliationStatus,
+                    reconciliationSummary.EmissionLineCount,
+                    reconciliationSummary.CostLayerCount,
+                    reconciliationSummary.MissingCostLayerCount,
+                    reconciliationSummary.OrphanCostLayerCount,
+                    reconciliationSummary.EmittedQuantity,
+                    reconciliationSummary.CostLayerQuantity,
+                    reconciliationSummary.EmittedCostBase,
+                    reconciliationSummary.CostLayerOriginalCostBase,
+                    reconciliationSummary.LastEmittedAt
+                }
+                : null,
+            GrIrBridge = grIrBridgeSummaries.TryGetValue(document.DocumentId, out var grIrBridgeSummary)
+                ? new
+                {
+                    grIrBridgeSummary.BridgeStatus,
+                    grIrBridgeSummary.BridgeLineCount,
+                    grIrBridgeSummary.EligibleLineCount,
+                    grIrBridgeSummary.BlockedReconciliationLineCount,
+                    grIrBridgeSummary.BlockedVarianceLineCount,
+                    grIrBridgeSummary.PostedLineCount,
+                    grIrBridgeSummary.BridgeQuantity,
+                    grIrBridgeSummary.BridgeAmountBase,
+                    grIrBridgeSummary.EligibleAmountBase,
+                    grIrBridgeSummary.BlockedAmountBase,
+                    grIrBridgeSummary.PostedAmountBase,
+                    grIrBridgeSummary.JournalEntryId,
+                    grIrBridgeSummary.JournalEntryDisplayNumber,
+                    grIrBridgeSummary.LastPostedAt,
+                    grIrBridgeSummary.LastRefreshedAt
+                }
+                : null,
+            GrIrSettlement = grIrSettlementSummaries.TryGetValue(document.DocumentId, out var grIrSettlementSummary)
+                ? new
+                {
+                    grIrSettlementSummary.SettlementStatus,
+                    grIrSettlementSummary.SettlementLineCount,
+                    grIrSettlementSummary.EligibleLineCount,
+                    grIrSettlementSummary.BlockedLineCount,
+                    grIrSettlementSummary.BlockedGrIrNotPostedLineCount,
+                    grIrSettlementSummary.BlockedBillNotPostedLineCount,
+                    grIrSettlementSummary.BlockedMissingApOpenItemLineCount,
+                    grIrSettlementSummary.BlockedJournalNotPostedLineCount,
+                    grIrSettlementSummary.BlockedAmountExceededLineCount,
+                    grIrSettlementSummary.PartiallySettledLineCount,
+                    grIrSettlementSummary.SettledLineCount,
+                    grIrSettlementSummary.SettlementAmountBase,
+                    grIrSettlementSummary.EligibleAmountBase,
+                    grIrSettlementSummary.SettledAmountBase,
+                    grIrSettlementSummary.RemainingAmountBase,
+                    grIrSettlementSummary.SettlementBatchCount,
+                    grIrSettlementSummary.JournalNotPostedBatchCount,
+                    grIrSettlementSummary.JournalPostedBatchCount,
+                    grIrSettlementSummary.JournalStaleBatchCount,
+                    grIrSettlementSummary.JournalInconsistentBatchCount,
+                    grIrSettlementSummary.JournalReconciliationStatus,
+                    grIrSettlementSummary.LastJournalRefreshedAt,
+                    grIrSettlementSummary.OpenItemNotClearedBatchCount,
+                    grIrSettlementSummary.OpenItemClearedBatchCount,
+                    grIrSettlementSummary.OpenItemReversedBatchCount,
+                    grIrSettlementSummary.OpenItemBlockedBatchCount,
+                    grIrSettlementSummary.OpenItemStaleBatchCount,
+                    grIrSettlementSummary.OpenItemInconsistentBatchCount,
+                    grIrSettlementSummary.OpenItemClearingStatus,
+                    grIrSettlementSummary.LastOpenItemClearedAt,
+                    grIrSettlementSummary.LastOpenItemReversedAt,
+                    grIrSettlementSummary.PurchaseVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceCandidateLineCount,
+                    grIrSettlementSummary.PurchaseVarianceNoVarianceLineCount,
+                    grIrSettlementSummary.PurchaseVarianceBlockedLineCount,
+                    grIrSettlementSummary.PurchaseVarianceStatus,
+                    grIrSettlementSummary.PurchaseVarianceAmountBase,
+                    grIrSettlementSummary.LastPurchaseVarianceRefreshedAt,
+                    grIrSettlementSummary.LastRefreshedAt,
+                    grIrSettlementSummary.LastSettledAt
+                }
+                : null
+        }));
+    });
+
+accounting.MapGet(
+    "/receipts/grir-clearing-account-policy",
+    async (
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptGrIrClearingAccountPolicyRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var accountId = await repository.GetDefaultGrIrClearingAccountIdAsync(
+            new(query.CompanyId),
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            query.CompanyId,
+            GrIrClearingAccountId = accountId
+        });
+    });
+
+accounting.MapPost(
+    "/receipts/grir-clearing-account-policy",
+    async (
+        SaveReceiptGrIrClearingAccountPolicyHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReceiptGrIrClearingAccountPolicyRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrClearingAccountPolicyManagementAuthority(
+            sessionAccessor.Current,
+            "save");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            await repository.SaveDefaultGrIrClearingAccountAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                request.GrIrClearingAccountId,
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                request.CompanyId,
+                request.GrIrClearingAccountId
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/receipts/{documentId:guid}",
+    async (
+        Guid documentId,
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptDocumentRepository repository,
+        IReceiptInventoryActivationStore activationStore,
+        IReceiptInventoryValuationStore valuationStore,
+        IReceiptInventoryCostLayerEmissionStore emissionStore,
+        IReceiptGrIrBridgeStore grIrBridgeStore,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+        var activationSummary = await activationStore.GetReceiptActivationSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var valuationSummary = await valuationStore.GetReceiptValuationSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var emissionSummary = await emissionStore.GetReceiptCostLayerEmissionSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var emissionReconciliationSummary = await emissionStore.GetReceiptCostLayerEmissionReconciliationSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var grIrBridgeSummary = await grIrBridgeStore.GetReceiptGrIrBridgeSummaryAsync(
+            query.CompanyId,
+            documentId,
+            cancellationToken);
+        var grIrSettlementSummary = await grIrSettlementStore.GetReceiptSettlementSummaryAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return document is null
+            ? Results.NotFound(new { message = "Receipt document was not found in the active company context." })
+            : Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.SourceType,
+                document.Status,
+                document.VendorId,
+                document.WarehouseId,
+                document.ReceiptDate,
+                document.VendorReference,
+                document.SourceReference,
+                document.Memo,
+                document.PostedAt,
+                InventoryActivation = activationSummary is null
+                    ? null
+                    : new
+                    {
+                        activationSummary.ReceiptStatus,
+                        activationSummary.ActivationStatus,
+                        activationSummary.InventoryDocumentId,
+                        activationSummary.ReceiptLineCount,
+                        activationSummary.ActivatedLineCount,
+                        activationSummary.TotalQuantity,
+                        activationSummary.ActivatedQuantity,
+                        activationSummary.ActivatedAt,
+                        activationSummary.LastFailureMessage,
+                        activationSummary.LastFailureAt
+                    },
+                InventoryValuation = valuationSummary is null
+                    ? null
+                    : new
+                    {
+                        valuationSummary.ValuationStatus,
+                        valuationSummary.ActivatedQuantity,
+                        valuationSummary.BillCoveredQuantity,
+                        valuationSummary.ValuedQuantity,
+                        valuationSummary.UnvaluedQuantity,
+                        valuationSummary.ValuationLineCount,
+                        valuationSummary.ValuationAmountBase,
+                        valuationSummary.LastValuedAt
+                    },
+                InventoryCostLayerEmission = emissionSummary is null
+                    ? null
+                    : new
+                    {
+                        emissionSummary.EmissionStatus,
+                        emissionSummary.ActivatedQuantity,
+                        emissionSummary.ValuationBackedQuantity,
+                        emissionSummary.EmissionEligibleQuantity,
+                        emissionSummary.EmittedQuantity,
+                        emissionSummary.UnemittedQuantity,
+                        emissionSummary.EmissionLineCount,
+                        emissionSummary.EmittedCostBase,
+                        emissionSummary.LastEmittedAt
+                    },
+                InventoryCostLayerEmissionReconciliation = emissionReconciliationSummary is null
+                    ? null
+                    : new
+                    {
+                        emissionReconciliationSummary.ReconciliationStatus,
+                        emissionReconciliationSummary.EmissionLineCount,
+                        emissionReconciliationSummary.CostLayerCount,
+                        emissionReconciliationSummary.MissingCostLayerCount,
+                        emissionReconciliationSummary.OrphanCostLayerCount,
+                        emissionReconciliationSummary.EmittedQuantity,
+                        emissionReconciliationSummary.CostLayerQuantity,
+                        emissionReconciliationSummary.EmittedCostBase,
+                        emissionReconciliationSummary.CostLayerOriginalCostBase,
+                        emissionReconciliationSummary.LastEmittedAt
+                    },
+                GrIrBridge = grIrBridgeSummary is null
+                    ? null
+                    : new
+                    {
+                        grIrBridgeSummary.BridgeStatus,
+                        grIrBridgeSummary.BridgeLineCount,
+                        grIrBridgeSummary.EligibleLineCount,
+                        grIrBridgeSummary.BlockedReconciliationLineCount,
+                        grIrBridgeSummary.BlockedVarianceLineCount,
+                        grIrBridgeSummary.PostedLineCount,
+                        grIrBridgeSummary.BridgeQuantity,
+                        grIrBridgeSummary.BridgeAmountBase,
+                        grIrBridgeSummary.EligibleAmountBase,
+                        grIrBridgeSummary.BlockedAmountBase,
+                        grIrBridgeSummary.PostedAmountBase,
+                        grIrBridgeSummary.JournalEntryId,
+                        grIrBridgeSummary.JournalEntryDisplayNumber,
+                        grIrBridgeSummary.LastPostedAt,
+                        grIrBridgeSummary.LastRefreshedAt
+                    },
+                GrIrSettlement = grIrSettlementSummary is null
+                    ? null
+                    : new
+                    {
+                        grIrSettlementSummary.SettlementStatus,
+                        grIrSettlementSummary.SettlementLineCount,
+                        grIrSettlementSummary.EligibleLineCount,
+                        grIrSettlementSummary.BlockedLineCount,
+                        grIrSettlementSummary.BlockedGrIrNotPostedLineCount,
+                        grIrSettlementSummary.BlockedBillNotPostedLineCount,
+                        grIrSettlementSummary.BlockedMissingApOpenItemLineCount,
+                        grIrSettlementSummary.BlockedJournalNotPostedLineCount,
+                        grIrSettlementSummary.BlockedAmountExceededLineCount,
+                        grIrSettlementSummary.PartiallySettledLineCount,
+                        grIrSettlementSummary.SettledLineCount,
+                        grIrSettlementSummary.SettlementAmountBase,
+                        grIrSettlementSummary.EligibleAmountBase,
+                        grIrSettlementSummary.SettledAmountBase,
+                        grIrSettlementSummary.RemainingAmountBase,
+                        grIrSettlementSummary.SettlementBatchCount,
+                        grIrSettlementSummary.JournalNotPostedBatchCount,
+                        grIrSettlementSummary.JournalPostedBatchCount,
+                        grIrSettlementSummary.JournalStaleBatchCount,
+                        grIrSettlementSummary.JournalInconsistentBatchCount,
+                        grIrSettlementSummary.JournalReconciliationStatus,
+                        grIrSettlementSummary.LastJournalRefreshedAt,
+                        grIrSettlementSummary.OpenItemNotClearedBatchCount,
+                        grIrSettlementSummary.OpenItemClearedBatchCount,
+                        grIrSettlementSummary.OpenItemReversedBatchCount,
+                        grIrSettlementSummary.OpenItemBlockedBatchCount,
+                        grIrSettlementSummary.OpenItemStaleBatchCount,
+                        grIrSettlementSummary.OpenItemInconsistentBatchCount,
+                        grIrSettlementSummary.OpenItemClearingStatus,
+                        grIrSettlementSummary.LastOpenItemClearedAt,
+                        grIrSettlementSummary.LastOpenItemReversedAt,
+                        grIrSettlementSummary.PurchaseVarianceLineCount,
+                        grIrSettlementSummary.PurchaseVarianceCandidateLineCount,
+                        grIrSettlementSummary.PurchaseVarianceNoVarianceLineCount,
+                        grIrSettlementSummary.PurchaseVarianceBlockedLineCount,
+                        grIrSettlementSummary.PurchaseVarianceStatus,
+                        grIrSettlementSummary.PurchaseVarianceAmountBase,
+                        grIrSettlementSummary.LastPurchaseVarianceRefreshedAt,
+                        grIrSettlementSummary.LastRefreshedAt,
+                        grIrSettlementSummary.LastSettledAt
+                    },
+                Lines = document.ReceiptLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.ItemId,
+                    line.Quantity,
+                    line.UomCode,
+                    line.TrackingCaptureHome,
+                    line.PurchaseOrderId,
+                    line.PurchaseOrderLineNumber
+                })
+            });
+    });
+
+accounting.MapPost(
+    "/receipts/drafts",
+    async (SaveReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new ReceiptDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.WarehouseId,
+                    request.ReceiptDate,
+                    request.VendorReference,
+                    request.SourceReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new ReceiptDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.Quantity,
+                        line.UomCode,
+                        line.TrackingCaptureHome,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/receipts/drafts/{documentId:guid}",
+    async (Guid documentId, SaveReceiptDraftHttpRequest request, IReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new ReceiptDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.WarehouseId,
+                    request.ReceiptDate,
+                    request.VendorReference,
+                    request.SourceReference,
+                    request.Memo,
+                    request.Lines.Select(static line => new ReceiptDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ItemId,
+                        line.Quantity,
+                        line.UomCode,
+                        line.TrackingCaptureHome,
+                        line.PurchaseOrderId,
+                        line.PurchaseOrderLineNumber)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/post",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, PostReceiptWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.PostAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/inventory-activation/retry",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, PostReceiptWorkflow workflow, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await workflow.PostAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/inventory-valuation/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptInventoryValuationStore valuationStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await valuationStore.RefreshReceiptValuationAsync(
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/inventory-cost-layer-emission/emit",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptInventoryCostLayerEmissionStore emissionStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await emissionStore.EmitReceiptCostLayersAsync(
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-bridge/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrBridgeStore grIrBridgeStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrBridgeStore.RefreshReceiptGrIrBridgeAsync(
+                request.CompanyId,
+                request.UserId,
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrSettlementStore.RefreshReceiptSettlementControlAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/journal-reconciliation/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrSettlementStore.RefreshReceiptSettlementJournalReconciliationAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/purchase-variance/refresh",
+    async (Guid documentId, PostReceiptDraftHttpRequest request, IReceiptGrIrApSettlementControlStore grIrSettlementStore, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await grIrSettlementStore.RefreshReceiptSettlementVarianceControlAsync(
+                new(request.CompanyId),
+                new(request.UserId),
+                documentId,
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/receipts/{documentId:guid}/grir-settlement/purchase-variance/lines",
+    async (
+        Guid documentId,
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await grIrSettlementStore.ListReceiptPurchaseVarianceLinesAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(result);
+    });
+
+accounting.MapGet(
+    "/receipts/{documentId:guid}/grir-settlement/batches",
+    async (
+        Guid documentId,
+        [AsParameters] ReceiptLookupQuery query,
+        IReceiptGrIrApSettlementControlStore grIrSettlementStore,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await grIrSettlementStore.ListReceiptSettlementBatchesAsync(
+            new(query.CompanyId),
+            documentId,
+            cancellationToken);
+
+        return Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/execute",
+    async (
+        Guid documentId,
+        ExecuteReceiptGrIrSettlementHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ExecuteReceiptGrIrSettlementCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "execute");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new ExecuteReceiptGrIrSettlementCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    request.SettlementAmountBase,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/{settlementBatchId:guid}/journal/post",
+    async (
+        Guid documentId,
+        Guid settlementBatchId,
+        PostReceiptGrIrSettlementJournalHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostReceiptGrIrSettlementJournalCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "post");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostReceiptGrIrSettlementJournalCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    settlementBatchId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/{settlementBatchId:guid}/ap-open-item/clear",
+    async (
+        Guid documentId,
+        Guid settlementBatchId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ClearReceiptGrIrSettlementOpenItemCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "clear");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new ClearReceiptGrIrSettlementOpenItemCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    settlementBatchId),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-settlement/{settlementBatchId:guid}/ap-open-item/reverse",
+    async (
+        Guid documentId,
+        Guid settlementBatchId,
+        PostReceiptDraftHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ReverseReceiptGrIrSettlementOpenItemClearingCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var authorityBlock = RequireGrIrSettlementExecutionAuthority(
+            sessionAccessor.Current,
+            "reverse");
+        if (authorityBlock is not null)
+        {
+            return authorityBlock;
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new ReverseReceiptGrIrSettlementOpenItemClearingCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    settlementBatchId),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/receipts/{documentId:guid}/grir-bridge/post",
+    async (Guid documentId, PostReceiptGrIrBridgeHttpRequest request, PostReceiptGrIrCommandHandler handler, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostReceiptGrIrCommand(
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    documentId,
+                    request.GrIrClearingAccountId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/vendor-credits/drafts/{documentId:guid}",
+    async (Guid documentId, [AsParameters] VendorCreditLookupQuery query, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        return document is null || document.Status != "draft"
+            ? Results.NotFound(new { message = "Vendor credit draft was not found in the active company context." })
+            : Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.Status,
+                VendorId = document.PartyId,
+                DocumentDate = document.DocumentDate,
+                DueDate = document.DueDate,
+                TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+                BaseCurrencyCode = document.BaseCurrencyCode.Value,
+                FxSnapshotId = document.FxSnapshot?.SnapshotId,
+                FxRate = document.FxSnapshot?.Rate,
+                FxEffectiveDate = document.FxSnapshot?.EffectiveDate,
+                FxSource = document.FxSnapshot?.SourceSemantics,
+                document.Memo,
+                Lines = document.VendorCreditLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.ExpenseAccountId,
+                    line.Description,
+                    line.LineAmount,
+                    line.TaxCodeId,
+                    line.TaxAmount,
+                    line.IsTaxRecoverable
+                })
+            });
+    });
+
+accounting.MapPost(
+    "/vendor-credits/drafts",
+    async (SaveVendorCreditDraftHttpRequest request, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new VendorCreditDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.VendorCreditDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new VendorCreditDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ExpenseAccountId,
+                        line.Description,
+                        line.LineAmount,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        line.IsTaxRecoverable)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/vendor-credits/drafts/{documentId:guid}",
+    async (Guid documentId, SaveVendorCreditDraftHttpRequest request, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var result = await repository.SaveDraftAsync(
+                new VendorCreditDraftSaveModel(
+                    documentId,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.VendorCreditDate,
+                    request.DueDate,
+                    request.TransactionCurrencyCode,
+                    request.BaseCurrencyCode,
+                    request.FxSnapshotId,
+                    request.FxRate,
+                    request.FxEffectiveDate,
+                    request.FxSource,
+                    request.Memo,
+                    request.Lines.Select(static line => new VendorCreditDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ExpenseAccountId,
+                        line.Description,
+                        line.LineAmount,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        line.IsTaxRecoverable)).ToArray()),
+                cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 
@@ -2481,6 +6083,232 @@ accounting.MapPost(
 
 app.Run();
 
+static IResult? RequireOpenItemAdjustmentApprovalAuthority(
+    BusinessSessionContext? session,
+    OpenItemAdjustmentRequestRecord request,
+    string openItemLabel,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateOpenItemAdjustmentApproval(
+        session,
+        openItemLabel,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new OpenItemAdjustmentRequestTransitionResult(
+                request,
+                transitionCode,
+                decision.OutcomeCode,
+                decision.Message),
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequireOpenItemAdjustmentAccountMappingManagementAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateOpenItemAdjustmentAccountMappingManagement(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequireGrIrClearingAccountPolicyManagementAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateGrIrClearingAccountPolicyManagement(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequireGrIrSettlementExecutionAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluateGrIrSettlementExecution(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderApprovalAuthority(
+    BusinessSessionContext? session,
+    string transitionCode,
+    decimal? estimatedOrderAmount = null)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApproval(
+        session,
+        transitionCode,
+        estimatedOrderAmount);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                estimatedOrderAmount,
+                approvalThresholdAmount = BusinessApprovalAuthority.PurchaseOrderApprovalGovernanceThresholdAmount,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderReleaseAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderRelease(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderAmendmentAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderAmendment(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderApprovalReversalAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderApprovalReversal(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderCloseAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderClose(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static IResult? RequirePurchaseOrderCancelAuthority(
+    BusinessSessionContext? session,
+    string transitionCode)
+{
+    var decision = BusinessApprovalAuthority.EvaluatePurchaseOrderCancel(
+        session,
+        transitionCode);
+
+    return decision.Allowed
+        ? null
+        : Results.Json(
+            new
+            {
+                transitionCode,
+                outcomeCode = decision.OutcomeCode,
+                message = decision.Message
+            },
+            statusCode: StatusCodes.Status403Forbidden);
+}
+
+static decimal? CalculatePurchaseOrderListEstimatedAmount(PurchaseOrderDocumentListItem document) => null;
+
+static decimal? CalculatePurchaseOrderDocumentEstimatedAmount(PurchaseOrderDocument document) =>
+    document.PurchaseOrderLines.Any(static line => !line.UnitCost.HasValue)
+        ? null
+        : document.PurchaseOrderLines.Sum(static line => line.OrderedQuantity * line.UnitCost!.Value);
+
+static object BuildPurchaseOrderApprovalAuthoritySummary(decimal? estimatedOrderAmount) =>
+    new
+    {
+        EstimatedOrderAmount = estimatedOrderAmount,
+        ThresholdAmount = BusinessApprovalAuthority.PurchaseOrderApprovalGovernanceThresholdAmount,
+        RequiresGovernanceApproval = BusinessApprovalAuthority.RequiresPurchaseOrderGovernanceApproval(estimatedOrderAmount),
+        Summary = !estimatedOrderAmount.HasValue
+            ? "Estimated purchase order amount is unavailable, so the temporary threshold does not add an approval block yet."
+            : BusinessApprovalAuthority.RequiresPurchaseOrderGovernanceApproval(estimatedOrderAmount)
+            ? "Purchase order approval is above the temporary governance threshold and requires owner or governance authority."
+            : "Purchase order approval is within the temporary approver threshold."
+    };
+
 static IResult ToCsvFileResult(ReportCsvExporter.ReportCsvFile file) =>
     Results.File(Encoding.UTF8.GetBytes(file.Content), file.ContentType, file.FileName);
 
@@ -2496,6 +6324,14 @@ static string MapDocumentReviewSourceLabel(string sourceType) =>
         "credit_application" => "Credit Application",
         "pay_bill" => "Pay Bill",
         "vendor_credit_application" => "Vendor Credit Application",
+        "invoice_reversal" => "Invoice Reversal",
+        "credit_note_reversal" => "Credit Note Reversal",
+        "bill_reversal" => "Bill Reversal",
+        "vendor_credit_reversal" => "Vendor Credit Reversal",
+        "receive_payment_reversal" => "Receive Payment Reversal",
+        "credit_application_reversal" => "Credit Application Reversal",
+        "pay_bill_reversal" => "Pay Bill Reversal",
+        "vendor_credit_application_reversal" => "Vendor Credit Application Reversal",
         _ => "Document"
     };
 
@@ -2524,6 +6360,18 @@ static string MapDocumentReviewLineAccountLabel(string counterpartyRole) =>
         "customer" => "Revenue account",
         "vendor" => "Expense account",
         _ => "Account"
+    };
+
+static string BuildInvoiceCoverageSummary(InventoryInvoiceShipmentPostingGateSnapshot snapshot) =>
+    snapshot.InvoiceCoverageStatus switch
+    {
+        "no_inventory_handoff" => "No shipped/invoiced coverage lane is active for this invoice.",
+        "no_shipment" => "Shipment truth has not started yet, so nothing is formally invoiced against shipped quantity.",
+        "not_invoiced" => $"Shipment truth exists, but {snapshot.RemainingToInvoiceQuantity:N2} shipped quantity still has no formal AR coverage.",
+        "partially_invoiced" => $"{snapshot.RemainingToInvoiceQuantity:N2} shipped quantity is still waiting for formal AR coverage.",
+        "fully_invoiced" => "Current shipped quantity is fully covered by posted AR truth.",
+        "over_invoiced" => "Posted invoice truth currently exceeds shipped quantity and should move into discrepancy review.",
+        _ => "Invoice coverage truth has not been evaluated yet."
     };
 
 static JournalEntryReviewListItemSummary MapJournalEntryReviewListItem(JournalEntryReviewListItem item) =>
@@ -2610,6 +6458,14 @@ static string MapJournalEntrySourceTypeLabel(string sourceType) =>
         "credit_application" => "Credit Application",
         "pay_bill" => "Pay Bill",
         "vendor_credit_application" => "Vendor Credit Application",
+        "invoice_reversal" => "Invoice Reversal",
+        "credit_note_reversal" => "Credit Note Reversal",
+        "bill_reversal" => "Bill Reversal",
+        "vendor_credit_reversal" => "Vendor Credit Reversal",
+        "receive_payment_reversal" => "Receive Payment Reversal",
+        "credit_application_reversal" => "Credit Application Reversal",
+        "pay_bill_reversal" => "Pay Bill Reversal",
+        "vendor_credit_application_reversal" => "Vendor Credit Application Reversal",
         "fx_revaluation" => "FX Revaluation",
         _ => "Source Document"
     };

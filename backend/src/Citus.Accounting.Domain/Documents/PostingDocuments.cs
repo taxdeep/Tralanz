@@ -161,7 +161,11 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         decimal unitPrice,
         decimal lineAmount,
         decimal taxAmount,
-        Guid? payableTaxAccountId)
+        Guid? payableTaxAccountId,
+        Guid? taxCodeId = null,
+        Guid? itemId = null,
+        Guid? warehouseId = null,
+        string? uomCode = null)
     {
         if (lineNumber <= 0)
         {
@@ -201,6 +205,10 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
         LineAmount = lineAmount;
         TaxAmount = taxAmount;
         PayableTaxAccountId = payableTaxAccountId;
+        TaxCodeId = taxCodeId;
+        ItemId = itemId;
+        WarehouseId = warehouseId;
+        UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
     }
 
     public int LineNumber { get; }
@@ -218,6 +226,14 @@ public sealed record InvoiceDocumentLine : IPostingDocumentLine
     public decimal TaxAmount { get; }
 
     public Guid? PayableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
+
+    public Guid? ItemId { get; }
+
+    public Guid? WarehouseId { get; }
+
+    public string? UomCode { get; }
 }
 
 public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
@@ -327,7 +343,8 @@ public sealed record CreditNoteDocumentLine : IPostingDocumentLine
         decimal unitPrice,
         decimal lineAmount,
         decimal taxAmount,
-        Guid? payableTaxAccountId)
+        Guid? payableTaxAccountId,
+        Guid? taxCodeId = null)
     {
         if (lineNumber <= 0)
         {
@@ -367,6 +384,7 @@ public sealed record CreditNoteDocumentLine : IPostingDocumentLine
         LineAmount = lineAmount;
         TaxAmount = taxAmount;
         PayableTaxAccountId = payableTaxAccountId;
+        TaxCodeId = taxCodeId;
     }
 
     public int LineNumber { get; }
@@ -384,6 +402,8 @@ public sealed record CreditNoteDocumentLine : IPostingDocumentLine
     public decimal TaxAmount { get; }
 
     public Guid? PayableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
 }
 
 public sealed class CreditNoteDocument : IPostingDocument, IOpenItemDocument
@@ -492,7 +512,15 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         decimal lineAmount,
         decimal taxAmount,
         bool isTaxRecoverable,
-        Guid? recoverableTaxAccountId)
+        Guid? recoverableTaxAccountId,
+        Guid? taxCodeId = null,
+        Guid? itemId = null,
+        Guid? warehouseId = null,
+        string? uomCode = null,
+        decimal? quantity = null,
+        decimal? unitCost = null,
+        Guid? purchaseOrderId = null,
+        int? purchaseOrderLineNumber = null)
     {
         if (lineNumber <= 0)
         {
@@ -519,6 +547,60 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             throw new InvalidOperationException("Recoverable tax bill lines must resolve to a recoverable tax account.");
         }
 
+        var hasInventorySemantics =
+            itemId.HasValue ||
+            warehouseId.HasValue ||
+            !string.IsNullOrWhiteSpace(uomCode) ||
+            quantity.HasValue ||
+            unitCost.HasValue;
+
+        if (hasInventorySemantics)
+        {
+            if (!itemId.HasValue || itemId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require an item id.");
+            }
+
+            if (!warehouseId.HasValue || warehouseId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a warehouse id.");
+            }
+
+            if (string.IsNullOrWhiteSpace(uomCode))
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a UOM code.");
+            }
+
+            if (!quantity.HasValue || quantity.Value <= 0m)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a positive quantity.");
+            }
+
+            if (!unitCost.HasValue || unitCost.Value < 0m)
+            {
+                throw new InvalidOperationException("Inventory-grade bill lines require a non-negative unit cost.");
+            }
+        }
+
+        var hasPurchaseOrderAnchor = purchaseOrderId.HasValue || purchaseOrderLineNumber.HasValue;
+        if (hasPurchaseOrderAnchor)
+        {
+            if (!purchaseOrderId.HasValue || purchaseOrderId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a purchase order id.");
+            }
+
+            if (!purchaseOrderLineNumber.HasValue || purchaseOrderLineNumber.Value <= 0)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a positive purchase order line number.");
+            }
+
+            if (!quantity.HasValue || quantity.Value <= 0m)
+            {
+                throw new InvalidOperationException("PO-anchored bill lines require a positive quantity.");
+            }
+        }
+
         LineNumber = lineNumber;
         ExpenseAccountId = expenseAccountId;
         Description = description.Trim();
@@ -526,6 +608,14 @@ public sealed record BillDocumentLine : IPostingDocumentLine
         TaxAmount = taxAmount;
         IsTaxRecoverable = isTaxRecoverable;
         RecoverableTaxAccountId = recoverableTaxAccountId;
+        TaxCodeId = taxCodeId;
+        ItemId = itemId;
+        WarehouseId = warehouseId;
+        UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim().ToUpperInvariant();
+        Quantity = quantity;
+        UnitCost = unitCost;
+        PurchaseOrderId = purchaseOrderId;
+        PurchaseOrderLineNumber = purchaseOrderLineNumber;
     }
 
     public int LineNumber { get; }
@@ -541,6 +631,22 @@ public sealed record BillDocumentLine : IPostingDocumentLine
     public bool IsTaxRecoverable { get; }
 
     public Guid? RecoverableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
+
+    public Guid? ItemId { get; }
+
+    public Guid? WarehouseId { get; }
+
+    public string? UomCode { get; }
+
+    public decimal? Quantity { get; }
+
+    public decimal? UnitCost { get; }
+
+    public Guid? PurchaseOrderId { get; }
+
+    public int? PurchaseOrderLineNumber { get; }
 }
 
 public sealed class BillDocument : IPostingDocument, IOpenItemDocument
@@ -640,6 +746,649 @@ public sealed class BillDocument : IPostingDocument, IOpenItemDocument
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 }
 
+public static class ReceiptDocumentStatuses
+{
+    public const string Draft = "draft";
+    public const string Posted = "posted";
+
+    public static string Normalize(string? status)
+    {
+        var normalized = string.IsNullOrWhiteSpace(status)
+            ? Draft
+            : status.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            Draft => Draft,
+            Posted => Posted,
+            _ => throw new InvalidOperationException("Receipt documents only support draft or posted status in the current phase.")
+        };
+    }
+
+    public static bool CanEdit(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+
+    public static bool CanPost(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+}
+
+public sealed record ReceiptDocumentLine
+{
+    public ReceiptDocumentLine(
+        int lineNumber,
+        Guid itemId,
+        decimal quantity,
+        string uomCode,
+        string? trackingCaptureHome = null,
+        Guid? purchaseOrderId = null,
+        int? purchaseOrderLineNumber = null)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+
+        if (quantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Receipt quantity must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(uomCode))
+        {
+            throw new ArgumentException("UOM code is required.", nameof(uomCode));
+        }
+
+        var hasPurchaseOrderAnchor = purchaseOrderId.HasValue || purchaseOrderLineNumber.HasValue;
+        if (hasPurchaseOrderAnchor)
+        {
+            if (!purchaseOrderId.HasValue || purchaseOrderId.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException("PO-anchored receipt lines require a purchase order id.");
+            }
+
+            if (!purchaseOrderLineNumber.HasValue || purchaseOrderLineNumber.Value <= 0)
+            {
+                throw new InvalidOperationException("PO-anchored receipt lines require a positive purchase order line number.");
+            }
+        }
+
+        LineNumber = lineNumber;
+        ItemId = itemId;
+        Quantity = quantity;
+        UomCode = uomCode.Trim().ToUpperInvariant();
+        TrackingCaptureHome = string.IsNullOrWhiteSpace(trackingCaptureHome) ? null : trackingCaptureHome.Trim();
+        PurchaseOrderId = purchaseOrderId;
+        PurchaseOrderLineNumber = purchaseOrderLineNumber;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid ItemId { get; }
+
+    public decimal Quantity { get; }
+
+    public string UomCode { get; }
+
+    public string? TrackingCaptureHome { get; }
+
+    public Guid? PurchaseOrderId { get; }
+
+    public int? PurchaseOrderLineNumber { get; }
+}
+
+public static class PurchaseOrderDocumentStatuses
+{
+    public const string Draft = "draft";
+    public const string Approved = "approved";
+    public const string Issued = "issued";
+    public const string Closed = "closed";
+    public const string Cancelled = "cancelled";
+
+    public static string Normalize(string? status)
+    {
+        var normalized = string.IsNullOrWhiteSpace(status)
+            ? Draft
+            : status.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            Draft => Draft,
+            Approved => Approved,
+            Issued => Issued,
+            Closed => Closed,
+            Cancelled => Cancelled,
+            _ => throw new InvalidOperationException("Purchase orders only support draft, approved, issued, closed, or cancelled status in the current phase.")
+        };
+    }
+
+    public static bool CanEdit(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+
+    public static bool CanApprove(string status) =>
+        string.Equals(Normalize(status), Draft, StringComparison.Ordinal);
+
+    public static bool CanIssue(string status) =>
+        string.Equals(Normalize(status), Approved, StringComparison.Ordinal);
+
+    public static bool CanReopenForAmendment(string status)
+    {
+        var normalized = Normalize(status);
+        return normalized is Approved or Issued;
+    }
+
+    public static bool CanClose(string status) =>
+        string.Equals(Normalize(status), Issued, StringComparison.Ordinal);
+
+    public static bool CanCancel(string status)
+    {
+        var normalized = Normalize(status);
+        return normalized is Draft or Approved or Issued;
+    }
+}
+
+public sealed record PurchaseOrderDocumentLine
+{
+    public PurchaseOrderDocumentLine(
+        int lineNumber,
+        Guid itemId,
+        decimal orderedQuantity,
+        string uomCode,
+        string? description = null,
+        decimal? unitCost = null)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+
+        if (orderedQuantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(orderedQuantity), "PO ordered quantity must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(uomCode))
+        {
+            throw new ArgumentException("UOM code is required.", nameof(uomCode));
+        }
+
+        if (unitCost.HasValue && unitCost.Value < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unitCost), "PO unit cost cannot be negative.");
+        }
+
+        LineNumber = lineNumber;
+        ItemId = itemId;
+        OrderedQuantity = orderedQuantity;
+        UomCode = uomCode.Trim().ToUpperInvariant();
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        UnitCost = unitCost;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid ItemId { get; }
+
+    public decimal OrderedQuantity { get; }
+
+    public string UomCode { get; }
+
+    public string? Description { get; }
+
+    public decimal? UnitCost { get; }
+}
+
+public sealed class PurchaseOrderDocument
+{
+    public PurchaseOrderDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid vendorId,
+        DateOnly orderDate,
+        IEnumerable<PurchaseOrderDocumentLine> lines,
+        DateOnly? expectedDate = null,
+        string? vendorReference = null,
+        string? memo = null,
+        DateTimeOffset? approvedAt = null,
+        DateTimeOffset? issuedAt = null,
+        DateTimeOffset? closedAt = null,
+        DateTimeOffset? cancelledAt = null,
+        DateTimeOffset? amendmentStartedAt = null)
+    {
+        if (vendorId == Guid.Empty)
+        {
+            throw new ArgumentException("Vendor id is required.", nameof(vendorId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = PurchaseOrderDocumentStatuses.Normalize(status);
+        VendorId = vendorId;
+        OrderDate = orderDate;
+        ExpectedDate = expectedDate;
+        VendorReference = string.IsNullOrWhiteSpace(vendorReference) ? null : vendorReference.Trim();
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        ApprovedAt = approvedAt;
+        IssuedAt = issuedAt;
+        ClosedAt = closedAt;
+        CancelledAt = cancelledAt;
+        AmendmentStartedAt = amendmentStartedAt;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Purchase order must contain at least one line.");
+        }
+
+        PurchaseOrderLines = Array.AsReadOnly(materializedLines);
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "purchase_order";
+
+    public string Status { get; }
+
+    public Guid VendorId { get; }
+
+    public DateOnly OrderDate { get; }
+
+    public DateOnly? ExpectedDate { get; }
+
+    public string? VendorReference { get; }
+
+    public string? Memo { get; }
+
+    public DateTimeOffset? ApprovedAt { get; }
+
+    public DateTimeOffset? IssuedAt { get; }
+
+    public DateTimeOffset? ClosedAt { get; }
+
+    public DateTimeOffset? CancelledAt { get; }
+
+    public DateTimeOffset? AmendmentStartedAt { get; }
+
+    public IReadOnlyList<PurchaseOrderDocumentLine> PurchaseOrderLines { get; }
+}
+
+public sealed class ReceiptDocument
+{
+    public ReceiptDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid vendorId,
+        Guid warehouseId,
+        DateOnly receiptDate,
+        IEnumerable<ReceiptDocumentLine> lines,
+        string? vendorReference = null,
+        string? sourceReference = null,
+        string? memo = null,
+        DateTimeOffset? postedAt = null)
+    {
+        if (vendorId == Guid.Empty)
+        {
+            throw new ArgumentException("Vendor id is required.", nameof(vendorId));
+        }
+
+        if (warehouseId == Guid.Empty)
+        {
+            throw new ArgumentException("Warehouse id is required.", nameof(warehouseId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = ReceiptDocumentStatuses.Normalize(status);
+        VendorId = vendorId;
+        WarehouseId = warehouseId;
+        ReceiptDate = receiptDate;
+        VendorReference = string.IsNullOrWhiteSpace(vendorReference) ? null : vendorReference.Trim();
+        SourceReference = string.IsNullOrWhiteSpace(sourceReference) ? null : sourceReference.Trim();
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        PostedAt = postedAt;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Receipt document must contain at least one line.");
+        }
+
+        ReceiptLines = Array.AsReadOnly(materializedLines);
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "receipt";
+
+    public string Status { get; }
+
+    public Guid VendorId { get; }
+
+    public Guid WarehouseId { get; }
+
+    public DateOnly ReceiptDate { get; }
+
+    public string? VendorReference { get; }
+
+    public string? SourceReference { get; }
+
+    public string? Memo { get; }
+
+    public DateTimeOffset? PostedAt { get; }
+
+    public IReadOnlyList<ReceiptDocumentLine> ReceiptLines { get; }
+}
+
+public sealed record ReceiptGrIrPostingDocumentLine : IPostingDocumentLine
+{
+    public ReceiptGrIrPostingDocumentLine(
+        int lineNumber,
+        Guid bridgeLineId,
+        Guid inventoryAssetAccountId,
+        Guid grIrClearingAccountId,
+        string description,
+        decimal amountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (bridgeLineId == Guid.Empty)
+        {
+            throw new ArgumentException("Bridge line id is required.", nameof(bridgeLineId));
+        }
+
+        if (inventoryAssetAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Inventory asset account id is required.", nameof(inventoryAssetAccountId));
+        }
+
+        if (grIrClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("GR/IR clearing account id is required.", nameof(grIrClearingAccountId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (amountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amountBase), "GR/IR line amount must be positive.");
+        }
+
+        LineNumber = lineNumber;
+        BridgeLineId = bridgeLineId;
+        InventoryAssetAccountId = inventoryAssetAccountId;
+        GrIrClearingAccountId = grIrClearingAccountId;
+        Description = description.Trim();
+        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+    }
+
+    public int LineNumber { get; }
+
+    public Guid BridgeLineId { get; }
+
+    public Guid InventoryAssetAccountId { get; }
+
+    public Guid GrIrClearingAccountId { get; }
+
+    public string Description { get; }
+
+    public decimal AmountBase { get; }
+}
+
+public sealed class ReceiptGrIrPostingDocument : IPostingDocument
+{
+    public ReceiptGrIrPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid receiptDocumentId,
+        DateOnly documentDate,
+        CurrencyCode baseCurrencyCode,
+        Guid grIrClearingAccountId,
+        IEnumerable<ReceiptGrIrPostingDocumentLine> lines)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        if (grIrClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("GR/IR clearing account id is required.", nameof(grIrClearingAccountId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        ReceiptDocumentId = receiptDocumentId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+        GrIrClearingAccountId = grIrClearingAccountId;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Receipt GR/IR posting document must contain at least one line.");
+        }
+
+        GrIrLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "receipt_grir_bridge_posting";
+
+    public string Status { get; }
+
+    public Guid ReceiptDocumentId { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public Guid GrIrClearingAccountId { get; }
+
+    public IReadOnlyList<ReceiptGrIrPostingDocumentLine> GrIrLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    public decimal TotalAmountBase => GrIrLines.Sum(static line => line.AmountBase);
+}
+
+public sealed record ReceiptGrIrSettlementPostingDocumentLine : IPostingDocumentLine
+{
+    public ReceiptGrIrSettlementPostingDocumentLine(
+        int lineNumber,
+        Guid settlementLineId,
+        Guid settlementBatchLineId,
+        Guid grIrClearingAccountId,
+        Guid billOffsetAccountId,
+        string description,
+        decimal amountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (settlementLineId == Guid.Empty)
+        {
+            throw new ArgumentException("Settlement line id is required.", nameof(settlementLineId));
+        }
+
+        if (settlementBatchLineId == Guid.Empty)
+        {
+            throw new ArgumentException("Settlement batch line id is required.", nameof(settlementBatchLineId));
+        }
+
+        if (grIrClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("GR/IR clearing account id is required.", nameof(grIrClearingAccountId));
+        }
+
+        if (billOffsetAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Bill offset account id is required.", nameof(billOffsetAccountId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (amountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amountBase), "Settlement line amount must be positive.");
+        }
+
+        LineNumber = lineNumber;
+        SettlementLineId = settlementLineId;
+        SettlementBatchLineId = settlementBatchLineId;
+        GrIrClearingAccountId = grIrClearingAccountId;
+        BillOffsetAccountId = billOffsetAccountId;
+        Description = description.Trim();
+        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+    }
+
+    public int LineNumber { get; }
+
+    public Guid SettlementLineId { get; }
+
+    public Guid SettlementBatchLineId { get; }
+
+    public Guid GrIrClearingAccountId { get; }
+
+    public Guid BillOffsetAccountId { get; }
+
+    public string Description { get; }
+
+    public decimal AmountBase { get; }
+}
+
+public sealed class ReceiptGrIrSettlementPostingDocument : IPostingDocument
+{
+    public ReceiptGrIrSettlementPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid receiptDocumentId,
+        Guid settlementBatchId,
+        DateOnly documentDate,
+        CurrencyCode baseCurrencyCode,
+        IEnumerable<ReceiptGrIrSettlementPostingDocumentLine> lines)
+    {
+        if (receiptDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Receipt document id is required.", nameof(receiptDocumentId));
+        }
+
+        if (settlementBatchId == Guid.Empty)
+        {
+            throw new ArgumentException("Settlement batch id is required.", nameof(settlementBatchId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        ReceiptDocumentId = receiptDocumentId;
+        SettlementBatchId = settlementBatchId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Receipt GR/IR settlement posting document must contain at least one line.");
+        }
+
+        SettlementLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "receipt_grir_ap_settlement_posting";
+
+    public string Status { get; }
+
+    public Guid ReceiptDocumentId { get; }
+
+    public Guid SettlementBatchId { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public IReadOnlyList<ReceiptGrIrSettlementPostingDocumentLine> SettlementLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    public decimal TotalAmountBase => SettlementLines.Sum(static line => line.AmountBase);
+}
+
 public sealed record VendorCreditDocumentLine : IPostingDocumentLine
 {
     public VendorCreditDocumentLine(
@@ -649,7 +1398,8 @@ public sealed record VendorCreditDocumentLine : IPostingDocumentLine
         decimal lineAmount,
         decimal taxAmount,
         bool isTaxRecoverable,
-        Guid? recoverableTaxAccountId)
+        Guid? recoverableTaxAccountId,
+        Guid? taxCodeId = null)
     {
         if (lineNumber <= 0)
         {
@@ -683,6 +1433,7 @@ public sealed record VendorCreditDocumentLine : IPostingDocumentLine
         TaxAmount = taxAmount;
         IsTaxRecoverable = isTaxRecoverable;
         RecoverableTaxAccountId = recoverableTaxAccountId;
+        TaxCodeId = taxCodeId;
     }
 
     public int LineNumber { get; }
@@ -698,6 +1449,8 @@ public sealed record VendorCreditDocumentLine : IPostingDocumentLine
     public bool IsTaxRecoverable { get; }
 
     public Guid? RecoverableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
 }
 
 public sealed class VendorCreditDocument : IPostingDocument, IOpenItemDocument
@@ -1512,6 +2265,200 @@ public sealed class PayBillDocument : IPostingDocument, ISettlementDocument
         }
 
         return accountId.Value;
+    }
+}
+
+public sealed record OpenItemAdjustmentDocumentLine : IPostingDocumentLine
+{
+    public OpenItemAdjustmentDocumentLine(
+        int lineNumber,
+        Guid targetOpenItemId,
+        string targetOpenItemType,
+        string targetBalanceSide,
+        Guid controlAccountId,
+        Guid offsetAccountId,
+        Guid partyId,
+        string description,
+        decimal adjustmentAmountTx,
+        decimal adjustmentAmountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (targetOpenItemId == Guid.Empty)
+        {
+            throw new ArgumentException("Target open item id is required.", nameof(targetOpenItemId));
+        }
+
+        var normalizedOpenItemType = string.IsNullOrWhiteSpace(targetOpenItemType)
+            ? throw new ArgumentException("Target open item type is required.", nameof(targetOpenItemType))
+            : targetOpenItemType.Trim().ToLowerInvariant();
+        if (normalizedOpenItemType is not ("ar_open_item" or "ap_open_item"))
+        {
+            throw new InvalidOperationException("Open item adjustment target type is not supported.");
+        }
+
+        var normalizedBalanceSide = string.IsNullOrWhiteSpace(targetBalanceSide)
+            ? throw new ArgumentException("Target balance side is required.", nameof(targetBalanceSide))
+            : targetBalanceSide.Trim().ToLowerInvariant();
+        if (normalizedBalanceSide is not ("debit" or "credit"))
+        {
+            throw new InvalidOperationException("Open item adjustment balance side is not supported.");
+        }
+
+        if (controlAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Control account id is required.", nameof(controlAccountId));
+        }
+
+        if (offsetAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Offset account id is required.", nameof(offsetAccountId));
+        }
+
+        if (partyId == Guid.Empty)
+        {
+            throw new ArgumentException("Party id is required.", nameof(partyId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (adjustmentAmountTx <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(adjustmentAmountTx), "Adjustment transaction amount must be greater than zero.");
+        }
+
+        if (adjustmentAmountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(adjustmentAmountBase), "Adjustment base amount must be greater than zero.");
+        }
+
+        LineNumber = lineNumber;
+        TargetOpenItemId = targetOpenItemId;
+        TargetOpenItemType = normalizedOpenItemType;
+        TargetBalanceSide = normalizedBalanceSide;
+        ControlAccountId = controlAccountId;
+        OffsetAccountId = offsetAccountId;
+        PartyId = partyId;
+        Description = description.Trim();
+        AdjustmentAmountTx = adjustmentAmountTx;
+        AdjustmentAmountBase = adjustmentAmountBase;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid TargetOpenItemId { get; }
+
+    public string TargetOpenItemType { get; }
+
+    public string TargetBalanceSide { get; }
+
+    public Guid ControlAccountId { get; }
+
+    public Guid OffsetAccountId { get; }
+
+    public Guid PartyId { get; }
+
+    public string Description { get; }
+
+    public decimal AdjustmentAmountTx { get; }
+
+    public decimal AdjustmentAmountBase { get; }
+
+    public string ControlRole => TargetOpenItemType == "ar_open_item" ? "accounts_receivable" : "accounts_payable";
+
+    public bool ReducesDebitBalance => TargetBalanceSide == "debit";
+}
+
+public sealed class OpenItemAdjustmentDocument : IPostingDocument
+{
+    public OpenItemAdjustmentDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string sourceType,
+        string status,
+        DateOnly documentDate,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        string adjustmentType,
+        IEnumerable<OpenItemAdjustmentDocumentLine> lines,
+        string? memo = null)
+    {
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        SourceType = NormalizeSourceType(sourceType);
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        AdjustmentType = NormalizeAdjustmentType(adjustmentType);
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Open item adjustment document must contain at least one line.");
+        }
+
+        AdjustmentLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType { get; }
+
+    public string Status { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public string AdjustmentType { get; }
+
+    public string? Memo { get; }
+
+    public IReadOnlyList<OpenItemAdjustmentDocumentLine> AdjustmentLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    private static string NormalizeSourceType(string sourceType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(sourceType)
+            ? throw new ArgumentException("Source type is required.", nameof(sourceType))
+            : sourceType.Trim().ToLowerInvariant();
+
+        return normalized is "ar_open_item_adjustment" or "ap_open_item_adjustment"
+            ? normalized
+            : throw new InvalidOperationException("Open item adjustment source type is not supported.");
+    }
+
+    private static string NormalizeAdjustmentType(string adjustmentType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(adjustmentType)
+            ? throw new ArgumentException("Adjustment type is required.", nameof(adjustmentType))
+            : adjustmentType.Trim().ToLowerInvariant();
+
+        return normalized is "write_off" or "small_balance_adjustment"
+            ? normalized
+            : throw new InvalidOperationException("Open item adjustment type is not supported.");
     }
 }
 

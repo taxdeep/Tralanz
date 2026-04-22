@@ -1,25 +1,16 @@
 using Citus.Ui.Shared.Business;
+using Citus.Ui.Shared.Shell;
 using Microsoft.Extensions.Options;
-using Modules.CompanyAccess.SessionContext;
-using SharedKernel.CompanyAccess;
 using Web.Shell.Configuration;
 
 namespace Web.Shell.State;
 
 public sealed class WebShellState
 {
-    private readonly ICompanySessionContextWorkflow _workflow;
-    private readonly CompanyAccessSessionContext _fallbackContext;
-    private bool _hydrationAttempted;
-
-    public WebShellState(
-        IOptions<WebShellAppHostOptions> options,
-        ICompanySessionContextWorkflow workflow)
+    public WebShellState(IOptions<WebShellAppHostOptions> options)
     {
-        _workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
-        var bootstrap = options.Value;
-        _fallbackContext = BuildFallbackContext(bootstrap);
-        ApplyContext(_fallbackContext);
+        _ = options ?? throw new ArgumentNullException(nameof(options));
+        ClearAuthenticatedSession();
     }
 
     public BusinessUserSummary User { get; private set; } = new();
@@ -28,27 +19,39 @@ public sealed class WebShellState
 
     public IReadOnlyList<BusinessCompanySummary> AvailableCompanies { get; private set; } = Array.Empty<BusinessCompanySummary>();
 
+    public MaintenanceStateSummary MaintenanceState { get; private set; } = new()
+    {
+        Enabled = false,
+        Message = "Platform runtime is accepting interactive changes."
+    };
+
+    public string SessionToken { get; private set; } = string.Empty;
+
+    public DateTimeOffset? SessionExpiresAtUtc { get; private set; }
+
+    public bool IsAuthenticated =>
+        !string.IsNullOrWhiteSpace(SessionToken) &&
+        User.Id != Guid.Empty &&
+        ActiveCompany.Id != Guid.Empty;
+
     public Guid CurrentUserId => User.Id;
 
-    public string ContextSource { get; private set; } = "app_host_fallback";
+    public string ContextSource { get; private set; } = "unauthenticated";
 
-    public async Task EnsureHydratedAsync(CancellationToken cancellationToken = default)
-    {
-        if (_hydrationAttempted)
-        {
-            return;
-        }
+    public bool IsCompanyReadOnly => ActiveCompany.IsReadOnly;
 
-        _hydrationAttempted = true;
-        var context = await _workflow.GetAsync(User.Id, ActiveCompany.Id, cancellationToken);
-        if (context is null)
-        {
-            return;
-        }
+    public bool AreWritesBlocked => !IsAuthenticated || MaintenanceState.Enabled || ActiveCompany.IsReadOnly;
 
-        ApplyContext(context);
-        ContextSource = "company_access_membership";
-    }
+    public string WriteBlockMessage =>
+        !IsAuthenticated
+            ? "Business sign-in is required before interactive work can continue."
+            : MaintenanceState.Enabled
+                ? MaintenanceState.Message
+                : ActiveCompany.IsReadOnly
+                    ? $"Company {ActiveCompany.CompanyName} is {NormalizeStatus(ActiveCompany.Status)} and currently read-only."
+                    : "Business writes are available.";
+
+    public Task EnsureHydratedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public bool TrySetActiveCompany(Guid companyId)
     {
@@ -62,84 +65,44 @@ public sealed class WebShellState
         return true;
     }
 
-    private void ApplyContext(CompanyAccessSessionContext context)
+    public void ApplyAuthenticatedSession(
+        string sessionToken,
+        BusinessSessionContextSummary context,
+        DateTimeOffset expiresAtUtc)
     {
-        User = new BusinessUserSummary
+        SessionToken = sessionToken.Trim();
+        SessionExpiresAtUtc = expiresAtUtc;
+        ApplyBusinessSessionContext(context);
+    }
+
+    public void ClearAuthenticatedSession()
+    {
+        SessionToken = string.Empty;
+        SessionExpiresAtUtc = null;
+        User = new BusinessUserSummary();
+        ActiveCompany = new BusinessCompanySummary();
+        AvailableCompanies = Array.Empty<BusinessCompanySummary>();
+        MaintenanceState = new MaintenanceStateSummary
         {
-            Id = context.User.Id,
-            DisplayName = context.User.DisplayName,
-            Email = context.User.Email,
-            Username = context.User.Username,
-            Roles = context.User.Roles.ToArray()
+            Enabled = false,
+            Message = "Platform runtime is accepting interactive changes."
         };
-        AvailableCompanies = context.AvailableCompanies
-            .Select(
-                static company => new BusinessCompanySummary
-                {
-                    Id = company.Id,
-                    CompanyCode = company.CompanyCode,
-                    CompanyName = company.CompanyName,
-                    BaseCurrencyCode = company.BaseCurrencyCode,
-                    MultiCurrencyEnabled = company.MultiCurrencyEnabled
-                })
-            .ToArray();
-        ActiveCompany = AvailableCompanies.FirstOrDefault(company => company.Id == context.ActiveCompany.Id)
-            ?? AvailableCompanies.First();
+        ContextSource = "unauthenticated";
     }
 
-    private static CompanyAccessSessionContext BuildFallbackContext(WebShellAppHostOptions bootstrap)
+    public void ApplyBusinessSessionContext(BusinessSessionContextSummary context)
     {
-        var companies = bootstrap.Companies
-            .Where(company => company.Id != Guid.Empty)
-            .Select(
-                static company => new CompanyAccessCompanySummary
-                {
-                    Id = company.Id,
-                    CompanyCode = company.CompanyCode.Trim().ToUpperInvariant(),
-                    CompanyName = company.CompanyName.Trim(),
-                    BaseCurrencyCode = company.BaseCurrencyCode.Trim().ToUpperInvariant(),
-                    MultiCurrencyEnabled = company.MultiCurrencyEnabled
-                })
-            .OrderBy(company => company.CompanyCode, StringComparer.Ordinal)
-            .ToArray();
-
-        var activeCompany = ResolveInitialActiveCompany(bootstrap.DefaultActiveCompanyId, companies);
-        return new CompanyAccessSessionContext
-        {
-            User = new CompanyAccessUserSummary
-            {
-                Id = bootstrap.BootstrapUserId,
-                DisplayName = bootstrap.BootstrapUserDisplayName,
-                Email = bootstrap.BootstrapUserEmail,
-                Username = bootstrap.BootstrapUsername,
-                Roles = bootstrap.BootstrapRoles
-            },
-            ActiveCompany = activeCompany,
-            AvailableCompanies = companies
-        };
+        User = context.User;
+        ActiveCompany = context.ActiveCompany;
+        AvailableCompanies = context.AvailableCompanies;
+        MaintenanceState = context.MaintenanceState;
+        ContextSource = IsAuthenticated
+            ? "business_session_api"
+            : "transient_business_context";
     }
 
-    private static CompanyAccessCompanySummary ResolveInitialActiveCompany(
-        Guid? configuredCompanyId,
-        IReadOnlyList<CompanyAccessCompanySummary> companies)
-    {
-        if (configuredCompanyId.HasValue)
-        {
-            var configured = companies.FirstOrDefault(company => company.Id == configuredCompanyId.Value);
-            if (configured is not null)
-            {
-                return configured;
-            }
-        }
-
-        return companies.FirstOrDefault()
-            ?? new CompanyAccessCompanySummary
-            {
-                Id = Guid.Empty,
-                CompanyCode = "UNCONFIGURED",
-                CompanyName = "Unconfigured Company",
-                BaseCurrencyCode = "USD",
-                MultiCurrencyEnabled = false
-            };
-    }
+    private static string NormalizeStatus(string? status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "inactive"
+            : status.Trim().ToLowerInvariant();
 }

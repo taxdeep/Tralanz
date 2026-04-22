@@ -1,5 +1,8 @@
 @page "/users"
 
+@inject AppShellState ShellState
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
 @inject SysAdminControlClient SysAdminControlClient
 
 <PageTitle>Users | Citus SysAdmin</PageTitle>
@@ -21,19 +24,29 @@
 }
 else
 {
+    @if (_notificationReadiness is not null && !_notificationReadiness.IsVerificationDeliveryReady)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+            Password reset is currently blocked because notification readiness is not verified.
+            Open Maintenance and Notification Readiness to confirm config, test status, and verification readiness.
+        </MudAlert>
+    }
+
     <MudPaper Class="pa-4">
         <MudTable Items="_users" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
             <HeaderContent>
                 <MudTh>User</MudTh>
                 <MudTh>Status</MudTh>
+                <MudTh>MFA</MudTh>
                 <MudTh>System Role</MudTh>
-                <MudTh>Roles</MudTh>
+                <MudTh>Platform Roles</MudTh>
                 <MudTh>Companies</MudTh>
+                <MudTh>Governance</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="User">
                     <MudText Typo="Typo.body1">@context.DisplayName</MudText>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Username · @context.Email</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Username | @context.Email</MudText>
                 </MudTd>
                 <MudTd DataLabel="Status">
                     <MudChip T="string"
@@ -42,6 +55,32 @@ else
                         @(context.IsActive ? "Active" : "Disabled")
                     </MudChip>
                 </MudTd>
+                <MudTd DataLabel="MFA">
+                    <MudStack Spacing="0">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@(string.Equals(context.MfaMode, "none", StringComparison.OrdinalIgnoreCase) ? Color.Default : Color.Info)">
+                            @context.MfaModeLabel
+                        </MudChip>
+                        @if (context.LastMfaResetAtUtc.HasValue)
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                Reset @context.LastMfaResetAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(context.LastMfaResetReason))
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">@context.LastMfaResetReason</MudText>
+                            }
+                        }
+                        @if (HasOpenMfaRecoveryRequest(context.Id))
+                        {
+                            <MudText Typo="Typo.caption" Class="text-warning">Recovery request open</MudText>
+                        }
+                        <MudText Typo="Typo.caption" Class="text-secondary">
+                            @context.EmergencyMfaResetPolicyReason
+                        </MudText>
+                    </MudStack>
+                </MudTd>
                 <MudTd DataLabel="System Role">
                     <MudChip T="string"
                              Variant="Variant.Outlined"
@@ -49,10 +88,587 @@ else
                         @(context.IsSysAdmin ? "SysAdmin" : "Business")
                     </MudChip>
                 </MudTd>
-                <MudTd DataLabel="Roles">@string.Join(", ", context.Roles)</MudTd>
-                <MudTd DataLabel="Companies">@string.Join(", ", context.CompanyCodes)</MudTd>
+                <MudTd DataLabel="Platform Roles">
+                    @if (context.Roles.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="text-secondary">None</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@string.Join(", ", context.Roles)</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Companies">
+                    @if (context.CompanyCodes.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="text-secondary">No company memberships</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@string.Join(", ", context.CompanyCodes)</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Governance">
+                    <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                        @if (context.IsSysAdmin)
+                        {
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Protected</MudChip>
+                        }
+                        else
+                        {
+                            @if (context.IsActive)
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@IsAccountUpdating(context.Id)"
+                                           OnClick="@(() => SetAccountStatusAsync(context, "inactive"))">
+                                    Disable
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           Disabled="@IsAccountUpdating(context.Id)"
+                                           OnClick="@(() => SetAccountStatusAsync(context, "active"))">
+                                    Activate
+                                </MudButton>
+                            }
+
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       Disabled="@IsAccountUpdating(context.Id)"
+                                       OnClick="@(() => RequestPasswordResetAsync(context))">
+                                Password reset
+                            </MudButton>
+
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       Disabled="@(IsAccountUpdating(context.Id) || !context.CanEmergencyMfaReset)"
+                                       OnClick="@(() => ResetMfaAsync(context))">
+                                Reset MFA
+                            </MudButton>
+
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Info"
+                                       Size="Size.Small"
+                                       Disabled="@IsMfaTimelineLoading(context.Id)"
+                                       OnClick="@(() => LoadMfaTimelineAsync(context))">
+                                MFA history
+                            </MudButton>
+
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Default"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenAuditForAccount(context.Id))">
+                                Open audit
+                            </MudButton>
+                        }
+                    </MudStack>
+                </MudTd>
             </RowTemplate>
         </MudTable>
+    </MudPaper>
+
+    @if (_selectedTimelineUser is not null)
+    {
+        <MudPaper Class="pa-4 mt-6">
+            <MudStack Spacing="1" Class="mb-4">
+                <MudText Typo="Typo.h6">MFA Timeline</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    @_selectedTimelineUser.DisplayName (@_selectedTimelineUser.Username | @_selectedTimelineUser.Email)
+                </MudText>
+            </MudStack>
+
+            @if (_isSelectedTimelineLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+            }
+            else if (_selectedMfaTimeline.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    No MFA governance events have been recorded for this account yet.
+                </MudAlert>
+            }
+            else
+            {
+                <div style="display:grid;gap:0.75rem;">
+                    @foreach (var entry in _selectedMfaTimeline)
+                    {
+                        <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                            <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                                <div style="display:grid;gap:0.35rem;">
+                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                                        <MudChip T="string"
+                                                 Variant="Variant.Outlined"
+                                                 Color="@GetTimelineColor(entry.Action)">
+                                            @entry.ActionLabel
+                                        </MudChip>
+                                        <MudChip T="string" Variant="Variant.Text" Color="Color.Default">
+                                            @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
+                                        </MudChip>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(entry.Detail))
+                                    {
+                                        <MudText Typo="Typo.body2">@entry.Detail</MudText>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                    {
+                                        <MudText Typo="Typo.caption" Class="text-secondary">Reason: @entry.Reason</MudText>
+                                    }
+                                </div>
+                                <MudStack Spacing="1" Class="align-end">
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        @entry.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")
+                                    </MudText>
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               OnClick="@(() => OpenAuditForAccount(_selectedTimelineUser.Id))">
+                                        Open in audit
+                                    </MudButton>
+                                </MudStack>
+                            </div>
+                        </MudPaper>
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+
+    <MudPaper Class="pa-4 mt-6">
+        <MudStack Spacing="1" Class="mb-4">
+            <MudText Typo="Typo.h6">MFA Recovery Queue</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                Recovery is a governed flow: business users request, SysAdmin reviews, then executes the approved reset.
+            </MudText>
+        </MudStack>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+            Policy: self-service can only request recovery. Review and execution remain SysAdmin-controlled, and direct emergency reset should stay out-of-band while an open recovery request already exists for the same account.
+        </MudAlert>
+
+        @if (_mfaRecoveryRequests.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No open MFA recovery requests are pending review or execution.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_mfaRecoveryRequests" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Account</MudTh>
+                    <MudTh>Current MFA</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Requested</MudTh>
+                    <MudTh>Reason</MudTh>
+                    <MudTh>Governance</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Account">
+                        <MudText Typo="Typo.body1">@context.DisplayName</MudText>
+                        <MudText Typo="Typo.caption" Class="text-secondary">@context.Username | @context.Email</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Current MFA">
+                        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+                            @context.CurrentMfaModeLabel
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudStack Spacing="1">
+                            <MudChip T="string"
+                                     Variant="Variant.Outlined"
+                                     Color="@GetRecoveryStatusColor(context.Status)">
+                                @GetRecoveryStatusLabel(context.Status)
+                            </MudChip>
+                            <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Variant="Variant.Outlined"
+                                         Color="Color.Info">
+                                    Requested
+                                </MudChip>
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetRecoveryReviewStageColor(context.Status)">
+                                    Review
+                                </MudChip>
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetRecoveryExecutionStageColor(context.Status)">
+                                    Execute
+                                </MudChip>
+                            </MudStack>
+                            @if (context.ReviewedAtUtc.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    Reviewed @context.ReviewedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                                </MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Requested">
+                        <MudText Typo="Typo.body2">@context.RequestedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudText>
+                        @if (!string.IsNullOrWhiteSpace(context.ReviewedByDisplayName))
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">@context.ReviewedByDisplayName</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Reason">
+                        <MudText Typo="Typo.body2">@context.RequestReason</MudText>
+                        @if (!string.IsNullOrWhiteSpace(context.ReviewReason))
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">Review: @context.ReviewReason</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Governance">
+                        <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                            @if (string.Equals(context.Status, "requested", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           Disabled="@IsMfaRecoveryUpdating(context.RequestId)"
+                                           OnClick="@(() => ReviewMfaRecoveryRequestAsync(context, "approve"))">
+                                    Approve
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@IsMfaRecoveryUpdating(context.RequestId)"
+                                           OnClick="@(() => ReviewMfaRecoveryRequestAsync(context, "reject"))">
+                                    Reject
+                                </MudButton>
+                            }
+                            @if (string.Equals(context.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Secondary"
+                                           Size="Size.Small"
+                                           Disabled="@IsMfaRecoveryUpdating(context.RequestId)"
+                                           OnClick="@(() => ExecuteMfaRecoveryRequestAsync(context))">
+                                    Execute reset
+                                </MudButton>
+                            }
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Default"
+                                       Size="Size.Small"
+                                       OnClick="@(() => SelectRecoveryRequestAsync(context))">
+                                Flow
+                            </MudButton>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Default"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenAuditForAccount(context.AccountId))">
+                                Audit
+                            </MudButton>
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    @if (_selectedRecoveryRequest is not null)
+    {
+        <MudPaper Class="pa-4 mt-6">
+            <MudStack Spacing="1" Class="mb-4">
+                <MudText Typo="Typo.h6">Recovery Flow</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    @_selectedRecoveryRequest.DisplayName (@_selectedRecoveryRequest.Username | @_selectedRecoveryRequest.Email)
+                </MudText>
+            </MudStack>
+
+            <div style="display:grid;gap:0.75rem;">
+                <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                    <MudStack Spacing="1">
+                        <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">1. Requested</MudChip>
+                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                @_selectedRecoveryRequest.RequestedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                            </MudText>
+                        </div>
+                        <MudText Typo="Typo.body2">@_selectedRecoveryRequest.RequestReason</MudText>
+                        <MudText Typo="Typo.caption" Class="text-secondary">
+                            Current MFA mode at request time: @_selectedRecoveryRequest.CurrentMfaModeLabel
+                        </MudText>
+                    </MudStack>
+                </MudPaper>
+
+                <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                    <MudStack Spacing="1">
+                        <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                            <MudChip T="string"
+                                     Variant="Variant.Outlined"
+                                     Color="@GetRecoveryReviewStageColor(_selectedRecoveryRequest.Status)">
+                                2. Review
+                            </MudChip>
+                            @if (_selectedRecoveryRequest.ReviewedAtUtc.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">
+                                    @_selectedRecoveryRequest.ReviewedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                                </MudText>
+                            }
+                        </div>
+                        <MudText Typo="Typo.body2">@GetRecoveryReviewDescription(_selectedRecoveryRequest)</MudText>
+                        @if (!string.IsNullOrWhiteSpace(_selectedRecoveryRequest.ReviewReason))
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                Review reason: @_selectedRecoveryRequest.ReviewReason
+                            </MudText>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_selectedRecoveryRequest.ReviewedByDisplayName))
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                Reviewed by @_selectedRecoveryRequest.ReviewedByDisplayName
+                            </MudText>
+                        }
+                    </MudStack>
+                </MudPaper>
+
+                <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                    <MudStack Spacing="1">
+                        <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                            <MudChip T="string"
+                                     Variant="Variant.Outlined"
+                                     Color="@GetRecoveryExecutionStageColor(_selectedRecoveryRequest.Status)">
+                                3. Execute
+                            </MudChip>
+                            <MudChip T="string"
+                                     Variant="Variant.Text"
+                                     Color="@GetRecoveryStatusColor(_selectedRecoveryRequest.Status)">
+                                @GetRecoveryExecutionStatusChipLabel(_selectedRecoveryRequest.Status)
+                            </MudChip>
+                        </div>
+                        <MudText Typo="Typo.body2">@GetRecoveryExecutionDescription(_selectedRecoveryRequest)</MudText>
+                        <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                            @if (string.Equals(_selectedRecoveryRequest.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Secondary"
+                                           Size="Size.Small"
+                                           Disabled="@IsMfaRecoveryUpdating(_selectedRecoveryRequest.RequestId)"
+                                           OnClick="@(() => ExecuteMfaRecoveryRequestAsync(_selectedRecoveryRequest))">
+                                    Execute reset
+                                </MudButton>
+                            }
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Default"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenAuditForAccount(_selectedRecoveryRequest.AccountId))">
+                                Open audit
+                            </MudButton>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </div>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mt-4">
+            <MudStack Spacing="1" Class="mb-4">
+                <MudText Typo="Typo.h6">Recent Recovery History</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">
+                    Formal recovery requests for this account, including rejected and executed outcomes.
+                </MudText>
+            </MudStack>
+
+            @if (_isSelectedRecoveryHistoryLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+            }
+            else if (_selectedRecoveryHistory.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    No historical recovery requests have been recorded for this account yet.
+                </MudAlert>
+            }
+            else
+            {
+                <div style="display:grid;gap:0.75rem;">
+                    @foreach (var history in _selectedRecoveryHistory)
+                    {
+                        <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
+                            <MudStack Spacing="1">
+                                <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
+                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                                        <MudChip T="string"
+                                                 Variant="Variant.Outlined"
+                                                 Color="@GetRecoveryStatusColor(history.Status)">
+                                            @GetRecoveryStatusLabel(history.Status)
+                                        </MudChip>
+                                        @if (_selectedRecoveryRequest?.RequestId == history.RequestId)
+                                        {
+                                            <MudChip T="string" Variant="Variant.Text" Color="Color.Primary">
+                                                Selected
+                                            </MudChip>
+                                        }
+                                    </div>
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        Requested @history.RequestedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                                    </MudText>
+                                </div>
+
+                                <MudText Typo="Typo.body2">@history.RequestReason</MudText>
+
+                                @if (history.ReviewedAtUtc.HasValue)
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        Review: @GetRecoveryStatusLabel(history.Status) at @history.ReviewedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                                        @if (!string.IsNullOrWhiteSpace(history.ReviewedByDisplayName))
+                                        {
+                                            <text> by @history.ReviewedByDisplayName</text>
+                                        }
+                                    </MudText>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(history.ReviewReason))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        Review reason: @history.ReviewReason
+                                    </MudText>
+                                }
+
+                                @if (history.ExecutedAtUtc.HasValue)
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        Executed at @history.ExecutedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                                        @if (!string.IsNullOrWhiteSpace(history.ExecutedByDisplayName))
+                                        {
+                                            <text> by @history.ExecutedByDisplayName</text>
+                                        }
+                                    </MudText>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(history.ExecutionReason))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-secondary">
+                                        Execution reason: @history.ExecutionReason
+                                    </MudText>
+                                }
+
+                                <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               OnClick="@(() => SelectRecoveryRequestAsync(history))">
+                                        View flow
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               OnClick="@(() => OpenAuditForAccount(history.AccountId))">
+                                        Open audit
+                                    </MudButton>
+                                </MudStack>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+
+    <MudPaper Class="pa-4 mt-6">
+        <MudStack Spacing="1" Class="mb-4">
+            <MudText Typo="Typo.h6">Current Company Memberships</MudText>
+            <MudText Typo="Typo.body2" Class="text-secondary">
+                CompanyAccess governance for the current active company context.
+            </MudText>
+        </MudStack>
+
+        @if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                Switch to a business company from the Companies page to manage owner and user memberships.
+            </MudAlert>
+        }
+        else if (_memberships.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No active company memberships were returned for @ShellState.ActiveCompany.CompanyName.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_memberships" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Member</MudTh>
+                    <MudTh>Role</MudTh>
+                    <MudTh>Permissions</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Updated</MudTh>
+                    <MudTh>Governance</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Member">
+                        <MudText Typo="Typo.body1">@context.DisplayName</MudText>
+                        <MudText Typo="Typo.caption" Class="text-secondary">@context.Username | @context.Email</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Role">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@(string.Equals(context.Role, "owner", StringComparison.OrdinalIgnoreCase) ? Color.Warning : Color.Default)">
+                            @context.Role
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Permissions">
+                        @if (context.PermissionTokens.Count == 0)
+                        {
+                            <MudText Typo="Typo.caption" Class="text-secondary">Inherited owner scope or no custom grants</MudText>
+                        }
+                        else
+                        {
+                            <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                                @foreach (var permission in context.PermissionTokens)
+                                {
+                                    <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@permission</MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string"
+                                 Variant="Variant.Outlined"
+                                 Color="@(context.IsActive ? Color.Success : Color.Default)">
+                            @(context.IsActive ? "Active" : "Inactive")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Updated">
+                        <MudText Typo="Typo.body2">@context.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Governance">
+                        <MudStack Row="true" Spacing="1" Class="flex-wrap">
+                            @if (string.Equals(context.Role, "owner", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Disabled="@IsMembershipUpdating(context.MembershipId)"
+                                           OnClick="@(() => ChangeMembershipRoleAsync(context, "user"))">
+                                    Set user
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           Disabled="@IsMembershipUpdating(context.MembershipId)"
+                                           OnClick="@(() => ChangeMembershipRoleAsync(context, "owner"))">
+                                    Promote owner
+                                </MudButton>
+                            }
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
     </MudPaper>
 }
 
@@ -62,15 +678,374 @@ else
     {
         Eyebrow = "Operations",
         Title = "Users",
-        Subtitle = "Managed principals and company memberships visible to SysAdmin."
+        Subtitle = "Platform accounts plus current-company membership governance for SysAdmin."
     };
 
     private bool _isLoading = true;
     private IReadOnlyList<ManagedUserSummary> _users = Array.Empty<ManagedUserSummary>();
+    private IReadOnlyList<MfaRecoveryRequestSummary> _mfaRecoveryRequests = Array.Empty<MfaRecoveryRequestSummary>();
+    private IReadOnlyList<MfaRecoveryRequestSummary> _selectedRecoveryHistory = Array.Empty<MfaRecoveryRequestSummary>();
+    private IReadOnlyList<PlatformMfaTimelineEntrySummary> _selectedMfaTimeline = Array.Empty<PlatformMfaTimelineEntrySummary>();
+    private IReadOnlyList<ManagedCompanyMembershipSummary> _memberships = Array.Empty<ManagedCompanyMembershipSummary>();
+    private NotificationReadinessSummary? _notificationReadiness;
+    private ManagedUserSummary? _selectedTimelineUser;
+    private MfaRecoveryRequestSummary? _selectedRecoveryRequest;
+    private bool _isSelectedTimelineLoading;
+    private bool _isSelectedRecoveryHistoryLoading;
+    private readonly HashSet<Guid> _accountUpdates = [];
+    private readonly HashSet<Guid> _mfaRecoveryUpdates = [];
+    private readonly HashSet<Guid> _membershipUpdates = [];
+    private readonly HashSet<Guid> _mfaTimelineLoads = [];
 
     protected override async Task OnInitializedAsync()
     {
-        _users = await SysAdminControlClient.ListUsersAsync();
-        _isLoading = false;
+        await LoadAsync();
     }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        try
+        {
+            _users = await SysAdminControlClient.ListUsersAsync();
+            _mfaRecoveryRequests = await SysAdminControlClient.ListOpenMfaRecoveryRequestsAsync();
+            _notificationReadiness = await SysAdminControlClient.GetNotificationReadinessAsync();
+            await LoadMembershipsAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadMembershipsAsync()
+    {
+        if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
+        {
+            _memberships = Array.Empty<ManagedCompanyMembershipSummary>();
+            return;
+        }
+
+        _memberships = await SysAdminControlClient.ListCompanyMembershipsAsync(ShellState.ActiveCompany.CompanyId.Value);
+    }
+
+    private bool IsAccountUpdating(Guid accountId) => _accountUpdates.Contains(accountId);
+
+    private bool IsMfaRecoveryUpdating(Guid requestId) => _mfaRecoveryUpdates.Contains(requestId);
+
+    private bool IsMfaTimelineLoading(Guid accountId) => _mfaTimelineLoads.Contains(accountId);
+
+    private bool IsMembershipUpdating(Guid membershipId) => _membershipUpdates.Contains(membershipId);
+
+    private bool HasOpenMfaRecoveryRequest(Guid accountId) =>
+        _users.FirstOrDefault(user => user.Id == accountId)?.HasActiveMfaRecoveryRequest == true ||
+        _mfaRecoveryRequests.Any(request => request.AccountId == accountId);
+
+    private void OpenAuditForAccount(Guid accountId) =>
+        NavigationManager.NavigateTo($"audit?accountId={accountId}");
+
+    private async Task SelectRecoveryRequestAsync(MfaRecoveryRequestSummary request)
+    {
+        _selectedRecoveryRequest = request;
+        _isSelectedRecoveryHistoryLoading = true;
+        _selectedRecoveryHistory = Array.Empty<MfaRecoveryRequestSummary>();
+
+        try
+        {
+            _selectedRecoveryHistory = await SysAdminControlClient.ListAccountMfaRecoveryHistoryAsync(request.AccountId);
+            _selectedRecoveryRequest = _selectedRecoveryHistory.FirstOrDefault(candidate => candidate.RequestId == request.RequestId) ?? request;
+        }
+        finally
+        {
+            _isSelectedRecoveryHistoryLoading = false;
+        }
+    }
+
+    private async Task SetAccountStatusAsync(ManagedUserSummary user, string status)
+    {
+        if (user.IsSysAdmin)
+        {
+            Snackbar.Add("SysAdmin accounts are protected from business-side lifecycle changes.", Severity.Info);
+            return;
+        }
+
+        _accountUpdates.Add(user.Id);
+        var reason = $"SysAdmin set platform account {user.Username} from {(user.IsActive ? "active" : "inactive")} to {status}.";
+
+        try
+        {
+            var updated = await SysAdminControlClient.SetAccountStatusAsync(user.Id, status, null, reason);
+            if (!updated)
+            {
+                Snackbar.Add($"Unable to set {user.Username} to {status}.", Severity.Warning);
+                return;
+            }
+
+            _users = await SysAdminControlClient.ListUsersAsync();
+            Snackbar.Add($"{user.Username} is now {status}.", Severity.Success);
+        }
+        finally
+        {
+            _accountUpdates.Remove(user.Id);
+        }
+    }
+
+    private async Task RequestPasswordResetAsync(ManagedUserSummary user)
+    {
+        if (user.IsSysAdmin)
+        {
+            Snackbar.Add("SysAdmin accounts use the platform operator flow and are not reset from this surface.", Severity.Info);
+            return;
+        }
+
+        _accountUpdates.Add(user.Id);
+        var reason = $"SysAdmin requested password reset delivery for {user.Username}.";
+
+        try
+        {
+            var requested = await SysAdminControlClient.RequestPasswordResetAsync(user.Id, reason);
+            if (!requested.Succeeded)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(requested.Message)
+                        ? $"Unable to queue password reset for {user.Username}."
+                        : requested.Message,
+                    Severity.Warning);
+                return;
+            }
+
+            _notificationReadiness = await SysAdminControlClient.GetNotificationReadinessAsync();
+            Snackbar.Add($"Password reset request recorded for {user.Username}.", Severity.Success);
+        }
+        finally
+        {
+            _accountUpdates.Remove(user.Id);
+        }
+    }
+
+    private async Task ResetMfaAsync(ManagedUserSummary user)
+    {
+        if (user.IsSysAdmin)
+        {
+            Snackbar.Add("SysAdmin accounts do not use the business-platform MFA reset flow.", Severity.Info);
+            return;
+        }
+
+        if (!user.CanEmergencyMfaReset)
+        {
+            Snackbar.Add(user.EmergencyMfaResetPolicyReason, Severity.Info);
+            return;
+        }
+
+        _accountUpdates.Add(user.Id);
+        var reason = $"SysAdmin reset business MFA for {user.Username}.";
+
+        try
+        {
+            var outcome = await SysAdminControlClient.ResetMfaAsync(user.Id, reason);
+            if (!outcome.Succeeded)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to reset MFA for {user.Username}."
+                        : outcome.Message,
+                    Severity.Warning);
+                return;
+            }
+
+            _users = await SysAdminControlClient.ListUsersAsync();
+            Snackbar.Add($"MFA reset applied for {user.Username}.", Severity.Success);
+        }
+        finally
+        {
+            _accountUpdates.Remove(user.Id);
+        }
+    }
+
+    private async Task ReviewMfaRecoveryRequestAsync(MfaRecoveryRequestSummary request, string decision)
+    {
+        _mfaRecoveryUpdates.Add(request.RequestId);
+        var reason = decision switch
+        {
+            "approve" => $"SysAdmin approved MFA recovery for {request.Username}.",
+            _ => $"SysAdmin rejected MFA recovery for {request.Username}."
+        };
+
+        try
+        {
+            var outcome = await SysAdminControlClient.ReviewMfaRecoveryRequestAsync(request.RequestId, decision, reason);
+            if (!outcome.Succeeded)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to {decision} MFA recovery for {request.Username}."
+                        : outcome.Message,
+                    Severity.Warning);
+                return;
+            }
+
+            _users = await SysAdminControlClient.ListUsersAsync();
+            _mfaRecoveryRequests = await SysAdminControlClient.ListOpenMfaRecoveryRequestsAsync();
+            _selectedRecoveryHistory = await SysAdminControlClient.ListAccountMfaRecoveryHistoryAsync(request.AccountId);
+            _selectedRecoveryRequest = _selectedRecoveryHistory.FirstOrDefault(candidate => candidate.RequestId == request.RequestId);
+            Snackbar.Add(
+                decision == "approve"
+                    ? $"Approved MFA recovery for {request.Username}."
+                    : $"Rejected MFA recovery for {request.Username}.",
+                Severity.Success);
+        }
+        finally
+        {
+            _mfaRecoveryUpdates.Remove(request.RequestId);
+        }
+    }
+
+    private async Task LoadMfaTimelineAsync(ManagedUserSummary user)
+    {
+        _selectedTimelineUser = user;
+        _selectedMfaTimeline = Array.Empty<PlatformMfaTimelineEntrySummary>();
+        _mfaTimelineLoads.Add(user.Id);
+        _isSelectedTimelineLoading = true;
+
+        try
+        {
+            _selectedMfaTimeline = await SysAdminControlClient.ListAccountMfaTimelineAsync(user.Id);
+        }
+        finally
+        {
+            _isSelectedTimelineLoading = false;
+            _mfaTimelineLoads.Remove(user.Id);
+        }
+    }
+
+    private async Task ExecuteMfaRecoveryRequestAsync(MfaRecoveryRequestSummary request)
+    {
+        _mfaRecoveryUpdates.Add(request.RequestId);
+        var reason = $"SysAdmin executed approved MFA recovery for {request.Username}.";
+
+        try
+        {
+            var outcome = await SysAdminControlClient.ExecuteMfaRecoveryRequestAsync(request.RequestId, reason);
+            if (!outcome.Succeeded)
+            {
+                Snackbar.Add(
+                    string.IsNullOrWhiteSpace(outcome.Message)
+                        ? $"Unable to execute MFA recovery for {request.Username}."
+                        : outcome.Message,
+                    Severity.Warning);
+                return;
+            }
+
+            _users = await SysAdminControlClient.ListUsersAsync();
+            _mfaRecoveryRequests = await SysAdminControlClient.ListOpenMfaRecoveryRequestsAsync();
+            _selectedRecoveryHistory = await SysAdminControlClient.ListAccountMfaRecoveryHistoryAsync(request.AccountId);
+            _selectedRecoveryRequest = _selectedRecoveryHistory.FirstOrDefault(candidate => candidate.RequestId == request.RequestId);
+            Snackbar.Add($"Executed MFA recovery reset for {request.Username}.", Severity.Success);
+        }
+        finally
+        {
+            _mfaRecoveryUpdates.Remove(request.RequestId);
+        }
+    }
+
+    private async Task ChangeMembershipRoleAsync(ManagedCompanyMembershipSummary membership, string role)
+    {
+        if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
+        {
+            Snackbar.Add("Select a business company before changing membership roles.", Severity.Info);
+            return;
+        }
+
+        _membershipUpdates.Add(membership.MembershipId);
+        var companyId = ShellState.ActiveCompany.CompanyId.Value;
+        var reason = $"SysAdmin changed {membership.Username} role from {membership.Role} to {role} in {ShellState.ActiveCompany.CompanyCode}.";
+
+        try
+        {
+            var changed = await SysAdminControlClient.ChangeMembershipRoleAsync(companyId, membership.MembershipId, role, reason);
+            if (!changed)
+            {
+                Snackbar.Add($"Unable to change membership role for {membership.Username}.", Severity.Warning);
+                return;
+            }
+
+            await LoadMembershipsAsync();
+            Snackbar.Add($"{membership.Username} role updated to {role}.", Severity.Success);
+        }
+        finally
+        {
+            _membershipUpdates.Remove(membership.MembershipId);
+        }
+    }
+
+    private static Color GetRecoveryStatusColor(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => Color.Success,
+            "rejected" => Color.Error,
+            _ => Color.Warning
+        };
+
+    private static string GetRecoveryStatusLabel(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => "Approved",
+            "rejected" => "Rejected",
+            _ => "Requested"
+        };
+
+    private static Color GetRecoveryReviewStageColor(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => Color.Success,
+            "rejected" => Color.Error,
+            _ => Color.Warning
+        };
+
+    private static Color GetRecoveryExecutionStageColor(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => Color.Secondary,
+            "rejected" => Color.Default,
+            _ => Color.Default
+        };
+
+    private static string GetRecoveryReviewDescription(MfaRecoveryRequestSummary request) =>
+        request.Status.Trim().ToLowerInvariant() switch
+        {
+            "approved" => "A SysAdmin operator reviewed this request and approved the recovery reset.",
+            "rejected" => "A SysAdmin operator reviewed this request and rejected the recovery reset.",
+            _ => "This request is waiting for SysAdmin review before any MFA reset can happen."
+        };
+
+    private static string GetRecoveryExecutionDescription(MfaRecoveryRequestSummary request) =>
+        request.Status.Trim().ToLowerInvariant() switch
+        {
+            "approved" => "Execution is now allowed. Running execute reset will clear MFA and close the governed recovery flow.",
+            "rejected" => "Execution is blocked because this request was rejected during review.",
+            _ => "Execution is blocked until the recovery request is explicitly approved."
+        };
+
+    private static string GetRecoveryExecutionStatusChipLabel(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "approved" => "Ready to execute",
+            "rejected" => "Execution blocked",
+            _ => "Waiting for approval"
+        };
+
+    private static Color GetTimelineColor(string? action) =>
+        action?.Trim().ToLowerInvariant() switch
+        {
+            "account_totp_enrollment_started" => Color.Info,
+            "account_totp_enrollment_confirmed" => Color.Success,
+            "profile_mfa_mode_saved" => Color.Primary,
+            "account_mfa_recovery_requested" => Color.Warning,
+            "account_mfa_recovery_approved" => Color.Success,
+            "account_mfa_recovery_rejected" => Color.Error,
+            "account_mfa_recovery_executed" => Color.Secondary,
+            "account_mfa_reset" => Color.Warning,
+            _ => Color.Default
+        };
 }

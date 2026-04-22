@@ -2,11 +2,101 @@ using Citus.Ui.Shared.Control;
 using Citus.Ui.Shared.Navigation;
 using Citus.Ui.Shared.Shell;
 using MudBlazor;
+using Citus.SysAdmin.Blazor.Services;
 
 namespace Citus.SysAdmin.Blazor.State;
 
 public sealed class AppShellState
 {
+    private static readonly IReadOnlyList<NavSection> SetupNavigationSections =
+    [
+        new NavSection
+        {
+            Title = "Setup",
+            Items =
+            [
+                new NavMenuItem { Title = "Overview", Href = "overview", Icon = Icons.Material.Filled.DashboardCustomize },
+                new NavMenuItem { Title = "First Company", Href = "setup/company-decision", Icon = Icons.Material.Filled.DomainAdd }
+            ]
+        },
+        new NavSection
+        {
+            Title = "Platform Control",
+            Items =
+            [
+                new NavMenuItem { Title = "Audit", Href = "audit", Icon = Icons.Material.Filled.FactCheck },
+                new NavMenuItem { Title = "Security", Href = "security", Icon = Icons.Material.Filled.AdminPanelSettings },
+                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = Icons.Material.Filled.BuildCircle },
+                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = Icons.Material.Filled.MonitorHeart }
+            ]
+        }
+    ];
+
+    private static readonly IReadOnlyList<NavSection> BusinessReadyNavigationSections =
+    [
+        new NavSection
+        {
+            Title = "Control",
+            Items =
+            [
+                new NavMenuItem { Title = "Overview", Href = "overview", Icon = Icons.Material.Filled.DashboardCustomize },
+                new NavMenuItem { Title = "Modules", Href = "modules", Icon = Icons.Material.Filled.Extension },
+                new NavMenuItem { Title = "Entities", Href = "entities", Icon = Icons.Material.Filled.Schema }
+            ]
+        },
+        new NavSection
+        {
+            Title = "Operations",
+            Items =
+            [
+                new NavMenuItem { Title = "Companies", Href = "companies", Icon = Icons.Material.Filled.Domain },
+                new NavMenuItem { Title = "Users", Href = "users", Icon = Icons.Material.Filled.People },
+                new NavMenuItem { Title = "Audit", Href = "audit", Icon = Icons.Material.Filled.FactCheck },
+                new NavMenuItem { Title = "Security", Href = "security", Icon = Icons.Material.Filled.AdminPanelSettings },
+                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = Icons.Material.Filled.BuildCircle },
+                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = Icons.Material.Filled.MonitorHeart }
+            ]
+        }
+    ];
+
+    public SysAdminAuthSessionSummary? AuthSession { get; private set; }
+
+    public string SessionToken { get; private set; } = string.Empty;
+
+    public bool IsAuthenticated => AuthSession is not null && !string.IsNullOrWhiteSpace(SessionToken);
+
+    public bool HasLoadedSetupStatus { get; private set; }
+
+    public string SetupStage { get; private set; } = "uninitialized";
+
+    public int AccountCount { get; private set; }
+
+    public int CompanyCount { get; private set; }
+
+    public int OwnerMembershipCount { get; private set; }
+
+    public bool HasAnyAccount { get; private set; }
+
+    public bool HasAnyCompany { get; private set; }
+
+    public bool HasAnyOwnerMembership { get; private set; }
+
+    public bool SetupRequired { get; private set; } = true;
+
+    public bool BusinessInitializationPending { get; private set; }
+
+    public bool BusinessReady { get; private set; }
+
+    public bool FirstCompanySetupRequired { get; private set; }
+
+    public bool FirstCompanySetupDeferred { get; private set; }
+
+    public DateTimeOffset? FirstCompanySetupDeferredAtUtc { get; private set; }
+
+    public SysAdminAuthenticationClient.FirstCompanyProvisioningResponse? FirstCompanyCompletion { get; private set; }
+
+    public bool HasFirstCompanyCompletion => FirstCompanyCompletion is not null;
+
     public SysAdminOperatorSummary Operator { get; private set; } = new()
     {
         DisplayName = "Platform Administrator",
@@ -29,30 +119,8 @@ public sealed class AppShellState
         Message = "Platform runtime is accepting interactive changes."
     };
 
-    public IReadOnlyList<NavSection> NavigationSections { get; } =
-    [
-        new NavSection
-        {
-            Title = "Control",
-            Items =
-            [
-                new NavMenuItem { Title = "Overview", Href = "overview", Icon = Icons.Material.Filled.DashboardCustomize },
-                new NavMenuItem { Title = "Modules", Href = "modules", Icon = Icons.Material.Filled.Extension },
-                new NavMenuItem { Title = "Entities", Href = "entities", Icon = Icons.Material.Filled.Schema }
-            ]
-        },
-        new NavSection
-        {
-            Title = "Operations",
-            Items =
-            [
-                new NavMenuItem { Title = "Companies", Href = "companies", Icon = Icons.Material.Filled.Domain },
-                new NavMenuItem { Title = "Users", Href = "users", Icon = Icons.Material.Filled.People },
-                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = Icons.Material.Filled.BuildCircle },
-                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = Icons.Material.Filled.MonitorHeart }
-            ]
-        }
-    ];
+    public IReadOnlyList<NavSection> NavigationSections =>
+        BusinessReady ? BusinessReadyNavigationSections : SetupNavigationSections;
 
     public void SetMaintenanceState(MaintenanceStateSummary state)
     {
@@ -64,11 +132,109 @@ public sealed class AppShellState
         ActiveCompany = company;
     }
 
+    public void ApplySetupStatus(SysAdminAuthenticationClient.SetupStatusResponse status)
+    {
+        HasLoadedSetupStatus = true;
+        SetupStage = string.IsNullOrWhiteSpace(status.SetupStage) ? "uninitialized" : status.SetupStage.Trim().ToLowerInvariant();
+        AccountCount = status.AccountCount;
+        CompanyCount = status.CompanyCount;
+        OwnerMembershipCount = status.OwnerMembershipCount;
+        HasAnyAccount = status.HasAnyAccount;
+        HasAnyCompany = status.HasAnyCompany;
+        HasAnyOwnerMembership = status.HasAnyOwnerMembership;
+        SetupRequired = status.SetupRequired;
+        BusinessInitializationPending = status.BusinessInitializationPending;
+        BusinessReady = status.BusinessReady;
+        FirstCompanySetupRequired = status.FirstCompanySetupRequired;
+        FirstCompanySetupDeferred = status.FirstCompanySetupDeferred;
+        FirstCompanySetupDeferredAtUtc = status.FirstCompanySetupDeferredAtUtc;
+
+        if (!BusinessReady)
+        {
+            ActiveCompany = new CompanyContextSummary
+            {
+                CompanyCode = "SYS",
+                CompanyName = "Platform Control",
+                IsSystemScope = true
+            };
+            AvailableCompanies = Array.Empty<CompanyWorkspaceSummary>();
+        }
+    }
+
+    public void SetFirstCompanyCompletion(SysAdminAuthenticationClient.FirstCompanyProvisioningResponse completion)
+    {
+        FirstCompanyCompletion = completion;
+    }
+
+    public void ClearFirstCompanyCompletion()
+    {
+        FirstCompanyCompletion = null;
+    }
+
+    public void ApplyAuthenticatedSession(string sessionToken, SysAdminAuthSessionSummary session)
+    {
+        SessionToken = sessionToken.Trim();
+        AuthSession = session;
+        Operator = new SysAdminOperatorSummary
+        {
+            DisplayName = session.DisplayName,
+            Email = session.Email,
+            Roles = session.Roles
+        };
+    }
+
+    public void ClearAuthenticatedSession()
+    {
+        AuthSession = null;
+        SessionToken = string.Empty;
+        HasLoadedSetupStatus = false;
+        SetupStage = "uninitialized";
+        AccountCount = 0;
+        CompanyCount = 0;
+        OwnerMembershipCount = 0;
+        HasAnyAccount = false;
+        HasAnyCompany = false;
+        HasAnyOwnerMembership = false;
+        SetupRequired = true;
+        BusinessInitializationPending = false;
+        BusinessReady = false;
+        FirstCompanySetupRequired = false;
+        FirstCompanySetupDeferred = false;
+        FirstCompanySetupDeferredAtUtc = null;
+        FirstCompanyCompletion = null;
+        Operator = new SysAdminOperatorSummary
+        {
+            DisplayName = "Platform Administrator",
+            Email = "sysadmin@citus.local",
+            Roles = ["sysadmin"]
+        };
+        ActiveCompany = new CompanyContextSummary
+        {
+            CompanyCode = "SYS",
+            CompanyName = "Platform Control",
+            IsSystemScope = true
+        };
+        AvailableCompanies = Array.Empty<CompanyWorkspaceSummary>();
+    }
+
     public void ApplyControlContext(SysAdminControlContextSummary context)
     {
         Operator = context.Operator;
-        ActiveCompany = context.ActiveCompany;
         MaintenanceState = context.MaintenanceState;
-        AvailableCompanies = context.AvailableCompanies;
+
+        if (BusinessReady)
+        {
+            ActiveCompany = context.ActiveCompany;
+            AvailableCompanies = context.AvailableCompanies;
+            return;
+        }
+
+        ActiveCompany = new CompanyContextSummary
+        {
+            CompanyCode = "SYS",
+            CompanyName = "Platform Control",
+            IsSystemScope = true
+        };
+        AvailableCompanies = Array.Empty<CompanyWorkspaceSummary>();
     }
 }

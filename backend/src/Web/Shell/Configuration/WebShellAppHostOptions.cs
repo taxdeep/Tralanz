@@ -4,29 +4,25 @@ public sealed class WebShellAppHostOptions
 {
     public const string SectionName = "AppHost";
 
+    public string PublicBaseUrl { get; set; } = "http://127.0.0.1:3000/";
+
     public string AccountingApiBaseUrl { get; set; } = "http://127.0.0.1:5088/";
 
-    public Guid BootstrapUserId { get; set; } = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    public int BusinessSessionHours { get; set; } = 12;
 
-    public string BootstrapUserDisplayName { get; set; } = "Alice Rowan";
+    public Guid BootstrapUserId { get; set; }
 
-    public string BootstrapUserEmail { get; set; } = "alice.rowan@northwind.example";
+    public string BootstrapUserDisplayName { get; set; } = string.Empty;
 
-    public string BootstrapUsername { get; set; } = "alice.rowan";
+    public string BootstrapUserEmail { get; set; } = string.Empty;
 
-    public string[] BootstrapRoles { get; set; } = ["owner", "reports"];
+    public string BootstrapUsername { get; set; } = string.Empty;
 
-    public Guid? DefaultActiveCompanyId { get; set; } = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    public string[] BootstrapRoles { get; set; } = [];
 
-    public WebShellCompanyOption[] Companies { get; set; } =
-    [
-        new()
-        {
-            Id = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
-            CompanyCode = "NORTHWIND",
-            CompanyName = "Northwind Studio Ltd.",
-            BaseCurrencyCode = "USD",
-            MultiCurrencyEnabled = true
-        }
-    ];
+    public Guid? DefaultActiveCompanyId { get; set; }
+
+    public bool DisableRazorComponents { get; set; }
+
+    public WebShellCompanyOption[] Companies { get; set; } = [];
 }

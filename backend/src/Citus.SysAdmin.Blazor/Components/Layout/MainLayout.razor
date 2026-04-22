@@ -1,5 +1,8 @@
 @inject AppShellState ShellState
 @inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject SysAdminAuthenticationClient SysAdminAuthenticationClient
 @inject SysAdminControlClient SysAdminControlClient
 
 @inherits LayoutComponentBase
@@ -9,39 +12,63 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-<MudLayout>
-    <MudAppBar Elevation="1">
-        <MudIconButton
-            Icon="@Icons.Material.Filled.Menu"
-            Color="Color.Inherit"
-            Edge="Edge.Start"
-            OnClick="ToggleDrawer" />
-        <MudText Typo="Typo.h6">Citus SysAdmin</MudText>
-        <MudSpacer />
-        <SysAdminTopBar />
-    </MudAppBar>
-
-    <MudDrawer
-        @bind-Open="_drawerOpen"
-        ClipMode="DrawerClipMode.Always"
-        Elevation="1"
-        Variant="DrawerVariant.Responsive"
-        Class="citus-drawer">
-        <SysAdminNavMenu />
-    </MudDrawer>
-
+@if (!_isShellReady)
+{
+    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
+        <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+    </MudContainer>
+}
+else if (!ShellState.IsAuthenticated)
+{
     <MudMainContent Class="citus-main-content">
-        <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
-            @if (_isContextLoading)
+        <MudContainer MaxWidth="MaxWidth.Small" Class="pa-6">
+            @if (IsLoginRoute)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+                @Body
             }
-
-            <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
-            @Body
+            else
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+            }
         </MudContainer>
     </MudMainContent>
-</MudLayout>
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="1">
+            <MudIconButton
+                Icon="@Icons.Material.Filled.Menu"
+                Color="Color.Inherit"
+                Edge="Edge.Start"
+                OnClick="ToggleDrawer" />
+            <MudText Typo="Typo.h6">Citus SysAdmin</MudText>
+            <MudSpacer />
+            <SysAdminTopBar />
+        </MudAppBar>
+
+        <MudDrawer
+            @bind-Open="_drawerOpen"
+            ClipMode="DrawerClipMode.Always"
+            Elevation="1"
+            Variant="DrawerVariant.Responsive"
+            Class="citus-drawer">
+            <SysAdminNavMenu />
+        </MudDrawer>
+
+        <MudMainContent Class="citus-main-content">
+            <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
+                @if (_isContextLoading)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+                }
+
+                <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -53,27 +80,158 @@
 {
     private bool _drawerOpen = true;
     private bool _isContextLoading = true;
+    private bool _isShellReady;
 
-    protected override async Task OnInitializedAsync()
+    private bool IsLoginRoute =>
+        NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
+            .StartsWith("login", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsSetupRoute =>
+        NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
+            .StartsWith("setup/", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsSetupCompletedRoute =>
+        string.Equals(
+            NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/'),
+            "setup/completed",
+            StringComparison.OrdinalIgnoreCase);
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var context = await SysAdminControlClient.GetContextAsync();
-
-        if (context is null)
+        if (!firstRender)
         {
-            Snackbar.Add(
-                "SysAdmin control context is unavailable. The shell will stay in fallback mode until the API responds.",
-                Severity.Warning);
+            return;
+        }
+
+        if (ShellState.IsAuthenticated)
+        {
+            await LoadSetupStatusAsync();
+            await LoadControlContextAsync();
+            await EnforceAuthenticatedRouteAsync();
+            _isShellReady = true;
+            StateHasChanged();
+            return;
+        }
+
+        var storedToken = await JS.InvokeAsync<string?>("citusSysAdminAuth.getSessionToken");
+        if (!string.IsNullOrWhiteSpace(storedToken))
+        {
+            var session = await SysAdminAuthenticationClient.ResumeSessionAsync(storedToken);
+            if (session is not null)
+            {
+                ShellState.ApplyAuthenticatedSession(storedToken, session);
+                await LoadSetupStatusAsync();
+                await LoadControlContextAsync();
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("citusSysAdminAuth.clearSessionToken");
+                ShellState.ClearAuthenticatedSession();
+            }
         }
         else
         {
-            ShellState.ApplyControlContext(context);
+            ShellState.ClearAuthenticatedSession();
         }
 
-        _isContextLoading = false;
+        _isShellReady = true;
+
+        if (!ShellState.IsAuthenticated && !IsLoginRoute)
+        {
+            NavigationManager.NavigateTo("login");
+        }
+        else if (ShellState.IsAuthenticated)
+        {
+            await EnforceAuthenticatedRouteAsync();
+        }
+
+        StateHasChanged();
     }
 
     private void ToggleDrawer()
     {
         _drawerOpen = !_drawerOpen;
     }
+
+    private async Task LoadControlContextAsync()
+    {
+        _isContextLoading = true;
+
+        try
+        {
+            var context = await SysAdminControlClient.GetContextAsync();
+
+            if (context is null)
+            {
+                Snackbar.Add(
+                    "SysAdmin control context is unavailable. The shell will stay in fallback mode until the API responds.",
+                    Severity.Warning);
+                return;
+            }
+
+            ShellState.ApplyControlContext(context);
+        }
+        finally
+        {
+            _isContextLoading = false;
+        }
+    }
+
+    private async Task LoadSetupStatusAsync()
+    {
+        var status = await SysAdminAuthenticationClient.GetSetupStatusAsync();
+        if (status is null)
+        {
+            return;
+        }
+
+        ShellState.ApplySetupStatus(status);
+    }
+
+    private Task EnforceAuthenticatedRouteAsync()
+    {
+        var destination = GetAuthenticatedDestination();
+        if (!string.IsNullOrWhiteSpace(destination) &&
+            !IsCurrentRoute(destination))
+        {
+            NavigationManager.NavigateTo(destination);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private string? GetAuthenticatedDestination()
+    {
+        if (IsSetupCompletedRoute && ShellState.HasFirstCompanyCompletion)
+        {
+            return null;
+        }
+
+        if (ShellState.HasLoadedSetupStatus && ShellState.FirstCompanySetupRequired)
+        {
+            return ShellState.HasAnyCompany
+                ? "setup/first-company"
+                : "setup/company-decision";
+        }
+
+        if (IsSetupCompletedRoute && !ShellState.HasFirstCompanyCompletion)
+        {
+            return "overview";
+        }
+
+        if (IsLoginRoute || IsSetupRoute)
+        {
+            return "overview";
+        }
+
+        return null;
+    }
+
+    private bool IsCurrentRoute(string route) =>
+        string.Equals(
+            NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/'),
+            route.Trim('/'),
+            StringComparison.OrdinalIgnoreCase);
 }
