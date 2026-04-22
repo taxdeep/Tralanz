@@ -912,11 +912,41 @@ public sealed record FxRevaluationCascadeUnwindPlanResult(
     bool RequestedBatchIsTail,
     IReadOnlyList<FxRevaluationCascadeUnwindPlanStep> ActiveRevaluationChain);
 
+public sealed record FxRevaluationBatchListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    string BatchKind,
+    Guid? ReversalOfDocumentId,
+    Guid? BookId,
+    string? BookCode,
+    string? AccountingStandard,
+    string? RevaluationProfile,
+    string? FxRoundingPolicy,
+    DateOnly DocumentDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal FxRate,
+    int LineCount,
+    decimal UnrealizedTotalBase,
+    Guid? LinkedJournalEntryId,
+    string? LinkedJournalEntryDisplayNumber,
+    DateTimeOffset? LinkedJournalPostedAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
 public interface IFxRevaluationDocumentRepository
 {
     Task<FxRevaluationDocument?> GetForPostingAsync(
         CompanyId companyId,
         Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<FxRevaluationBatchListItem>> ListRecentAsync(
+        CompanyId companyId,
+        int take,
         CancellationToken cancellationToken);
 
     Task<FxRevaluationCascadeUnwindPlanResult> GetCascadeUnwindPlanAsync(

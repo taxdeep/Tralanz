@@ -175,7 +175,6 @@
 
 @code
 {
-    private static readonly Guid DemoUserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
     private readonly JournalEntryEditorState _state = JournalEntryEditorState.CreateDarkModeDemo();
     private FxRateSelectionData _fxSelectionData = new([], []);
     private CompanyCurrencyProfile? _companyCurrencyProfile;
@@ -187,10 +186,13 @@
     private string? _enableCurrencyCode;
     private Guid? _postedJournalEntryId;
     private bool WritesBlocked => ShellSession.AreWritesBlocked;
+    private Guid CurrentUserId => ShellSession.CurrentUserId;
 
     protected override async Task OnInitializedAsync()
     {
         await EnsureWriteGateStateAsync();
+        _state.Draft.CompanyId = ShellSession.ActiveCompanyId;
+        _state.Draft.JournalDate = DateOnly.FromDateTime(DateTime.Today);
         await LoadCompanyCurrencyProfileAsync();
         var accountOptions = await JournalEntryWorkflow.LoadAccountOptionsAsync(_state.Draft.CompanyId, CancellationToken.None);
         _state.ReplaceAccountOptions(accountOptions);
@@ -265,7 +267,7 @@
             _isSaving = true;
             StateHasChanged();
 
-            var result = await JournalEntryWorkflow.SaveDraftAsync(_state.Draft, DemoUserId, CancellationToken.None);
+            var result = await JournalEntryWorkflow.SaveDraftAsync(_state.Draft, CurrentUserId, CancellationToken.None);
             _state.Draft.DocumentId = result.DocumentId;
             _state.Draft.DocumentNumber = result.DocumentNumber;
             _state.Draft.Status = result.Status;
@@ -296,7 +298,7 @@
             _isPosting = true;
             StateHasChanged();
 
-            var result = await JournalEntryWorkflow.PostDraftAsync(_state.Draft, DemoUserId, CancellationToken.None);
+            var result = await JournalEntryWorkflow.PostDraftAsync(_state.Draft, CurrentUserId, CancellationToken.None);
             _state.Draft.DocumentId = result.DocumentId;
             _state.Draft.DocumentNumber = result.DocumentNumber;
             _state.Draft.JournalNumber = result.JournalDisplayNumber;
@@ -335,7 +337,7 @@
             var resolution = await FxRateResolver.ResolveAsync(
                 new FxRateLookupRequest(
                     _state.Draft.CompanyId,
-                    DemoUserId,
+                    CurrentUserId,
                     _state.Draft.CurrencyCode,
                     _state.Draft.BaseCurrencyCode,
                     _state.Draft.JournalDate,
@@ -486,7 +488,7 @@
             var result = await CompanyCurrencyGovernanceWorkflow.EnableCurrencyAsync(
                 _state.Draft.CompanyId,
                 _enableCurrencyCode,
-                DemoUserId,
+                CurrentUserId,
                 CancellationToken.None);
 
             _companyCurrencyProfile = result.Profile;
@@ -529,7 +531,7 @@
     private FxRateSelectionRequest BuildSelectionRequest() =>
         new(
             _state.Draft.CompanyId,
-            DemoUserId,
+            CurrentUserId,
             _state.Draft.CurrencyCode,
             _state.Draft.BaseCurrencyCode,
             _state.Draft.JournalDate,

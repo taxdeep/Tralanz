@@ -515,4 +515,6 @@ public sealed record PostFxRevaluationBatchHttpRequest(
     Guid? AcceptedFxSnapshotId,
     string? IdempotencyKey);
 
+public sealed record FxRevaluationBatchListQuery(Guid CompanyId, int? Take);
+
 public sealed record FxRevaluationBatchLookupQuery(Guid CompanyId);

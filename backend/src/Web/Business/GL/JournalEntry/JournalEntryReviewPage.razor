@@ -381,6 +381,9 @@
             </div>
 
             <div class="je-review-action-bar">
+                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/gl/journal-entries">
+                    Journal workbench
+                </MudButton>
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="HandleBackToEditor" Disabled="WritesBlocked">
                     New journal entry
                 </MudButton>
@@ -561,6 +564,7 @@
             "credit_application" => $"/documents/credit_application/{documentId:D}",
             "pay_bill" => $"/documents/pay_bill/{documentId:D}",
             "vendor_credit_application" => $"/documents/vendor_credit_application/{documentId:D}",
+            "fx_revaluation" => $"/gl/fx-revaluation/{documentId:D}",
             _ => string.Empty
         };
 

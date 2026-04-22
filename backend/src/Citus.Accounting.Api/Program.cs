@@ -3097,67 +3097,114 @@ accounting.MapPost(
     });
 
 accounting.MapGet(
+    "/fx-revaluation-batches",
+    async ([AsParameters] FxRevaluationBatchListQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var batches = await repository.ListRecentAsync(
+            new(query.CompanyId),
+            query.Take ?? 50,
+            cancellationToken);
+
+        return Results.Ok(batches.Select(batch => new
+        {
+            batch.Id,
+            batch.EntityNumber,
+            batch.DisplayNumber,
+            batch.Status,
+            batch.BatchKind,
+            batch.ReversalOfDocumentId,
+            batch.BookId,
+            batch.BookCode,
+            batch.AccountingStandard,
+            batch.RevaluationProfile,
+            batch.FxRoundingPolicy,
+            batch.DocumentDate,
+            batch.TransactionCurrencyCode,
+            batch.BaseCurrencyCode,
+            batch.FxSnapshotId,
+            batch.FxRate,
+            batch.LineCount,
+            batch.UnrealizedTotalBase,
+            batch.LinkedJournalEntryId,
+            batch.LinkedJournalEntryDisplayNumber,
+            batch.LinkedJournalPostedAt,
+            batch.CreatedAt,
+            batch.UpdatedAt
+        }));
+    });
+
+accounting.MapGet(
     "/fx-revaluation-batches/{documentId:guid}",
     async (Guid documentId, [AsParameters] FxRevaluationBatchLookupQuery query, IFxRevaluationDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        var document = await repository.GetForPostingAsync(
-            new(query.CompanyId),
-            documentId,
-            cancellationToken);
-
-        if (document is null)
+        try
         {
-            return Results.NotFound(new
+            var document = await repository.GetForPostingAsync(
+                new(query.CompanyId),
+                documentId,
+                cancellationToken);
+
+            if (document is null)
             {
-                message = "FX revaluation batch was not found in the active company context."
+                return Results.NotFound(new
+                {
+                    message = "FX revaluation batch was not found in the active company context."
+                });
+            }
+
+            return Results.Ok(new
+            {
+                document.Id,
+                CompanyId = document.CompanyId.Value,
+                EntityNumber = document.EntityNumber.Value,
+                DisplayNumber = document.DisplayNumber.Value,
+                document.Status,
+                document.BatchKind,
+                document.ReversalOfDocumentId,
+                document.BookId,
+                document.BookCode,
+                document.AccountingStandard,
+                document.RevaluationProfile,
+                document.FxRoundingPolicy,
+                document.DocumentDate,
+                TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+                BaseCurrencyCode = document.BaseCurrencyCode.Value,
+                FxSnapshotId = document.FxSnapshot.SnapshotId == Guid.Empty ? (Guid?)null : document.FxSnapshot.SnapshotId,
+                FxRate = document.FxSnapshot.Rate,
+                FxRateType = document.FxSnapshot.RateType,
+                FxQuoteBasis = document.FxSnapshot.QuoteBasis,
+                FxRateUseCase = document.FxSnapshot.RateUseCase,
+                FxPostingReason = document.FxSnapshot.PostingReason,
+                FxRequestedDate = document.FxSnapshot.RequestedDate,
+                FxEffectiveDate = document.FxSnapshot.EffectiveDate,
+                FxSource = document.FxSnapshot.SourceSemantics,
+                document.UnrealizedFxGainAccountId,
+                document.UnrealizedFxLossAccountId,
+                document.Memo,
+                Lines = document.RevaluationLines.Select(line => new
+                {
+                    line.LineNumber,
+                    line.TargetOpenItemType,
+                    line.TargetOpenItemId,
+                    line.TargetBalanceSide,
+                    line.TargetControlAccountId,
+                    line.OffsetAccountId,
+                    line.PartyId,
+                    line.Description,
+                    line.OpenAmountTx,
+                    line.CarryingAmountBase,
+                    line.RevaluedAmountBase,
+                    line.UnrealizedAmountBase
+                })
             });
         }
-
-        return Results.Ok(new
+        catch (InvalidOperationException ex)
         {
-            document.Id,
-            CompanyId = document.CompanyId.Value,
-            EntityNumber = document.EntityNumber.Value,
-            DisplayNumber = document.DisplayNumber.Value,
-            document.Status,
-            document.BatchKind,
-            document.ReversalOfDocumentId,
-            document.BookId,
-            document.BookCode,
-            document.AccountingStandard,
-            document.RevaluationProfile,
-            document.FxRoundingPolicy,
-            document.DocumentDate,
-            TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
-            BaseCurrencyCode = document.BaseCurrencyCode.Value,
-            FxSnapshotId = document.FxSnapshot.SnapshotId == Guid.Empty ? (Guid?)null : document.FxSnapshot.SnapshotId,
-            FxRate = document.FxSnapshot.Rate,
-            FxRateType = document.FxSnapshot.RateType,
-            FxQuoteBasis = document.FxSnapshot.QuoteBasis,
-            FxRateUseCase = document.FxSnapshot.RateUseCase,
-            FxPostingReason = document.FxSnapshot.PostingReason,
-            FxRequestedDate = document.FxSnapshot.RequestedDate,
-            FxEffectiveDate = document.FxSnapshot.EffectiveDate,
-            FxSource = document.FxSnapshot.SourceSemantics,
-            document.UnrealizedFxGainAccountId,
-            document.UnrealizedFxLossAccountId,
-            document.Memo,
-            Lines = document.RevaluationLines.Select(line => new
+            return Results.BadRequest(new
             {
-                line.LineNumber,
-                line.TargetOpenItemType,
-                line.TargetOpenItemId,
-                line.TargetBalanceSide,
-                line.TargetControlAccountId,
-                line.OffsetAccountId,
-                line.PartyId,
-                line.Description,
-                line.OpenAmountTx,
-                line.CarryingAmountBase,
-                line.RevaluedAmountBase,
-                line.UnrealizedAmountBase
-            })
-        });
+                message = ex.Message
+            });
+        }
     });
 
 accounting.MapPost(

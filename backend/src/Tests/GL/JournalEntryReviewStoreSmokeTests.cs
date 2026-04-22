@@ -88,6 +88,39 @@ public sealed class JournalEntryReviewStoreSmokeTests
             Assert.Equal("Review debit", review.Lines[0].Description);
             Assert.Equal("Review credit", review.Lines[1].Description);
 
+            var recent = await reviewStore.ListRecentAsync(CompanyId, 25, CancellationToken.None);
+            var listItem = Assert.Single(recent, item => item.Id == posted.JournalEntryId);
+
+            Assert.Equal(posted.JournalDisplayNumber, listItem.DisplayNumber);
+            Assert.True(listItem.IsForeignCurrency);
+            Assert.True(listItem.IsBalanced);
+            Assert.Equal("EUR", listItem.TransactionCurrencyCode);
+            Assert.Equal(companyCurrency.Profile.BaseCurrencyCode, listItem.BaseCurrencyCode);
+            Assert.Equal(snapshotId, listItem.FxSnapshotId);
+            Assert.Equal("Manual journal", listItem.SourceTypeLabel);
+
+            var accountBalances = await reviewStore.ListAccountBalancesAsync(
+                CompanyId,
+                journalDate,
+                CancellationToken.None);
+            var debitAccountBalance = Assert.Single(accountBalances, balance => balance.AccountId == accounts[0].AccountId);
+            var debitExposure = Assert.Single(debitAccountBalance.CurrencyExposures, exposure => exposure.CurrencyCode == "EUR");
+
+            Assert.Equal(150m, debitExposure.TransactionDebit);
+            Assert.Equal(0m, debitExposure.TransactionCredit);
+            Assert.True(debitAccountBalance.NetDebit > 0m);
+
+            var ledgerRows = await reviewStore.ListLedgerEntriesAsync(
+                CompanyId,
+                accounts[0].AccountId,
+                10,
+                CancellationToken.None);
+            var debitLedgerRow = Assert.Single(ledgerRows, row => row.JournalEntryId == posted.JournalEntryId);
+
+            Assert.Equal("EUR", debitLedgerRow.TransactionCurrencyCode);
+            Assert.Equal(150m, debitLedgerRow.TransactionDebit);
+            Assert.Equal("Review debit", debitLedgerRow.Description);
+
             var sourceReview = await sourceReviewStore.GetAsync(CompanyId, saved.DocumentId, CancellationToken.None);
 
             Assert.NotNull(sourceReview);

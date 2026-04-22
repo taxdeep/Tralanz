@@ -162,6 +162,13 @@ builder.Services.AddHttpClient<ShellSettlementPostingClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
         })
     .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<JournalEntryFxRevaluationClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
 
 var connectionString =
     Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")

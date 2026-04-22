@@ -84,6 +84,7 @@ public sealed record class JournalEntryReview
             "vendor_credit" => "Vendor credit",
             "receive_payment" => "Receive payment",
             "pay_bill" => "Pay bill",
+            "fx_revaluation" => "FX revaluation",
             _ => SourceType.Replace('_', ' ')
         };
 
