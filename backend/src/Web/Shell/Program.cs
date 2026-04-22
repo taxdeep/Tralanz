@@ -223,6 +223,7 @@ builder.Services.AddSingleton<ShellInventoryAdjustmentClient>();
 builder.Services.AddSingleton<ShellInventoryManufacturingClient>();
 builder.Services.AddSingleton<ShellCounterpartyOnboardingClient>();
 builder.Services.AddSingleton<ShellProductServiceCatalogClient>();
+builder.Services.AddSingleton<ShellSalesCommercialDocumentClient>();
 builder.Services.AddSingleton<ICustomerCurrencyStore, PostgreSqlCustomerCurrencyStore>();
 builder.Services.AddSingleton<ICustomerCurrencyWorkflow, CustomerCurrencyWorkflow>();
 builder.Services.AddSingleton<IReceivePaymentDraftPreparationStore, PostgreSqlReceivePaymentDraftPreparationStore>();

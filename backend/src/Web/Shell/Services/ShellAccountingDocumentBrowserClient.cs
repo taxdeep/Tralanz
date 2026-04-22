@@ -17,6 +17,11 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
             return await GetPurchaseOrdersAsync(companyId, counterpartyRole, counterpartyId, limit, cancellationToken);
         }
 
+        if (string.Equals(sourceType?.Trim(), "receipt", StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetReceiptsAsync(companyId, counterpartyRole, counterpartyId, limit, cancellationToken);
+        }
+
         var requestUri = $"accounting/documents/source?companyId={companyId:D}&limit={Math.Clamp(limit, 1, 200)}";
         if (!string.IsNullOrWhiteSpace(sourceType))
         {
@@ -126,6 +131,78 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
             AnchorGovernanceSummary = item.AnchorGovernance?.Summary
         };
 
+    private async Task<WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>> GetReceiptsAsync(
+        Guid companyId,
+        string? counterpartyRole,
+        Guid? counterpartyId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(counterpartyRole?.Trim(), "customer", StringComparison.OrdinalIgnoreCase))
+        {
+            return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Success(
+                Array.Empty<ShellAccountingSourceDocumentBrowserItem>());
+        }
+
+        var requestUri = $"accounting/receipts?companyId={companyId:D}&take={Math.Clamp(limit, 1, 200)}";
+        try
+        {
+            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadErrorMessageAsync(response, cancellationToken);
+                logger.LogWarning("Unable to load receipts for company {CompanyId}: {Error}", companyId, error);
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error);
+            }
+
+            var items = await response.Content.ReadFromJsonAsync<IReadOnlyList<ShellReceiptBrowserItem>>(cancellationToken)
+                ?? Array.Empty<ShellReceiptBrowserItem>();
+            var mapped = items
+                .Where(item => !counterpartyId.HasValue || item.VendorId == counterpartyId.Value)
+                .Select(item => MapReceipt(companyId, item))
+                .ToArray();
+            return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Success(mapped);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load receipts for company {CompanyId}.", companyId);
+            return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure("Unable to load receipts right now.");
+        }
+    }
+
+    private static ShellAccountingSourceDocumentBrowserItem MapReceipt(
+        Guid companyId,
+        ShellReceiptBrowserItem item) =>
+        new()
+        {
+            SourceType = "receipt",
+            SourceTypeLabel = "Receipt",
+            Id = item.DocumentId,
+            CompanyId = companyId,
+            EntityNumber = item.EntityNumber,
+            DisplayNumber = item.DisplayNumber,
+            Status = item.Status,
+            DocumentDate = item.ReceiptDate,
+            CounterpartyLabel = "Vendor",
+            CounterpartyId = item.VendorId,
+            CounterpartyDisplayName = item.VendorId.ToString("D"),
+            TotalOrderedQuantity = item.TotalQuantity,
+            LineCount = item.LineCount,
+            VendorReference = item.VendorReference,
+            ReceiptActivationStatus = item.InventoryActivation?.ActivationStatus,
+            ReceiptValuationStatus = item.InventoryValuation?.ValuationStatus,
+            ReceiptCostLayerEmissionStatus = item.InventoryCostLayerEmission?.EmissionStatus,
+            ReceiptGrIrBridgeStatus = item.GrIrBridge?.BridgeStatus,
+            ReceiptGrIrSettlementStatus = item.GrIrSettlement?.SettlementStatus,
+            ReceiptPurchaseVarianceStatus = item.GrIrSettlement?.PurchaseVarianceStatus
+        };
+
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -168,5 +245,67 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
         public string? VendorReference { get; init; }
 
         public ShellPurchaseOrderAnchorGovernanceSummary? AnchorGovernance { get; init; }
+    }
+
+    private sealed record class ShellReceiptBrowserItem
+    {
+        public Guid DocumentId { get; init; }
+
+        public string EntityNumber { get; init; } = string.Empty;
+
+        public string DisplayNumber { get; init; } = string.Empty;
+
+        public string Status { get; init; } = string.Empty;
+
+        public Guid VendorId { get; init; }
+
+        public Guid WarehouseId { get; init; }
+
+        public DateOnly ReceiptDate { get; init; }
+
+        public int LineCount { get; init; }
+
+        public decimal TotalQuantity { get; init; }
+
+        public string? VendorReference { get; init; }
+
+        public string? SourceReference { get; init; }
+
+        public ShellReceiptInventoryActivationSummary? InventoryActivation { get; init; }
+
+        public ShellReceiptInventoryValuationSummary? InventoryValuation { get; init; }
+
+        public ShellReceiptInventoryCostLayerEmissionSummary? InventoryCostLayerEmission { get; init; }
+
+        public ShellReceiptGrIrBridgeBrowserSummary? GrIrBridge { get; init; }
+
+        public ShellReceiptGrIrSettlementBrowserSummary? GrIrSettlement { get; init; }
+    }
+
+    private sealed record class ShellReceiptInventoryActivationSummary
+    {
+        public string ActivationStatus { get; init; } = string.Empty;
+    }
+
+    private sealed record class ShellReceiptInventoryValuationSummary
+    {
+        public string ValuationStatus { get; init; } = string.Empty;
+    }
+
+    private sealed record class ShellReceiptInventoryCostLayerEmissionSummary
+    {
+        public string EmissionStatus { get; init; } = string.Empty;
+    }
+
+    private sealed record class ShellReceiptGrIrBridgeBrowserSummary
+    {
+        public string BridgeStatus { get; init; } = string.Empty;
+    }
+
+    private sealed record class ShellReceiptGrIrSettlementBrowserSummary
+    {
+        public string SettlementStatus { get; init; } = string.Empty;
+
+        public string PurchaseVarianceStatus { get; init; } = string.Empty;
     }
 }

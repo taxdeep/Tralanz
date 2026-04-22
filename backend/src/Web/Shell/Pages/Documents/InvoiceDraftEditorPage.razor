@@ -14,6 +14,7 @@
 @inject ShellProductServiceCatalogClient ProductServices
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSalesCommercialDocumentClient CommercialDocuments
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 
@@ -98,6 +99,18 @@
     @if (!string.IsNullOrWhiteSpace(_error))
     {
         <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_error</MudAlert>
+    }
+    @if (!string.IsNullOrWhiteSpace(_sourceShipmentDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            Shipment hand-off <strong>@_sourceShipmentDisplayNumber</strong> prefilled this invoice draft. Shipment remains fulfillment truth; complete price, revenue account, tax, and AR posting details before posting.
+        </MudAlert>
+    }
+    @if (!string.IsNullOrWhiteSpace(_sourceSalesOrderDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+            Sales order <strong>@_sourceSalesOrderDisplayNumber</strong> prefilled this invoice draft. Invoice owns AR/revenue truth; SO remains demand truth.
+        </MudAlert>
     }
 
     @if (WritesBlocked)
@@ -407,6 +420,12 @@
     [SupplyParameterFromQuery(Name = "productServiceId")]
     public Guid? ProductServiceId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "shipmentId")]
+    public Guid? ShipmentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "salesOrderId")]
+    public Guid? SalesOrderId { get; set; }
+
     private readonly List<SalesLine> _lines = [SalesLine.Blank(1)];
     private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _customerOptions = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
     private IReadOnlyList<JournalEntryAccountOption> _revenueAccounts = Array.Empty<JournalEntryAccountOption>();
@@ -434,6 +453,10 @@
     private DateTime? _dueDatePicker = DateTime.Today.AddDays(30);
     private Guid? _loadedDraftId;
     private Guid? _loadedProductServiceHintId;
+    private Guid? _loadedSourceShipmentId;
+    private string? _sourceShipmentDisplayNumber;
+    private Guid? _loadedSourceSalesOrderId;
+    private string? _sourceSalesOrderDisplayNumber;
 
     private decimal Subtotal => _lines.Sum(static x => x.LineAmount);
     private decimal TaxTotal => _lines.Sum(static x => x.TaxAmount);
@@ -641,6 +664,7 @@
             _documentId = _saved.DocumentId;
             _postedResult = null;
             await LoadShipmentHandoffSummaryAsync();
+            await TryRecordSalesOrderInvoiceAnchorAsync(_saved.Status);
             Snackbar.Add($"Invoice draft {_saved.DisplayNumber} saved.", Severity.Success);
         }
         catch (Exception ex)
@@ -695,6 +719,7 @@
             _saved = submitResult.Value;
             _postedResult = null;
             await LoadShipmentHandoffSummaryAsync();
+            await TryRecordSalesOrderInvoiceAnchorAsync(_saved.Status);
             Snackbar.Add($"Invoice {_saved.DisplayNumber} submitted.", Severity.Success);
         }
         catch (Exception ex)
@@ -753,6 +778,7 @@
                 _saved = _saved with { Status = _postedResult.Status };
             }
             await LoadShipmentHandoffSummaryAsync();
+            await TryRecordSalesOrderInvoiceAnchorAsync(_postedResult.Status);
 
             Snackbar.Add($"Invoice posted to journal entry {_postedResult.JournalEntryDisplayNumber}.", Severity.Success);
         }
@@ -873,6 +899,20 @@
             _loadedProductServiceHintId = ProductServiceId.Value;
         }
 
+        if (!DraftId.HasValue &&
+            ShipmentId.HasValue &&
+            ShipmentId != _loadedSourceShipmentId)
+        {
+            await LoadShipmentInvoiceHandoffAsync(ShipmentId.Value);
+        }
+
+        if (!DraftId.HasValue &&
+            SalesOrderId.HasValue &&
+            SalesOrderId != _loadedSourceSalesOrderId)
+        {
+            await LoadSalesOrderInvoiceHandoffAsync(SalesOrderId.Value);
+        }
+
         return true;
     }
 
@@ -990,6 +1030,157 @@
             ShellSession.ActiveCompanyId,
             _documentId.Value,
             CancellationToken.None);
+    }
+
+    private async Task LoadShipmentInvoiceHandoffAsync(Guid shipmentId)
+    {
+        if (_inventoryShipmentDashboard is null)
+        {
+            return;
+        }
+
+        var shipment = await InventoryShipment.GetAsync(ShellSession.ActiveCompanyId, shipmentId, CancellationToken.None);
+        if (shipment is null)
+        {
+            _error = "The shipment hand-off could not be found in the active company context.";
+            return;
+        }
+
+        _loadedSourceShipmentId = shipment.DocumentId;
+        _sourceShipmentDisplayNumber = shipment.DocumentNumber;
+        _customerIdText = shipment.CustomerId.ToString("D");
+        _memo ??= $"Invoice coverage from shipment {shipment.DocumentNumber}";
+        _lines.Clear();
+
+        var defaultRevenueAccount = _revenueAccounts.Count == 1
+            ? _revenueAccounts[0].AccountId.ToString("D")
+            : string.Empty;
+        var lineNumber = 1;
+        foreach (var shipmentLine in shipment.Lines.OrderBy(static line => line.LineNo))
+        {
+            var item = _inventoryShipmentDashboard.ActiveItems.FirstOrDefault(candidate => candidate.Id == shipmentLine.ItemId);
+            _lines.Add(new SalesLine
+            {
+                LineNumber = lineNumber++,
+                AccountIdText = defaultRevenueAccount,
+                Description = item is null
+                    ? $"Shipment {shipment.DocumentNumber} line {shipmentLine.LineNo}"
+                    : $"{item.ItemCode} - {item.Name}",
+                Quantity = shipmentLine.Quantity,
+                UnitPrice = 1m,
+                ItemId = shipmentLine.ItemId,
+                WarehouseId = shipmentLine.WarehouseId,
+                UomCode = shipmentLine.UomCode
+            });
+        }
+
+        if (_lines.Count == 0)
+        {
+            _lines.Add(SalesLine.Blank(1));
+        }
+    }
+
+    private async Task LoadSalesOrderInvoiceHandoffAsync(Guid salesOrderId)
+    {
+        var salesOrder = await CommercialDocuments.GetAsync(ShellSession.ActiveCompanyId, salesOrderId, CancellationToken.None);
+        if (salesOrder is null || salesOrder.DocumentType != "sales_order")
+        {
+            _error = "The sales order hand-off could not be found in the active company context.";
+            return;
+        }
+
+        _loadedSourceSalesOrderId = salesOrder.Id;
+        _sourceSalesOrderDisplayNumber = salesOrder.DisplayNumber;
+        _customerIdText = salesOrder.CustomerId.ToString("D");
+        _txCurrency = salesOrder.TransactionCurrencyCode;
+        _memo ??= $"Invoice coverage from sales order {salesOrder.DisplayNumber}";
+        _lines.Clear();
+
+        var coverage = await CommercialDocuments.GetSalesOrderInvoiceCoverageAsync(
+            ShellSession.ActiveCompanyId,
+            salesOrder.Id,
+            CancellationToken.None);
+        var remainingByLine = coverage?.Lines.ToDictionary(static line => line.LineNumber);
+
+        foreach (var sourceLine in salesOrder.Lines.OrderBy(static line => line.LineNumber))
+        {
+            var quantity = sourceLine.Quantity;
+            if (remainingByLine is not null &&
+                remainingByLine.TryGetValue(sourceLine.LineNumber, out var lineCoverage))
+            {
+                quantity = lineCoverage.RemainingToInvoiceQuantity;
+            }
+
+            if (coverage is not null && quantity <= 0m)
+            {
+                continue;
+            }
+
+            _lines.Add(new SalesLine
+            {
+                LineNumber = sourceLine.LineNumber,
+                AccountIdText = sourceLine.RevenueAccountId?.ToString("D") ?? string.Empty,
+                Description = sourceLine.Description,
+                Quantity = quantity,
+                UnitPrice = sourceLine.UnitPrice,
+                ItemId = sourceLine.ItemId,
+                WarehouseId = sourceLine.WarehouseId,
+                UomCode = sourceLine.UomCode ?? string.Empty
+            });
+        }
+
+        if (_lines.Count == 0)
+        {
+            _error = $"Sales order {salesOrder.DisplayNumber} is already fully invoiced.";
+            _lines.Add(SalesLine.Blank(1));
+        }
+    }
+
+    private async Task TryRecordSalesOrderInvoiceAnchorAsync(string? invoiceStatus)
+    {
+        if (!_loadedSourceSalesOrderId.HasValue || _saved is null)
+        {
+            return;
+        }
+
+        var lines = _lines
+            .Where(static line => line.Quantity > 0m)
+            .Select(static line => new ShellSalesCommercialInvoiceAnchorLineRequest
+            {
+                LineNumber = line.LineNumber,
+                Description = line.Description,
+                Quantity = line.Quantity,
+                UnitPrice = line.UnitPrice,
+                ItemId = line.ItemId,
+                WarehouseId = line.WarehouseId,
+                UomCode = line.UomCode
+            })
+            .ToArray();
+        if (lines.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await CommercialDocuments.RecordSalesOrderInvoiceAnchorAsync(
+                ShellSession.ActiveCompanyId,
+                _loadedSourceSalesOrderId.Value,
+                new ShellSalesCommercialInvoiceAnchorRequest
+                {
+                    InvoiceDocumentId = _saved.DocumentId,
+                    InvoiceDisplayNumber = _saved.DisplayNumber,
+                    InvoiceStatus = string.IsNullOrWhiteSpace(invoiceStatus) ? _saved.Status : invoiceStatus,
+                    DocumentDate = _documentDate,
+                    TotalAmount = GrandTotal,
+                    Lines = lines
+                },
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Sales order invoice coverage was not updated: {ex.Message}", Severity.Warning);
+        }
     }
 
     private static bool AllowsInvoicePost(string? matchStatus) =>

@@ -286,6 +286,42 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             new ReceiptGrIrClearingAccountPolicySaveCommand(companyId, userId, grIrClearingAccountId),
             cancellationToken);
 
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptInventoryActivationSummary>> RetryReceiptInventoryActivationAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptInventoryControlCommandAsync<ShellReceiptInventoryActivationSummary, ReceiptGrIrSettlementRefreshCommand>(
+            $"accounting/receipts/{receiptDocumentId:D}/inventory-activation/retry",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "retry receipt inventory activation",
+            receiptDocumentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptInventoryValuationSummary>> RefreshReceiptInventoryValuationAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptInventoryControlCommandAsync<ShellReceiptInventoryValuationSummary, ReceiptGrIrSettlementRefreshCommand>(
+            $"accounting/receipts/{receiptDocumentId:D}/inventory-valuation/refresh",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "refresh receipt inventory valuation",
+            receiptDocumentId,
+            cancellationToken);
+
+    public async Task<WebShellAuthenticatedApiResult<ShellReceiptInventoryCostLayerEmissionSummary>> EmitReceiptInventoryCostLayersAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken = default) =>
+        await PostReceiptInventoryControlCommandAsync<ShellReceiptInventoryCostLayerEmissionSummary, ReceiptGrIrSettlementRefreshCommand>(
+            $"accounting/receipts/{receiptDocumentId:D}/inventory-cost-layer-emission/emit",
+            new ReceiptGrIrSettlementRefreshCommand(companyId, userId),
+            "emit receipt inventory cost layers",
+            receiptDocumentId,
+            cancellationToken);
+
     public async Task<WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>> RefreshReceiptGrIrJournalReconciliationAsync(
         Guid companyId,
         Guid userId,
@@ -870,6 +906,41 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             logger.LogWarning(ex, "Unable to save receipt GR/IR clearing account policy.");
             return WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.Failure(
                 "Unable to save receipt GR/IR clearing account policy. Check API availability and business-session headers.");
+        }
+    }
+
+    private async Task<WebShellAuthenticatedApiResult<TResponse>> PostReceiptInventoryControlCommandAsync<TResponse, TRequest>(
+        string requestUri,
+        TRequest request,
+        string operationLabel,
+        Guid receiptDocumentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return WebShellAuthenticatedApiResult<TResponse>.RequiresAuthentication();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WebShellAuthenticatedApiResult<TResponse>.Failure(
+                    await ReadErrorMessageAsync(response, cancellationToken));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken);
+            return result is null
+                ? WebShellAuthenticatedApiResult<TResponse>.Failure(
+                    $"{operationLabel} succeeded but returned an empty payload.")
+                : WebShellAuthenticatedApiResult<TResponse>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to {OperationLabel} for receipt {ReceiptDocumentId}.", operationLabel, receiptDocumentId);
+            return WebShellAuthenticatedApiResult<TResponse>.Failure(
+                $"Unable to {operationLabel}. Check API availability and business-session headers.");
         }
     }
 

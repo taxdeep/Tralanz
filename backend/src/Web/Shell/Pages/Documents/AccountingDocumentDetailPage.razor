@@ -60,6 +60,15 @@
             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildPurchaseOrderBrowserHref(_purchaseOrder)">
                 Browse Purchase Orders
             </MudButton>
+            @if (CanOpenPurchaseOrderReceiptDraft(_purchaseOrder))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@BuildPurchaseOrderReceiptDraftHref(_purchaseOrder)" Disabled="WritesBlocked">
+                    Start Receipt
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildPurchaseOrderBillDraftHref(_purchaseOrder)" Disabled="WritesBlocked">
+                    Start Bill
+                </MudButton>
+            }
             <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/documents/purchase-orders/approval-requests">
                 Approval Requests
             </MudButton>
@@ -607,6 +616,23 @@
                 <MudAlert Severity="@GetBillReceiptMatchingSeverity(_billReceiptHandoffSummary.MatchStatus)" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
                     @BuildBillReceiptMatchingNotice(_billReceiptHandoffSummary)
                 </MudAlert>
+                @if (CanOpenPurchaseReceiptFromBill(_document, _billReceiptHandoffSummary))
+                {
+                    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   Href="@BuildBillPurchaseReceiptHref(_document)"
+                                   Disabled="WritesBlocked"
+                                   StartIcon="@Icons.Material.Filled.MoveToInbox">
+                            Open Receipt Draft
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Info"
+                                   Href="@BuildBillDraftWorkbenchHref(_document)">
+                            Open Bill Workbench
+                        </MudButton>
+                    </div>
+                }
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
                     <MudPaper Class="pa-3" Elevation="0">
                         <MudText Typo="Typo.caption">Bill Inbound Qty</MudText>
@@ -766,6 +792,14 @@
                                    Disabled="@(_invoiceShipmentLaneSummary.RemainingToIssueQuantity <= 0m)"
                                    Href="@BuildInvoiceSalesIssueHref(_invoiceShipmentLaneSummary)">
                             Open Sales Issue
+                        </MudButton>
+                    }
+                    @if (CanOpenInvoiceCoverageFromShipment(_invoiceShipmentLaneSummary))
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Success"
+                                   Href="@BuildInvoiceCoverageFromShipmentHref(_invoiceShipmentLaneSummary)">
+                            Open Invoice Coverage
                         </MudButton>
                     }
                 </div>
@@ -2081,6 +2115,7 @@
             "pay_bill_reversal" => "Pay Bill Reversal",
             "vendor_credit_application_reversal" => "Vendor Credit Application Reversal",
             "purchase_order" => "Purchase Order",
+            "receipt" => "Receipt",
             _ => "Document"
         };
 
@@ -2098,6 +2133,15 @@
 
     private static string BuildPurchaseOrderDraftEditorHref(ShellPurchaseOrderReviewSummary purchaseOrder) =>
         $"/documents/purchase-order/draft-editor?draftId={purchaseOrder.Id:D}";
+
+    private static bool CanOpenPurchaseOrderReceiptDraft(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        string.Equals(purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildPurchaseOrderReceiptDraftHref(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        $"/documents/receipt/draft-editor?purchaseOrderId={purchaseOrder.Id:D}&vendorId={purchaseOrder.VendorId:D}";
+
+    private static string BuildPurchaseOrderBillDraftHref(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        $"/documents/bill/draft-editor?purchaseOrderId={purchaseOrder.Id:D}&vendorId={purchaseOrder.VendorId:D}";
 
     private static string GetPurchaseOrderApprovalThresholdTitle(ShellPurchaseOrderReviewSummary purchaseOrder)
     {
@@ -2976,6 +3020,7 @@
             "pay_bill" => $"/documents/pay_bill/{documentId.Value:D}",
             "vendor_credit_application" => $"/documents/vendor_credit_application/{documentId.Value:D}",
             "purchase_order" => $"/documents/purchase_order/{documentId.Value:D}",
+            "receipt" => $"/documents/receipt/draft-editor?draftId={documentId.Value:D}",
             _ => string.Empty
         };
 
@@ -3066,7 +3111,7 @@
     {
         href = string.Empty;
         var normalizedSourceType = sourceType?.Trim().ToLowerInvariant();
-        if (normalizedSourceType is not ("invoice" or "credit_note" or "bill" or "vendor_credit" or "purchase_order"))
+        if (normalizedSourceType is not ("invoice" or "credit_note" or "bill" or "vendor_credit" or "purchase_order" or "receipt"))
         {
             return false;
         }
@@ -3130,6 +3175,20 @@
         summary.RemainingQuantity > 0m
             ? "Quantity is still outstanding on the receipt side."
             : "Current bill hand-off quantity is fully covered.";
+
+    private static bool CanOpenPurchaseReceiptFromBill(
+        ShellAccountingDocumentReviewSummary document,
+        ShellBillReceiptMatchingSummary summary) =>
+        document.SourceType?.Trim().Equals("bill", StringComparison.OrdinalIgnoreCase) == true &&
+        document.Status?.Trim().ToLowerInvariant() is "draft" or "submitted" &&
+        summary.BillInboundLineCount > 0 &&
+        !string.Equals(summary.MatchStatus, "fully_covered", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildBillPurchaseReceiptHref(ShellAccountingDocumentReviewSummary document) =>
+        $"/documents/receipt/draft-editor?billId={document.Id:D}&origin=bill-receipt-handoff";
+
+    private static string BuildBillDraftWorkbenchHref(ShellAccountingDocumentReviewSummary document) =>
+        $"/documents/bill/draft-editor?draftId={document.Id:D}";
 
     private static string FormatInvoiceShipmentMatchStatus(string? matchStatus) =>
         matchStatus switch
@@ -3206,6 +3265,19 @@
         return shipment is null
             ? $"/company/inventory-sales-issue?sourceType=invoice&invoiceId={summary.InvoiceDocumentId:D}"
             : $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={shipment.DocumentId:D}&customerId={shipment.CustomerId:D}";
+    }
+
+    private static bool CanOpenInvoiceCoverageFromShipment(InventoryInvoiceShipmentIssueLaneSummary summary) =>
+        summary.RecentShipments.Count > 0 &&
+        summary.RemainingToInvoiceQuantity > 0m &&
+        summary.InvoiceCoverageStatus is "not_invoiced" or "partially_invoiced";
+
+    private static string BuildInvoiceCoverageFromShipmentHref(InventoryInvoiceShipmentIssueLaneSummary summary)
+    {
+        var shipment = summary.RecentShipments.FirstOrDefault();
+        return shipment is null
+            ? "/documents/invoice/draft-editor"
+            : $"/documents/invoice/draft-editor?origin=shipment-invoice-handoff&shipmentId={shipment.DocumentId:D}&customerId={shipment.CustomerId:D}";
     }
 
     private static string GetSettlementFollowUpTitle(ShellAccountingDocumentReviewSummary document)
@@ -3325,6 +3397,7 @@
             "bill" => $"/documents/bill/draft-editor?draftId={documentId:D}",
             "vendor_credit" => $"/documents/vendor-credit/draft-editor?draftId={documentId:D}",
             "purchase_order" => $"/documents/purchase-order/draft-editor?draftId={documentId:D}",
+            "receipt" => $"/documents/receipt/draft-editor?draftId={documentId:D}",
             _ => string.Empty
         };
 
@@ -3343,9 +3416,14 @@
             {
                 "bill" => "Open Bill Workbench",
                 "invoice" => "Open Invoice Workbench",
+                "receipt" => "Open Receipt Workbench",
                 _ => "Open Workbench"
             }
-            : "Edit Draft";
+            : sourceType?.Trim().ToLowerInvariant() switch
+            {
+                "receipt" => "Open Receipt Workbench",
+                _ => "Edit Draft"
+            };
 
     private static bool TryBuildJournalEntryLifecycleNotice(
         ShellAccountingDocumentReviewSummary document,

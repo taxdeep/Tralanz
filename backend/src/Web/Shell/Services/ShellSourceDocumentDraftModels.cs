@@ -93,6 +93,8 @@ public sealed record class ShellPurchaseSourceDocumentDraftReadLine
     public string? UomCode { get; init; }
     public decimal? Quantity { get; init; }
     public decimal? UnitCost { get; init; }
+    public Guid? PurchaseOrderId { get; init; }
+    public int? PurchaseOrderLineNumber { get; init; }
 }
 
 public sealed record class ShellSalesSourceDocumentDraftSaveRequest
@@ -201,6 +203,96 @@ public sealed record class ShellPurchaseSourceDocumentDraftLineSaveRequest
     public decimal? Quantity { get; init; }
 
     public decimal? UnitCost { get; init; }
+
+    public Guid? PurchaseOrderId { get; init; }
+
+    public int? PurchaseOrderLineNumber { get; init; }
+}
+
+public sealed record class ShellReceiptDraftReadModel
+{
+    public Guid Id { get; init; }
+
+    public Guid CompanyId { get; init; }
+
+    public string EntityNumber { get; init; } = string.Empty;
+
+    public string DisplayNumber { get; init; } = string.Empty;
+
+    public string SourceType { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public Guid VendorId { get; init; }
+
+    public Guid WarehouseId { get; init; }
+
+    public DateOnly ReceiptDate { get; init; }
+
+    public string? VendorReference { get; init; }
+
+    public string? SourceReference { get; init; }
+
+    public string? Memo { get; init; }
+
+    public DateTimeOffset? PostedAt { get; init; }
+
+    public IReadOnlyList<ShellReceiptDraftReadLine> Lines { get; init; } = Array.Empty<ShellReceiptDraftReadLine>();
+}
+
+public sealed record class ShellReceiptDraftReadLine
+{
+    public int LineNumber { get; init; }
+
+    public Guid ItemId { get; init; }
+
+    public decimal Quantity { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public string? TrackingCaptureHome { get; init; }
+
+    public Guid? PurchaseOrderId { get; init; }
+
+    public int? PurchaseOrderLineNumber { get; init; }
+}
+
+public sealed record class ShellReceiptDraftSaveRequest
+{
+    public Guid CompanyId { get; init; }
+
+    public Guid UserId { get; init; }
+
+    public Guid VendorId { get; init; }
+
+    public Guid WarehouseId { get; init; }
+
+    public DateOnly ReceiptDate { get; init; }
+
+    public string? VendorReference { get; init; }
+
+    public string? SourceReference { get; init; }
+
+    public string? Memo { get; init; }
+
+    public IReadOnlyList<ShellReceiptDraftLineSaveRequest> Lines { get; init; } = Array.Empty<ShellReceiptDraftLineSaveRequest>();
+}
+
+public sealed record class ShellReceiptDraftLineSaveRequest
+{
+    public int LineNumber { get; init; }
+
+    public Guid ItemId { get; init; }
+
+    public decimal Quantity { get; init; }
+
+    public string UomCode { get; init; } = string.Empty;
+
+    public string? TrackingCaptureHome { get; init; }
+
+    public Guid? PurchaseOrderId { get; init; }
+
+    public int? PurchaseOrderLineNumber { get; init; }
 }
 
 public sealed record class ShellPurchaseOrderDraftSaveRequest

@@ -42,6 +42,15 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
             "vendor credit draft",
             cancellationToken);
 
+    public Task<WebShellAuthenticatedApiResult<ShellReceiptDraftReadModel>> GetReceiptDraftAsync(
+        Guid companyId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        GetAsync<ShellReceiptDraftReadModel>(
+            $"accounting/receipts/{documentId:D}?companyId={companyId:D}",
+            "receipt draft",
+            cancellationToken);
+
     public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SaveInvoiceDraftAsync(
         Guid? documentId,
         ShellSalesSourceDocumentDraftSaveRequest request,
@@ -159,7 +168,9 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
                 line.WarehouseId,
                 line.UomCode,
                 line.Quantity,
-                line.UnitCost
+                line.UnitCost,
+                line.PurchaseOrderId,
+                line.PurchaseOrderLineNumber
             }).ToArray()
         };
 
@@ -296,6 +307,20 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
             },
             cancellationToken);
 
+    public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> PostReceiptAsync(
+        Guid companyId,
+        Guid userId,
+        Guid documentId,
+        CancellationToken cancellationToken = default) =>
+        TransitionDraftAsync(
+            $"accounting/receipts/{documentId:D}/post",
+            new
+            {
+                CompanyId = companyId,
+                UserId = userId
+            },
+            cancellationToken);
+
     public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SavePurchaseOrderDraftAsync(
         Guid? documentId,
         ShellPurchaseOrderDraftSaveRequest request,
@@ -322,6 +347,36 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
         };
 
         return SaveAsync(documentId, "accounting/purchase-orders/drafts", payload, cancellationToken);
+    }
+
+    public Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SaveReceiptDraftAsync(
+        Guid? documentId,
+        ShellReceiptDraftSaveRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            request.CompanyId,
+            request.UserId,
+            request.VendorId,
+            request.WarehouseId,
+            request.ReceiptDate,
+            request.VendorReference,
+            request.SourceReference,
+            request.Memo,
+            Lines = request.Lines.Select(static line => new
+            {
+                line.LineNumber,
+                line.ItemId,
+                line.Quantity,
+                line.UomCode,
+                line.TrackingCaptureHome,
+                line.PurchaseOrderId,
+                line.PurchaseOrderLineNumber
+            }).ToArray()
+        };
+
+        return SaveAsync(documentId, "accounting/receipts/drafts", payload, cancellationToken);
     }
 
     private async Task<WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>> SaveAsync(

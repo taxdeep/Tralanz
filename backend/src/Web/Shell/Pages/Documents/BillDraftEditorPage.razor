@@ -13,6 +13,7 @@
 @inject ShellTaxCodeLookupService TaxCodes
 @inject ShellProductServiceCatalogClient ProductServices
 @inject ShellSourceDocumentDraftClient Drafts
+@inject ShellAccountingDocumentReviewClient ReviewClient
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellInventoryReceiptClient InventoryReceipt
 @inject ShellBillReceiptMatchingClient BillReceiptMatching
@@ -112,8 +113,26 @@
         </MudAlert>
     }
 
+    @if (_purchaseOrder is not null)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;border:1px solid rgba(119,210,160,.35);">
+            <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;">
+                <div>
+                    <MudText Typo="Typo.caption">Purchase Order Anchor</MudText>
+                    <MudText Typo="Typo.h6">@_purchaseOrder.DisplayNumber</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">
+                        @($"{_purchaseOrder.Status} | {_purchaseOrder.Lines.Count} ordered line(s) | vendor {_purchaseOrder.VendorId:D}")
+                    </MudText>
+                </div>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/documents/purchase_order/{_purchaseOrder.Id:D}")">
+                    Open PO
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_vendorIdText" Disabled="@DraftMutationBlocked">
+        <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_vendorIdText" Disabled="@HeaderMutationBlocked">
             @foreach (var vendor in _vendorOptions)
             {
                 <MudSelectItem T="string" Value="@vendor.Id.ToString("D")">@vendor.DisplayLabel</MudSelectItem>
@@ -196,7 +215,7 @@
                 <MudTd>@context.TotalAmount.ToString("N2")</MudTd>
                 <MudTd>
                     <MudButton Variant="Variant.Text" Color="Color.Info" Size="Size.Small" Disabled="@DraftMutationBlocked" OnClick="@(() => ApplyRate(context))">Rate</MudButton>
-                    <MudButton Variant="Variant.Text" Color="Color.Error" Disabled="@(_lines.Count == 1 || DraftMutationBlocked)" OnClick="@(() => RemoveLine(context))">X</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Disabled="@(_lines.Count == 1 || DraftMutationBlocked || context.IsPurchaseOrderAnchored)" OnClick="@(() => RemoveLine(context))">X</MudButton>
                 </MudTd>
             </RowTemplate>
         </MudTable>
@@ -214,7 +233,7 @@
             @if (IncompleteInventoryHandoffLineCount > 0)
             {
                 <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:.75rem;">
-                    @IncompleteInventoryHandoffLineCount line(s) started inventory receipt hand-off but are still missing warehouse, UOM, quantity, or unit cost. Complete the hand-off set before saving or continuing into Purchase Receipt.
+                    @IncompleteInventoryHandoffLineCount line(s) started inventory receipt hand-off but are still missing warehouse, UOM, quantity, or unit cost. Complete the hand-off set before saving or continuing into Receipt Draft.
                 </MudAlert>
             }
             @if (_receiptHandoffSummary is not null)
@@ -251,6 +270,12 @@
                     <MudText Typo="Typo.h6">@ReceiptHandoffNextStepTitle</MudText>
                     <MudText Typo="Typo.body2" Class="text-secondary">@ReceiptHandoffNextStepDetail</MudText>
                     <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem;">
+                        @if (CanOpenPurchaseReceiptFromBill())
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPurchaseReceiptHandoffHref()" Disabled="WritesBlocked">
+                                Open Receipt Draft
+                            </MudButton>
+                        }
                         @if (_saved is not null)
                         {
                             <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildPostedDetailHref()">
@@ -332,12 +357,12 @@
             }
             <MudTable Items="_lines" Dense="true" Hover="true" Bordered="true">
                 <HeaderContent>
-                    <MudTh>#</MudTh><MudTh>Item</MudTh><MudTh>Warehouse</MudTh><MudTh>UOM</MudTh><MudTh>Qty</MudTh><MudTh>Unit Cost</MudTh>
+                    <MudTh>#</MudTh><MudTh>Item</MudTh><MudTh>Warehouse</MudTh><MudTh>UOM</MudTh><MudTh>Qty</MudTh><MudTh>Unit Cost</MudTh><MudTh>PO Anchor</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd>@context.LineNumber</MudTd>
                     <MudTd>
-                        <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@DraftMutationBlocked" Value="context.ItemId" ValueChanged="@(value => ApplyInventoryItem(context, value))">
+                        <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.IsPurchaseOrderAnchored)" Value="context.ItemId" ValueChanged="@(value => ApplyInventoryItem(context, value))">
                             <MudSelectItem T="Guid?" Value="@((Guid?)null)">No inventory receipt hand-off</MudSelectItem>
                             @foreach (var item in InventoryOperationalItems)
                             {
@@ -354,7 +379,7 @@
                         </MudSelect>
                     </MudTd>
                     <MudTd>
-                        <MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.ItemId is null)" @bind-Value="context.UomCode" />
+                        <MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.ItemId is null || context.IsPurchaseOrderAnchored)" @bind-Value="context.UomCode" />
                     </MudTd>
                     <MudTd>
                         <MudNumericField T="decimal?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.ItemId is null)" @bind-Value="context.Quantity" />
@@ -362,6 +387,7 @@
                     <MudTd>
                         <MudNumericField T="decimal?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(DraftMutationBlocked || context.ItemId is null)" @bind-Value="context.UnitCost" />
                     </MudTd>
+                    <MudTd>@FormatPurchaseOrderAnchor(context)</MudTd>
                 </RowTemplate>
             </MudTable>
         </MudPaper>
@@ -456,6 +482,9 @@
     [SupplyParameterFromQuery(Name = "vendorId")]
     public Guid? VendorId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "purchaseOrderId")]
+    public Guid? PurchaseOrderId { get; set; }
+
     [SupplyParameterFromQuery(Name = "productServiceId")]
     public Guid? ProductServiceId { get; set; }
 
@@ -467,6 +496,7 @@
     private WebShellCompanyOnboardingSummary? _onboardingSummary;
     private InventoryPurchaseReceiptDashboard? _inventoryReceiptDashboard;
     private ShellBillReceiptMatchingSummary? _receiptHandoffSummary;
+    private ShellPurchaseOrderReviewSummary? _purchaseOrder;
     private Guid? _documentId;
     private ShellSourceDocumentDraftSaveResult? _saved;
     private string? _vendorIdText;
@@ -486,6 +516,7 @@
     private DateTime? _dueDatePicker = DateTime.Today.AddDays(30);
     private Guid? _loadedDraftId;
     private Guid? _loadedProductServiceHintId;
+    private Guid? _loadedPurchaseOrderId;
 
     private decimal Subtotal => _lines.Sum(static x => x.LineAmount);
     private decimal TaxTotal => _lines.Sum(static x => x.TaxAmount);
@@ -498,6 +529,7 @@
     private bool CanEditDraft => _saved is null || IsDraft;
     private bool CanPost => IsSubmitted && _documentId.HasValue && ReceiptHandoffAllowsBillPost;
     private bool DraftMutationBlocked => WritesBlocked || !CanEditDraft;
+    private bool HeaderMutationBlocked => DraftMutationBlocked || _purchaseOrder is not null || _lines.Any(static line => line.IsPurchaseOrderAnchored);
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private bool SupportsInventoryReceiptHandoff => _onboardingSummary?.SupportsInventoryFoundation == true && _inventoryReceiptDashboard is not null;
@@ -625,6 +657,14 @@
         if (DraftId.HasValue && DraftId != _loadedDraftId)
         {
             await LoadDraftAsync(DraftId.Value);
+            return;
+        }
+
+        if (!DraftId.HasValue &&
+            PurchaseOrderId.HasValue &&
+            PurchaseOrderId != _loadedPurchaseOrderId)
+        {
+            await LoadPurchaseOrderHandoffAsync(PurchaseOrderId.Value);
         }
     }
 
@@ -643,7 +683,18 @@
             ApplyTaxCode(line, DefaultPurchaseTaxCode);
         }
     }
-    private void RemoveLine(PurchaseLine line) { if (TryBlockDraftEdits()) return; _lines.Remove(line); for (var i = 0; i < _lines.Count; i++) _lines[i].LineNumber = i + 1; }
+    private void RemoveLine(PurchaseLine line)
+    {
+        if (TryBlockDraftEdits()) return;
+        if (line.IsPurchaseOrderAnchored)
+        {
+            _error = "PO-anchored bill lines stay with their purchase order hand-off.";
+            return;
+        }
+
+        _lines.Remove(line);
+        for (var i = 0; i < _lines.Count; i++) _lines[i].LineNumber = i + 1;
+    }
     private void ApplyRate(PurchaseLine line)
     {
         if (TryBlockDraftEdits()) return;
@@ -846,7 +897,9 @@
                 WarehouseId = line.WarehouseId,
                 UomCode = string.IsNullOrWhiteSpace(line.UomCode) ? null : line.UomCode.Trim().ToUpperInvariant(),
                 Quantity = line.ItemId.HasValue ? line.Quantity : null,
-                UnitCost = line.ItemId.HasValue ? line.UnitCost : null
+                UnitCost = line.ItemId.HasValue ? line.UnitCost : null,
+                PurchaseOrderId = line.PurchaseOrderId,
+                PurchaseOrderLineNumber = line.PurchaseOrderLineNumber
             });
         }
         if (built.Count == 0) { _error = "At least one line is required."; lines = []; return false; }
@@ -967,10 +1020,99 @@
             WarehouseId = line.WarehouseId,
             UomCode = line.UomCode ?? string.Empty,
             Quantity = line.Quantity,
-            UnitCost = line.UnitCost
+            UnitCost = line.UnitCost,
+            PurchaseOrderId = line.PurchaseOrderId,
+            PurchaseOrderLineNumber = line.PurchaseOrderLineNumber
         }));
         if (_lines.Count == 0) _lines.Add(PurchaseLine.Blank(1));
         await LoadReceiptHandoffSummaryAsync();
+    }
+
+    private bool CanOpenPurchaseReceiptFromBill() =>
+        _documentId.HasValue &&
+        SupportsInventoryReceiptHandoff &&
+        HasReadyInventoryGradeInboundLines &&
+        !string.Equals(_receiptHandoffSummary?.MatchStatus, "fully_covered", StringComparison.OrdinalIgnoreCase);
+
+    private string BuildPurchaseReceiptHandoffHref() =>
+        _documentId.HasValue
+            ? $"/documents/receipt/draft-editor?billId={_documentId.Value:D}&origin=bill-receipt-handoff"
+            : "/documents/receipt/draft-editor";
+
+    private async Task LoadPurchaseOrderHandoffAsync(Guid purchaseOrderId)
+    {
+        var result = await ReviewClient.GetPurchaseOrderAsync(ShellSession.ActiveCompanyId, purchaseOrderId, CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+        {
+            return;
+        }
+
+        var purchaseOrder = result.Value;
+        if (purchaseOrder is null)
+        {
+            _error = result.IsNotFound ? "The purchase order could not be found in the active company context." : result.ErrorMessage ?? "Unable to load the purchase order.";
+            return;
+        }
+
+        if (!CanCreateBillFromPurchaseOrder(purchaseOrder))
+        {
+            _error = "Only issued purchase orders can start a governed bill draft.";
+            return;
+        }
+
+        _purchaseOrder = purchaseOrder;
+        _loadedPurchaseOrderId = purchaseOrder.Id;
+        _vendorIdText = purchaseOrder.VendorId.ToString("D");
+        _memo = string.IsNullOrWhiteSpace(purchaseOrder.Memo)
+            ? $"Bill hand-off from {purchaseOrder.DisplayNumber}"
+            : $"Bill hand-off from {purchaseOrder.DisplayNumber}: {purchaseOrder.Memo}";
+        if (purchaseOrder.ExpectedDate.HasValue)
+        {
+            _dueDate = purchaseOrder.ExpectedDate.Value;
+            _dueDatePicker = purchaseOrder.ExpectedDate.Value.ToDateTime(TimeOnly.MinValue);
+        }
+
+        _lines.Clear();
+        foreach (var line in purchaseOrder.Lines.OrderBy(static line => line.LineNumber))
+        {
+            var remaining = purchaseOrder.ThreeQuantity?.Lines
+                .FirstOrDefault(current => current.LineNumber == line.LineNumber)
+                ?.RemainingToBillQuantity;
+            var quantity = remaining.HasValue && remaining.Value > 0m
+                ? remaining.Value
+                : line.OrderedQuantity;
+            if (quantity <= 0m)
+            {
+                continue;
+            }
+
+            var unitCost = line.UnitCost ?? 0m;
+            _lines.Add(new PurchaseLine
+            {
+                LineNumber = _lines.Count + 1,
+                AccountIdText = ResolveDefaultExpenseAccountIdText(),
+                Description = string.IsNullOrWhiteSpace(line.Description)
+                    ? $"PO line {line.LineNumber}"
+                    : line.Description.Trim(),
+                LineAmount = decimal.Round(quantity * unitCost, 2, MidpointRounding.AwayFromZero),
+                TaxCodeIdText = string.Empty,
+                TaxAmount = 0m,
+                IsTaxRecoverable = false,
+                ItemId = line.ItemId,
+                WarehouseId = InventoryWarehouses.FirstOrDefault()?.Id,
+                UomCode = line.UomCode,
+                Quantity = quantity,
+                UnitCost = unitCost,
+                PurchaseOrderId = purchaseOrder.Id,
+                PurchaseOrderLineNumber = line.LineNumber
+            });
+        }
+
+        if (_lines.Count == 0)
+        {
+            _lines.Add(PurchaseLine.Blank(1));
+            _error = "The selected purchase order has no remaining billable quantity.";
+        }
     }
 
     private string GetFirstBillStepOne() =>
@@ -1093,6 +1235,17 @@
         line.UnitCost.HasValue &&
         line.UnitCost.Value >= 0m;
 
+    private static string FormatPurchaseOrderAnchor(PurchaseLine line) =>
+        line.PurchaseOrderId.HasValue && line.PurchaseOrderLineNumber.HasValue
+            ? $"PO line {line.PurchaseOrderLineNumber.Value}"
+            : "n/a";
+
+    private string ResolveDefaultExpenseAccountIdText() =>
+        _expenseAccounts.FirstOrDefault()?.AccountId.ToString("D") ?? string.Empty;
+
+    private static bool CanCreateBillFromPurchaseOrder(ShellPurchaseOrderReviewSummary purchaseOrder) =>
+        string.Equals(purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase);
+
     private sealed class PurchaseLine
     {
         public int LineNumber { get; set; }
@@ -1108,6 +1261,9 @@
         public string UomCode { get; set; } = string.Empty;
         public decimal? Quantity { get; set; }
         public decimal? UnitCost { get; set; }
+        public Guid? PurchaseOrderId { get; set; }
+        public int? PurchaseOrderLineNumber { get; set; }
+        public bool IsPurchaseOrderAnchored => PurchaseOrderId.HasValue && PurchaseOrderLineNumber.HasValue;
         public decimal TotalAmount => LineAmount + TaxAmount;
         public static PurchaseLine Blank(int lineNumber) => new() { LineNumber = lineNumber };
     }

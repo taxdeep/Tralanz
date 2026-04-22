@@ -470,6 +470,75 @@ public sealed record class ShellReceiptGrIrClearingAccountPolicySummary
     public Guid? GrIrClearingAccountId { get; init; }
 }
 
+public sealed record class ShellReceiptInventoryActivationSummary
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public string ReceiptStatus { get; init; } = string.Empty;
+
+    public string ActivationStatus { get; init; } = string.Empty;
+
+    public Guid? InventoryDocumentId { get; init; }
+
+    public int ReceiptLineCount { get; init; }
+
+    public int ActivatedLineCount { get; init; }
+
+    public decimal TotalQuantity { get; init; }
+
+    public decimal ActivatedQuantity { get; init; }
+
+    public DateTimeOffset? ActivatedAt { get; init; }
+
+    public string? LastFailureMessage { get; init; }
+
+    public DateTimeOffset? LastFailureAt { get; init; }
+}
+
+public sealed record class ShellReceiptInventoryValuationSummary
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public string ValuationStatus { get; init; } = string.Empty;
+
+    public decimal ActivatedQuantity { get; init; }
+
+    public decimal BillCoveredQuantity { get; init; }
+
+    public decimal ValuedQuantity { get; init; }
+
+    public decimal UnvaluedQuantity { get; init; }
+
+    public int ValuationLineCount { get; init; }
+
+    public decimal ValuationAmountBase { get; init; }
+
+    public DateTimeOffset? LastValuedAt { get; init; }
+}
+
+public sealed record class ShellReceiptInventoryCostLayerEmissionSummary
+{
+    public Guid ReceiptDocumentId { get; init; }
+
+    public string EmissionStatus { get; init; } = string.Empty;
+
+    public decimal ActivatedQuantity { get; init; }
+
+    public decimal ValuationBackedQuantity { get; init; }
+
+    public decimal EmissionEligibleQuantity { get; init; }
+
+    public decimal EmittedQuantity { get; init; }
+
+    public decimal UnemittedQuantity { get; init; }
+
+    public int EmissionLineCount { get; init; }
+
+    public decimal EmittedCostBase { get; init; }
+
+    public DateTimeOffset? LastEmittedAt { get; init; }
+}
+
 public sealed record class ShellReceiptGrIrApPurchaseVarianceLineSummary
 {
     public Guid ReceiptDocumentId { get; init; }

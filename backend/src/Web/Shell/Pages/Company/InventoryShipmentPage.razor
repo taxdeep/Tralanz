@@ -9,6 +9,7 @@
 @inject WebShellCompanyOnboardingClient OnboardingClient
 @inject ShellCounterpartyOnboardingClient CounterpartyClient
 @inject ShellInventoryShipmentClient InventoryShipment
+@inject ShellSalesCommercialDocumentClient CommercialDocuments
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 
@@ -27,6 +28,12 @@
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
             Invoice hand-off <strong>@_sourceInvoiceDisplayNumber</strong> prefilled this shipment workspace. Invoice still carries charge truth only; shipment remains the fulfillment authority.
+        </MudAlert>
+    }
+    @if (!string.IsNullOrWhiteSpace(_sourceSalesOrderDisplayNumber))
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Sales order <strong>@_sourceSalesOrderDisplayNumber</strong> prefilled this shipment workspace. Shipment owns fulfillment truth; SO remains demand truth.
         </MudAlert>
     }
 
@@ -99,6 +106,9 @@
                 </MudButton>
                 <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="@BuildSalesIssueHref()">
                     Continue To Sales Issue
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildInvoiceCoverageHref()">
+                    Open Invoice Coverage
                 </MudButton>
                 @if (_loadedSourceInvoiceId.HasValue)
                 {
@@ -244,6 +254,8 @@
     [SupplyParameterFromQuery(Name = "customerId")] public Guid? CustomerIdQuery { get; set; }
     [SupplyParameterFromQuery(Name = "sourceType")] public string? SourceType { get; set; }
     [SupplyParameterFromQuery(Name = "invoiceId")] public Guid? InvoiceIdQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "shipmentId")] public Guid? ShipmentIdQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "salesOrderId")] public Guid? SalesOrderIdQuery { get; set; }
 
     private InventoryShipmentDashboard? _dashboard;
     private WebShellCompanyOnboardingSummary? _onboardingSummary;
@@ -261,6 +273,8 @@
     private List<ShipmentLineEditorState> _lineEditors = [];
     private Guid? _loadedSourceInvoiceId;
     private string? _sourceInvoiceDisplayNumber;
+    private Guid? _loadedSourceSalesOrderId;
+    private string? _sourceSalesOrderDisplayNumber;
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private IReadOnlyList<InventoryManagedItemSummary> OperationalItems => _dashboard?.ActiveItems.Where(item => item.ItemKind == InventoryItemKind.Stock && item.ManageInventoryMethod == ManageInventoryMethod.ManageStock).OrderBy(item => item.ItemCode).ToArray() ?? Array.Empty<InventoryManagedItemSummary>();
@@ -285,11 +299,31 @@
             if (_onboardingSummary is not null && !_onboardingSummary.SupportsInventoryFoundation) return;
             _dashboard = await InventoryShipment.GetDashboardAsync(ShellState.ActiveCompany.Id);
             _counterpartySummary = await CounterpartyClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            await LoadFocusedShipmentReviewAsync();
             SeedHeaderDefaults();
             SeedLinesIfNeeded();
             await LoadSourceInvoiceHandoffAsync();
+            await LoadSourceSalesOrderHandoffAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task LoadFocusedShipmentReviewAsync()
+    {
+        if (!ShipmentIdQuery.HasValue)
+        {
+            return;
+        }
+
+        var shipment = await InventoryShipment.GetAsync(ShellState.ActiveCompany.Id, ShipmentIdQuery.Value, CancellationToken.None);
+        if (shipment is null)
+        {
+            _error = "Shipment was not found in the active company context.";
+            return;
+        }
+
+        _lastPostedShipment = shipment;
+        _selectedCustomerId = shipment.CustomerId;
     }
 
     private void SeedHeaderDefaults()
@@ -344,15 +378,16 @@
                 _carrierName,
                 _trackingNumber,
                 _shippingSlipNumber,
-                string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue ? "ar_invoice" : "web_shell_inventory",
-                string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue ? InvoiceIdQuery.Value : null,
-                _sourceInvoiceDisplayNumber,
+                ResolveSourceModule(),
+                ResolveSourceDocumentId(),
+                _sourceInvoiceDisplayNumber ?? _sourceSalesOrderDisplayNumber,
                 _memo,
                 _lineEditors.Select(line => new InventoryShipmentLineInput(line.LineNo, line.ItemId ?? Guid.Empty, line.WarehouseId ?? Guid.Empty, line.UomCode, line.Quantity, line.ReasonCode, line.Memo)).ToArray());
             _lastPostedShipment = await InventoryShipment.PostAsync(request, _dashboard, _counterpartySummary);
             await ReloadDashboardAsync();
             ResetForm();
             await LoadSourceInvoiceHandoffAsync(forceLineReload: true);
+            await LoadSourceSalesOrderHandoffAsync(forceLineReload: true);
             Snackbar.Add($"Shipment {_lastPostedShipment.DocumentNumber} posted.", Severity.Success);
         }
         catch (Exception ex) { _error = ex.Message; Snackbar.Add(ex.Message, Severity.Error); }
@@ -371,7 +406,11 @@
         _carrierName = null;
         _trackingNumber = null;
         _shippingSlipNumber = null;
-        _memo = _loadedSourceInvoiceId.HasValue && !string.IsNullOrWhiteSpace(_sourceInvoiceDisplayNumber) ? $"Shipment-first hand-off from invoice {_sourceInvoiceDisplayNumber}" : null;
+        _memo = _loadedSourceInvoiceId.HasValue && !string.IsNullOrWhiteSpace(_sourceInvoiceDisplayNumber)
+            ? $"Shipment-first hand-off from invoice {_sourceInvoiceDisplayNumber}"
+            : _loadedSourceSalesOrderId.HasValue && !string.IsNullOrWhiteSpace(_sourceSalesOrderDisplayNumber)
+                ? $"Shipment from sales order {_sourceSalesOrderDisplayNumber}"
+                : null;
         _lineEditors = [];
     }
 
@@ -395,6 +434,75 @@
         if (forceLineReload || _lineEditors.Count == 0 || string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase)) _lineEditors = remainingLines;
     }
 
+    private async Task LoadSourceSalesOrderHandoffAsync(bool forceLineReload = false)
+    {
+        if (!string.Equals(SourceType, "sales_order", StringComparison.OrdinalIgnoreCase) ||
+            !SalesOrderIdQuery.HasValue ||
+            (_loadedSourceSalesOrderId == SalesOrderIdQuery && !forceLineReload))
+        {
+            return;
+        }
+
+        var salesOrder = await CommercialDocuments.GetAsync(ShellState.ActiveCompany.Id, SalesOrderIdQuery.Value, CancellationToken.None);
+        if (salesOrder is null || salesOrder.DocumentType != "sales_order")
+        {
+            _error = "The sales order hand-off could not be found in the active company context.";
+            return;
+        }
+
+        _loadedSourceSalesOrderId = salesOrder.Id;
+        _sourceSalesOrderDisplayNumber = salesOrder.DisplayNumber;
+        _memo ??= $"Shipment from sales order {salesOrder.DisplayNumber}";
+        var outboundControl = await CommercialDocuments.GetSalesOrderOutboundControlAsync(ShellState.ActiveCompany.Id, salesOrder.Id, CancellationToken.None);
+        var remainingByLine = outboundControl?.Lines.ToDictionary(static line => line.LineNumber)
+            ?? new Dictionary<int, ShellSalesOrderOutboundControlLineSummary>();
+        if (_counterpartySummary is not null)
+        {
+            var preferredCustomer = _counterpartySummary.ActiveCustomers.FirstOrDefault(customer => customer.Id == salesOrder.CustomerId);
+            if (preferredCustomer is not null) _selectedCustomerId = preferredCustomer.Id;
+        }
+
+        var lines = salesOrder.Lines
+            .Where(line => line.ItemId.HasValue && line.WarehouseId.HasValue && !string.IsNullOrWhiteSpace(line.UomCode))
+            .Select(line =>
+            {
+                var quantity = remainingByLine.TryGetValue(line.LineNumber, out var remainingLine)
+                    ? remainingLine.RemainingToShipQuantity
+                    : line.Quantity;
+                return new
+                {
+                    SourceLine = line,
+                    Quantity = quantity
+                };
+            })
+            .Where(line => line.Quantity > 0m)
+            .Select((line, index) => new ShipmentLineEditorState
+            {
+                LineNo = index + 1,
+                ItemId = line.SourceLine.ItemId,
+                WarehouseId = line.SourceLine.WarehouseId,
+                UomCode = line.SourceLine.UomCode ?? string.Empty,
+                Quantity = line.Quantity,
+                Memo = $"SO {salesOrder.DisplayNumber} line {line.SourceLine.LineNumber}"
+            })
+            .ToList();
+        if (forceLineReload || _lineEditors.Count == 0 || string.Equals(SourceType, "sales_order", StringComparison.OrdinalIgnoreCase)) _lineEditors = lines;
+    }
+
+    private string ResolveSourceModule() =>
+        string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue
+            ? "ar_invoice"
+            : string.Equals(SourceType, "sales_order", StringComparison.OrdinalIgnoreCase) && SalesOrderIdQuery.HasValue
+                ? "sales_order"
+                : "web_shell_inventory";
+
+    private Guid? ResolveSourceDocumentId() =>
+        string.Equals(SourceType, "invoice", StringComparison.OrdinalIgnoreCase) && InvoiceIdQuery.HasValue
+            ? InvoiceIdQuery.Value
+            : string.Equals(SourceType, "sales_order", StringComparison.OrdinalIgnoreCase) && SalesOrderIdQuery.HasValue
+                ? SalesOrderIdQuery.Value
+                : null;
+
     private static string BuildInvoiceCoverageSummary(InventoryInvoiceShipmentIssueLaneSummary summary) =>
         summary.InvoiceCoverageStatus switch
         {
@@ -408,6 +516,8 @@
         };
 
     private string BuildSalesIssueHref() => _lastPostedShipment is null ? "/company/inventory-sales-issue" : $"/company/inventory-sales-issue?sourceType=shipment&shipmentId={_lastPostedShipment.DocumentId:D}&customerId={_lastPostedShipment.CustomerId:D}";
+
+    private string BuildInvoiceCoverageHref() => _lastPostedShipment is null ? "/documents/invoice/draft-editor" : $"/documents/invoice/draft-editor?origin=shipment-invoice-handoff&shipmentId={_lastPostedShipment.DocumentId:D}&customerId={_lastPostedShipment.CustomerId:D}";
 
     private string BuildReturnReceiveHref() => _lastPostedShipment is null ? "/company/inventory-return-receive" : $"/company/inventory-return-receive?shipmentId={_lastPostedShipment.DocumentId:D}";
 
