@@ -341,6 +341,12 @@
 
                         @if (_sourceTrace is not null)
                         {
+                            var reconciliation = BuildSourceReconciliation(_review, _sourceTrace);
+
+                            <MudAlert Severity="@reconciliation.Severity" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                                @reconciliation.Message
+                            </MudAlert>
+
                             <div class="je-review-facts mt-3">
                                 <div class="je-review-fact">
                                     <span class="je-review-fact__label">Document date</span>
@@ -359,6 +365,10 @@
                                     <span class="je-review-fact__value">@FormatAmount(_sourceTrace.TotalAmount) @_sourceTrace.TotalCurrencyCode</span>
                                 </div>
                                 <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Compared JE total</span>
+                                    <span class="je-review-fact__value">@FormatAmount(reconciliation.JournalTotal) @reconciliation.CurrencyCode</span>
+                                </div>
+                                <div class="je-review-fact">
                                     <span class="je-review-fact__label">Lifecycle</span>
                                     <span class="je-review-fact__value">@DisplayTraceText(_sourceTrace.LifecycleMode)</span>
                                 </div>
@@ -366,6 +376,33 @@
                                     <span class="je-review-fact__label">Source lines</span>
                                     <span class="je-review-fact__value">@_sourceTrace.Lines.Count</span>
                                 </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Line subtotal</span>
+                                    <span class="je-review-fact__value">@FormatAmount(reconciliation.SourceLineTotal) @reconciliation.CurrencyCode</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Tax total</span>
+                                    <span class="je-review-fact__value">@FormatAmount(reconciliation.SourceTaxTotal) @reconciliation.CurrencyCode</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Source accounts mapped</span>
+                                    <span class="je-review-fact__value">@reconciliation.MappedSourceAccountCount / @reconciliation.SourceAccountCount</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Amount delta</span>
+                                    <span class="je-review-fact__value">@FormatSignedAmount(reconciliation.AmountDelta) @reconciliation.CurrencyCode</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Line delta</span>
+                                    <span class="je-review-fact__value">@reconciliation.LineDelta</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(reconciliation.UnmappedSourceAccountLabel))
+                                {
+                                    <div class="je-review-fact">
+                                        <span class="je-review-fact__label">Unmapped source accounts</span>
+                                        <span class="je-review-fact__value">@reconciliation.UnmappedSourceAccountLabel</span>
+                                    </div>
+                                }
                             </div>
 
                             @if (_sourceTrace.Lines.Count > 0)
@@ -636,6 +673,9 @@
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
 
+    private static string FormatSignedAmount(decimal amount) =>
+        amount >= 0m ? $"+{amount:N2}" : amount.ToString("N2");
+
     private static string FormatNullableAmount(decimal? amount) =>
         amount.HasValue ? FormatAmount(amount.Value) : "n/a";
 
@@ -650,6 +690,87 @@
 
     private static string BuildReviewHref(Guid journalEntryId) =>
         $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private static SourceTraceReconciliation BuildSourceReconciliation(
+        JournalEntryReview review,
+        JournalEntrySourceDocumentTraceSummary sourceTrace)
+    {
+        var currencyCode = sourceTrace.TotalCurrencyCode;
+        var journalTotal = string.Equals(currencyCode, review.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
+            ? review.TotalDebit
+            : review.TotalTransactionDebit;
+        var sourceLineTotal = sourceTrace.Lines.Sum(static line => line.LineAmount);
+        var sourceTaxTotal = sourceTrace.Lines.Sum(static line => line.TaxAmount);
+        var journalAccountCodes = review.Lines
+            .Select(static line => line.AccountCode)
+            .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var sourceAccountCodes = sourceTrace.Lines
+            .Select(static line => line.AccountCode)
+            .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var unmappedSourceAccounts = sourceAccountCodes
+            .Where(accountCode => !journalAccountCodes.Contains(accountCode))
+            .ToArray();
+        var mappedSourceAccountCount = sourceAccountCodes.Length - unmappedSourceAccounts.Length;
+        var unmappedSourceAccountLabel = unmappedSourceAccounts.Length == 0
+            ? string.Empty
+            : string.Join(", ", unmappedSourceAccounts.Take(4));
+        if (unmappedSourceAccounts.Length > 4)
+        {
+            unmappedSourceAccountLabel = $"{unmappedSourceAccountLabel}, +{unmappedSourceAccounts.Length - 4}";
+        }
+
+        var amountDelta = Math.Round(journalTotal - sourceTrace.TotalAmount, 2, MidpointRounding.ToEven);
+        var lineDelta = review.LineCount - sourceTrace.Lines.Count;
+
+        if (amountDelta == 0m && lineDelta == 0)
+        {
+            return new SourceTraceReconciliation(
+                Severity.Success,
+                "Source trace matches the generated journal by visible amount and line count.",
+                currencyCode,
+                journalTotal,
+                sourceLineTotal,
+                sourceTaxTotal,
+                sourceAccountCodes.Length,
+                mappedSourceAccountCount,
+                unmappedSourceAccountLabel,
+                amountDelta,
+                lineDelta);
+        }
+
+        if (amountDelta == 0m)
+        {
+            return new SourceTraceReconciliation(
+                Severity.Info,
+                "Source amount matches the generated journal; line count differs because posting may add control, tax, FX, or offset lines.",
+                currencyCode,
+                journalTotal,
+                sourceLineTotal,
+                sourceTaxTotal,
+                sourceAccountCodes.Length,
+                mappedSourceAccountCount,
+                unmappedSourceAccountLabel,
+                amountDelta,
+                lineDelta);
+        }
+
+        return new SourceTraceReconciliation(
+            Severity.Warning,
+            "Source amount differs from the generated journal total. Review source lines, tax/control/FX lines, and posting fragments before relying on this entry.",
+            currencyCode,
+            journalTotal,
+            sourceLineTotal,
+            sourceTaxTotal,
+            sourceAccountCodes.Length,
+            mappedSourceAccountCount,
+            unmappedSourceAccountLabel,
+            amountDelta,
+            lineDelta);
+    }
 
     private static Color GetStatusColor(string status) =>
         status switch
@@ -706,4 +827,17 @@
 
         return !string.IsNullOrWhiteSpace(href);
     }
+
+    private sealed record SourceTraceReconciliation(
+        Severity Severity,
+        string Message,
+        string CurrencyCode,
+        decimal JournalTotal,
+        decimal SourceLineTotal,
+        decimal SourceTaxTotal,
+        int SourceAccountCount,
+        int MappedSourceAccountCount,
+        string UnmappedSourceAccountLabel,
+        decimal AmountDelta,
+        int LineDelta);
 }
