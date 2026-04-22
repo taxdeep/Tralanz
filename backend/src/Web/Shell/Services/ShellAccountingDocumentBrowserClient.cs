@@ -42,7 +42,8 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication();
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication(
+                    "The source document service rejected the current business context. Your shell session is still active; refresh or retry after deployment completes.");
             }
 
             if (!response.IsSuccessStatusCode)
@@ -83,7 +84,8 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication();
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication(
+                    "The purchase order source service rejected the current business context. Your shell session is still active; refresh or retry after deployment completes.");
             }
 
             if (!response.IsSuccessStatusCode)
@@ -151,7 +153,8 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication();
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.RequiresAuthentication(
+                    "The receipt source service rejected the current business context. Your shell session is still active; refresh or retry after deployment completes.");
             }
 
             if (!response.IsSuccessStatusCode)

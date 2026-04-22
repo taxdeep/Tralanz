@@ -7,6 +7,7 @@ namespace Web.Shell.Services;
 
 public sealed class WebShellSessionExpirationCoordinator(
     WebShellState shellState,
+    WebShellBusinessSessionClient sessionClient,
     IJSRuntime jsRuntime,
     NavigationManager navigationManager,
     ISnackbar snackbar)
@@ -29,12 +30,29 @@ public sealed class WebShellSessionExpirationCoordinator(
         return await ExpireSessionAsync();
     }
 
-    public Task<bool> HandleAuthenticatedApiResultAsync<T>(
+    public async Task<bool> HandleAuthenticatedApiResultAsync<T>(
         WebShellAuthenticatedApiResult<T> result,
-        CancellationToken cancellationToken = default) =>
-        result.RequiresSignIn
-            ? ExpireSessionAsync()
-            : Task.FromResult(false);
+        CancellationToken cancellationToken = default)
+    {
+        if (!result.RequiresSignIn)
+        {
+            return false;
+        }
+
+        var probe = await sessionClient.ProbeContextAsync(cancellationToken);
+        if (probe.Context is not null)
+        {
+            shellState.ApplyBusinessSessionContext(probe.Context);
+            return false;
+        }
+
+        if (!probe.RequiresSignIn)
+        {
+            return false;
+        }
+
+        return await ExpireSessionAsync();
+    }
 
     private async Task<bool> ExpireSessionAsync()
     {
