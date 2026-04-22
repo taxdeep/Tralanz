@@ -144,7 +144,7 @@
                     <MudTd DataLabel="Source">
                         <div class="je-workbench-entry">
                             <span>@context.SourceTypeLabel</span>
-                            <small>@context.SourceId.ToString("N")[..8]</small>
+                            <small>@context.SourceIdShort</small>
                         </div>
                     </MudTd>
                     <MudTd DataLabel="Currency">
@@ -158,7 +158,7 @@
                     <MudTd DataLabel="FX">
                         <div class="je-workbench-entry">
                             <span>@(context.IsForeignCurrency ? context.ExchangeRate.ToString("0.######") : "1")</span>
-                            <small>@(context.FxSnapshotId.HasValue ? $"snapshot {context.FxSnapshotId.Value.ToString("N")[..8]}" : "identity/header")</small>
+                            <small>@context.FxTraceLabel</small>
                         </div>
                     </MudTd>
                     <MudTd DataLabel="Posted">@FormatTimestamp(context.PostedAt)</MudTd>
@@ -516,7 +516,7 @@
                         <div class="je-workbench-section-head">
                             <div>
                                 <h2>@_selectedAccount.AccountCode @_selectedAccount.AccountName</h2>
-                                <p>Recent ledger rows with journal review links.</p>
+                                <p>Recent ledger rows with journal, source, and FX trace links.</p>
                             </div>
                             @if (_isDrillDownLoading)
                             {
@@ -532,6 +532,7 @@
                                 <MudTh>Date</MudTh>
                                 <MudTh>Journal</MudTh>
                                 <MudTh>Source</MudTh>
+                                <MudTh>FX trace</MudTh>
                                 <MudTh>Tx debit</MudTh>
                                 <MudTh>Tx credit</MudTh>
                                 <MudTh>Debit</MudTh>
@@ -547,19 +548,41 @@
                                         <small>@context.JournalEntryStatus</small>
                                     </div>
                                 </MudTd>
-                                <MudTd DataLabel="Source">@context.SourceTypeLabel</MudTd>
+                                <MudTd DataLabel="Source">
+                                    <div class="je-workbench-entry">
+                                        <span>@context.SourceTypeLabel</span>
+                                        <small>@context.SourceIdShort</small>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="FX trace">
+                                    <div class="je-workbench-entry">
+                                        <span>@(context.IsForeignCurrency ? context.ExchangeRate.ToString("0.######") : "1")</span>
+                                        <small>@context.FxTraceLabel</small>
+                                    </div>
+                                </MudTd>
                                 <MudTd DataLabel="Tx debit">@FormatMoney(context.TransactionDebit) @context.TransactionCurrencyCode</MudTd>
                                 <MudTd DataLabel="Tx credit">@FormatMoney(context.TransactionCredit) @context.TransactionCurrencyCode</MudTd>
                                 <MudTd DataLabel="Debit">@FormatMoney(context.Debit)</MudTd>
                                 <MudTd DataLabel="Credit">@FormatMoney(context.Credit)</MudTd>
                                 <MudTd DataLabel="Description">@DisplayDescription(context.Description)</MudTd>
                                 <MudTd DataLabel="">
-                                    <MudButton Variant="Variant.Text"
-                                               Color="Color.Info"
-                                               Size="Size.Small"
-                                               Href="@BuildReviewHref(context.JournalEntryId)">
-                                        Review
-                                    </MudButton>
+                                    <div class="je-workbench-row-actions">
+                                        @if (TryBuildSourceHref(context, out var ledgerSourceHref))
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Color="Color.Default"
+                                                       Size="Size.Small"
+                                                       Href="@ledgerSourceHref">
+                                                Source
+                                            </MudButton>
+                                        }
+                                        <MudButton Variant="Variant.Text"
+                                                   Color="Color.Info"
+                                                   Size="Size.Small"
+                                                   Href="@BuildReviewHref(context.JournalEntryId)">
+                                            Review
+                                        </MudButton>
+                                    </div>
                                 </MudTd>
                             </RowTemplate>
                             <NoRecordsContent>
@@ -998,22 +1021,32 @@
 
     private static bool TryBuildSourceHref(JournalEntryReviewListItem item, out string href)
     {
-        href = item.SourceType switch
+        return TryBuildSourceHref(item.SourceType, item.SourceId, out href);
+    }
+
+    private static bool TryBuildSourceHref(JournalLedgerEntryReviewItem item, out string href)
+    {
+        return TryBuildSourceHref(item.SourceType, item.SourceId, out href);
+    }
+
+    private static bool TryBuildSourceHref(string sourceType, Guid sourceId, out string href)
+    {
+        href = sourceType switch
         {
-            "manual_journal" => $"/gl/journal-entry/source/{item.SourceId:D}",
-            "invoice" => $"/documents/invoice/{item.SourceId:D}",
-            "credit_note" => $"/documents/credit_note/{item.SourceId:D}",
-            "bill" => $"/documents/bill/{item.SourceId:D}",
-            "vendor_credit" => $"/documents/vendor_credit/{item.SourceId:D}",
-            "receive_payment" => $"/documents/receive_payment/{item.SourceId:D}",
-            "credit_application" => $"/documents/credit_application/{item.SourceId:D}",
-            "pay_bill" => $"/documents/pay_bill/{item.SourceId:D}",
-            "vendor_credit_application" => $"/documents/vendor_credit_application/{item.SourceId:D}",
-            "fx_revaluation" => $"/gl/fx-revaluation/{item.SourceId:D}",
+            "manual_journal" => $"/gl/journal-entry/source/{sourceId:D}",
+            "invoice" => $"/documents/invoice/{sourceId:D}",
+            "credit_note" => $"/documents/credit_note/{sourceId:D}",
+            "bill" => $"/documents/bill/{sourceId:D}",
+            "vendor_credit" => $"/documents/vendor_credit/{sourceId:D}",
+            "receive_payment" => $"/documents/receive_payment/{sourceId:D}",
+            "credit_application" => $"/documents/credit_application/{sourceId:D}",
+            "pay_bill" => $"/documents/pay_bill/{sourceId:D}",
+            "vendor_credit_application" => $"/documents/vendor_credit_application/{sourceId:D}",
+            "fx_revaluation" => $"/gl/fx-revaluation/{sourceId:D}",
             _ => string.Empty
         };
 
-        return !string.IsNullOrWhiteSpace(href);
+        return sourceId != Guid.Empty && !string.IsNullOrWhiteSpace(href);
     }
 
     private static Color GetStatusColor(string status) =>

@@ -51,6 +51,24 @@ public sealed record class JournalEntryReviewListItem(
     public bool IsBalanced =>
         TotalDebit == TotalCredit && TotalTransactionDebit == TotalTransactionCredit;
 
+    public string SourceIdShort =>
+        SourceId == Guid.Empty ? "no source" : SourceId.ToString("N")[..8];
+
+    public string FxTraceLabel
+    {
+        get
+        {
+            if (!IsForeignCurrency)
+            {
+                return "identity";
+            }
+
+            return FxSnapshotId.HasValue
+                ? $"snapshot {FxSnapshotId.Value.ToString("N")[..8]}"
+                : "header-only";
+        }
+    }
+
     public string SourceTypeLabel =>
         SourceType switch
         {
@@ -120,7 +138,11 @@ public sealed record class JournalLedgerEntryReviewItem(
     string JournalEntryDisplayNumber,
     string JournalEntryStatus,
     string SourceType,
+    Guid SourceId,
     string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    decimal ExchangeRate,
+    Guid? FxSnapshotId,
     decimal TransactionDebit,
     decimal TransactionCredit,
     decimal Debit,
@@ -131,6 +153,48 @@ public sealed record class JournalLedgerEntryReviewItem(
 
     public decimal TransactionNet => TransactionDebit - TransactionCredit;
 
+    public bool IsForeignCurrency =>
+        !string.Equals(TransactionCurrencyCode, BaseCurrencyCode, StringComparison.OrdinalIgnoreCase);
+
+    public string SourceIdShort =>
+        SourceId == Guid.Empty ? "no source" : SourceId.ToString("N")[..8];
+
+    public string FxTraceLabel
+    {
+        get
+        {
+            if (!IsForeignCurrency)
+            {
+                return "identity";
+            }
+
+            return FxSnapshotId.HasValue
+                ? $"snapshot {FxSnapshotId.Value.ToString("N")[..8]}"
+                : "header-only";
+        }
+    }
+
     public string SourceTypeLabel =>
-        SourceType.Replace('_', ' ');
+        SourceType switch
+        {
+            "manual_journal" => "Manual journal",
+            "manual_journal_void" => "Manual journal void",
+            "manual_journal_reversal" => "Manual journal reversal",
+            "invoice" => "Invoice",
+            "invoice_reversal" => "Invoice reversal",
+            "bill" => "Bill",
+            "bill_reversal" => "Bill reversal",
+            "credit_note" => "Credit note",
+            "credit_note_reversal" => "Credit note reversal",
+            "vendor_credit" => "Vendor credit",
+            "vendor_credit_reversal" => "Vendor credit reversal",
+            "receive_payment" => "Receive payment",
+            "receive_payment_reversal" => "Receive payment reversal",
+            "pay_bill" => "Pay bill",
+            "pay_bill_reversal" => "Pay bill reversal",
+            "credit_application" => "Credit application",
+            "vendor_credit_application" => "Vendor credit application",
+            "fx_revaluation" => "FX revaluation",
+            _ => SourceType.Replace('_', ' ')
+        };
 }

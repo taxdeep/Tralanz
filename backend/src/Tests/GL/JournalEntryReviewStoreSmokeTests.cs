@@ -118,6 +118,12 @@ public sealed class JournalEntryReviewStoreSmokeTests
             var debitLedgerRow = Assert.Single(ledgerRows, row => row.JournalEntryId == posted.JournalEntryId);
 
             Assert.Equal("EUR", debitLedgerRow.TransactionCurrencyCode);
+            Assert.Equal(companyCurrency.Profile.BaseCurrencyCode, debitLedgerRow.BaseCurrencyCode);
+            Assert.True(debitLedgerRow.IsForeignCurrency);
+            Assert.Equal(saved.DocumentId, debitLedgerRow.SourceId);
+            Assert.Equal(snapshotId, debitLedgerRow.FxSnapshotId);
+            Assert.Equal("Manual journal", debitLedgerRow.SourceTypeLabel);
+            Assert.Contains("snapshot", debitLedgerRow.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
             Assert.Equal(150m, debitLedgerRow.TransactionDebit);
             Assert.Equal("Review debit", debitLedgerRow.Description);
 

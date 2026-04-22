@@ -7,6 +7,7 @@
 @inject IJournalEntryReviewStore JournalEntryReviewStore
 @inject IManualJournalSourceReviewStore ManualJournalSourceReviewStore
 @inject IJournalEntryLifecycleWorkflow JournalEntryLifecycleWorkflow
+@inject JournalEntrySourceDocumentTraceClient SourceDocumentTraceClient
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
@@ -294,16 +295,28 @@
                     <div class="je-review-panel">
                         <div class="je-review-panel__header">
                             <div>
-                                <div class="je-review-panel__title">Posting facts</div>
-                                <div class="je-review-panel__caption">Editor and review now point to the same persisted journal truth.</div>
+                                <div class="je-review-panel__title">Source trace</div>
+                                <div class="je-review-panel__caption">Journal, source document, and FX snapshot are tied to the same persisted posting truth.</div>
                             </div>
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@_review.SourceTraceLabel</MudChip>
                         </div>
 
                         <div class="je-review-facts">
                             <div class="je-review-fact">
-                                <span class="je-review-fact__label">Source document</span>
+                                <span class="je-review-fact__label">Source document id</span>
                                 <span class="je-review-fact__value">@_review.SourceId.ToString("D")</span>
                             </div>
+                            @if (_sourceTrace is not null)
+                            {
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Source number</span>
+                                    <span class="je-review-fact__value">@_sourceTrace.DisplayNumber</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Source status</span>
+                                    <span class="je-review-fact__value">@_sourceTrace.Status</span>
+                                </div>
+                            }
                             <div class="je-review-fact">
                                 <span class="je-review-fact__label">Source type</span>
                                 <span class="je-review-fact__value">@_review.SourceTypeLabel</span>
@@ -313,10 +326,94 @@
                                 <span class="je-review-fact__value">@_review.CreatedByUserId.ToString("D")</span>
                             </div>
                             <div class="je-review-fact">
+                                <span class="je-review-fact__label">FX trace</span>
+                                <span class="je-review-fact__value">@_review.FxTraceLabel</span>
+                            </div>
+                            <div class="je-review-fact">
                                 <span class="je-review-fact__label">Base balanced</span>
                                 <span class="je-review-fact__value">@(_review.IsBalanced ? "Yes" : "No")</span>
                             </div>
+                            <div class="je-review-fact">
+                                <span class="je-review-fact__label">Line count</span>
+                                <span class="je-review-fact__value">@_review.LineCount</span>
+                            </div>
                         </div>
+
+                        @if (_sourceTrace is not null)
+                        {
+                            <div class="je-review-facts mt-3">
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Document date</span>
+                                    <span class="je-review-fact__value">@_sourceTrace.DocumentDate.ToString("yyyy-MM-dd")</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Due date</span>
+                                    <span class="je-review-fact__value">@(_sourceTrace.DueDate?.ToString("yyyy-MM-dd") ?? "n/a")</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">@DisplayTraceText(_sourceTrace.CounterpartyLabel)</span>
+                                    <span class="je-review-fact__value">@(_sourceTrace.CounterpartyId?.ToString("D") ?? "n/a")</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Source total</span>
+                                    <span class="je-review-fact__value">@FormatAmount(_sourceTrace.TotalAmount) @_sourceTrace.TotalCurrencyCode</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Lifecycle</span>
+                                    <span class="je-review-fact__value">@DisplayTraceText(_sourceTrace.LifecycleMode)</span>
+                                </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">Source lines</span>
+                                    <span class="je-review-fact__value">@_sourceTrace.Lines.Count</span>
+                                </div>
+                            </div>
+
+                            @if (_sourceTrace.Lines.Count > 0)
+                            {
+                                <MudTable Items="_sourceTrace.Lines" Dense="true" Hover="true" Class="je-review-table mt-3">
+                                    <HeaderContent>
+                                        <MudTh>#</MudTh>
+                                        <MudTh>Source account</MudTh>
+                                        <MudTh>Amount</MudTh>
+                                        <MudTh>Tax</MudTh>
+                                        <MudTh>Tx debit</MudTh>
+                                        <MudTh>Tx credit</MudTh>
+                                        <MudTh>Description</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="#">@context.LineNumber</MudTd>
+                                        <MudTd DataLabel="Source account">
+                                            <div class="je-review-account">
+                                                <span class="je-review-account__code">@DisplayTraceText(context.AccountCode)</span>
+                                                <span class="je-review-account__name">@DisplayTraceText(context.AccountName)</span>
+                                            </div>
+                                        </MudTd>
+                                        <MudTd DataLabel="Amount">@FormatAmount(context.LineAmount) @_sourceTrace.TotalCurrencyCode</MudTd>
+                                        <MudTd DataLabel="Tax">@FormatAmount(context.TaxAmount)</MudTd>
+                                        <MudTd DataLabel="Tx debit">@FormatNullableAmount(context.TxDebit)</MudTd>
+                                        <MudTd DataLabel="Tx credit">@FormatNullableAmount(context.TxCredit)</MudTd>
+                                        <MudTd DataLabel="Description">@DisplayTraceText(context.Description)</MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            }
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_sourceTraceErrorText))
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                                @_sourceTraceErrorText
+                            </MudAlert>
+                        }
+
+                        @if (_review.SourceId != Guid.Empty && TryBuildSourceReviewHref(_review.SourceType, _review.SourceId, out var traceSourceHref))
+                        {
+                            <div class="je-review-links">
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Info"
+                                           Href="@traceSourceHref">
+                                    Open source
+                                </MudButton>
+                            </div>
+                        }
                     </div>
 
                     @if (_review.SourceId != Guid.Empty && TryBuildSourceReviewHref(_review.SourceType, _review.SourceId, out var sourceHref))
@@ -399,9 +496,11 @@
 
     private JournalEntryReview? _review;
     private ManualJournalSourceReview? _sourceReview;
+    private JournalEntrySourceDocumentTraceSummary? _sourceTrace;
     private bool _isLoading;
     private bool _isApplyingLifecycle;
     private string? _errorText;
+    private string? _sourceTraceErrorText;
     private bool WritesBlocked => ShellSession.AreWritesBlocked;
 
     protected override Task OnParametersSetAsync() => LoadReviewAsync();
@@ -412,6 +511,8 @@
         _errorText = null;
         _review = null;
         _sourceReview = null;
+        _sourceTrace = null;
+        _sourceTraceErrorText = null;
 
         try
         {
@@ -427,6 +528,11 @@
             {
                 _sourceReview = await ManualJournalSourceReviewStore.GetAsync(ShellSession.ActiveCompanyId, _review.SourceId, CancellationToken.None);
             }
+
+            if (_review is not null)
+            {
+                await LoadSourceTraceAsync(_review);
+            }
         }
         catch (Exception ex)
         {
@@ -436,6 +542,30 @@
         {
             _isLoading = false;
         }
+    }
+
+    private async Task LoadSourceTraceAsync(JournalEntryReview review)
+    {
+        var result = await SourceDocumentTraceClient.GetAsync(
+            ShellSession.ActiveCompanyId,
+            review.SourceType,
+            review.SourceId,
+            CancellationToken.None);
+
+        if (result.RequiresSignIn)
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Your business session has expired. Please sign in again.", Severity.Warning);
+            Navigation.NavigateTo("login", replace: true);
+            return;
+        }
+
+        if (result.Value is not null && string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            _sourceTrace = result.Value;
+            return;
+        }
+
+        _sourceTraceErrorText = result.ErrorMessage;
     }
 
     private async Task HandleVoidAsync()
@@ -506,11 +636,17 @@
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
 
+    private static string FormatNullableAmount(decimal? amount) =>
+        amount.HasValue ? FormatAmount(amount.Value) : "n/a";
+
     private static string FormatTimestamp(DateTimeOffset? value) =>
         value?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Unavailable";
 
     private static string DisplayMemo(string memo) =>
         string.IsNullOrWhiteSpace(memo) ? "No memo was stored on the source document." : memo;
+
+    private static string DisplayTraceText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "n/a" : value;
 
     private static string BuildReviewHref(Guid journalEntryId) =>
         $"/gl/journal-entry/review/{journalEntryId:D}";

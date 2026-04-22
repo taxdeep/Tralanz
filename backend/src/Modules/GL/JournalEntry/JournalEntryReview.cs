@@ -72,6 +72,14 @@ public sealed record class JournalEntryReview
 
     public string Title => $"JE# {DisplayNumber}";
 
+    public string SourceIdShort =>
+        SourceId == Guid.Empty ? "no source" : SourceId.ToString("N")[..8];
+
+    public string SourceTraceLabel =>
+        SourceId == Guid.Empty
+            ? $"{SourceTypeLabel} without source id"
+            : $"{SourceTypeLabel} / {SourceIdShort}";
+
     public string SourceTypeLabel =>
         SourceType switch
         {
@@ -79,11 +87,19 @@ public sealed record class JournalEntryReview
             "manual_journal_void" => "Manual journal void",
             "manual_journal_reversal" => "Manual journal reversal",
             "invoice" => "Invoice",
+            "invoice_reversal" => "Invoice reversal",
             "bill" => "Bill",
+            "bill_reversal" => "Bill reversal",
             "credit_note" => "Credit note",
+            "credit_note_reversal" => "Credit note reversal",
             "vendor_credit" => "Vendor credit",
+            "vendor_credit_reversal" => "Vendor credit reversal",
             "receive_payment" => "Receive payment",
+            "receive_payment_reversal" => "Receive payment reversal",
             "pay_bill" => "Pay bill",
+            "pay_bill_reversal" => "Pay bill reversal",
+            "credit_application" => "Credit application",
+            "vendor_credit_application" => "Vendor credit application",
             "fx_revaluation" => "FX revaluation",
             _ => SourceType.Replace('_', ' ')
         };
@@ -145,6 +161,21 @@ public sealed record class JournalEntryReview
         string.IsNullOrWhiteSpace(FxProviderKey)
             ? "No linked provider"
             : FxProviderKey;
+
+    public string FxTraceLabel
+    {
+        get
+        {
+            if (!IsForeignCurrency)
+            {
+                return "identity base-currency trace";
+            }
+
+            return FxSnapshotId.HasValue
+                ? $"snapshot {FxSnapshotId.Value.ToString("N")[..8]} / {FxRateUseCaseLabel} / {FxPostingReasonLabel}"
+                : $"header-only / {FxRateUseCaseLabel} / {FxPostingReasonLabel}";
+        }
+    }
 
     public string FxReviewTitle => "Posted FX review";
 
