@@ -1269,7 +1269,13 @@ public sealed record AccountingSourceDocumentListItem(
     string? CounterpartyDisplayName,
     string TransactionCurrencyCode,
     string BaseCurrencyCode,
-    decimal TotalAmount);
+    decimal TotalAmount,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    string? JournalEntryStatus,
+    DateTimeOffset? JournalEntryPostedAt,
+    DateTimeOffset? JournalEntryVoidedAt,
+    DateTimeOffset? JournalEntryReversedAt);
 
 public sealed record AccountingDocumentLifecycleAction(
     string ActionCode,

@@ -32,6 +32,18 @@ public sealed record class ShellAccountingSourceDocumentBrowserItem
 
     public decimal TotalAmount { get; init; }
 
+    public Guid? JournalEntryId { get; init; }
+
+    public string? JournalEntryDisplayNumber { get; init; }
+
+    public string? JournalEntryStatus { get; init; }
+
+    public DateTimeOffset? JournalEntryPostedAt { get; init; }
+
+    public DateTimeOffset? JournalEntryVoidedAt { get; init; }
+
+    public DateTimeOffset? JournalEntryReversedAt { get; init; }
+
     public decimal? TotalOrderedQuantity { get; init; }
 
     public int? LineCount { get; init; }

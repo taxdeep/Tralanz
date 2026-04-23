@@ -244,25 +244,45 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
               where vc.company_id = @company_id
             )
             select
-              source_type,
-              id,
-              entity_number,
-              display_number,
-              status,
-              document_date,
-              due_date,
-              counterparty_role,
-              counterparty_id,
-              counterparty_display_name,
-              document_currency_code,
-              base_currency_code,
-              total_amount
-            from source_documents
-            where @source_type is null
-               or source_type = @source_type
-              and (@counterparty_role is null or counterparty_role = @counterparty_role)
-              and (@counterparty_id is null or counterparty_id = @counterparty_id)
-            order by document_date desc, display_number asc
+              sd.source_type,
+              sd.id,
+              sd.entity_number,
+              sd.display_number,
+              sd.status,
+              sd.document_date,
+              sd.due_date,
+              sd.counterparty_role,
+              sd.counterparty_id,
+              sd.counterparty_display_name,
+              sd.document_currency_code,
+              sd.base_currency_code,
+              sd.total_amount,
+              je.id as journal_entry_id,
+              je.display_number as journal_entry_display_number,
+              je.status as journal_entry_status,
+              je.posted_at as journal_entry_posted_at,
+              je.voided_at as journal_entry_voided_at,
+              je.reversed_at as journal_entry_reversed_at
+            from source_documents sd
+            left join lateral (
+              select
+                entry.id,
+                entry.display_number,
+                entry.status,
+                entry.posted_at,
+                entry.voided_at,
+                entry.reversed_at
+              from journal_entries entry
+              where entry.company_id = @company_id
+                and entry.source_type = sd.source_type
+                and entry.source_id = sd.id
+              order by entry.posted_at desc nulls last, entry.created_at desc
+              limit 1
+            ) je on true
+            where (@source_type is null or sd.source_type = @source_type)
+              and (@counterparty_role is null or sd.counterparty_role = @counterparty_role)
+              and (@counterparty_id is null or sd.counterparty_id = @counterparty_id)
+            order by sd.document_date desc, sd.display_number asc
             limit @limit;
             """);
 
@@ -290,7 +310,13 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                 reader.IsDBNull(reader.GetOrdinal("counterparty_display_name")) ? null : reader.GetString(reader.GetOrdinal("counterparty_display_name")),
                 reader.GetString(reader.GetOrdinal("document_currency_code")),
                 reader.GetString(reader.GetOrdinal("base_currency_code")),
-                reader.GetDecimal(reader.GetOrdinal("total_amount"))));
+                reader.GetDecimal(reader.GetOrdinal("total_amount")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_id")) ? null : reader.GetGuid(reader.GetOrdinal("journal_entry_id")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_display_number")) ? null : reader.GetString(reader.GetOrdinal("journal_entry_display_number")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_status")) ? null : reader.GetString(reader.GetOrdinal("journal_entry_status")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("journal_entry_posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_voided_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("journal_entry_voided_at")),
+                reader.IsDBNull(reader.GetOrdinal("journal_entry_reversed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("journal_entry_reversed_at"))));
         }
 
         return items;

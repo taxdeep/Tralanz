@@ -193,6 +193,7 @@
                     <MudTh>Type</MudTh>
                     <MudTh>Display</MudTh>
                     <MudTh>Status</MudTh>
+                    <MudTh>GL</MudTh>
                     <MudTh>Date</MudTh>
                     <MudTh>Counterparty</MudTh>
                     <MudTh>Total</MudTh>
@@ -317,6 +318,53 @@
                     </MudTd>
                     <MudTd>
                         <MudStack Spacing="0">
+                            @if (context.JournalEntryId.HasValue)
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="@GetJournalEntryStatusColor(context.JournalEntryStatus)"
+                                         Size="Size.Small"
+                                         Style="width:max-content;">
+                                    @FormatJournalEntryIdentity(context)
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @BuildJournalEntryCaption(context)
+                                </MudText>
+                            }
+                            else if (ShouldShowMissingJournalEntryWarning(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Outlined"
+                                         Color="Color.Warning"
+                                         Size="Size.Small"
+                                         Style="width:max-content;">
+                                    No linked JE
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    Posted source needs GL review
+                                </MudText>
+                            }
+                            else if (IsJournalBackedSource(context))
+                            {
+                                <MudChip T="string"
+                                         Variant="Variant.Text"
+                                         Color="Color.Default"
+                                         Size="Size.Small"
+                                         Style="width:max-content;">
+                                    JE pending
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-secondary" Style="margin-top:.25rem;">
+                                    @FormatControlStatus(context.Status)
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Class="text-secondary">n/a</MudText>
+                            }
+                        </MudStack>
+                    </MudTd>
+                    <MudTd>
+                        <MudStack Spacing="0">
                             <MudText Typo="Typo.body2">@context.DocumentDate.ToString("yyyy-MM-dd")</MudText>
                             <MudText Typo="Typo.caption" Class="text-secondary">@($"Due {context.DueDate?.ToString("yyyy-MM-dd") ?? "n/a"}")</MudText>
                         </MudStack>
@@ -359,6 +407,12 @@
                             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildDocumentOpenHref(context)">
                                 Open Detail
                             </MudButton>
+                            @if (context.JournalEntryId.HasValue)
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Info" Href="@BuildJournalEntryReviewHref(context.JournalEntryId.Value)">
+                                    Open JE
+                                </MudButton>
+                            }
                             @if (TryBuildShipmentWorkspaceHref(context.SourceType, context.Id, context.CounterpartyId, out var shipmentHref))
                             {
                                 <MudButton Variant="Variant.Text" Color="Color.Warning" Href="@shipmentHref" Disabled="WritesBlocked">
@@ -919,6 +973,75 @@
             "sales_order" => $"/documents/sales-order/draft-editor?draftId={item.Id:D}",
             _ => $"/documents/{item.SourceType}/{item.Id:D}"
         };
+
+    private static string BuildJournalEntryReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+
+    private static bool IsJournalBackedSource(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.SourceType.Trim().ToLowerInvariant() is
+            "invoice" or
+            "credit_note" or
+            "bill" or
+            "vendor_credit" or
+            "receive_payment" or
+            "credit_application" or
+            "pay_bill" or
+            "vendor_credit_application";
+
+    private static bool ShouldShowMissingJournalEntryWarning(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsJournalBackedSource(item) &&
+        IsJournalRequiredStatus(item.Status);
+
+    private static bool IsJournalRequiredStatus(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return normalized is not (null or "" or "draft" or "submitted" or "cancelled" or "canceled" or "voided" or "reversed");
+    }
+
+    private static string FormatJournalEntryIdentity(ShellAccountingSourceDocumentBrowserItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.JournalEntryDisplayNumber))
+        {
+            return item.JournalEntryDisplayNumber;
+        }
+
+        var shortId = item.JournalEntryId.HasValue
+            ? item.JournalEntryId.Value.ToString("N")[..8]
+            : "pending";
+        return $"JE {shortId}";
+    }
+
+    private static string BuildJournalEntryCaption(ShellAccountingSourceDocumentBrowserItem item)
+    {
+        if (item.JournalEntryVoidedAt.HasValue)
+        {
+            return $"Voided {item.JournalEntryVoidedAt.Value:yyyy-MM-dd HH:mm}";
+        }
+
+        if (item.JournalEntryReversedAt.HasValue)
+        {
+            return $"Reversed {item.JournalEntryReversedAt.Value:yyyy-MM-dd HH:mm}";
+        }
+
+        if (item.JournalEntryPostedAt.HasValue)
+        {
+            return $"Posted {item.JournalEntryPostedAt.Value:yyyy-MM-dd HH:mm}";
+        }
+
+        return FormatControlStatus(item.JournalEntryStatus ?? "review");
+    }
+
+    private static Color GetJournalEntryStatusColor(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "posted" => Color.Success,
+            "voided" or "reversed" => Color.Warning,
+            "draft" => Color.Default,
+            _ => Color.Info
+        };
+    }
 
     private static bool HasPurchaseOrderAnchorGate(ShellAccountingSourceDocumentBrowserItem item) =>
         IsPurchaseOrder(item) &&
