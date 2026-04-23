@@ -348,7 +348,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     line.TxCredit,
                     baseDebit,
                     baseCredit,
-                    line.Description);
+                    line.Description,
+                    PostingRole: "manual_journal",
+                    SourceLineNumber: line.LineNumber);
             })
             .ToList();
 
@@ -596,7 +598,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 $"Credit application source settlement line {line.LineNumber}",
                 ControlRole: "accounts_receivable",
-                PartyId: creditApplication.PartyId));
+                PartyId: creditApplication.PartyId,
+                PostingRole: "settlement:credit_application_source",
+                SourceLineNumber: line.LineNumber));
 
             fragments.Add(new PostingFragment(
                 creditApplication.ReceivableAccountId,
@@ -607,7 +611,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 line.TargetCarryingAmountBase,
                 $"Credit application target settlement line {line.LineNumber}",
                 ControlRole: "accounts_receivable",
-                PartyId: creditApplication.PartyId));
+                PartyId: creditApplication.PartyId,
+                PostingRole: "settlement:credit_application_target",
+                SourceLineNumber: line.LineNumber));
 
             AppendCreditApplicationRealizedFxFragment(creditApplication, line, fragments);
         }
@@ -633,7 +639,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 settlementBaseTotal,
                 0m,
-                $"Bank receipt for payment {receivePayment.DisplayNumber.Value}"),
+                $"Bank receipt for payment {receivePayment.DisplayNumber.Value}",
+                PostingRole: "cash:receipt"),
             new(
                 receivePayment.ReceivableAccountId,
                 receivePayment.TransactionCurrencyCode,
@@ -643,7 +650,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 carryingBaseTotal,
                 $"Accounts Receivable settlement for payment {receivePayment.DisplayNumber.Value}",
                 ControlRole: "accounts_receivable",
-                PartyId: receivePayment.PartyId)
+                PartyId: receivePayment.PartyId,
+                PostingRole: "control:accounts_receivable")
         };
 
         AppendReceivePaymentRealizedFxFragment(receivePayment, fragments, settlementBaseTotal, carryingBaseTotal);
@@ -667,7 +675,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 $"Vendor credit application target settlement line {line.LineNumber}",
                 ControlRole: "accounts_payable",
-                PartyId: vendorCreditApplication.PartyId));
+                PartyId: vendorCreditApplication.PartyId,
+                PostingRole: "settlement:vendor_credit_application_target",
+                SourceLineNumber: line.LineNumber));
 
             fragments.Add(new PostingFragment(
                 vendorCreditApplication.PayableAccountId,
@@ -678,7 +688,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 line.SourceCarryingAmountBase,
                 $"Vendor credit application source settlement line {line.LineNumber}",
                 ControlRole: "accounts_payable",
-                PartyId: vendorCreditApplication.PartyId));
+                PartyId: vendorCreditApplication.PartyId,
+                PostingRole: "settlement:vendor_credit_application_source",
+                SourceLineNumber: line.LineNumber));
 
             AppendVendorCreditApplicationRealizedFxFragment(vendorCreditApplication, line, fragments);
         }
@@ -706,7 +718,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 $"Accounts Payable settlement for payment {payBill.DisplayNumber.Value}",
                 ControlRole: "accounts_payable",
-                PartyId: payBill.PartyId),
+                PartyId: payBill.PartyId,
+                PostingRole: "control:accounts_payable"),
             new(
                 payBill.BankAccountId,
                 payBill.TransactionCurrencyCode,
@@ -714,7 +727,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 payBill.TotalAmount,
                 0m,
                 settlementBaseTotal,
-                $"Bank disbursement for payment {payBill.DisplayNumber.Value}")
+                $"Bank disbursement for payment {payBill.DisplayNumber.Value}",
+                PostingRole: "cash:disbursement")
         };
 
         AppendPayBillRealizedFxFragment(payBill, fragments, settlementBaseTotal, carryingBaseTotal);
@@ -752,7 +766,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     0m,
                     line.AdjustmentAmountBase,
                     0m,
-                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}"));
+                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}",
+                    PostingRole: "adjustment:offset",
+                    SourceLineNumber: line.LineNumber));
                 fragments.Add(new PostingFragment(
                     line.ControlAccountId,
                     adjustment.TransactionCurrencyCode,
@@ -762,7 +778,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     line.AdjustmentAmountBase,
                     line.Description,
                     ControlRole: line.ControlRole,
-                    PartyId: line.PartyId));
+                    PartyId: line.PartyId,
+                    PostingRole: $"control:{line.ControlRole}",
+                    SourceLineNumber: line.LineNumber));
             }
             else
             {
@@ -775,7 +793,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     0m,
                     line.Description,
                     ControlRole: line.ControlRole,
-                    PartyId: line.PartyId));
+                    PartyId: line.PartyId,
+                    PostingRole: $"control:{line.ControlRole}",
+                    SourceLineNumber: line.LineNumber));
                 fragments.Add(new PostingFragment(
                     line.OffsetAccountId,
                     adjustment.TransactionCurrencyCode,
@@ -783,7 +803,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     line.AdjustmentAmountTx,
                     0m,
                     line.AdjustmentAmountBase,
-                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}"));
+                    $"Offset for {adjustment.DisplayNumber.Value} line {line.LineNumber}",
+                    PostingRole: "adjustment:offset",
+                    SourceLineNumber: line.LineNumber));
             }
         }
 
@@ -812,7 +834,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 amount,
                 0m,
                 $"Inventory asset recognition for {document.DisplayNumber.Value}",
-                ControlRole: "inventory_asset"));
+                ControlRole: "inventory_asset",
+                PostingRole: "inventory:asset_recognition"));
         }
 
         var creditAmount = Round6(document.GrIrLines.Sum(static line => line.AmountBase));
@@ -824,7 +847,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             0m,
             creditAmount,
             $"GR/IR clearing for receipt {document.ReceiptDocumentId}",
-            ControlRole: "grir_clearing"));
+            ControlRole: "grir_clearing",
+            PostingRole: "control:grir_clearing"));
 
         EnsureBalancedBaseCurrency(fragments);
         return fragments;
@@ -851,7 +875,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 amount,
                 0m,
                 $"GR/IR settlement clearing for {document.DisplayNumber.Value}",
-                ControlRole: "grir_clearing"));
+                ControlRole: "grir_clearing",
+                PostingRole: "control:grir_clearing"));
         }
 
         foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.BillOffsetAccountId))
@@ -870,7 +895,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 amount,
                 $"Bill-side GR/IR settlement offset for {document.DisplayNumber.Value}",
-                ControlRole: "grir_bill_offset"));
+                ControlRole: "grir_bill_offset",
+                PostingRole: "settlement:grir_bill_offset"));
         }
 
         EnsureBalancedBaseCurrency(fragments);
@@ -894,7 +920,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 0m,
                 realizedFxAmount,
-                $"Realized FX gain on payment {receivePayment.DisplayNumber.Value}"));
+                $"Realized FX gain on payment {receivePayment.DisplayNumber.Value}",
+                PostingRole: "fx:realized_gain"));
         }
         else if (realizedFxAmount < 0m)
         {
@@ -906,7 +933,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 Math.Abs(realizedFxAmount),
                 0m,
-                $"Realized FX loss on payment {receivePayment.DisplayNumber.Value}"));
+                $"Realized FX loss on payment {receivePayment.DisplayNumber.Value}",
+                PostingRole: "fx:realized_loss"));
         }
     }
 
@@ -926,7 +954,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 0m,
                 realizedFxAmount,
-                $"Realized FX gain on credit application {creditApplication.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Realized FX gain on credit application {creditApplication.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:realized_gain",
+                SourceLineNumber: line.LineNumber));
         }
         else if (realizedFxAmount < 0m)
         {
@@ -938,7 +968,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 Math.Abs(realizedFxAmount),
                 0m,
-                $"Realized FX loss on credit application {creditApplication.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Realized FX loss on credit application {creditApplication.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:realized_loss",
+                SourceLineNumber: line.LineNumber));
         }
     }
 
@@ -959,7 +991,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 0m,
                 realizedFxAmount,
-                $"Realized FX gain on payment {payBill.DisplayNumber.Value}"));
+                $"Realized FX gain on payment {payBill.DisplayNumber.Value}",
+                PostingRole: "fx:realized_gain"));
         }
         else if (realizedFxAmount < 0m)
         {
@@ -971,7 +1004,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 Math.Abs(realizedFxAmount),
                 0m,
-                $"Realized FX loss on payment {payBill.DisplayNumber.Value}"));
+                $"Realized FX loss on payment {payBill.DisplayNumber.Value}",
+                PostingRole: "fx:realized_loss"));
         }
     }
 
@@ -991,7 +1025,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 realizedFxAmount,
                 0m,
-                $"Realized FX loss on vendor credit application {vendorCreditApplication.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Realized FX loss on vendor credit application {vendorCreditApplication.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:realized_loss",
+                SourceLineNumber: line.LineNumber));
         }
         else if (realizedFxAmount < 0m)
         {
@@ -1003,7 +1039,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 0m,
                 Math.Abs(realizedFxAmount),
-                $"Realized FX gain on vendor credit application {vendorCreditApplication.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Realized FX gain on vendor credit application {vendorCreditApplication.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:realized_gain",
+                SourceLineNumber: line.LineNumber));
         }
     }
 
@@ -1040,7 +1078,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 line.Description,
                 ControlRole: line.ControlRole,
-                PartyId: line.PartyId));
+                PartyId: line.PartyId,
+                PostingRole: $"control:{line.ControlRole}",
+                SourceLineNumber: line.LineNumber));
             fragments.Add(new PostingFragment(
                 line.OffsetAccountId,
                 document.TransactionCurrencyCode,
@@ -1048,7 +1088,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 0m,
                 delta,
-                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:unrealized_offset",
+                SourceLineNumber: line.LineNumber));
         }
         else
         {
@@ -1060,7 +1102,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 absoluteDelta,
                 0m,
-                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:unrealized_offset",
+                SourceLineNumber: line.LineNumber));
             fragments.Add(new PostingFragment(
                 line.TargetControlAccountId,
                 document.TransactionCurrencyCode,
@@ -1070,7 +1114,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 absoluteDelta,
                 line.Description,
                 ControlRole: line.ControlRole,
-                PartyId: line.PartyId));
+                PartyId: line.PartyId,
+                PostingRole: $"control:{line.ControlRole}",
+                SourceLineNumber: line.LineNumber));
         }
     }
 
@@ -1089,7 +1135,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 delta,
                 0m,
-                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:unrealized_offset",
+                SourceLineNumber: line.LineNumber));
             fragments.Add(new PostingFragment(
                 line.TargetControlAccountId,
                 document.TransactionCurrencyCode,
@@ -1099,7 +1147,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 delta,
                 line.Description,
                 ControlRole: line.ControlRole,
-                PartyId: line.PartyId));
+                PartyId: line.PartyId,
+                PostingRole: $"control:{line.ControlRole}",
+                SourceLineNumber: line.LineNumber));
         }
         else
         {
@@ -1113,7 +1163,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 line.Description,
                 ControlRole: line.ControlRole,
-                PartyId: line.PartyId));
+                PartyId: line.PartyId,
+                PostingRole: $"control:{line.ControlRole}",
+                SourceLineNumber: line.LineNumber));
             fragments.Add(new PostingFragment(
                 line.OffsetAccountId,
                 document.TransactionCurrencyCode,
@@ -1121,7 +1173,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 0m,
                 absoluteDelta,
-                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}"));
+                $"Unrealized FX offset for {document.DisplayNumber.Value} line {line.LineNumber}",
+                PostingRole: "fx:unrealized_offset",
+                SourceLineNumber: line.LineNumber));
         }
     }
 

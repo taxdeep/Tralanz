@@ -33,6 +33,7 @@ public sealed class ForeignCurrencySettlementPostingTests
                 Assert.Equal(100m, bank.TxDebit);
                 Assert.Equal(125m, bank.Debit);
                 Assert.Equal(0m, bank.Credit);
+                Assert.Equal("cash:receipt", bank.PostingRole);
             },
             ar =>
             {
@@ -40,6 +41,7 @@ public sealed class ForeignCurrencySettlementPostingTests
                 Assert.Equal(100m, ar.TxCredit);
                 Assert.Equal(120m, ar.Credit);
                 Assert.Equal("accounts_receivable", ar.ControlRole);
+                Assert.Equal("control:accounts_receivable", ar.PostingRole);
             },
             fxGain =>
             {
@@ -47,6 +49,7 @@ public sealed class ForeignCurrencySettlementPostingTests
                 Assert.Equal(0m, fxGain.TxDebit);
                 Assert.Equal(0m, fxGain.TxCredit);
                 Assert.Equal(5m, fxGain.Credit);
+                Assert.Equal("fx:realized_gain", fxGain.PostingRole);
             });
     }
 
@@ -72,18 +75,21 @@ public sealed class ForeignCurrencySettlementPostingTests
                 Assert.Equal(100m, ap.TxDebit);
                 Assert.Equal(120m, ap.Debit);
                 Assert.Equal("accounts_payable", ap.ControlRole);
+                Assert.Equal("control:accounts_payable", ap.PostingRole);
             },
             bank =>
             {
                 Assert.Equal(document.BankAccountId, bank.AccountId);
                 Assert.Equal(100m, bank.TxCredit);
                 Assert.Equal(125m, bank.Credit);
+                Assert.Equal("cash:disbursement", bank.PostingRole);
             },
             fxLoss =>
             {
                 Assert.Equal(document.RealizedFxLossAccountId!.Value, fxLoss.AccountId);
                 Assert.Equal(5m, fxLoss.Debit);
                 Assert.Equal(0m, fxLoss.Credit);
+                Assert.Equal("fx:realized_loss", fxLoss.PostingRole);
             });
     }
 

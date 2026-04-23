@@ -40,12 +40,16 @@ public sealed class FxRevaluationPostingTests
                 Assert.Equal(5m, control.Debit);
                 Assert.Equal(0m, control.Credit);
                 Assert.Equal("accounts_receivable", control.ControlRole);
+                Assert.Equal("control:accounts_receivable", control.PostingRole);
+                Assert.Equal(1, control.SourceLineNumber);
             },
             gain =>
             {
                 Assert.Equal(gainAccountId, gain.AccountId);
                 Assert.Equal(0m, gain.Debit);
                 Assert.Equal(5m, gain.Credit);
+                Assert.Equal("fx:unrealized_offset", gain.PostingRole);
+                Assert.Equal(1, gain.SourceLineNumber);
             });
     }
 
@@ -74,6 +78,8 @@ public sealed class FxRevaluationPostingTests
                 Assert.Equal(lossAccountId, loss.AccountId);
                 Assert.Equal(5m, loss.Debit);
                 Assert.Equal(0m, loss.Credit);
+                Assert.Equal("fx:unrealized_offset", loss.PostingRole);
+                Assert.Equal(1, loss.SourceLineNumber);
             },
             control =>
             {
@@ -81,6 +87,8 @@ public sealed class FxRevaluationPostingTests
                 Assert.Equal(0m, control.Debit);
                 Assert.Equal(5m, control.Credit);
                 Assert.Equal("accounts_payable", control.ControlRole);
+                Assert.Equal("control:accounts_payable", control.PostingRole);
+                Assert.Equal(1, control.SourceLineNumber);
             });
     }
 
@@ -110,6 +118,8 @@ public sealed class FxRevaluationPostingTests
                 Assert.Equal(lossAccountId, loss.AccountId);
                 Assert.Equal(5m, loss.Debit);
                 Assert.Equal(0m, loss.Credit);
+                Assert.Equal("fx:unrealized_offset", loss.PostingRole);
+                Assert.Equal(1, loss.SourceLineNumber);
             },
             control =>
             {
@@ -117,6 +127,8 @@ public sealed class FxRevaluationPostingTests
                 Assert.Equal(0m, control.Debit);
                 Assert.Equal(5m, control.Credit);
                 Assert.Equal("accounts_receivable", control.ControlRole);
+                Assert.Equal("control:accounts_receivable", control.PostingRole);
+                Assert.Equal(1, control.SourceLineNumber);
             });
     }
 
@@ -147,12 +159,16 @@ public sealed class FxRevaluationPostingTests
                 Assert.Equal(5m, control.Debit);
                 Assert.Equal(0m, control.Credit);
                 Assert.Equal("accounts_payable", control.ControlRole);
+                Assert.Equal("control:accounts_payable", control.PostingRole);
+                Assert.Equal(1, control.SourceLineNumber);
             },
             gain =>
             {
                 Assert.Equal(gainAccountId, gain.AccountId);
                 Assert.Equal(0m, gain.Debit);
                 Assert.Equal(5m, gain.Credit);
+                Assert.Equal("fx:unrealized_offset", gain.PostingRole);
+                Assert.Equal(1, gain.SourceLineNumber);
             });
     }
 

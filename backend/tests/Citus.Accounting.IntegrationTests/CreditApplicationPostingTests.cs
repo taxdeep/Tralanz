@@ -36,6 +36,8 @@ public sealed class CreditApplicationPostingTests
                 Assert.Equal(0m, source.TxCredit);
                 Assert.Equal(100m, source.Debit);
                 Assert.Equal(0m, source.Credit);
+                Assert.Equal("settlement:credit_application_source", source.PostingRole);
+                Assert.Equal(1, source.SourceLineNumber);
             },
             target =>
             {
@@ -44,6 +46,8 @@ public sealed class CreditApplicationPostingTests
                 Assert.Equal(100m, target.TxCredit);
                 Assert.Equal(0m, target.Debit);
                 Assert.Equal(100m, target.Credit);
+                Assert.Equal("settlement:credit_application_target", target.PostingRole);
+                Assert.Equal(1, target.SourceLineNumber);
             });
     }
 
@@ -78,6 +82,8 @@ public sealed class CreditApplicationPostingTests
                 Assert.Equal(gainAccountId, gain.AccountId);
                 Assert.Equal(0m, gain.Debit);
                 Assert.Equal(5m, gain.Credit);
+                Assert.Equal("fx:realized_gain", gain.PostingRole);
+                Assert.Equal(1, gain.SourceLineNumber);
             });
     }
 
@@ -108,6 +114,8 @@ public sealed class CreditApplicationPostingTests
                 Assert.Equal(0m, target.TxCredit);
                 Assert.Equal(100m, target.Debit);
                 Assert.Equal(0m, target.Credit);
+                Assert.Equal("settlement:vendor_credit_application_target", target.PostingRole);
+                Assert.Equal(1, target.SourceLineNumber);
             },
             source =>
             {
@@ -116,6 +124,8 @@ public sealed class CreditApplicationPostingTests
                 Assert.Equal(100m, source.TxCredit);
                 Assert.Equal(0m, source.Debit);
                 Assert.Equal(100m, source.Credit);
+                Assert.Equal("settlement:vendor_credit_application_source", source.PostingRole);
+                Assert.Equal(1, source.SourceLineNumber);
             });
     }
 
@@ -150,6 +160,8 @@ public sealed class CreditApplicationPostingTests
                 Assert.Equal(lossAccountId, loss.AccountId);
                 Assert.Equal(5m, loss.Debit);
                 Assert.Equal(0m, loss.Credit);
+                Assert.Equal("fx:realized_loss", loss.PostingRole);
+                Assert.Equal(1, loss.SourceLineNumber);
             });
     }
 

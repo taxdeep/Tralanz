@@ -62,11 +62,13 @@ public sealed class ReceiptGrIrPostingFragmentBuilderTests
             fragment.AccountId == inventoryAssetAccountId &&
             fragment.Debit == 40m &&
             fragment.Credit == 0m &&
-            fragment.ControlRole == "inventory_asset");
+            fragment.ControlRole == "inventory_asset" &&
+            fragment.PostingRole == "inventory:asset_recognition");
         Assert.Contains(fragments, fragment =>
             fragment.AccountId == grIrClearingAccountId &&
             fragment.Debit == 0m &&
             fragment.Credit == 40m &&
-            fragment.ControlRole == "grir_clearing");
+            fragment.ControlRole == "grir_clearing" &&
+            fragment.PostingRole == "control:grir_clearing");
     }
 }
