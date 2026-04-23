@@ -1,5 +1,6 @@
 @page "/documents/{SourceType}/{DocumentId:guid}"
 @using Citus.Modules.Inventory.Application.Contracts
+@using Modules.GL.JournalEntry
 @using Web.Shell.Services
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -7,6 +8,7 @@
 @inject ShellAccountingDocumentReviewClient ReviewClient
 @inject ShellBillReceiptMatchingClient BillReceiptMatchingClient
 @inject ShellInventoryShipmentClient InventoryShipmentClient
+@inject IJournalEntryReviewStore JournalEntryReviewStore
 @inject IJSRuntime JS
 
 <div style="padding:2rem 2.25rem;color:#d9e2ea;">
@@ -879,6 +881,78 @@
             </MudPaper>
         }
 
+        @if (_linkedJournalEntry is not null)
+        {
+            var linkedGlEvidence = BuildLinkedJournalEvidence(_document, _linkedJournalEntry);
+            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:1rem;">
+                    <div>
+                        <MudText Typo="Typo.h6">Linked GL Evidence</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">
+                            Source-to-GL review uses the persisted journal entry and its structured posting roles.
+                        </MudText>
+                    </div>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Href="@BuildJournalEntryReviewHref(_linkedJournalEntry.Id)"
+                               StartIcon="@Icons.Material.Filled.AccountTree">
+                        Open JE Review
+                    </MudButton>
+                </div>
+
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Journal Entry</MudText>
+                        <MudText Typo="Typo.h6">@_linkedJournalEntry.DisplayNumber</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@_linkedJournalEntry.Status</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">JE Lines</MudText>
+                        <MudText Typo="Typo.h6">@_linkedJournalEntry.LineCount</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@($"{_linkedJournalEntry.TransactionCurrencyCode} / {_linkedJournalEntry.BaseCurrencyCode}")</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Base Debit/Credit</MudText>
+                        <MudText Typo="Typo.h6">@($"{FormatAmount(_linkedJournalEntry.TotalDebit)} / {FormatAmount(_linkedJournalEntry.TotalCredit)}")</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@(_linkedJournalEntry.IsBalanced ? "Balanced" : "Review imbalance")</MudText>
+                    </MudPaper>
+                    <MudPaper Class="pa-3" Elevation="0" Style="background:rgba(255,255,255,0.02);">
+                        <MudText Typo="Typo.caption">Source-Line Evidence</MudText>
+                        <MudText Typo="Typo.h6">@linkedGlEvidence.SourceLineEvidenceLabel</MudText>
+                        <MudText Typo="Typo.body2" Class="text-secondary">@linkedGlEvidence.SourceLineEvidenceDetail</MudText>
+                    </MudPaper>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(linkedGlEvidence.UnmatchedSourceLineLabel))
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+                        @($"Source lines without JE evidence: {linkedGlEvidence.UnmatchedSourceLineLabel}")
+                    </MudAlert>
+                }
+
+                <MudTable Items="linkedGlEvidence.RoleRows" Dense="true" Hover="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Posting Role</MudTh>
+                        <MudTh>Lines</MudTh>
+                        <MudTh>Tx Debit</MudTh>
+                        <MudTh>Tx Credit</MudTh>
+                        <MudTh>Debit</MudTh>
+                        <MudTh>Credit</MudTh>
+                        <MudTh>Evidence</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.RoleLabel</MudTd>
+                        <MudTd>@context.LineCount</MudTd>
+                        <MudTd>@FormatAmount(context.TransactionDebit)</MudTd>
+                        <MudTd>@FormatAmount(context.TransactionCredit)</MudTd>
+                        <MudTd>@FormatAmount(context.Debit)</MudTd>
+                        <MudTd>@FormatAmount(context.Credit)</MudTd>
+                        <MudTd>@context.Evidence</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
+
         <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
             <MudText Typo="Typo.h6" Class="mb-3">Facts</MudText>
             <MudTable Items="_factRows" Dense="true">
@@ -1307,6 +1381,7 @@
     private string? _purchaseOrderQuantityReviewNote;
     private ShellAccountingDocumentReviewSummary? _document;
     private ShellPurchaseOrderReviewSummary? _purchaseOrder;
+    private JournalEntryReview? _linkedJournalEntry;
     private IReadOnlyList<ShellPurchaseOrderLifecycleAuditEntry> _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
     private ShellPurchaseOrderApprovalRequestSummary? _latestPurchaseOrderApprovalRequest;
     private ShellAccountingDocumentReverseRequestSummary? _latestReverseRequest;
@@ -1337,6 +1412,7 @@
 
         _document = null;
         _purchaseOrder = null;
+        _linkedJournalEntry = null;
         _purchaseOrderLifecycleAudit = Array.Empty<ShellPurchaseOrderLifecycleAuditEntry>();
         _latestPurchaseOrderApprovalRequest = null;
         _latestReverseRequest = null;
@@ -1380,6 +1456,14 @@
         }
 
         _document = document;
+        if (document.JournalEntryId is { } journalEntryId)
+        {
+            _linkedJournalEntry = await JournalEntryReviewStore.GetAsync(
+                ShellState.ActiveCompany.Id,
+                journalEntryId,
+                CancellationToken.None);
+        }
+
         _factRows = BuildFactRows(document);
         if (IsBillReceiptReview(document))
         {
@@ -2625,6 +2709,211 @@
         return rows;
     }
 
+    private static LinkedJournalEvidence BuildLinkedJournalEvidence(
+        ShellAccountingDocumentReviewSummary document,
+        JournalEntryReview journalEntry)
+    {
+        var sourceLineNumbers = document.Lines
+            .Select(static line => line.LineNumber)
+            .Where(static lineNumber => lineNumber > 0)
+            .Distinct()
+            .Order()
+            .ToArray();
+        var journalSourceLineNumbers = journalEntry.Lines
+            .Select(static line => line.SourceLineNumber)
+            .Where(static lineNumber => lineNumber.HasValue && lineNumber.Value > 0)
+            .Select(static lineNumber => lineNumber!.Value)
+            .Distinct()
+            .Order()
+            .ToArray();
+        var matchedSourceLineCount = sourceLineNumbers.Intersect(journalSourceLineNumbers).Count();
+        var unmatchedSourceLines = sourceLineNumbers.Except(journalSourceLineNumbers).ToArray();
+        var unmatchedSourceLineLabel = unmatchedSourceLines.Length == 0
+            ? string.Empty
+            : string.Join(", ", unmatchedSourceLines.Take(8));
+        if (unmatchedSourceLines.Length > 8)
+        {
+            unmatchedSourceLineLabel = $"{unmatchedSourceLineLabel}, +{unmatchedSourceLines.Length - 8}";
+        }
+
+        var sourceLineEvidenceLabel = sourceLineNumbers.Length == 0
+            ? "No source lines"
+            : $"{matchedSourceLineCount} / {sourceLineNumbers.Length}";
+        var sourceLineEvidenceDetail = sourceLineNumbers.Length == 0
+            ? "This source type does not expose line-level source review rows."
+            : unmatchedSourceLines.Length == 0
+                ? "All visible source lines have linked JE evidence."
+                : "Some visible source lines do not appear on linked JE lines yet.";
+
+        var roleRows = journalEntry.Lines
+            .Select(static line => new
+            {
+                Role = BuildPostingRoleKey(line),
+                Line = line
+            })
+            .GroupBy(static item => item.Role)
+            .OrderBy(static group => group.Key.SortOrder)
+            .ThenBy(static group => group.Key.Label, StringComparer.OrdinalIgnoreCase)
+            .Select(static group =>
+            {
+                var lines = group.Select(static item => item.Line).ToArray();
+                return new LinkedJournalRoleRow(
+                    group.Key.Label,
+                    lines.Length,
+                    lines.Sum(static line => line.TransactionDebit),
+                    lines.Sum(static line => line.TransactionCredit),
+                    lines.Sum(static line => line.Debit),
+                    lines.Sum(static line => line.Credit),
+                    BuildLinkedJournalRoleEvidence(lines));
+            })
+            .ToArray();
+
+        return new LinkedJournalEvidence(
+            sourceLineEvidenceLabel,
+            sourceLineEvidenceDetail,
+            unmatchedSourceLineLabel,
+            roleRows);
+    }
+
+    private static PostingRoleKey BuildPostingRoleKey(JournalEntryReviewLine line)
+    {
+        if (!string.IsNullOrWhiteSpace(line.PostingRole))
+        {
+            return BuildPostingRoleKey(line.PostingRole);
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.ControlRole))
+        {
+            return new PostingRoleKey(30, $"Control: {HumanizeToken(line.ControlRole)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.TaxComponentType))
+        {
+            return new PostingRoleKey(40, $"Tax: {HumanizeToken(line.TaxComponentType)}");
+        }
+
+        if (line.IsRealizedFxLine)
+        {
+            return new PostingRoleKey(50, "FX: Realized");
+        }
+
+        return new PostingRoleKey(90, $"Other: {HumanizeToken(line.RootType)}");
+    }
+
+    private static PostingRoleKey BuildPostingRoleKey(string postingRole)
+    {
+        var normalized = postingRole.Trim();
+        var sortOrder = normalized switch
+        {
+            "manual_journal" => 5,
+            _ when normalized.StartsWith("source_line:", StringComparison.OrdinalIgnoreCase) => 10,
+            _ when normalized.StartsWith("inventory:", StringComparison.OrdinalIgnoreCase) => 15,
+            _ when normalized.StartsWith("cash:", StringComparison.OrdinalIgnoreCase) => 20,
+            _ when normalized.StartsWith("settlement:", StringComparison.OrdinalIgnoreCase) => 25,
+            _ when normalized.StartsWith("control:", StringComparison.OrdinalIgnoreCase) => 30,
+            _ when normalized.StartsWith("tax:", StringComparison.OrdinalIgnoreCase) => 40,
+            _ when normalized.StartsWith("fx:", StringComparison.OrdinalIgnoreCase) => 50,
+            _ when normalized.StartsWith("adjustment:", StringComparison.OrdinalIgnoreCase) => 60,
+            _ => 80
+        };
+
+        return new PostingRoleKey(sortOrder, DisplayPostingRole(normalized));
+    }
+
+    private static string BuildLinkedJournalRoleEvidence(IReadOnlyCollection<JournalEntryReviewLine> lines)
+    {
+        var accounts = lines
+            .Select(static line => line.AccountCode)
+            .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToArray();
+        var accountSuffix = lines
+            .Select(static line => line.AccountCode)
+            .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count() > accounts.Length
+            ? ", ..."
+            : string.Empty;
+        var accountEvidence = accounts.Length == 0
+            ? "No account code"
+            : string.Join(", ", accounts) + accountSuffix;
+
+        var sourceLines = lines
+            .Select(static line => line.SourceLineNumber)
+            .Where(static lineNumber => lineNumber.HasValue && lineNumber.Value > 0)
+            .Select(static lineNumber => lineNumber!.Value)
+            .Distinct()
+            .Order()
+            .Take(8)
+            .ToArray();
+        if (sourceLines.Length == 0)
+        {
+            return accountEvidence;
+        }
+
+        var sourceLineSuffix = lines
+            .Select(static line => line.SourceLineNumber)
+            .Where(static lineNumber => lineNumber.HasValue && lineNumber.Value > 0)
+            .Select(static lineNumber => lineNumber!.Value)
+            .Distinct()
+            .Count() > sourceLines.Length
+            ? ", ..."
+            : string.Empty;
+
+        return $"{accountEvidence} | source lines {string.Join(", ", sourceLines)}{sourceLineSuffix}";
+    }
+
+    private static string DisplayPostingRole(string postingRole)
+    {
+        if (string.IsNullOrWhiteSpace(postingRole))
+        {
+            return "Unclassified";
+        }
+
+        var normalized = postingRole.Trim();
+        if (string.Equals(normalized, "manual_journal", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Manual journal";
+        }
+
+        var parts = normalized.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+        {
+            return HumanizeToken(normalized);
+        }
+
+        var group = parts[0].ToLowerInvariant();
+        var detail = HumanizeToken(parts[1]);
+        return group switch
+        {
+            "source_line" => $"Source line: {detail}",
+            "control" => $"Control: {detail}",
+            "tax" => $"Tax: {detail}",
+            "settlement" => $"Settlement: {detail}",
+            "cash" => $"Cash: {detail}",
+            "fx" => $"FX: {detail}",
+            "inventory" => $"Inventory: {detail}",
+            "adjustment" => $"Adjustment: {detail}",
+            _ => $"{HumanizeToken(group)}: {detail}"
+        };
+    }
+
+    private static string HumanizeToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return "n/a";
+        }
+
+        var text = token.Replace('_', ' ').Replace('-', ' ').Trim();
+        return text.Length == 0 ? "n/a" : char.ToUpperInvariant(text[0]) + text[1..];
+    }
+
+    private static string BuildJournalEntryReviewHref(Guid journalEntryId) =>
+        $"/gl/journal-entry/review/{journalEntryId:D}";
+
     private static IReadOnlyList<FactRow> BuildReverseRequestRows(ShellAccountingDocumentReverseRequestSummary request)
     {
         var rows = new List<FactRow>
@@ -3454,6 +3743,23 @@
     }
 
     private sealed record class FactRow(string Label, string Value);
+
+    private sealed record class LinkedJournalEvidence(
+        string SourceLineEvidenceLabel,
+        string SourceLineEvidenceDetail,
+        string UnmatchedSourceLineLabel,
+        IReadOnlyList<LinkedJournalRoleRow> RoleRows);
+
+    private sealed record class LinkedJournalRoleRow(
+        string RoleLabel,
+        int LineCount,
+        decimal TransactionDebit,
+        decimal TransactionCredit,
+        decimal Debit,
+        decimal Credit,
+        string Evidence);
+
+    private readonly record struct PostingRoleKey(int SortOrder, string Label);
 
     private sealed record class BlockerReverseDetail(
         Guid SettlementApplicationId,
