@@ -41,7 +41,7 @@ public sealed class JournalEntryWorkflowTests
         draft.CurrencyCode = "USD";
         draft.Lines[0].Description = "Incomplete";
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Line 1 requires an account.", exception.Message);
@@ -104,7 +104,7 @@ public sealed class JournalEntryWorkflowTests
         draft.Lines[0].DebitAmount = 10m;
         draft.Lines[1].CreditAmount = 9.99m;
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.PostDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Transaction-currency debit and credit must balance before posting.", exception.Message);
@@ -143,7 +143,7 @@ public sealed class JournalEntryWorkflowTests
         var draft = CreateBalancedDraft();
         draft.CurrencyCode = "EUR";
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal($"Currency EUR is not enabled for company {CompanyId:D}.", exception.Message);
@@ -161,7 +161,7 @@ public sealed class JournalEntryWorkflowTests
         var draft = CreateBalancedDraft();
         draft.BaseCurrencyCode = "CAD";
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Draft base currency CAD does not match company base currency USD.", exception.Message);
@@ -180,7 +180,7 @@ public sealed class JournalEntryWorkflowTests
         draft.FxRate = 1.25m;
         draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Manual;
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Base-currency journal entries must use identity FX semantics.", exception.Message);
@@ -202,7 +202,7 @@ public sealed class JournalEntryWorkflowTests
         draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Manual;
         draft.FxSnapshotId = null;
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Foreign-currency journal entries require a persisted FX snapshot before save or post.", exception.Message);
@@ -223,7 +223,7 @@ public sealed class JournalEntryWorkflowTests
         draft.FxRate = 1.25m;
         draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Identity;
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Foreign-currency journal entries cannot use identity FX semantics.", exception.Message);
@@ -247,7 +247,7 @@ public sealed class JournalEntryWorkflowTests
         draft.FxEffectiveDate = draft.JournalDate;
         draft.FxRateUseCase = SharedKernel.FX.FxRateUseCase.Settlement;
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("Manual journal entry FX use case must stay general.", exception.Message);
@@ -270,7 +270,7 @@ public sealed class JournalEntryWorkflowTests
         draft.FxSnapshotId = Guid.NewGuid();
         draft.FxEffectiveDate = draft.JournalDate.AddDays(1);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<JournalEntryWorkflowException>(() =>
             workflow.SaveDraftAsync(draft, UserId, CancellationToken.None));
 
         Assert.Equal("FX effective date cannot be later than the journal date.", exception.Message);

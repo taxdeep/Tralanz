@@ -27,17 +27,42 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
 
         if (draft.DocumentId is null)
         {
-            throw new InvalidOperationException("A saved manual journal draft is required before posting.");
+            throw new JournalEntryWorkflowException("not_found", "A saved manual journal draft is required before posting.");
         }
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var existing = await TryFindExistingAsync(connection, transaction, draft.CompanyId, draft.DocumentId.Value, cancellationToken);
+        var lockedSource = await LockManualJournalSourceAsync(
+            connection,
+            transaction,
+            draft.CompanyId,
+            draft.DocumentId.Value,
+            cancellationToken);
+
+        var existing = await TryFindExistingAsync(
+            connection,
+            transaction,
+            draft.CompanyId,
+            draft.DocumentId.Value,
+            lockedSource.DisplayNumber,
+            cancellationToken);
         if (existing is not null)
         {
             await transaction.CommitAsync(cancellationToken);
             return existing;
+        }
+
+        await EnsurePostingPeriodOpenAsync(
+            connection,
+            transaction,
+            draft.CompanyId,
+            draft.JournalDate,
+            cancellationToken);
+
+        if (!string.Equals(lockedSource.Status, "draft", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new JournalEntryWorkflowException("invalid_document_status", "Only draft manual journals can be posted.");
         }
 
         var journalDisplayNumber = await ReserveJournalDisplayNumberAsync(connection, transaction, draft.CompanyId, cancellationToken);
@@ -265,7 +290,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             var affectedRows = await updateSourceCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
-                throw new InvalidOperationException("The manual journal source document could not be marked as posted.");
+                throw new JournalEntryWorkflowException("invalid_document_status", "The manual journal source document could not be marked as posted.");
             }
         }
 
@@ -298,11 +323,108 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             cancellationToken);
     }
 
+    private static async Task EnsurePostingPeriodOpenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        DateOnly postingDate,
+        CancellationToken cancellationToken)
+    {
+        if (!await BookGovernanceTablesExistAsync(connection, transaction, cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+              s.signal_date,
+              s.reference_label
+            from company_books b
+            inner join company_book_governance_signals s
+              on s.company_id = b.company_id
+             and s.company_book_id = b.id
+             and s.signal_type = 'closed_period'
+             and s.signal_date >= @posting_date
+            where b.company_id = @company_id
+              and b.is_active = true
+              and b.is_primary = true
+              and b.effective_from <= @posting_date
+            order by s.signal_date asc, s.created_at asc, s.id asc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("posting_date", postingDate);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return;
+        }
+
+        var closedThrough = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("signal_date"));
+        var referenceLabel = reader.IsDBNull(reader.GetOrdinal("reference_label"))
+            ? "closed period"
+            : reader.GetString(reader.GetOrdinal("reference_label"));
+        throw new JournalEntryWorkflowException(
+            "posting_period_closed",
+            $"Posting date {postingDate:yyyy-MM-dd} is locked by {referenceLabel} through {closedThrough:yyyy-MM-dd}.");
+    }
+
+    private static async Task<bool> BookGovernanceTablesExistAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select to_regclass('public.company_books') is not null
+               and to_regclass('public.company_book_governance_signals') is not null;
+            """;
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<LockedManualJournalSource> LockManualJournalSourceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid sourceId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select display_number, status
+            from manual_journal_documents
+            where company_id = @company_id
+              and id = @source_id
+            for update;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("source_id", sourceId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new JournalEntryWorkflowException("not_found", "The manual journal source document does not exist.");
+        }
+
+        return new LockedManualJournalSource(
+            reader.GetString(reader.GetOrdinal("display_number")),
+            reader.GetString(reader.GetOrdinal("status")));
+    }
+
     private static async Task<JournalEntryPostResult?> TryFindExistingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid companyId,
         Guid sourceId,
+        string sourceDisplayNumber,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -329,7 +451,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
 
         return new JournalEntryPostResult(
             sourceId,
-            string.Empty,
+            sourceDisplayNumber,
             reader.GetGuid(reader.GetOrdinal("id")),
             reader.GetString(reader.GetOrdinal("display_number")));
     }
@@ -383,4 +505,6 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
 
     private static decimal Round10(decimal value) =>
         Math.Round(value, 10, MidpointRounding.ToEven);
+
+    private sealed record LockedManualJournalSource(string DisplayNumber, string Status);
 }

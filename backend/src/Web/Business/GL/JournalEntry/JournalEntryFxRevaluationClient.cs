@@ -163,8 +163,8 @@ public sealed class JournalEntryFxRevaluationClient(HttpClient httpClient, ILogg
                     : JournalEntryFxRevaluationApiResult<T>.Success(result);
             }
 
-            var error = await ReadErrorMessageAsync(response, cancellationToken);
-            return JournalEntryFxRevaluationApiResult<T>.Failure(error);
+            var error = await ReadErrorAsync(response, cancellationToken);
+            return JournalEntryFxRevaluationApiResult<T>.Failure(error.Message, error.Code);
         }
         catch (Exception ex)
         {
@@ -196,8 +196,8 @@ public sealed class JournalEntryFxRevaluationClient(HttpClient httpClient, ILogg
                     : JournalEntryFxRevaluationApiResult<T>.Success(result);
             }
 
-            var error = await ReadErrorMessageAsync(response, cancellationToken);
-            return JournalEntryFxRevaluationApiResult<T>.Failure(error);
+            var error = await ReadErrorAsync(response, cancellationToken);
+            return JournalEntryFxRevaluationApiResult<T>.Failure(error.Message, error.Code);
         }
         catch (Exception ex)
         {
@@ -206,21 +206,23 @@ public sealed class JournalEntryFxRevaluationClient(HttpClient httpClient, ILogg
         }
     }
 
-    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<JournalEntryFxRevaluationErrorPayload> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
         {
             var payload = await response.Content.ReadFromJsonAsync<JournalEntryFxRevaluationErrorPayload>(cancellationToken);
             if (!string.IsNullOrWhiteSpace(payload?.Message))
             {
-                return payload.Message;
+                return payload;
             }
         }
         catch
         {
         }
 
-        return $"FX revaluation request failed with HTTP {(int)response.StatusCode}.";
+        return new JournalEntryFxRevaluationErrorPayload(
+            null,
+            $"FX revaluation request failed with HTTP {(int)response.StatusCode}.");
     }
 }
 
@@ -234,17 +236,19 @@ public sealed record class JournalEntryFxRevaluationApiResult<T>
 
     public string? ErrorMessage { get; init; }
 
+    public string? ErrorCode { get; init; }
+
     public static JournalEntryFxRevaluationApiResult<T> Success(T? value) =>
         new() { Value = value };
 
     public static JournalEntryFxRevaluationApiResult<T> RequiresAuthentication() =>
         new() { RequiresSignIn = true, ErrorMessage = "Your business session has expired. Please sign in again." };
 
-    public static JournalEntryFxRevaluationApiResult<T> NotFound(string errorMessage) =>
-        new() { IsNotFound = true, ErrorMessage = errorMessage };
+    public static JournalEntryFxRevaluationApiResult<T> NotFound(string errorMessage, string? errorCode = null) =>
+        new() { IsNotFound = true, ErrorMessage = errorMessage, ErrorCode = errorCode };
 
-    public static JournalEntryFxRevaluationApiResult<T> Failure(string errorMessage) =>
-        new() { ErrorMessage = errorMessage };
+    public static JournalEntryFxRevaluationApiResult<T> Failure(string errorMessage, string? errorCode = null) =>
+        new() { ErrorMessage = errorMessage, ErrorCode = errorCode };
 }
 
 public sealed record class JournalEntryFxRevaluationPrepareResult(
@@ -389,4 +393,4 @@ public sealed record class JournalEntryFxRevaluationCascadePostStep(
     DateTimeOffset PostedAt,
     IReadOnlyList<string> Warnings);
 
-internal sealed record class JournalEntryFxRevaluationErrorPayload(string? Message);
+internal sealed record class JournalEntryFxRevaluationErrorPayload(string? Code, string Message);

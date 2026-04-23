@@ -826,6 +826,8 @@ public sealed record class ShellAccountingDocumentReverseRequestSummary
 
 public sealed record class ShellAccountingDocumentReverseCommandResultSummary
 {
+    public string? Code { get; init; }
+
     public string? TransitionCode { get; init; }
 
     public string OutcomeCode { get; init; } = string.Empty;

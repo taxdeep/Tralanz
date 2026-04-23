@@ -608,7 +608,9 @@
         }
         catch (Exception ex)
         {
-            _errorText = ex.Message;
+            _errorText = string.IsNullOrWhiteSpace(ex.Message)
+                ? "The journal entry review could not be loaded right now."
+                : ex.Message;
         }
         finally
         {
@@ -637,7 +639,9 @@
             return;
         }
 
-        _sourceTraceErrorText = result.ErrorMessage;
+        _sourceTraceErrorText = DescribeLifecycleFailure(
+            result.ErrorCode,
+            result.ErrorMessage ?? "Source document trace is unavailable right now.");
     }
 
     private async Task HandleVoidAsync()
@@ -673,9 +677,13 @@
             Snackbar.Add($"{successMessage} Compensation JE {result.CompensationDisplayNumber} created.", Severity.Success);
             await LoadReviewAsync();
         }
+        catch (JournalEntryLifecycleException ex)
+        {
+            Snackbar.Add(DescribeLifecycleFailure(ex.ErrorCode, ex.Message), Severity.Error);
+        }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeLifecycleFailure(null, ex.Message), Severity.Error);
         }
         finally
         {
@@ -719,6 +727,26 @@
 
     private static string DisplayMemo(string memo) =>
         string.IsNullOrWhiteSpace(memo) ? "No memo was stored on the source document." : memo;
+
+    private static string DescribeLifecycleFailure(string? errorCode, string errorMessage)
+    {
+        if (string.Equals(errorCode, "posting_period_closed", StringComparison.Ordinal))
+        {
+            return "The compensation journal would post into a closed period for the active primary book. Reopen the period in Book Governance or reverse from an allowed period.";
+        }
+
+        if (string.Equals(errorCode, "invalid_document_status", StringComparison.Ordinal))
+        {
+            return "This journal entry is no longer in a lifecycle state that allows this action. Refresh the review page and continue from the current status.";
+        }
+
+        if (string.Equals(errorCode, "not_found", StringComparison.Ordinal))
+        {
+            return "The journal entry could not be found in the active company context. Reload the workbench and reopen the review page.";
+        }
+
+        return errorMessage;
+    }
 
     private static string DisplayTraceText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "n/a" : value;

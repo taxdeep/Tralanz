@@ -648,8 +648,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellPurchaseOrderApprovalRequestCommandResultSummary>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellPurchaseOrderApprovalRequestCommandResultSummary>(cancellationToken);
@@ -683,8 +685,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellSourceDocumentDraftSaveResult>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellSourceDocumentDraftSaveResult>(cancellationToken);
@@ -718,8 +722,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellPurchaseOrderThreeQuantitySummary>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellPurchaseOrderThreeQuantitySummary>(cancellationToken);
@@ -753,8 +759,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellReceiptGrIrBridgeSummary>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrBridgeSummary>(cancellationToken);
@@ -788,8 +796,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellPostReceiptGrIrCommandResult>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellPostReceiptGrIrCommandResult>(cancellationToken);
@@ -823,8 +833,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementSummary>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrApSettlementSummary>(cancellationToken);
@@ -858,8 +870,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellReceiptGrIrApSettlementExecutionResult>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrApSettlementExecutionResult>(cancellationToken);
@@ -891,8 +905,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<ShellReceiptGrIrClearingAccountPolicySummary>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<ShellReceiptGrIrClearingAccountPolicySummary>(cancellationToken);
@@ -926,8 +942,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<TResponse>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken);
@@ -962,8 +980,10 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
+                var error = await ReadErrorAsync(response, cancellationToken);
                 return WebShellAuthenticatedApiResult<TResponse>.Failure(
-                    await ReadErrorMessageAsync(response, cancellationToken));
+                    error.Message,
+                    error.Code);
             }
 
             var result = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken);
@@ -1007,7 +1027,8 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
-                return WebShellAuthenticatedApiResult<T>.Failure(await ReadErrorMessageAsync(response, cancellationToken));
+                var error = await ReadErrorAsync(response, cancellationToken);
+                return WebShellAuthenticatedApiResult<T>.Failure(error.Message, error.Code);
             }
 
             var payload = await response.Content.ReadFromJsonAsync<T>(cancellationToken);
@@ -1045,7 +1066,8 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
 
             if (!response.IsSuccessStatusCode)
             {
-                return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.Failure(await ReadErrorMessageAsync(response, cancellationToken));
+                var error = await ReadErrorAsync(response, cancellationToken);
+                return WebShellAuthenticatedApiResult<IReadOnlyList<TItem>>.Failure(error.Message, error.Code);
             }
 
             var payload = await response.Content.ReadFromJsonAsync<TItem[]>(cancellationToken);
@@ -1059,18 +1081,22 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         }
     }
 
-    private static async Task<string> ReadErrorMessageAsync(
+    private static async Task<ShellAccountingDocumentReviewApiError> ReadErrorAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            return WebShellBusinessSessionClient.AuthenticationRequiredError;
+            return new ShellAccountingDocumentReviewApiError(
+                null,
+                WebShellBusinessSessionClient.AuthenticationRequiredError);
         }
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return "The requested accounting document resource was not found in the active company context.";
+            return new ShellAccountingDocumentReviewApiError(
+                "not_found",
+                "The requested accounting document resource was not found in the active company context.");
         }
 
         try
@@ -1078,19 +1104,25 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
             var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
             if (payload?["message"]?.GetValue<string>() is { Length: > 0 } message)
             {
-                return message;
+                return new ShellAccountingDocumentReviewApiError(
+                    payload["code"]?.GetValue<string>()
+                    ?? payload["outcomeCode"]?.GetValue<string>()
+                    ?? payload["transitionCode"]?.GetValue<string>(),
+                    message);
             }
 
             if (payload?["error"]?.GetValue<string>() is { Length: > 0 } error)
             {
-                return error;
+                return new ShellAccountingDocumentReviewApiError(null, error);
             }
         }
         catch
         {
         }
 
-        return $"Accounting document review returned HTTP {(int)response.StatusCode}.";
+        return new ShellAccountingDocumentReviewApiError(
+            null,
+            $"Accounting document review returned HTTP {(int)response.StatusCode}.");
     }
 
     private static bool TryBuildApiPath(string? sourceType, Guid documentId, out string requestPath)
@@ -1221,4 +1253,6 @@ public sealed class ShellAccountingDocumentReviewClient(HttpClient httpClient, I
         Guid UserId,
         decimal? SettlementAmountBase,
         string? IdempotencyKey);
+
+    private sealed record ShellAccountingDocumentReviewApiError(string? Code, string Message);
 }

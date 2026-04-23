@@ -276,7 +276,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeEditorFailure(ex), Severity.Error);
             return false;
         }
         finally
@@ -308,7 +308,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeEditorFailure(ex), Severity.Error);
         }
         finally
         {
@@ -354,7 +354,7 @@
         }
         catch (Exception ex)
         {
-            _fxErrorText = ex.Message;
+            _fxErrorText = DescribeEditorFailure(ex);
         }
         finally
         {
@@ -385,7 +385,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeEditorFailure(ex), Severity.Error);
         }
         finally
         {
@@ -416,7 +416,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeEditorFailure(ex), Severity.Error);
         }
         finally
         {
@@ -448,7 +448,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeEditorFailure(ex), Severity.Error);
         }
         finally
         {
@@ -512,7 +512,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Snackbar.Add(DescribeEditorFailure(ex), Severity.Error);
         }
         finally
         {
@@ -559,5 +559,24 @@
 
         Snackbar.Add(ShellSession.WriteBlockMessage, Severity.Warning);
         return true;
+    }
+
+    private static string DescribeEditorFailure(Exception ex)
+    {
+        if (ex is JournalEntryWorkflowException workflowEx)
+        {
+            return workflowEx.ErrorCode switch
+            {
+                "posting_period_closed" => "The journal date falls inside a closed period for the active primary book. Move the journal date into an open period or adjust the lock in Book Governance.",
+                "invalid_document_status" => "This manual journal is no longer in an editable draft state. Refresh the editor and continue from the latest document status.",
+                "not_found" => "The manual journal draft is no longer available in the active company context. Return to the workbench and reopen or recreate it.",
+                "invalid_currency_configuration" => "The selected transaction/base currency setup is not currently valid for this company. Review company currency governance and then retry the journal.",
+                "invalid_fx_configuration" => "The journal's FX setup is incomplete or inconsistent. Persist a valid FX snapshot and effective date before saving or posting.",
+                "invalid_draft_shape" => workflowEx.Message,
+                _ => workflowEx.Message
+            };
+        }
+
+        return ex.Message;
     }
 }

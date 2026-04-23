@@ -60,6 +60,13 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             return existing;
         }
 
+        var postingDate = draft.FxSnapshot.RequestedDate;
+        await EnsurePostingPeriodOpenAsync(
+            scope,
+            context.CompanyId.Value,
+            postingDate,
+            cancellationToken);
+
         var postedAt = context.RequestedAt.UtcDateTime;
 
         var claimed = await TryMarkSourcePostedAsync(
@@ -304,7 +311,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             ledgerCommand.Parameters.AddWithValue("company_id", context.CompanyId.Value);
             ledgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
             ledgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
-            ledgerCommand.Parameters.AddWithValue("posting_date", draft.FxSnapshot.RequestedDate);
+            ledgerCommand.Parameters.AddWithValue("posting_date", postingDate);
             ledgerCommand.Parameters.AddWithValue("account_id", line.AccountId);
             ledgerCommand.Parameters.AddWithValue("debit", Round6(line.Debit));
             ledgerCommand.Parameters.AddWithValue("credit", Round6(line.Credit));
@@ -402,6 +409,64 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
         return new JournalEntryWriteResult(
             reader.GetGuid(reader.GetOrdinal("id")),
             reader.GetString(reader.GetOrdinal("display_number")));
+    }
+
+    private static async Task EnsurePostingPeriodOpenAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        DateOnly postingDate,
+        CancellationToken cancellationToken)
+    {
+        if (!await BookGovernanceTablesExistAsync(scope, cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = scope.CreateCommand(
+            """
+            select
+              s.signal_date,
+              s.reference_label
+            from company_books b
+            inner join company_book_governance_signals s
+              on s.company_id = b.company_id
+             and s.company_book_id = b.id
+             and s.signal_type = 'closed_period'
+             and s.signal_date >= @posting_date
+            where b.company_id = @company_id
+              and b.is_active = true
+              and b.is_primary = true
+              and b.effective_from <= @posting_date
+            order by s.signal_date asc, s.created_at asc, s.id asc
+            limit 1;
+            """);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("posting_date", postingDate);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return;
+        }
+
+        var closedThrough = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("signal_date"));
+        var referenceLabel = reader.IsDBNull(reader.GetOrdinal("reference_label"))
+            ? "closed period"
+            : reader.GetString(reader.GetOrdinal("reference_label"));
+        throw new InvalidOperationException(
+            $"Posting date {postingDate:yyyy-MM-dd} is locked by {referenceLabel} through {closedThrough:yyyy-MM-dd}.");
+    }
+
+    private static async Task<bool> BookGovernanceTablesExistAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select to_regclass('public.company_books') is not null
+               and to_regclass('public.company_book_governance_signals') is not null;
+            """);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     private static async Task<bool> TryMarkSourcePostedAsync(

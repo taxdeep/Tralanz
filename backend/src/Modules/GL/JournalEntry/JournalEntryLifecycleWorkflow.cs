@@ -23,3 +23,14 @@ public sealed class JournalEntryLifecycleWorkflow : IJournalEntryLifecycleWorkfl
         CancellationToken cancellationToken) =>
         _store.ReverseAsync(companyId, journalEntryId, userId, cancellationToken);
 }
+
+public sealed class JournalEntryLifecycleException : InvalidOperationException
+{
+    public JournalEntryLifecycleException(string errorCode, string message)
+        : base(message)
+    {
+        ErrorCode = errorCode;
+    }
+
+    public string ErrorCode { get; }
+}

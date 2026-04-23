@@ -60,13 +60,17 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         await EnsureJournalEntryLineAuditColumnsAsync(connection, transaction, cancellationToken);
 
         var original = await LoadOriginalAsync(connection, transaction, companyId, journalEntryId, cancellationToken)
-            ?? throw new InvalidOperationException("The journal entry could not be found in the active company context.");
+            ?? throw new JournalEntryLifecycleException(
+                "not_found",
+                "The journal entry could not be found in the active company context.");
 
         var lifecycleBehavior = ResolveLifecycleBehavior(original.SourceType, originalStatus, compensationSourceType);
 
         if (!string.Equals(original.Status, "posted", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Only posted journal entries can be voided or reversed.");
+            throw new JournalEntryLifecycleException(
+                "invalid_document_status",
+                "Only posted journal entries can be voided or reversed.");
         }
 
         var existingCompensation = await TryFindExistingCompensationAsync(
@@ -93,8 +97,17 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         var originalLines = await LoadOriginalLinesAsync(connection, transaction, companyId, journalEntryId, cancellationToken);
         if (originalLines.Count == 0)
         {
-            throw new InvalidOperationException("A journal entry without lines cannot be voided or reversed.");
+            throw new JournalEntryLifecycleException(
+                "invalid_operation",
+                "A journal entry without lines cannot be voided or reversed.");
         }
+
+        await EnsurePostingPeriodOpenAsync(
+            connection,
+            transaction,
+            companyId,
+            original.EntryDate,
+            cancellationToken);
 
         var lifecycleAt = DateTimeOffset.UtcNow;
         var compensationJournalEntryId = Guid.NewGuid();
@@ -336,7 +349,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             var affectedRows = await updateJournalCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
-                throw new InvalidOperationException("The original journal entry could not be moved to the requested lifecycle state.");
+                throw new JournalEntryLifecycleException(
+                    "invalid_document_status",
+                    "The original journal entry could not be moved to the requested lifecycle state.");
             }
         }
 
@@ -359,7 +374,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             var affectedRows = await updateSourceCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
-                throw new InvalidOperationException("The manual journal source document could not be moved to the requested lifecycle state.");
+                throw new JournalEntryLifecycleException(
+                    "invalid_document_status",
+                    "The manual journal source document could not be moved to the requested lifecycle state.");
             }
         }
 
@@ -615,6 +632,77 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task EnsurePostingPeriodOpenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        DateOnly postingDate,
+        CancellationToken cancellationToken)
+    {
+        if (!await BookGovernanceTablesExistAsync(connection, transaction, cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select
+                b.book_code,
+                s.signal_date,
+                s.reference_label
+            from company_books b
+            join company_book_governance_signals s
+              on s.company_id = b.company_id
+             and s.company_book_id = b.id
+            where b.company_id = @company_id
+              and b.is_primary = true
+              and b.is_active = true
+              and b.effective_from <= @posting_date
+              and s.signal_type = 'closed_period'
+              and s.signal_date >= @posting_date
+            order by s.signal_date asc, s.created_at asc, s.id asc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("posting_date", postingDate);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return;
+        }
+
+        var bookCode = reader.IsDBNull(reader.GetOrdinal("book_code"))
+            ? "primary book"
+            : reader.GetString(reader.GetOrdinal("book_code"));
+        var closedThrough = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("signal_date"));
+        var referenceLabel = reader.IsDBNull(reader.GetOrdinal("reference_label"))
+            ? "closed period"
+            : reader.GetString(reader.GetOrdinal("reference_label"));
+
+        throw new JournalEntryLifecycleException(
+            "posting_period_closed",
+            $"The posting date {postingDate:yyyy-MM-dd} is locked by {bookCode} ({referenceLabel}) through {closedThrough:yyyy-MM-dd}.");
+    }
+
+    private static async Task<bool> BookGovernanceTablesExistAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select to_regclass('public.company_books') is not null
+               and to_regclass('public.company_book_governance_signals') is not null;
+            """;
+
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
     private static async Task<LifecycleCompensation?> TryFindExistingCompensationAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -679,7 +767,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         {
             if (!string.Equals(normalizedSourceType, "manual_journal", StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("Void is currently supported only for manual-journal sourced entries.");
+                throw new JournalEntryLifecycleException(
+                    "invalid_operation",
+                    "Void is currently supported only for manual-journal sourced entries.");
             }
 
             return new LifecycleBehavior(requestedCompensationSourceType ?? "manual_journal_void", true);
@@ -687,7 +777,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
 
         if (normalizedOriginalStatus != "reversed")
         {
-            throw new InvalidOperationException($"Unsupported journal-entry lifecycle state '{originalStatus}'.");
+            throw new JournalEntryLifecycleException(
+                "invalid_operation",
+                $"Unsupported journal-entry lifecycle state '{originalStatus}'.");
         }
 
         return normalizedSourceType switch
@@ -701,7 +793,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             "credit_application" => new LifecycleBehavior("credit_application_reversal", false),
             "pay_bill" => new LifecycleBehavior("pay_bill_reversal", false),
             "vendor_credit_application" => new LifecycleBehavior("vendor_credit_application_reversal", false),
-            _ => throw new InvalidOperationException(
+            _ => throw new JournalEntryLifecycleException(
+                "invalid_operation",
                 $"Reversal is not supported for journal entries sourced from '{sourceType}'.")
         };
     }

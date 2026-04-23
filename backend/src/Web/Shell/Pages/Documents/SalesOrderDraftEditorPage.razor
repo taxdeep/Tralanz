@@ -27,6 +27,56 @@
         Capture committed customer demand before fulfillment, invoicing, and cost issue truth take over.
     </p>
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">Commercial Chain</MudText>
+                <MudText Typo="Typo.h5">@SalesOrderStageLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SalesOrderStageSummary</MudText>
+            </div>
+            <MudChip T="string" Color="@SalesOrderStageColor" Variant="Variant.Filled">@SalesOrderStageBadge</MudChip>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Quote hand-off</MudText>
+                <MudText Typo="Typo.h6">@SalesOrderQuoteLinkLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SalesOrderQuoteLinkSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current next step</MudText>
+                <MudText Typo="Typo.h6">@SalesOrderNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SalesOrderNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">AR hand-off</MudText>
+                <MudText Typo="Typo.h6">@SalesOrderInvoiceLaneLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SalesOrderInvoiceLaneSummary</MudText>
+            </MudPaper>
+        </div>
+
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/source-browser?sourceType=sales_order">
+                Open SO Pipeline
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/documents/source-browser?sourceType=quote">
+                Review Quotes
+            </MudButton>
+            @if (_sourceQuoteId.HasValue)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@($"/documents/quote/draft-editor?draftId={_sourceQuoteId.Value:D}")">
+                    Open Source Quote
+                </MudButton>
+            }
+            @if (_saved is not null && CanContinueInvoicing && !WritesBlocked)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildInvoiceHref()">
+                    @(IsPartiallyInvoiced ? "Continue Invoice Coverage" : "Start Invoice Coverage")
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+
     @if (!string.IsNullOrWhiteSpace(_sourceQuoteDisplayNumber))
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
@@ -312,6 +362,56 @@
     private IReadOnlyList<InventoryManagedWarehouseSummary> Warehouses => _inventoryDashboard?.ActiveWarehouses ?? [];
     private decimal TotalAmount => _lines.Sum(static line => line.LineAmount);
     private static readonly string[] OutboundStages = ["draft", "issued", "partially_shipped", "partially_invoiced", "closed"];
+    private string SalesOrderStageLabel => _outboundControl is not null
+        ? GetOutboundStatusLabel(_outboundControl.AggregateStatus)
+        : _saved is not null
+            ? "Sales order saved"
+            : "Start demand control";
+    private string SalesOrderStageSummary => _outboundControl is not null
+        ? BuildOutboundStatusSummary(_outboundControl)
+        : _saved is not null
+            ? "Demand truth is saved but outbound control has not been evaluated yet."
+            : "This lane owns committed customer demand before shipment and invoice truth take over.";
+    private string SalesOrderStageBadge => _outboundControl?.AggregateStatus ?? (_saved?.Status ?? "new");
+    private Color SalesOrderStageColor => GetOutboundStatusColor(_outboundControl?.AggregateStatus ?? _saved?.Status);
+    private string SalesOrderQuoteLinkLabel => !string.IsNullOrWhiteSpace(_sourceQuoteDisplayNumber)
+        ? _sourceQuoteDisplayNumber
+        : _sourceQuoteId.HasValue
+            ? "Quote linked"
+            : "Direct sales order";
+    private string SalesOrderQuoteLinkSummary => !string.IsNullOrWhiteSpace(_sourceQuoteDisplayNumber)
+        ? "Customer offer truth was already accepted and prefilled this demand lane."
+        : _sourceQuoteId.HasValue
+            ? "A quote link exists, but this workbench loaded without the original display label."
+            : "This sales order was created directly without a preceding quote hand-off.";
+    private string SalesOrderNextStepTitle => _saved is null
+        ? "Save the sales order"
+        : CanContinueInvoicing
+            ? (IsPartiallyInvoiced ? "Continue invoice coverage" : "Start invoice coverage")
+            : CanContinueShipment
+                ? (IsPartiallyShipped ? "Continue shipment" : "Start shipment")
+                : CanIssueSalesOrder
+                    ? "Issue the sales order"
+                    : CanCloseSalesOrder
+                        ? "Close the sales order"
+                        : "Monitor outbound truth";
+    private string SalesOrderNextStepSummary => _saved is null
+        ? "Demand truth only becomes governed once the sales order is saved."
+        : CanContinueInvoicing
+            ? "Invoice coverage is still open. Continue the AR hand-off so demand truth can close through posted invoice anchors."
+            : CanContinueShipment
+                ? "Fulfillment truth is still open. Continue shipment before this order can fully close."
+                : CanIssueSalesOrder
+                    ? "Issue the order to move it from editable demand truth into live outbound control."
+                    : CanCloseSalesOrder
+                        ? "Shipment and invoice truth now cover this order, so it can move into the closed state."
+                        : "Outbound truth already owns this lane. Use the workbench for review and follow-through.";
+    private string SalesOrderInvoiceLaneLabel => _invoiceCoverage is null
+        ? "Coverage pending"
+        : GetInvoiceCoverageLabel(_invoiceCoverage.InvoiceCoverageStatus);
+    private string SalesOrderInvoiceLaneSummary => _invoiceCoverage is null
+        ? "AR hand-off has not been evaluated yet."
+        : BuildInvoiceCoverageSummary(_invoiceCoverage);
 
     protected override async Task OnInitializedAsync()
     {

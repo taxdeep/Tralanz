@@ -10,6 +10,8 @@ public sealed record class WebShellAuthenticatedApiResult<T>
 
     public string? ErrorMessage { get; init; }
 
+    public string? ErrorCode { get; init; }
+
     public static WebShellAuthenticatedApiResult<T> Success(T? value) =>
         new() { Value = value };
 
@@ -27,6 +29,35 @@ public sealed record class WebShellAuthenticatedApiResult<T>
             ErrorMessage = errorMessage
         };
 
-    public static WebShellAuthenticatedApiResult<T> Failure(string errorMessage) =>
-        new() { ErrorMessage = errorMessage };
+    public static WebShellAuthenticatedApiResult<T> Failure(string errorMessage, string? errorCode = null) =>
+        new()
+        {
+            ErrorMessage = errorMessage,
+            ErrorCode = errorCode
+        };
+}
+
+public static class WebShellPostingFeedback
+{
+    public static string DescribeFailure(string? errorCode, string? errorMessage, string fallbackMessage)
+    {
+        if (string.Equals(errorCode, "posting_period_closed", StringComparison.Ordinal))
+        {
+            return "The posting date falls inside a closed period for the active primary book. Move the posting date into an open period or adjust the lock in Book Governance.";
+        }
+
+        if (string.Equals(errorCode, "invalid_document_status", StringComparison.Ordinal))
+        {
+            return "This document is no longer in the right lifecycle state for the requested action. Refresh the page and continue from the current document status.";
+        }
+
+        if (string.Equals(errorCode, "not_found", StringComparison.Ordinal))
+        {
+            return "The requested document could not be found in the active company context. Refresh the workspace and reopen it from the latest list or review page.";
+        }
+
+        return string.IsNullOrWhiteSpace(errorMessage)
+            ? fallbackMessage
+            : errorMessage;
+    }
 }

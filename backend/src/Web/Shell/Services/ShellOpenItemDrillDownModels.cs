@@ -299,5 +299,7 @@ public sealed record class ShellOpenItemAdjustmentExecutionResultSummary
 
 public sealed record class ShellOpenItemAdjustmentErrorSummary
 {
+    public string? Code { get; init; }
+
     public string Message { get; init; } = string.Empty;
 }

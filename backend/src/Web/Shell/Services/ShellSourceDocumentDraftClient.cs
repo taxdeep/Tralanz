@@ -486,16 +486,16 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
                     : WebShellAuthenticatedApiResult<ShellSourceDocumentPostResult>.Success(posted);
             }
 
-            var message = await TryReadMessageAsync(response, cancellationToken);
+            var error = await TryReadErrorAsync(response, cancellationToken);
             logger.LogWarning(
                 "Source document posting failed for {RequestUri} with status code {StatusCode}: {Message}",
                 requestUri,
                 (int)response.StatusCode,
-                message);
+                error.Message);
 
             return response.StatusCode == HttpStatusCode.NotFound
-                ? WebShellAuthenticatedApiResult<ShellSourceDocumentPostResult>.NotFound(message)
-                : WebShellAuthenticatedApiResult<ShellSourceDocumentPostResult>.Failure(message);
+                ? WebShellAuthenticatedApiResult<ShellSourceDocumentPostResult>.NotFound(error.Message)
+                : WebShellAuthenticatedApiResult<ShellSourceDocumentPostResult>.Failure(error.Message, error.Code);
         }
         catch (Exception ex)
         {
@@ -559,6 +559,39 @@ public sealed class ShellSourceDocumentDraftClient(HttpClient httpClient, ILogge
         {
         }
 
-        return $"Draft save failed with HTTP {(int)response.StatusCode}.";
+        return $"Source document request failed with HTTP {(int)response.StatusCode}.";
     }
+
+    private static async Task<ShellAccountingApiError> TryReadErrorAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new ShellAccountingApiError(
+                "not_found",
+                "Draft document was not found in the active company context.");
+        }
+
+        try
+        {
+            var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
+            var message = payload?["message"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return new ShellAccountingApiError(
+                    payload?["code"]?.GetValue<string>(),
+                    message);
+            }
+        }
+        catch
+        {
+        }
+
+        return new ShellAccountingApiError(
+            null,
+            $"Source document posting failed with HTTP {(int)response.StatusCode}.");
+    }
+
+    private sealed record class ShellAccountingApiError(string? Code, string Message);
 }

@@ -90,8 +90,8 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
                     : WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Success(result);
             }
 
-            var error = await ReadErrorMessageAsync(response, cancellationToken);
-            return WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Failure(error);
+            var error = await ReadErrorAsync(response, cancellationToken);
+            return WebShellAuthenticatedApiResult<ShellSettlementPostingResult>.Failure(error.Message, error.Code);
         }
         catch (Exception ex)
         {
@@ -100,22 +100,22 @@ public sealed class ShellSettlementPostingClient(HttpClient httpClient, ILogger<
         }
     }
 
-    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<ShellErrorPayload> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
         {
             var payload = await response.Content.ReadFromJsonAsync<ShellErrorPayload>(cancellationToken);
             if (!string.IsNullOrWhiteSpace(payload?.Message))
             {
-                return payload.Message;
+                return payload;
             }
         }
         catch
         {
         }
 
-        return $"Posting failed with HTTP {(int)response.StatusCode}.";
+        return new ShellErrorPayload(null, $"Posting failed with HTTP {(int)response.StatusCode}.");
     }
 
-    private sealed record class ShellErrorPayload(string? Message);
+    private sealed record class ShellErrorPayload(string? Code, string Message);
 }

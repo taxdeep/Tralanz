@@ -1241,7 +1241,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? $"Receipt {controlLabel} command did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    $"Receipt {controlLabel} command did not return a response.");
                 return;
             }
 
@@ -1287,7 +1290,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? "Receipt GR/IR bridge refresh did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Receipt GR/IR bridge refresh did not return a response.");
                 return;
             }
 
@@ -1335,7 +1341,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? "Receipt GR/IR bridge post did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Receipt GR/IR bridge post did not return a response.");
                 return;
             }
 
@@ -1395,7 +1404,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? "Receipt GR/IR settlement execution did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Receipt GR/IR settlement execution did not return a response.");
                 return;
             }
 
@@ -1491,7 +1503,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? "Settlement journal post did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Settlement journal post did not return a response.");
                 return;
             }
 
@@ -1539,7 +1554,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? "Settlement AP open-item clearing did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Settlement AP open-item clearing did not return a response.");
                 return;
             }
 
@@ -1588,7 +1606,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? "Settlement AP open-item clearing reversal did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Settlement AP open-item clearing reversal did not return a response.");
                 return;
             }
 
@@ -1666,7 +1687,10 @@
             if (result.Value is null)
             {
                 _receiptControlCommandSeverity = Severity.Warning;
-                _receiptControlCommandMessage = result.ErrorMessage ?? $"Receipt {controlLabel} refresh did not return a response.";
+                _receiptControlCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    $"Receipt {controlLabel} refresh did not return a response.");
                 return;
             }
 

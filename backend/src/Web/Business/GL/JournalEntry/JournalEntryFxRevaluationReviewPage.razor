@@ -433,9 +433,10 @@
 
             if (result.IsNotFound || result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _errorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
-                    ? $"FX revaluation batch {DocumentId:D} could not be found."
-                    : result.ErrorMessage;
+                _errorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    $"FX revaluation batch {DocumentId:D} could not be found.");
                 return;
             }
 
@@ -448,7 +449,10 @@
         }
         catch (Exception ex)
         {
-            _errorText = ex.Message;
+            _errorText = DescribeCommandFailure(
+                null,
+                ex.Message,
+                $"FX revaluation batch {DocumentId:D} could not be found.");
         }
         finally
         {
@@ -480,9 +484,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _planErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
-                    ? "Cascade unwind plan is unavailable for this batch."
-                    : result.ErrorMessage;
+                _planErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Cascade unwind plan is unavailable for this batch.");
                 return;
             }
 
@@ -490,7 +495,10 @@
         }
         catch (Exception ex)
         {
-            _planErrorText = ex.Message;
+            _planErrorText = DescribeCommandFailure(
+                null,
+                ex.Message,
+                "Cascade unwind plan is unavailable for this batch.");
         }
         finally
         {
@@ -520,7 +528,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _commandErrorText = result.ErrorMessage ?? "FX revaluation batch could not be posted.";
+                _commandErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "FX revaluation batch could not be posted.");
                 return;
             }
 
@@ -554,7 +565,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _commandErrorText = result.ErrorMessage ?? "Next-period unwind could not be prepared.";
+                _commandErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Next-period unwind could not be prepared.");
                 return;
             }
 
@@ -587,7 +601,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _commandErrorText = result.ErrorMessage ?? "Cascade unwind could not be prepared.";
+                _commandErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Cascade unwind could not be prepared.");
                 return;
             }
 
@@ -620,7 +637,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _commandErrorText = result.ErrorMessage ?? "Cascade unwind could not be posted.";
+                _commandErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Cascade unwind could not be posted.");
                 return;
             }
 
@@ -734,4 +754,26 @@
             "reversed" => Color.Warning,
             _ => Color.Secondary
         };
+
+    private static string DescribeCommandFailure(string? errorCode, string? errorMessage, string fallbackMessage)
+    {
+        if (string.Equals(errorCode, "posting_period_closed", StringComparison.Ordinal))
+        {
+            return "The posting date falls inside a closed period for the active primary book. Move the posting date into an open period or adjust the lock in Book Governance.";
+        }
+
+        if (string.Equals(errorCode, "invalid_document_status", StringComparison.Ordinal))
+        {
+            return "This FX revaluation batch is no longer in the right lifecycle state for the requested action. Refresh the review page and continue from the latest batch status.";
+        }
+
+        if (string.Equals(errorCode, "not_found", StringComparison.Ordinal))
+        {
+            return "The requested FX revaluation batch is no longer available in the active company context. Return to the workbench and reopen it from the latest batch history.";
+        }
+
+        return string.IsNullOrWhiteSpace(errorMessage)
+            ? fallbackMessage
+            : errorMessage;
+    }
 }

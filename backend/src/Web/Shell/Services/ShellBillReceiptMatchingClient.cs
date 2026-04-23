@@ -28,13 +28,13 @@ public sealed class ShellBillReceiptMatchingClient(HttpClient httpClient, ILogge
 
             if (!response.IsSuccessStatusCode)
             {
-                var error = await ReadErrorMessageAsync(response, cancellationToken);
+                var error = await ReadErrorAsync(response, cancellationToken);
                 logger.LogWarning(
                     "Unable to load bill receipt matching summary for bill {BillDocumentId} in company {CompanyId}: {Error}",
                     billDocumentId,
                     companyId,
-                    error);
-                return WebShellAuthenticatedApiResult<ShellBillReceiptMatchingSummary>.Failure(error);
+                    error.Message);
+                return WebShellAuthenticatedApiResult<ShellBillReceiptMatchingSummary>.Failure(error.Message, error.Code);
             }
 
             var summary = await response.Content.ReadFromJsonAsync<ShellBillReceiptMatchingSummary>(cancellationToken);
@@ -52,22 +52,22 @@ public sealed class ShellBillReceiptMatchingClient(HttpClient httpClient, ILogge
         }
     }
 
-    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<ShellErrorPayload> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
         {
             var payload = await response.Content.ReadFromJsonAsync<ShellErrorPayload>(cancellationToken);
             if (!string.IsNullOrWhiteSpace(payload?.Message))
             {
-                return payload.Message;
+                return payload;
             }
         }
         catch
         {
         }
 
-        return $"Loading bill receipt matching failed with HTTP {(int)response.StatusCode}.";
+        return new ShellErrorPayload(null, $"Loading bill receipt matching failed with HTTP {(int)response.StatusCode}.");
     }
 
-    private sealed record class ShellErrorPayload(string? Message);
+    private sealed record class ShellErrorPayload(string? Code, string Message);
 }

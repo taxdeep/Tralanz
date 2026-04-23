@@ -46,8 +46,24 @@ public sealed class ApSettlementPostingClient(HttpClient httpClient)
         }
 
         var error = await response.Content.ReadFromJsonAsync<ErrorPayload>(cancellationToken);
-        throw new InvalidOperationException(error?.Message ?? $"Posting failed with HTTP {(int)response.StatusCode}.");
+        throw new InvalidOperationException(
+            DescribePostingFailure(
+                error?.Code,
+                error?.Message,
+                response.StatusCode));
     }
 
-    private sealed record class ErrorPayload(string? Message);
+    private static string DescribePostingFailure(string? errorCode, string? errorMessage, System.Net.HttpStatusCode statusCode)
+    {
+        if (string.Equals(errorCode, "posting_period_closed", StringComparison.Ordinal))
+        {
+            return "The posting date falls inside a closed period for the active primary book. Move the posting date into an open period or adjust the lock in Book Governance.";
+        }
+
+        return string.IsNullOrWhiteSpace(errorMessage)
+            ? $"Posting failed with HTTP {(int)statusCode}."
+            : errorMessage;
+    }
+
+    private sealed record class ErrorPayload(string? Code, string? Message);
 }

@@ -2,6 +2,17 @@ using Modules.Company.MultiCurrency;
 
 namespace Modules.GL.JournalEntry;
 
+public sealed class JournalEntryWorkflowException : InvalidOperationException
+{
+    public JournalEntryWorkflowException(string errorCode, string message)
+        : base(message)
+    {
+        ErrorCode = errorCode;
+    }
+
+    public string ErrorCode { get; }
+}
+
 public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 {
     private readonly IJournalEntryAccountCatalog _accountCatalog;
@@ -70,18 +81,18 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
         var meaningfulLines = GetMeaningfulLines(draft).ToArray();
         if (meaningfulLines.Length < 2)
         {
-            throw new InvalidOperationException("At least two journal lines are required before posting.");
+            throw CreateWorkflowException("invalid_draft_shape", "At least two journal lines are required before posting.");
         }
 
         var totals = JournalEntryGridTotals.FromDraft(draft);
         if (!totals.IsTransactionBalanced)
         {
-            throw new InvalidOperationException("Transaction-currency debit and credit must balance before posting.");
+            throw CreateWorkflowException("invalid_draft_shape", "Transaction-currency debit and credit must balance before posting.");
         }
 
         if (!totals.IsBaseBalanced)
         {
-            throw new InvalidOperationException("Base-currency debit and credit must balance before posting.");
+            throw CreateWorkflowException("invalid_draft_shape", "Base-currency debit and credit must balance before posting.");
         }
 
         if (draft.DocumentId is null)
@@ -104,14 +115,14 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
         if (draft.CompanyId == Guid.Empty)
         {
-            throw new InvalidOperationException("A company context is required.");
+            throw CreateWorkflowException("invalid_draft_shape", "A company context is required.");
         }
 
         foreach (var line in GetMeaningfulLines(draft))
         {
             if (line.Account is null || line.Account.AccountId == Guid.Empty)
             {
-                throw new InvalidOperationException($"Line {line.LineNumber} requires an account.");
+                throw CreateWorkflowException("invalid_draft_shape", $"Line {line.LineNumber} requires an account.");
             }
 
             var debit = line.DebitAmount ?? 0m;
@@ -119,17 +130,17 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
             if (debit < 0m || credit < 0m)
             {
-                throw new InvalidOperationException($"Line {line.LineNumber} cannot contain negative amounts.");
+                throw CreateWorkflowException("invalid_draft_shape", $"Line {line.LineNumber} cannot contain negative amounts.");
             }
 
             if ((debit > 0m && credit > 0m) || (debit == 0m && credit == 0m))
             {
-                throw new InvalidOperationException($"Line {line.LineNumber} must contain either a debit or a credit.");
+                throw CreateWorkflowException("invalid_draft_shape", $"Line {line.LineNumber} must contain either a debit or a credit.");
             }
 
             if (!line.Account.AllowManualPosting)
             {
-                throw new InvalidOperationException($"Line {line.LineNumber} uses an account that is not allowed for manual posting.");
+                throw CreateWorkflowException("invalid_draft_shape", $"Line {line.LineNumber} uses an account that is not allowed for manual posting.");
             }
         }
     }
@@ -150,13 +161,15 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
         if (!string.Equals(draft.BaseCurrencyCode, profile.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
+            throw CreateWorkflowException(
+                "invalid_currency_configuration",
                 $"Draft base currency {draft.BaseCurrencyCode} does not match company base currency {profile.BaseCurrencyCode}.");
         }
 
         if (!profile.IsCurrencyEnabled(draft.CurrencyCode))
         {
-            throw new InvalidOperationException(
+            throw CreateWorkflowException(
+                "invalid_currency_configuration",
                 $"Currency {draft.CurrencyCode} is not enabled for company {draft.CompanyId:D}.");
         }
     }
@@ -173,7 +186,7 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
         if (draft.FxRate <= 0m)
         {
-            throw new InvalidOperationException("FX rate must be greater than zero.");
+            throw CreateWorkflowException("invalid_fx_configuration", "FX rate must be greater than zero.");
         }
 
         if (draft.FxSourceSemantics != SharedKernel.FX.FxSourceSemantics.Manual || draft.FxSnapshotId.HasValue)
@@ -211,44 +224,44 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
     {
         if (!IsSupportedRateType(draft.FxRateType))
         {
-            throw new InvalidOperationException($"Unsupported FX rate type {draft.FxRateType}.");
+            throw CreateWorkflowException("invalid_fx_configuration", $"Unsupported FX rate type {draft.FxRateType}.");
         }
 
         if (!IsSupportedQuoteBasis(draft.FxQuoteBasis))
         {
-            throw new InvalidOperationException($"Unsupported FX quote basis {draft.FxQuoteBasis}.");
+            throw CreateWorkflowException("invalid_fx_configuration", $"Unsupported FX quote basis {draft.FxQuoteBasis}.");
         }
 
         if (!IsSupportedRateUseCase(draft.FxRateUseCase))
         {
-            throw new InvalidOperationException($"Unsupported FX rate use case {draft.FxRateUseCase}.");
+            throw CreateWorkflowException("invalid_fx_configuration", $"Unsupported FX rate use case {draft.FxRateUseCase}.");
         }
 
         if (!IsSupportedPostingReason(draft.FxPostingReason))
         {
-            throw new InvalidOperationException($"Unsupported FX posting reason {draft.FxPostingReason}.");
+            throw CreateWorkflowException("invalid_fx_configuration", $"Unsupported FX posting reason {draft.FxPostingReason}.");
         }
 
         if (draft.IsForeignCurrency)
         {
             if (draft.FxRate <= 0m)
             {
-                throw new InvalidOperationException("FX rate must be greater than zero.");
+                throw CreateWorkflowException("invalid_fx_configuration", "FX rate must be greater than zero.");
             }
 
             if (string.Equals(draft.FxSourceSemantics, SharedKernel.FX.FxSourceSemantics.Identity, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Foreign-currency journal entries cannot use identity FX semantics.");
+                throw CreateWorkflowException("invalid_fx_configuration", "Foreign-currency journal entries cannot use identity FX semantics.");
             }
 
             if (!string.Equals(draft.FxRateUseCase, SharedKernel.FX.FxRateUseCase.General, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Manual journal entry FX use case must stay general.");
+                throw CreateWorkflowException("invalid_fx_configuration", "Manual journal entry FX use case must stay general.");
             }
 
             if (!string.Equals(draft.FxPostingReason, SharedKernel.FX.FxPostingReason.Normal, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Manual journal entry FX posting reason must stay normal.");
+                throw CreateWorkflowException("invalid_fx_configuration", "Manual journal entry FX posting reason must stay normal.");
             }
 
             return;
@@ -256,17 +269,17 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
         if (draft.FxSnapshotId.HasValue)
         {
-            throw new InvalidOperationException("Base-currency journal entries cannot carry an FX snapshot.");
+            throw CreateWorkflowException("invalid_fx_configuration", "Base-currency journal entries cannot carry an FX snapshot.");
         }
 
         if (!string.Equals(draft.FxSourceSemantics, SharedKernel.FX.FxSourceSemantics.Identity, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Base-currency journal entries must use identity FX semantics.");
+            throw CreateWorkflowException("invalid_fx_configuration", "Base-currency journal entries must use identity FX semantics.");
         }
 
         if (draft.FxRate != 1m)
         {
-            throw new InvalidOperationException("Base-currency journal entries must use an FX rate of 1.");
+            throw CreateWorkflowException("invalid_fx_configuration", "Base-currency journal entries must use an FX rate of 1.");
         }
     }
 
@@ -279,19 +292,22 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
         if (!draft.FxSnapshotId.HasValue)
         {
-            throw new InvalidOperationException("Foreign-currency journal entries require a persisted FX snapshot before save or post.");
+            throw CreateWorkflowException("invalid_fx_configuration", "Foreign-currency journal entries require a persisted FX snapshot before save or post.");
         }
 
         if (draft.FxEffectiveDate == default)
         {
-            throw new InvalidOperationException("Foreign-currency journal entries require an FX effective date.");
+            throw CreateWorkflowException("invalid_fx_configuration", "Foreign-currency journal entries require an FX effective date.");
         }
 
         if (draft.FxEffectiveDate > draft.JournalDate)
         {
-            throw new InvalidOperationException("FX effective date cannot be later than the journal date.");
+            throw CreateWorkflowException("invalid_fx_configuration", "FX effective date cannot be later than the journal date.");
         }
     }
+
+    private static JournalEntryWorkflowException CreateWorkflowException(string errorCode, string message) =>
+        new(errorCode, message);
 
     private static bool IsSupportedRateType(string value) =>
         value is SharedKernel.FX.FxRateType.Spot

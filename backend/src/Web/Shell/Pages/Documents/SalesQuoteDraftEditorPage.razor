@@ -27,6 +27,50 @@
         Capture customer-facing offer truth before it becomes a sales order. Quote does not post accounting or inventory truth.
     </p>
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">Commercial Chain</MudText>
+                <MudText Typo="Typo.h5">@QuoteStageLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@QuoteStageSummary</MudText>
+            </div>
+            <MudChip T="string" Color="@QuoteStageColor" Variant="Variant.Filled">@QuoteStageBadge</MudChip>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Commercial truth</MudText>
+                <MudText Typo="Typo.h6">Offer only</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">Quote owns customer-facing offer truth only. No JE, no inventory, and no receivable exists yet.</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current next step</MudText>
+                <MudText Typo="Typo.h6">@QuoteNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@QuoteNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Demand hand-off</MudText>
+                <MudText Typo="Typo.h6">@QuoteHandoffLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@QuoteHandoffSummary</MudText>
+            </MudPaper>
+        </div>
+
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/source-browser?sourceType=quote">
+                Open Quote Pipeline
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="/documents/source-browser?sourceType=sales_order">
+                Review Sales Orders
+            </MudButton>
+            @if (_convertedSalesOrder is not null)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@($"/documents/sales-order/draft-editor?draftId={_convertedSalesOrder.Id:D}")">
+                    Continue Sales Order
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+
     @if (!string.IsNullOrWhiteSpace(_error))
     {
         <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_error</MudAlert>
@@ -157,6 +201,59 @@
     private IReadOnlyList<InventoryManagedItemSummary> InventoryItems => _inventoryDashboard?.ActiveItems.ToArray() ?? [];
     private IReadOnlyList<InventoryManagedWarehouseSummary> Warehouses => _inventoryDashboard?.ActiveWarehouses ?? [];
     private decimal TotalAmount => _lines.Sum(static line => line.LineAmount);
+    private bool IsAcceptedQuote => string.Equals(_saved?.Status, "accepted", StringComparison.OrdinalIgnoreCase);
+    private string QuoteStageLabel => _convertedSalesOrder is not null
+        ? "Converted to sales order"
+        : IsAcceptedQuote
+            ? "Accepted and ready for demand hand-off"
+            : _saved is not null
+                ? "Draft quote saved"
+                : "Start the commercial lane";
+    private string QuoteStageSummary => _convertedSalesOrder is not null
+        ? $"Quote truth has already handed off into sales order {_convertedSalesOrder.DisplayNumber}. Continue demand control from the SO lane."
+        : IsAcceptedQuote
+            ? "The customer-facing offer has been accepted. Convert it into a sales order when committed demand should become operational truth."
+            : _saved is not null
+                ? "The quote is saved but still sits in the offer lane. Accept or continue editing it before demand truth begins."
+                : "Build the offer, save it, then accept it once commercial intent is real.";
+    private string QuoteStageBadge => _convertedSalesOrder is not null
+        ? "SO created"
+        : IsAcceptedQuote
+            ? "Accepted"
+            : _saved is not null
+                ? "Draft"
+                : "New";
+    private Color QuoteStageColor => _convertedSalesOrder is not null
+        ? Color.Success
+        : IsAcceptedQuote
+            ? Color.Info
+            : _saved is not null
+                ? Color.Warning
+                : Color.Default;
+    private string QuoteNextStepTitle => _convertedSalesOrder is not null
+        ? "Open the sales order"
+        : IsAcceptedQuote
+            ? "Convert to sales order"
+            : _saved is not null
+                ? "Accept the quote"
+                : "Save the quote";
+    private string QuoteNextStepSummary => _convertedSalesOrder is not null
+        ? "Commercial offer truth has already turned into committed customer demand. Continue from the SO workbench."
+        : IsAcceptedQuote
+            ? "Demand truth should now move into the sales-order lane. Conversion is the point where quote intent becomes operational commitment."
+            : _saved is not null
+                ? "Once the offer is reviewed, mark it accepted before you turn it into demand truth."
+                : "Quotes only become part of the operating lane after you save them and make the commercial intent explicit.";
+    private string QuoteHandoffLabel => _convertedSalesOrder is not null
+        ? _convertedSalesOrder.DisplayNumber
+        : IsAcceptedQuote
+            ? "Awaiting conversion"
+            : "SO not created yet";
+    private string QuoteHandoffSummary => _convertedSalesOrder is not null
+        ? "The demand hand-off already exists. Shipment and invoice truth will now branch from the sales order rather than from this quote."
+        : IsAcceptedQuote
+            ? "The quote is commercially approved but there is still no sales order carrying the committed demand."
+            : "Sales order hand-off has not started. Quote remains a non-posting commercial surface.";
 
     protected override async Task OnInitializedAsync()
     {

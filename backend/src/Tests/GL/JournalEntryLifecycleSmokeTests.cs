@@ -36,8 +36,18 @@ public sealed class JournalEntryLifecycleSmokeTests
             Assert.Equal("manual_journal_void", compensationReview!.SourceType);
             Assert.Equal("posted", compensationReview.Status);
             Assert.Equal(fixture.DocumentId, compensationReview.SourceId);
+            Assert.Equal("CNY", compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReview.TransactionCurrencyCode, compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReview.BaseCurrencyCode, compensationReview.BaseCurrencyCode);
+            Assert.Equal(originalReview.ExchangeRateSource, compensationReview.ExchangeRateSource);
+            Assert.Equal(originalReview.FxSnapshotId, compensationReview.FxSnapshotId);
+            Assert.Equal(originalReview.FxRateType, compensationReview.FxRateType);
+            Assert.Equal(originalReview.FxQuoteBasis, compensationReview.FxQuoteBasis);
+            Assert.Equal(originalReview.FxRateUseCase, compensationReview.FxRateUseCase);
+            Assert.Equal(originalReview.FxPostingReason, compensationReview.FxPostingReason);
             Assert.NotNull(sourceReview);
             Assert.Equal("voided", sourceReview!.Status);
+            Assert.Equal(fixture.FxSnapshotId, sourceReview.FxSnapshotId);
             Assert.Contains(sourceReview.RelatedEntries, entry => entry.Id == lifecycle.CompensationJournalEntryId);
         }
         finally
@@ -67,12 +77,230 @@ public sealed class JournalEntryLifecycleSmokeTests
             Assert.Equal("manual_journal_reversal", compensationReview!.SourceType);
             Assert.Equal("posted", compensationReview.Status);
             Assert.Equal(fixture.DocumentId, compensationReview.SourceId);
+            Assert.Equal("CNY", compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReview.TransactionCurrencyCode, compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReview.BaseCurrencyCode, compensationReview.BaseCurrencyCode);
+            Assert.Equal(originalReview.ExchangeRateSource, compensationReview.ExchangeRateSource);
+            Assert.Equal(originalReview.FxSnapshotId, compensationReview.FxSnapshotId);
+            Assert.Equal(originalReview.FxRateType, compensationReview.FxRateType);
+            Assert.Equal(originalReview.FxQuoteBasis, compensationReview.FxQuoteBasis);
+            Assert.Equal(originalReview.FxRateUseCase, compensationReview.FxRateUseCase);
+            Assert.Equal(originalReview.FxPostingReason, compensationReview.FxPostingReason);
             Assert.NotNull(sourceReview);
             Assert.Equal("reversed", sourceReview!.Status);
+            Assert.Equal(fixture.FxSnapshotId, sourceReview.FxSnapshotId);
             Assert.Contains(sourceReview.RelatedEntries, entry => entry.Id == lifecycle.CompensationJournalEntryId);
         }
         finally
         {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task ReverseAsync_PreservesForeignCurrencyTraceAcrossReviewAndSourceChain()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            var originalReviewBeforeReverse = await fixture.ReviewStore.GetAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                CancellationToken.None);
+            var sourceReviewBeforeReverse = await fixture.SourceReviewStore.GetAsync(
+                CompanyId,
+                fixture.DocumentId,
+                CancellationToken.None);
+
+            Assert.NotNull(originalReviewBeforeReverse);
+            Assert.NotNull(sourceReviewBeforeReverse);
+            Assert.True(originalReviewBeforeReverse!.IsForeignCurrency);
+            Assert.Equal("CNY", originalReviewBeforeReverse.TransactionCurrencyCode);
+            Assert.Equal(fixture.FxSnapshotId, originalReviewBeforeReverse.FxSnapshotId);
+            Assert.Contains("snapshot", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(fixture.Posted.JournalEntryId, sourceReviewBeforeReverse!.LinkedJournalEntryId);
+            Assert.Contains(
+                sourceReviewBeforeReverse.RelatedEntries,
+                entry => entry.Id == fixture.Posted.JournalEntryId && entry.SourceType == "manual_journal");
+
+            var lifecycle = await fixture.LifecycleWorkflow.ReverseAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                UserId,
+                CancellationToken.None);
+
+            var originalReviewAfterReverse = await fixture.ReviewStore.GetAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                CancellationToken.None);
+            var compensationReview = await fixture.ReviewStore.GetAsync(
+                CompanyId,
+                lifecycle.CompensationJournalEntryId,
+                CancellationToken.None);
+            var sourceReviewAfterReverse = await fixture.SourceReviewStore.GetAsync(
+                CompanyId,
+                fixture.DocumentId,
+                CancellationToken.None);
+
+            Assert.NotNull(originalReviewAfterReverse);
+            Assert.NotNull(compensationReview);
+            Assert.NotNull(sourceReviewAfterReverse);
+
+            Assert.Equal("reversed", originalReviewAfterReverse!.Status);
+            Assert.Equal(fixture.FxSnapshotId, originalReviewAfterReverse.FxSnapshotId);
+            Assert.Equal(originalReviewBeforeReverse.FxTraceLabel, originalReviewAfterReverse.FxTraceLabel);
+            Assert.Contains(
+                originalReviewAfterReverse.RelatedEntries,
+                entry => entry.Id == lifecycle.CompensationJournalEntryId && entry.SourceType == "manual_journal_reversal");
+
+            Assert.Equal("manual_journal_reversal", compensationReview!.SourceType);
+            Assert.True(compensationReview.IsForeignCurrency);
+            Assert.Equal("CNY", compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReviewBeforeReverse.BaseCurrencyCode, compensationReview.BaseCurrencyCode);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRate, compensationReview.ExchangeRate);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRateDate, compensationReview.ExchangeRateDate);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRateSource, compensationReview.ExchangeRateSource);
+            Assert.Equal(originalReviewBeforeReverse.FxSnapshotId, compensationReview.FxSnapshotId);
+            Assert.Equal(originalReviewBeforeReverse.FxRateType, compensationReview.FxRateType);
+            Assert.Equal(originalReviewBeforeReverse.FxQuoteBasis, compensationReview.FxQuoteBasis);
+            Assert.Equal(originalReviewBeforeReverse.FxRateUseCase, compensationReview.FxRateUseCase);
+            Assert.Equal(originalReviewBeforeReverse.FxPostingReason, compensationReview.FxPostingReason);
+            Assert.Contains("snapshot", compensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+
+            Assert.Equal("reversed", sourceReviewAfterReverse!.Status);
+            Assert.Equal(fixture.FxSnapshotId, sourceReviewAfterReverse.FxSnapshotId);
+            Assert.Equal(fixture.Posted.JournalEntryId, sourceReviewAfterReverse.LinkedJournalEntryId);
+            Assert.Contains(
+                sourceReviewAfterReverse.RelatedEntries,
+                entry => entry.Id == fixture.Posted.JournalEntryId && entry.SourceType == "manual_journal");
+            Assert.Contains(
+                sourceReviewAfterReverse.RelatedEntries,
+                entry => entry.Id == lifecycle.CompensationJournalEntryId && entry.SourceType == "manual_journal_reversal");
+            Assert.Equal(2, sourceReviewAfterReverse.RelatedEntries.Count);
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task VoidAsync_PreservesForeignCurrencyTraceAcrossReviewAndSourceChain()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        try
+        {
+            var originalReviewBeforeVoid = await fixture.ReviewStore.GetAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                CancellationToken.None);
+            var sourceReviewBeforeVoid = await fixture.SourceReviewStore.GetAsync(
+                CompanyId,
+                fixture.DocumentId,
+                CancellationToken.None);
+
+            Assert.NotNull(originalReviewBeforeVoid);
+            Assert.NotNull(sourceReviewBeforeVoid);
+            Assert.True(originalReviewBeforeVoid!.IsForeignCurrency);
+            Assert.Equal("CNY", originalReviewBeforeVoid.TransactionCurrencyCode);
+            Assert.Equal(fixture.FxSnapshotId, originalReviewBeforeVoid.FxSnapshotId);
+            Assert.Contains("snapshot", originalReviewBeforeVoid.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(fixture.Posted.JournalEntryId, sourceReviewBeforeVoid!.LinkedJournalEntryId);
+            Assert.Contains(
+                sourceReviewBeforeVoid.RelatedEntries,
+                entry => entry.Id == fixture.Posted.JournalEntryId && entry.SourceType == "manual_journal");
+
+            var lifecycle = await fixture.LifecycleWorkflow.VoidAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                UserId,
+                CancellationToken.None);
+
+            var originalReviewAfterVoid = await fixture.ReviewStore.GetAsync(
+                CompanyId,
+                fixture.Posted.JournalEntryId,
+                CancellationToken.None);
+            var compensationReview = await fixture.ReviewStore.GetAsync(
+                CompanyId,
+                lifecycle.CompensationJournalEntryId,
+                CancellationToken.None);
+            var sourceReviewAfterVoid = await fixture.SourceReviewStore.GetAsync(
+                CompanyId,
+                fixture.DocumentId,
+                CancellationToken.None);
+
+            Assert.NotNull(originalReviewAfterVoid);
+            Assert.NotNull(compensationReview);
+            Assert.NotNull(sourceReviewAfterVoid);
+
+            Assert.Equal("voided", originalReviewAfterVoid!.Status);
+            Assert.Equal(fixture.FxSnapshotId, originalReviewAfterVoid.FxSnapshotId);
+            Assert.Equal(originalReviewBeforeVoid.FxTraceLabel, originalReviewAfterVoid.FxTraceLabel);
+            Assert.Contains(
+                originalReviewAfterVoid.RelatedEntries,
+                entry => entry.Id == lifecycle.CompensationJournalEntryId && entry.SourceType == "manual_journal_void");
+
+            Assert.Equal("manual_journal_void", compensationReview!.SourceType);
+            Assert.True(compensationReview.IsForeignCurrency);
+            Assert.Equal("CNY", compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReviewBeforeVoid.BaseCurrencyCode, compensationReview.BaseCurrencyCode);
+            Assert.Equal(originalReviewBeforeVoid.ExchangeRate, compensationReview.ExchangeRate);
+            Assert.Equal(originalReviewBeforeVoid.ExchangeRateDate, compensationReview.ExchangeRateDate);
+            Assert.Equal(originalReviewBeforeVoid.ExchangeRateSource, compensationReview.ExchangeRateSource);
+            Assert.Equal(originalReviewBeforeVoid.FxSnapshotId, compensationReview.FxSnapshotId);
+            Assert.Equal(originalReviewBeforeVoid.FxRateType, compensationReview.FxRateType);
+            Assert.Equal(originalReviewBeforeVoid.FxQuoteBasis, compensationReview.FxQuoteBasis);
+            Assert.Equal(originalReviewBeforeVoid.FxRateUseCase, compensationReview.FxRateUseCase);
+            Assert.Equal(originalReviewBeforeVoid.FxPostingReason, compensationReview.FxPostingReason);
+            Assert.Contains("snapshot", compensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+
+            Assert.Equal("voided", sourceReviewAfterVoid!.Status);
+            Assert.Equal(fixture.FxSnapshotId, sourceReviewAfterVoid.FxSnapshotId);
+            Assert.Equal(fixture.Posted.JournalEntryId, sourceReviewAfterVoid.LinkedJournalEntryId);
+            Assert.Contains(
+                sourceReviewAfterVoid.RelatedEntries,
+                entry => entry.Id == fixture.Posted.JournalEntryId && entry.SourceType == "manual_journal");
+            Assert.Contains(
+                sourceReviewAfterVoid.RelatedEntries,
+                entry => entry.Id == lifecycle.CompensationJournalEntryId && entry.SourceType == "manual_journal_void");
+            Assert.Equal(2, sourceReviewAfterVoid.RelatedEntries.Count);
+        }
+        finally
+        {
+            await CleanupFixtureAsync(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task ReverseAsync_RejectsClosedPrimaryBookPeriod()
+    {
+        var fixture = await CreateFixtureAsync();
+        var governanceBookId = Guid.NewGuid();
+
+        try
+        {
+            if (!await BookGovernanceTablesExistAsync(fixture.ConnectionFactory, CancellationToken.None))
+            {
+                return;
+            }
+
+            await SeedClosedPrimaryBookAsync(
+                fixture.ConnectionFactory,
+                CompanyId,
+                governanceBookId,
+                fixture.JournalDate,
+                CancellationToken.None);
+
+            var exception = await Assert.ThrowsAsync<JournalEntryLifecycleException>(() =>
+                fixture.LifecycleWorkflow.ReverseAsync(CompanyId, fixture.Posted.JournalEntryId, UserId, CancellationToken.None));
+
+            Assert.Equal("posting_period_closed", exception.ErrorCode);
+        }
+        finally
+        {
+            await CleanupClosedPrimaryBookAsync(fixture.ConnectionFactory, CompanyId, governanceBookId, CancellationToken.None);
             await CleanupFixtureAsync(fixture);
         }
     }
@@ -97,7 +325,11 @@ public sealed class JournalEntryLifecycleSmokeTests
         var accounts = await accountCatalog.ListManualPostingAccountsAsync(CompanyId, CancellationToken.None);
         Assert.True(accounts.Count >= 2, "Expected at least two manual-posting accounts in the demo company.");
 
-        var journalDate = BuildUniqueJournalDate();
+        var journalDate = await ReserveUniqueJournalDateAsync(
+            connectionFactory,
+            companyCurrency.Profile.BaseCurrencyCode,
+            "CNY",
+            CancellationToken.None);
         var draft = JournalEntryEditorState.CreateDarkModeDemo().Draft;
         draft.CompanyId = CompanyId;
         draft.JournalDate = journalDate;
@@ -124,6 +356,7 @@ public sealed class JournalEntryLifecycleSmokeTests
             sourceReviewStore,
             saved.DocumentId,
             draft.FxSnapshotId,
+            journalDate,
             posted);
     }
 
@@ -169,27 +402,181 @@ public sealed class JournalEntryLifecycleSmokeTests
             await ExecuteDeleteAsync(connection, transaction, "delete from company_fx_rate_snapshots where id = @id;", fixture.FxSnapshotId.Value, CancellationToken.None);
         }
 
-        await ExecuteDeleteByCompanyAsync(
-            connection,
-            transaction,
-            """
-            delete from accounts
-            where company_id = @company_id
-              and system_role in ('accounts_receivable:CNY', 'accounts_payable:CNY');
-            """,
-            CancellationToken.None);
-
-        await ExecuteDeleteByCompanyAsync(
-            connection,
-            transaction,
-            """
-            delete from company_currencies
-            where company_id = @company_id
-              and currency_code = 'CNY';
-            """,
-            CancellationToken.None);
-
         await transaction.CommitAsync(CancellationToken.None);
+    }
+
+    private static async Task<bool> BookGovernanceTablesExistAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select to_regclass('public.company_books') is not null
+               and to_regclass('public.company_book_governance_signals') is not null;
+            """;
+
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task SeedClosedPrimaryBookAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        Guid companyId,
+        Guid bookId,
+        DateOnly journalDate,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var deleteSignals = connection.CreateCommand())
+        {
+            deleteSignals.Transaction = transaction;
+            deleteSignals.CommandText =
+                """
+                delete from company_book_governance_signals
+                where company_id = @company_id
+                  and company_book_id = @book_id;
+                """;
+            deleteSignals.Parameters.AddWithValue("company_id", companyId);
+            deleteSignals.Parameters.AddWithValue("book_id", bookId);
+            await deleteSignals.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var deleteBook = connection.CreateCommand())
+        {
+            deleteBook.Transaction = transaction;
+            deleteBook.CommandText =
+                """
+                delete from company_books
+                where company_id = @company_id
+                  and id = @book_id;
+                """;
+            deleteBook.Parameters.AddWithValue("company_id", companyId);
+            deleteBook.Parameters.AddWithValue("book_id", bookId);
+            await deleteBook.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var bookCommand = connection.CreateCommand())
+        {
+            bookCommand.Transaction = transaction;
+            bookCommand.CommandText =
+                """
+                insert into company_books (
+                  id,
+                  company_id,
+                  book_code,
+                  book_name,
+                  accounting_standard,
+                  base_currency_code,
+                  is_active,
+                  is_primary,
+                  effective_from,
+                  created_by_user_id,
+                  created_at
+                )
+                values (
+                  @id,
+                  @company_id,
+                  'PRIMARY',
+                  'Primary Book',
+                  'IFRS',
+                  'USD',
+                  true,
+                  true,
+                  @effective_from,
+                  @created_by_user_id,
+                  now()
+                );
+                """;
+            bookCommand.Parameters.AddWithValue("id", bookId);
+            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("effective_from", journalDate.AddDays(-30));
+            bookCommand.Parameters.AddWithValue("created_by_user_id", UserId);
+            await bookCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var signalCommand = connection.CreateCommand())
+        {
+            signalCommand.Transaction = transaction;
+            signalCommand.CommandText =
+                """
+                insert into company_book_governance_signals (
+                  id,
+                  company_id,
+                  company_book_id,
+                  signal_type,
+                  signal_date,
+                  reference_label,
+                  created_by_user_id,
+                  created_at
+                )
+                values (
+                  @id,
+                  @company_id,
+                  @book_id,
+                  'closed_period',
+                  @signal_date,
+                  'Lifecycle smoke closed period',
+                  @created_by_user_id,
+                  now()
+                );
+                """;
+            signalCommand.Parameters.AddWithValue("id", Guid.NewGuid());
+            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("book_id", bookId);
+            signalCommand.Parameters.AddWithValue("signal_date", journalDate.AddDays(5));
+            signalCommand.Parameters.AddWithValue("created_by_user_id", UserId);
+            await signalCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task CleanupClosedPrimaryBookAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        Guid companyId,
+        Guid bookId,
+        CancellationToken cancellationToken)
+    {
+        if (!await BookGovernanceTablesExistAsync(connectionFactory, cancellationToken))
+        {
+            return;
+        }
+
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var signalCommand = connection.CreateCommand())
+        {
+            signalCommand.Transaction = transaction;
+            signalCommand.CommandText =
+                """
+                delete from company_book_governance_signals
+                where company_id = @company_id
+                  and company_book_id = @book_id;
+                """;
+            signalCommand.Parameters.AddWithValue("company_id", companyId);
+            signalCommand.Parameters.AddWithValue("book_id", bookId);
+            await signalCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var bookCommand = connection.CreateCommand())
+        {
+            bookCommand.Transaction = transaction;
+            bookCommand.CommandText =
+                """
+                delete from company_books
+                where company_id = @company_id
+                  and id = @book_id;
+                """;
+            bookCommand.Parameters.AddWithValue("company_id", companyId);
+            bookCommand.Parameters.AddWithValue("book_id", bookId);
+            await bookCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static async Task ExecuteDeleteAsync(
@@ -206,25 +593,59 @@ public sealed class JournalEntryLifecycleSmokeTests
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task ExecuteDeleteByCompanyAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sql,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
     private static string GetConnectionString() =>
         Environment.GetEnvironmentVariable("CITUS_ACCOUNTING_DB")
         ?? "Host=localhost;Port=5432;Database=citus_accounting;Username=postgres;Password=change-me";
 
-    private static DateOnly BuildUniqueJournalDate() =>
-        DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(Math.Abs(Guid.NewGuid().GetHashCode() % 300) + 60);
+    private static async Task<DateOnly> ReserveUniqueJournalDateAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        string baseCurrencyCode,
+        string quoteCurrencyCode,
+        CancellationToken cancellationToken)
+    {
+        var start = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(60);
+        for (var offset = 0; offset < 720; offset++)
+        {
+            var candidate = start.AddDays(offset);
+            if (!await SnapshotIdentityExistsAsync(
+                    connectionFactory,
+                    baseCurrencyCode,
+                    quoteCurrencyCode,
+                    candidate,
+                    cancellationToken))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("Could not reserve a unique lifecycle smoke journal date.");
+    }
+
+    private static async Task<bool> SnapshotIdentityExistsAsync(
+        PostgreSqlConnectionFactory connectionFactory,
+        string baseCurrencyCode,
+        string quoteCurrencyCode,
+        DateOnly requestedDate,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select 1
+            from company_fx_rate_snapshots
+            where company_id = @company_id
+              and base_currency_code = @base_currency_code
+              and quote_currency_code = @quote_currency_code
+              and requested_date = @requested_date
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
+        command.Parameters.AddWithValue("requested_date", requestedDate);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
 
     private sealed record class LifecycleFixture(
         PostgreSqlConnectionFactory ConnectionFactory,
@@ -233,5 +654,6 @@ public sealed class JournalEntryLifecycleSmokeTests
         PostgreSqlManualJournalSourceReviewStore SourceReviewStore,
         Guid DocumentId,
         Guid? FxSnapshotId,
+        DateOnly JournalDate,
         JournalEntryPostResult Posted);
 }

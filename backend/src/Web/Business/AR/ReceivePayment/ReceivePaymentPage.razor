@@ -15,6 +15,53 @@
         Prepare governed AR receipt drafts from existing open receivables in the active company context.
     </p>
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">AR Settlement Chain</MudText>
+                <MudText Typo="Typo.h5">@SettlementStageLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SettlementStageSummary</MudText>
+            </div>
+            <MudChip T="string" Variant="Variant.Filled" Color="@SettlementStageColor">@SettlementStageBadge</MudChip>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Source receivable lane</MudText>
+                <MudText Typo="Typo.h6">@SettlementSourceLaneLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SettlementSourceLaneSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current next step</MudText>
+                <MudText Typo="Typo.h6">@SettlementNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SettlementNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Related AR lane</MudText>
+                <MudText Typo="Typo.h6">@SettlementRelatedLaneLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@SettlementRelatedLaneSummary</MudText>
+            </MudPaper>
+        </div>
+
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildInvoiceBrowserHref()">
+                Review Invoices
+            </MudButton>
+            @if (SelectedCustomerId.HasValue)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="@BuildCreditApplicationHref()">
+                    Open Credit Application
+                </MudButton>
+            }
+            @if (_postedResult is not null && _preparedDraft is not null)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPostedReceivePaymentDetailHref()">
+                    Continue Posted Receipt Review
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+
     @if (IsCompanyReadyHandOff)
     {
         <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
@@ -292,12 +339,18 @@
                 </MudAlert>
             }
             <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/receive_payment/{_preparedDraft!.DocumentId:D}")">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@BuildPostedReceivePaymentDetailHref()">
                     Open Posted Document
                 </MudButton>
                 <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">
                     Open Journal Entry Review
                 </MudButton>
+                @if (SelectedCustomerId.HasValue)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="@BuildCreditApplicationHref()">
+                        Continue to Credit Application
+                    </MudButton>
+                }
             </div>
         </MudPaper>
     }
@@ -380,6 +433,74 @@
         _ when CustomerId.HasValue && SelectedCustomerId == CustomerId => "Because this customer came from the first-invoice hand-off, the next check is whether the first invoice is still draft, has been reversed, or was already consumed by another receipt path.",
         _ => "The next legal check is the matching source-document history for this customer: posted invoice, posted credit note, reversal trail, or prior receipt consumption."
     };
+    private string SettlementStageLabel => _postedResult is not null
+        ? "Receipt posted into settlement truth"
+        : _preparedDraft is not null
+            ? "Receipt draft prepared"
+            : SelectedRows.Count > 0
+                ? "Receivable selected for settlement"
+                : _rows.Count > 0
+                    ? "Receivable candidates loaded"
+                    : "Start receipt settlement";
+    private string SettlementStageSummary => _postedResult is not null
+        ? "Cash settlement truth and its journal entry already exist. Continue with posted-document review or move into adjacent AR application lanes."
+        : _preparedDraft is not null
+            ? "The governed draft is ready. Post it when the customer receipt should become formal settlement truth."
+            : SelectedRows.Count > 0
+                ? "Settlement intent is defined. Prepare the draft so the receipt can move into the governed posting lane."
+                : _rows.Count > 0
+                    ? "Open receivables are visible. Select applied amounts to continue the receipt chain."
+                    : "This lane consumes posted invoice or credit-note receivables and turns them into governed cash settlement truth.";
+    private string SettlementStageBadge => _postedResult is not null
+        ? "Posted"
+        : _preparedDraft is not null
+            ? "Prepared"
+            : SelectedRows.Count > 0
+                ? "Selected"
+                : _rows.Count > 0
+                    ? "Loaded"
+                    : "New";
+    private Color SettlementStageColor => _postedResult is not null
+        ? Color.Success
+        : _preparedDraft is not null
+            ? Color.Info
+            : SelectedRows.Count > 0
+                ? Color.Warning
+                : _rows.Count > 0
+                    ? Color.Info
+                    : Color.Default;
+    private string SettlementSourceLaneLabel => _rows.Count > 0 || SelectedCustomerId.HasValue
+        ? "Posted invoice / credit note receivables"
+        : "Source still unknown";
+    private string SettlementSourceLaneSummary => _rows.Count > 0
+        ? "These open items already came from posted AR source documents, so Receive Payment is now operating on formal receivable truth."
+        : SelectedCustomerId.HasValue
+            ? "Select or load the posted invoice and credit-note receivables for this customer before cash settlement can begin."
+            : "Choose the customer that owns the receivable before diagnosing the source side of settlement.";
+    private string SettlementNextStepTitle => _postedResult is not null
+        ? "Review posted receipt"
+        : _preparedDraft is not null
+            ? "Post the receipt draft"
+            : SelectedRows.Count > 0
+                ? "Prepare the receipt draft"
+                : _rows.Count > 0
+                    ? "Select apply amounts"
+                    : "Load open receivables";
+    private string SettlementNextStepSummary => _postedResult is not null
+        ? "Use the posted document and JE review to confirm continuity, then move into adjacent AR flows only if more settlement work remains."
+        : _preparedDraft is not null
+            ? "Posting will formalize cash settlement truth and create the linked journal entry."
+            : SelectedRows.Count > 0
+                ? "Preparation turns your selected receivable applications into a governed source document."
+                : _rows.Count > 0
+                    ? "The workbench already found candidates. Pick concrete applied amounts so settlement intent becomes explicit."
+                    : "No settlement can begin until the workbench sees posted open receivables for the selected customer.";
+    private string SettlementRelatedLaneLabel => SelectedCustomerId.HasValue
+        ? "Credit application lane available"
+        : "Choose customer first";
+    private string SettlementRelatedLaneSummary => SelectedCustomerId.HasValue
+        ? "If the customer also has open credit notes, continue into Credit Application to consume them against invoice truth."
+        : "Credit Application follows the same customer-scoped open-item truth, so it becomes useful once one counterparty is selected.";
     private bool ShouldShowSettlementGapPanel => _customers.Count == 0 || SelectedCustomerId is null || (_rows.Count == 0 && SelectedCustomerId.HasValue);
     private string ReceiptGapSummary => _customers.Count switch
     {
@@ -604,6 +725,21 @@
         SelectedCustomerId.HasValue
             ? $"/documents/source-browser?origin=company-ready&sourceType=invoice&counterpartyRole=customer&counterpartyId={SelectedCustomerId.Value:D}"
             : "/documents/source-browser?origin=company-ready&sourceType=invoice&counterpartyRole=customer";
+
+    private string BuildInvoiceBrowserHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/documents/source-browser?sourceType=invoice&counterpartyRole=customer&counterpartyId={SelectedCustomerId.Value:D}"
+            : "/documents/source-browser?sourceType=invoice&counterpartyRole=customer";
+
+    private string BuildCreditApplicationHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/ar/credit-application?customerId={SelectedCustomerId.Value:D}"
+            : "/ar/credit-application";
+
+    private string BuildPostedReceivePaymentDetailHref() =>
+        _preparedDraft is null
+            ? string.Empty
+            : $"/documents/receive_payment/{_preparedDraft.DocumentId:D}";
 
     private sealed class RowState
     {

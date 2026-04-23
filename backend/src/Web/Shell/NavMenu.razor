@@ -30,6 +30,10 @@
             <MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Size="Size.Small" />
             <span class="ws-nav__label">Credit Application</span>
         </NavLink>
+        <NavLink href="/ar/aging" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" />
+            <span class="ws-nav__label">AR Aging</span>
+        </NavLink>
         <NavLink href="/documents/source-browser?sourceType=quote" class="ws-nav__link">
             <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
             <span class="ws-nav__label">Quotes</span>
@@ -37,6 +41,10 @@
         <NavLink href="/documents/source-browser?sourceType=sales_order" class="ws-nav__link">
             <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
             <span class="ws-nav__label">Sales Orders</span>
+        </NavLink>
+        <NavLink href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" />
+            <span class="ws-nav__label">Invoices</span>
         </NavLink>
     @if (WritesBlocked)
     {

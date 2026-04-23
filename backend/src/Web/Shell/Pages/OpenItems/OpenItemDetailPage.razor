@@ -493,7 +493,7 @@
         }
 
         _adjustmentPreview = previewResult.Value;
-        CapturePageError(previewResult.ErrorMessage);
+        CapturePageError(previewResult.ErrorCode, previewResult.ErrorMessage, "Unable to load the adjustment preview.");
 
         var latestRequestResult = await DrillDownClient.GetLatestAdjustmentRequestAsync(companyId, OpenItemType, OpenItemId);
         if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(latestRequestResult, CancellationToken.None))
@@ -502,7 +502,7 @@
         }
 
         _latestAdjustmentRequest = latestRequestResult.Value;
-        CapturePageError(latestRequestResult.ErrorMessage);
+        CapturePageError(latestRequestResult.ErrorCode, latestRequestResult.ErrorMessage, "Unable to load the latest adjustment request.");
         if (_latestAdjustmentRequest is null || string.Equals(_latestAdjustmentRequest.RequestStatus, "cancelled", StringComparison.OrdinalIgnoreCase))
         {
             _adjustmentReadiness = null;
@@ -522,7 +522,7 @@
         }
 
         _adjustmentReadiness = readinessResult.Value;
-        CapturePageError(readinessResult.ErrorMessage);
+        CapturePageError(readinessResult.ErrorCode, readinessResult.ErrorMessage, "Unable to load adjustment readiness.");
 
         var executionPlanResult = await DrillDownClient.GetAdjustmentExecutionPlanAsync(
             companyId,
@@ -536,7 +536,7 @@
         }
 
         _adjustmentExecutionPlan = executionPlanResult.Value;
-        CapturePageError(executionPlanResult.ErrorMessage);
+        CapturePageError(executionPlanResult.ErrorCode, executionPlanResult.ErrorMessage, "Unable to load the adjustment execution plan.");
         return true;
     }
 
@@ -634,7 +634,13 @@
                 }
 
                 return attemptResult.Value is null
-                    ? new AdjustmentCommandOutcome(true, attemptResult.ErrorMessage ?? "Unable to request the adjustment.", Severity.Warning)
+                    ? new AdjustmentCommandOutcome(
+                        true,
+                        WebShellPostingFeedback.DescribeFailure(
+                            attemptResult.ErrorCode,
+                            attemptResult.ErrorMessage,
+                            "Unable to request the adjustment."),
+                        Severity.Warning)
                     : new AdjustmentCommandOutcome(true, attemptResult.Value.Message ?? "Adjustment request submitted to backend governance.");
             });
     }
@@ -666,7 +672,13 @@
                 }
 
                 return result.Value is null
-                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to submit the adjustment request.", Severity.Warning)
+                    ? new AdjustmentCommandOutcome(
+                        true,
+                        WebShellPostingFeedback.DescribeFailure(
+                            result.ErrorCode,
+                            result.ErrorMessage,
+                            "Unable to submit the adjustment request."),
+                        Severity.Warning)
                     : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request submitted.");
             });
     }
@@ -698,7 +710,13 @@
                 }
 
                 return result.Value is null
-                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to cancel the adjustment request.", Severity.Warning)
+                    ? new AdjustmentCommandOutcome(
+                        true,
+                        WebShellPostingFeedback.DescribeFailure(
+                            result.ErrorCode,
+                            result.ErrorMessage,
+                            "Unable to cancel the adjustment request."),
+                        Severity.Warning)
                     : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request cancelled.");
             },
             successSeverity: Severity.Info);
@@ -731,7 +749,13 @@
                 }
 
                 return result.Value is null
-                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to approve the adjustment request.", Severity.Warning)
+                    ? new AdjustmentCommandOutcome(
+                        true,
+                        WebShellPostingFeedback.DescribeFailure(
+                            result.ErrorCode,
+                            result.ErrorMessage,
+                            "Unable to approve the adjustment request."),
+                        Severity.Warning)
                     : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request approved.");
             });
     }
@@ -763,7 +787,13 @@
                 }
 
                 return result.Value is null
-                    ? new AdjustmentCommandOutcome(true, result.ErrorMessage ?? "Unable to reject the adjustment request.", Severity.Warning)
+                    ? new AdjustmentCommandOutcome(
+                        true,
+                        WebShellPostingFeedback.DescribeFailure(
+                            result.ErrorCode,
+                            result.ErrorMessage,
+                            "Unable to reject the adjustment request."),
+                        Severity.Warning)
                     : new AdjustmentCommandOutcome(true, result.Value.Message ?? "Adjustment request rejected.");
             },
             successSeverity: Severity.Warning);
@@ -839,7 +869,7 @@
         }
         else
         {
-            CapturePageError(responseResult.ErrorMessage);
+        CapturePageError(responseResult.ErrorCode, responseResult.ErrorMessage, "Unable to reload the latest open item state.");
         }
 
         return await LoadAdjustmentFlowAsync();
@@ -952,17 +982,20 @@
 
         if (!string.IsNullOrWhiteSpace(probe.ErrorMessage))
         {
-            _errorText = probe.ErrorMessage;
+            _errorText = WebShellPostingFeedback.DescribeFailure(
+                null,
+                probe.ErrorMessage,
+                "Unable to probe the latest open item state.");
         }
 
         return true;
     }
 
-    private void CapturePageError(string? message)
+    private void CapturePageError(string? errorCode, string? message, string fallbackMessage)
     {
-        if (!string.IsNullOrWhiteSpace(message))
+        if (!string.IsNullOrWhiteSpace(message) || !string.IsNullOrWhiteSpace(errorCode))
         {
-            _errorText ??= message;
+            _errorText ??= WebShellPostingFeedback.DescribeFailure(errorCode, message, fallbackMessage);
         }
     }
 

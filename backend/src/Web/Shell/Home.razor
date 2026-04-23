@@ -129,9 +129,12 @@
     private IReadOnlyList<ActionTile> PrimaryActions =>
     [
         new("Receive Payment", "Apply AR cash receipts", "/ar/receive-payment", Icons.Material.Filled.Payments, Color.Secondary),
+        new("AR Aging", "Review receivable exposure", "/ar/aging", Icons.Material.Filled.Schedule, Color.Warning),
         new("Quote Draft", "Start customer offer truth", "/documents/quote/draft-editor", Icons.Material.Filled.RequestQuote, Color.Info, WritesBlocked),
-        new("Sales Order", "Commit customer demand", "/documents/sales-order/draft-editor", Icons.Material.Filled.AssignmentTurnedIn, Color.Success, WritesBlocked),
+        new("Quote Pipeline", "Review offer truth", "/documents/source-browser?sourceType=quote", Icons.Material.Filled.Topic, Color.Info),
+        new("Sales Order Draft", "Commit customer demand", "/documents/sales-order/draft-editor", Icons.Material.Filled.AssignmentTurnedIn, Color.Success, WritesBlocked),
         new("Sales Orders", "Review SO pipeline", "/documents/source-browser?sourceType=sales_order", Icons.Material.Filled.AssignmentTurnedIn, Color.Success),
+        new("Invoice Pipeline", "Review posted receivable anchors", "/documents/source-browser?sourceType=invoice&counterpartyRole=customer", Icons.Material.Filled.ReceiptLong, Color.Warning),
         new("Pay Bill", "Prepare AP settlement", "/ap/pay-bill", Icons.Material.Filled.RequestQuote, Color.Info),
         new("Purchase Order Draft", "Start ordered truth", "/documents/purchase-order/draft-editor", Icons.Material.Filled.AddBusiness, Color.Primary, WritesBlocked),
         new("Purchase Orders", "Review PO lifecycle audit", "/documents/source-browser?sourceType=purchase_order", Icons.Material.Filled.Assignment, Color.Primary),

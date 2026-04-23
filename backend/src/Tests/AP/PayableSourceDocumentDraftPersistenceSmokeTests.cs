@@ -303,6 +303,125 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
     }
 
     [Fact]
+    public async Task GetSourceDocumentAsync_ReturnsForeignCurrencyJournalEntryLinkForBill()
+    {
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
+
+        Guid expenseAccountId = Guid.Empty;
+        Guid payableControlAccountId = Guid.Empty;
+        Guid userId = Guid.Empty;
+        Guid billId = Guid.Empty;
+        Guid journalEntryId = Guid.Empty;
+        Guid fxSnapshotId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            payableControlAccountId = await CreatePayableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            expenseAccountId = await CreateExpenseAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            var fxDate = await ReserveUniqueSnapshotDateAsync(connectionFactory, "USD", "EUR", CancellationToken.None);
+            fxSnapshotId = await CreateManualFxSnapshotAsync(
+                connectionFactory,
+                "USD",
+                "EUR",
+                userId,
+                fxDate,
+                1.25m,
+                CancellationToken.None);
+
+            billId = (await billRepository.SaveDraftAsync(
+                new BillDraftSaveModel(
+                    null,
+                    new CompanyId(CompanyId),
+                    new UserId(userId),
+                    VendorId,
+                    new DateOnly(2026, 4, 14),
+                    new DateOnly(2026, 5, 14),
+                    "EUR",
+                    "USD",
+                    fxSnapshotId,
+                    1.25m,
+                    fxDate,
+                    "manual",
+                    "Foreign currency bill review link",
+                    [new BillDraftLineSaveModel(1, expenseAccountId, "Foreign review link", 100m, null, 0m, false)]),
+                CancellationToken.None)).DocumentId;
+            await MarkDocumentPostedAsync(connectionFactory, "bills", billId, CancellationToken.None);
+
+            journalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "bill",
+                billId,
+                expenseAccountId,
+                payableControlAccountId,
+                125m,
+                "JE-SMOKE-AP-BILL-FX-001",
+                CancellationToken.None,
+                transactionCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                transactionAmount: 100m,
+                exchangeRate: 1.25m,
+                exchangeRateDate: fxDate,
+                exchangeRateSource: "manual",
+                fxSnapshotId: fxSnapshotId);
+
+            var sourceReview = await reviewRepository.GetSourceDocumentAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                CancellationToken.None);
+            var journalReview = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                journalEntryId,
+                CancellationToken.None);
+
+            Assert.NotNull(sourceReview);
+            Assert.Equal(journalEntryId, sourceReview!.JournalEntryId);
+            Assert.Equal("JE-SMOKE-AP-BILL-FX-001", sourceReview.JournalEntryDisplayNumber);
+            Assert.Equal("posted", sourceReview.JournalEntryStatus);
+            Assert.Equal("EUR", sourceReview.TransactionCurrencyCode);
+            Assert.Equal("USD", sourceReview.BaseCurrencyCode);
+            Assert.Equal(100m, sourceReview.TotalAmount);
+            Assert.Equal("posted_locked", sourceReview.LifecycleMode);
+
+            Assert.NotNull(journalReview);
+            Assert.Equal("bill", journalReview!.SourceType);
+            Assert.Equal(billId, journalReview.SourceId);
+            Assert.Equal("posted", journalReview.Status);
+            Assert.Equal("EUR", journalReview.TransactionCurrencyCode);
+            Assert.Equal("USD", journalReview.BaseCurrencyCode);
+            Assert.Equal(1.25m, journalReview.ExchangeRate);
+            Assert.Equal(fxDate, journalReview.ExchangeRateDate);
+            Assert.Equal("manual", journalReview.ExchangeRateSource);
+            Assert.True(journalReview.IsForeignCurrency);
+            Assert.Equal(fxSnapshotId, journalReview.FxSnapshotId);
+            Assert.Equal(100m, journalReview.TotalTransactionDebit);
+            Assert.Equal(100m, journalReview.TotalTransactionCredit);
+            Assert.Equal(125m, journalReview.TotalDebit);
+            Assert.Equal(125m, journalReview.TotalCredit);
+            Assert.Equal(2, journalReview.LineCount);
+            Assert.Contains("snapshot", journalReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await CleanupJournalEntryAsync(connectionFactory, journalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "bill_lines", "bill_id", "bills", billId, CancellationToken.None);
+            await CleanupFxSnapshotAsync(connectionFactory, fxSnapshotId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task GetSourceDocumentAsync_ReturnsVoidedJournalEntryLifecycleForBill()
     {
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
@@ -1243,6 +1362,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
         var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
         var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
         var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
 
@@ -1301,6 +1421,24 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                 1m,
                 "JE-SMOKE-AP-PB-REV-001",
                 CancellationToken.None);
+
+            var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+            var originalReviewBeforeReverse = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                journalEntryId,
+                CancellationToken.None);
+
+            Assert.NotNull(sourceReviewBeforeReverse);
+            Assert.Equal(journalEntryId, sourceReviewBeforeReverse!.JournalEntryId);
+            Assert.Equal("posted", sourceReviewBeforeReverse.JournalEntryStatus);
+            Assert.NotNull(originalReviewBeforeReverse);
+            Assert.Equal("pay_bill", originalReviewBeforeReverse!.SourceType);
+            Assert.Equal(payBillId, originalReviewBeforeReverse.SourceId);
+            Assert.Equal("posted", originalReviewBeforeReverse.Status);
 
             var attempt = await reviewRepository.AttemptReverseAsync(
                 new CompanyId(CompanyId),
@@ -1364,6 +1502,19 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             var compensationJournal = await GetJournalEntrySnapshotAsync(connectionFactory, compensationJournalEntryId, CancellationToken.None);
             var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "pay_bills", payBillId, CancellationToken.None);
             var openItem = await GetApOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
+            var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+            var originalReviewAfterReverse = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                journalEntryId,
+                CancellationToken.None);
+            var compensationReview = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                compensationJournalEntryId,
+                CancellationToken.None);
             var applicationCount = await CountSettlementApplicationsForSourceAsync(
                 connectionFactory,
                 "pay_bill",
@@ -1390,6 +1541,26 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("open", openItem!.Status);
             Assert.Equal(72m, openItem.OpenAmountTx);
             Assert.Equal(72m, openItem.OpenAmountBase);
+            Assert.NotNull(sourceReviewAfterReverse);
+            Assert.Equal(journalEntryId, sourceReviewAfterReverse!.JournalEntryId);
+            Assert.Equal("reversed", sourceReviewAfterReverse.JournalEntryStatus);
+            Assert.NotNull(sourceReviewAfterReverse.JournalEntryReversedAt);
+            Assert.Equal(sourceReviewBeforeReverse.JournalEntryDisplayNumber, sourceReviewAfterReverse.JournalEntryDisplayNumber);
+            Assert.NotNull(originalReviewAfterReverse);
+            Assert.Equal("reversed", originalReviewAfterReverse!.Status);
+            Assert.NotNull(originalReviewAfterReverse.ReversedAt);
+            Assert.Contains(
+                originalReviewAfterReverse.RelatedEntries,
+                entry => entry.Id == compensationJournalEntryId && entry.SourceType == "pay_bill_reversal");
+            Assert.NotNull(compensationReview);
+            Assert.Equal("posted", compensationReview!.Status);
+            Assert.Equal("pay_bill_reversal", compensationReview.SourceType);
+            Assert.Equal(payBillId, compensationReview.SourceId);
+            Assert.Equal(originalReviewBeforeReverse.TransactionCurrencyCode, compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReviewBeforeReverse.BaseCurrencyCode, compensationReview.BaseCurrencyCode);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRate, compensationReview.ExchangeRate);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRateDate, compensationReview.ExchangeRateDate);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRateSource, compensationReview.ExchangeRateSource);
             Assert.Equal(0, applicationCount);
             Assert.Equal(1, reversalAuditCount);
             var reversalEvent = Assert.Single(reversalEvents);
@@ -1400,6 +1571,268 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal(openItemId, reversalEvent.TargetOpenItemId);
             Assert.Equal(1m, reversalEvent.AppliedAmountTx);
             Assert.Equal(1m, reversalEvent.AppliedAmountBase);
+            settlementApplicationId = Guid.Empty;
+        }
+        finally
+        {
+            await CleanupSettlementApplicationAsync(connectionFactory, settlementApplicationId, CancellationToken.None);
+            await CleanupAuditLogEntityAsync(connectionFactory, payBillId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, compensationJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, journalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "pay_bill_lines", "pay_bill_id", "pay_bills", payBillId, CancellationToken.None);
+            await CleanupApOpenItemAsync(connectionFactory, openItemId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task CompleteReverseRequestExecutionAsync_UnappliesForeignCurrencyPayBillBeforeMarkingReversed()
+    {
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
+        var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+
+        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = Guid.Empty;
+        Guid userId = Guid.Empty;
+        Guid billId = Guid.NewGuid();
+        Guid payBillId = Guid.Empty;
+        Guid openItemId = Guid.Empty;
+        Guid journalEntryId = Guid.Empty;
+        Guid compensationJournalEntryId = Guid.Empty;
+        Guid settlementApplicationId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            payableControlAccountId = await CreatePayableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            expenseAccountId = await CreateExpenseAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            openItemId = await CreateApOpenItemForSourceAsync(
+                connectionFactory,
+                CompanyId,
+                VendorId,
+                "bill",
+                billId,
+                CancellationToken.None,
+                amountTx: 100m,
+                amountBase: 125m,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD");
+
+            payBillId = await InsertPayBillAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                VendorId,
+                expenseAccountId,
+                openItemId,
+                CancellationToken.None,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                fxRate: 1.25m,
+                fxSource: "manual",
+                totalAmount: 100m,
+                appliedAmountTx: 100m,
+                paymentDate: new DateOnly(2026, 4, 14));
+
+            settlementApplicationId = await ApplySettlementApplicationForOpenItemAsync(
+                connectionFactory,
+                CompanyId,
+                "ap_open_item",
+                openItemId,
+                "pay_bill",
+                payBillId,
+                userId,
+                CancellationToken.None,
+                appliedAmountTx: 100m,
+                appliedAmountBase: 125m);
+
+            journalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "pay_bill",
+                payBillId,
+                payableControlAccountId,
+                expenseAccountId,
+                125m,
+                "JE-SMOKE-AP-PB-FX-REV-001",
+                CancellationToken.None,
+                transactionCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                transactionAmount: 100m,
+                exchangeRate: 1.25m,
+                exchangeRateDate: new DateOnly(2026, 4, 14),
+                exchangeRateSource: "manual");
+
+            var sourceReviewBeforeReverse = await reviewRepository.GetSourceDocumentAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+            var originalReviewBeforeReverse = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                journalEntryId,
+                CancellationToken.None);
+
+            Assert.NotNull(sourceReviewBeforeReverse);
+            Assert.Equal(journalEntryId, sourceReviewBeforeReverse!.JournalEntryId);
+            Assert.Equal("EUR", sourceReviewBeforeReverse.TransactionCurrencyCode);
+            Assert.Equal("USD", sourceReviewBeforeReverse.BaseCurrencyCode);
+            Assert.Equal(100m, sourceReviewBeforeReverse.TotalAmount);
+            Assert.NotNull(originalReviewBeforeReverse);
+            Assert.Equal("pay_bill", originalReviewBeforeReverse!.SourceType);
+            Assert.Equal(payBillId, originalReviewBeforeReverse.SourceId);
+            Assert.Equal("EUR", originalReviewBeforeReverse.TransactionCurrencyCode);
+            Assert.Equal("USD", originalReviewBeforeReverse.BaseCurrencyCode);
+            Assert.Equal(1.25m, originalReviewBeforeReverse.ExchangeRate);
+            Assert.Equal(new DateOnly(2026, 4, 14), originalReviewBeforeReverse.ExchangeRateDate);
+            Assert.Equal("manual", originalReviewBeforeReverse.ExchangeRateSource);
+            Assert.Null(originalReviewBeforeReverse.FxSnapshotId);
+            Assert.Contains("header-only", originalReviewBeforeReverse.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+
+            var attempt = await reviewRepository.AttemptReverseAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(attempt);
+            Assert.Equal("request_recorded", attempt!.OutcomeCode);
+
+            var submitResult = await reviewRepository.SubmitReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                attempt.RequestId!.Value,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(submitResult);
+            Assert.Equal("submitted", submitResult!.OutcomeCode);
+
+            var executeResult = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                attempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+
+            Assert.NotNull(executeResult);
+            Assert.Equal("execution_request_recorded", executeResult!.OutcomeCode);
+
+            var lifecycleResult = await lifecycleStore.ReverseAsync(
+                CompanyId,
+                journalEntryId,
+                userId,
+                CancellationToken.None);
+
+            compensationJournalEntryId = lifecycleResult.CompensationJournalEntryId;
+
+            var completionResult = await reviewRepository.CompleteReverseRequestExecutionAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                attempt.RequestId.Value,
+                userId,
+                lifecycleResult.CompensationJournalEntryId,
+                lifecycleResult.CompensationDisplayNumber,
+                lifecycleResult.CompensationSourceType,
+                lifecycleResult.LifecycleAt,
+                CancellationToken.None);
+
+            Assert.NotNull(completionResult);
+            Assert.True(completionResult!.Executed);
+            Assert.Equal("journal_entry_reversed", completionResult.OutcomeCode);
+            Assert.Equal("pay_bill_reversal", completionResult.Request.CompensationSourceType);
+
+            var originalJournalStatus = await GetJournalEntryStatusAsync(connectionFactory, journalEntryId, CancellationToken.None);
+            var compensationJournal = await GetJournalEntrySnapshotAsync(connectionFactory, compensationJournalEntryId, CancellationToken.None);
+            var sourceStatus = await GetDocumentStatusAsync(connectionFactory, "pay_bills", payBillId, CancellationToken.None);
+            var openItem = await GetApOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
+            var sourceReviewAfterReverse = await reviewRepository.GetSourceDocumentAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+            var originalReviewAfterReverse = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                journalEntryId,
+                CancellationToken.None);
+            var compensationReview = await journalEntryReviewStore.GetAsync(
+                CompanyId,
+                compensationJournalEntryId,
+                CancellationToken.None);
+            var applicationCount = await CountSettlementApplicationsForSourceAsync(
+                connectionFactory,
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+            var reversalAuditCount = await CountSettlementApplicationReversalAuditsForSourceAsync(
+                connectionFactory,
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+            var reversalEvents = await reviewRepository.ListSettlementApplicationReversalsAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                CancellationToken.None);
+
+            Assert.Equal("reversed", originalJournalStatus);
+            Assert.NotNull(compensationJournal);
+            Assert.Equal("posted", compensationJournal!.Status);
+            Assert.Equal("pay_bill_reversal", compensationJournal.SourceType);
+            Assert.Equal(payBillId, compensationJournal.SourceId);
+            Assert.Equal("reversed", sourceStatus);
+            Assert.NotNull(openItem);
+            Assert.Equal("open", openItem!.Status);
+            Assert.Equal(100m, openItem.OpenAmountTx);
+            Assert.Equal(125m, openItem.OpenAmountBase);
+            Assert.NotNull(sourceReviewAfterReverse);
+            Assert.Equal(journalEntryId, sourceReviewAfterReverse!.JournalEntryId);
+            Assert.Equal("reversed", sourceReviewAfterReverse.JournalEntryStatus);
+            Assert.Equal("EUR", sourceReviewAfterReverse.TransactionCurrencyCode);
+            Assert.Equal("USD", sourceReviewAfterReverse.BaseCurrencyCode);
+            Assert.Equal(100m, sourceReviewAfterReverse.TotalAmount);
+            Assert.NotNull(originalReviewAfterReverse);
+            Assert.Equal("reversed", originalReviewAfterReverse!.Status);
+            Assert.Equal("EUR", originalReviewAfterReverse.TransactionCurrencyCode);
+            Assert.Equal("USD", originalReviewAfterReverse.BaseCurrencyCode);
+            Assert.Contains(
+                originalReviewAfterReverse.RelatedEntries,
+                entry => entry.Id == compensationJournalEntryId && entry.SourceType == "pay_bill_reversal");
+            Assert.NotNull(compensationReview);
+            Assert.Equal("posted", compensationReview!.Status);
+            Assert.Equal("pay_bill_reversal", compensationReview.SourceType);
+            Assert.Equal(payBillId, compensationReview.SourceId);
+            Assert.Equal(originalReviewBeforeReverse.TransactionCurrencyCode, compensationReview.TransactionCurrencyCode);
+            Assert.Equal(originalReviewBeforeReverse.BaseCurrencyCode, compensationReview.BaseCurrencyCode);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRate, compensationReview.ExchangeRate);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRateDate, compensationReview.ExchangeRateDate);
+            Assert.Equal(originalReviewBeforeReverse.ExchangeRateSource, compensationReview.ExchangeRateSource);
+            Assert.Null(compensationReview.FxSnapshotId);
+            Assert.Contains("header-only", compensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(0, applicationCount);
+            Assert.Equal(1, reversalAuditCount);
+            var reversalEvent = Assert.Single(reversalEvents);
+            Assert.Equal(attempt.RequestId.Value, reversalEvent.RequestId);
+            Assert.Equal(settlementApplicationId, reversalEvent.SettlementApplicationId);
+            Assert.Equal("pay_bill", reversalEvent.SourceType);
+            Assert.Equal("ap_open_item", reversalEvent.TargetOpenItemType);
+            Assert.Equal(openItemId, reversalEvent.TargetOpenItemId);
+            Assert.Equal(100m, reversalEvent.AppliedAmountTx);
+            Assert.Equal(125m, reversalEvent.AppliedAmountBase);
             settlementApplicationId = Guid.Empty;
         }
         finally
@@ -1686,6 +2119,368 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             await CleanupDraftAsync(connectionFactory, "pay_bill_lines", "pay_bill_id", "pay_bills", payBillId, CancellationToken.None);
             await CleanupApOpenItemAsync(connectionFactory, openItemId, CancellationToken.None);
             await CleanupDraftAsync(connectionFactory, "bill_lines", "bill_id", "bills", billId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task CompleteReverseRequestExecutionAsync_AllowsForeignCurrencyBillReverseAfterBlockingPayBillIsUnapplied()
+    {
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var billRepository = new PostgresBillDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
+        var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+
+        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = Guid.Empty;
+        Guid userId = Guid.Empty;
+        Guid billId = Guid.Empty;
+        Guid payBillId = Guid.Empty;
+        Guid openItemId = Guid.Empty;
+        Guid billJournalEntryId = Guid.Empty;
+        Guid payBillJournalEntryId = Guid.Empty;
+        Guid billCompensationJournalEntryId = Guid.Empty;
+        Guid payBillCompensationJournalEntryId = Guid.Empty;
+        Guid settlementApplicationId = Guid.Empty;
+        Guid fxSnapshotId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            payableControlAccountId = await CreatePayableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            expenseAccountId = await CreateExpenseAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            var fxDate = await ReserveUniqueSnapshotDateAsync(connectionFactory, "USD", "EUR", CancellationToken.None);
+            fxSnapshotId = await CreateManualFxSnapshotAsync(
+                connectionFactory,
+                "USD",
+                "EUR",
+                userId,
+                fxDate,
+                1.25m,
+                CancellationToken.None);
+
+            billId = (await billRepository.SaveDraftAsync(
+                new BillDraftSaveModel(
+                    null,
+                    new CompanyId(CompanyId),
+                    new UserId(userId),
+                    VendorId,
+                    new DateOnly(2026, 4, 14),
+                    new DateOnly(2026, 5, 14),
+                    "EUR",
+                    "USD",
+                    fxSnapshotId,
+                    1.25m,
+                    fxDate,
+                    "manual",
+                    "Foreign currency bill blocked-then-reversed smoke",
+                    [new BillDraftLineSaveModel(1, expenseAccountId, "FX blocked then reversed", 100m, null, 0m, false)]),
+                CancellationToken.None)).DocumentId;
+            await MarkDocumentPostedAsync(connectionFactory, "bills", billId, CancellationToken.None);
+
+            billJournalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "bill",
+                billId,
+                expenseAccountId,
+                payableControlAccountId,
+                125m,
+                "JE-SMOKE-AP-CHAIN-BILL-FX-001",
+                CancellationToken.None,
+                transactionCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                transactionAmount: 100m,
+                exchangeRate: 1.25m,
+                exchangeRateDate: fxDate,
+                exchangeRateSource: "manual",
+                fxSnapshotId: fxSnapshotId);
+
+            openItemId = await CreateApOpenItemForSourceAsync(
+                connectionFactory,
+                CompanyId,
+                VendorId,
+                "bill",
+                billId,
+                CancellationToken.None,
+                amountTx: 100m,
+                amountBase: 125m,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD");
+
+            payBillId = await InsertPayBillAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                VendorId,
+                expenseAccountId,
+                openItemId,
+                CancellationToken.None,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                fxRate: 1.25m,
+                fxSource: "manual",
+                totalAmount: 100m,
+                appliedAmountTx: 100m,
+                paymentDate: fxDate);
+
+            settlementApplicationId = await ApplySettlementApplicationForOpenItemAsync(
+                connectionFactory,
+                CompanyId,
+                "ap_open_item",
+                openItemId,
+                "pay_bill",
+                payBillId,
+                userId,
+                CancellationToken.None,
+                appliedAmountTx: 100m,
+                appliedAmountBase: 125m);
+
+            payBillJournalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "pay_bill",
+                payBillId,
+                payableControlAccountId,
+                expenseAccountId,
+                125m,
+                "JE-SMOKE-AP-CHAIN-PB-FX-001",
+                CancellationToken.None,
+                transactionCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                transactionAmount: 100m,
+                exchangeRate: 1.25m,
+                exchangeRateDate: fxDate,
+                exchangeRateSource: "manual");
+
+            var billAttempt = await reviewRepository.AttemptReverseAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(billAttempt);
+            Assert.Equal("request_recorded", billAttempt!.OutcomeCode);
+
+            var billSubmit = await reviewRepository.SubmitReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                billAttempt.RequestId!.Value,
+                userId,
+                CancellationToken.None);
+
+            Assert.NotNull(billSubmit);
+            Assert.Equal("submitted", billSubmit!.OutcomeCode);
+
+            var blockedBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                billAttempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+
+            Assert.NotNull(blockedBillExecute);
+            Assert.Equal("blocked_by_subledger_truth", blockedBillExecute!.OutcomeCode);
+
+            var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                CancellationToken.None));
+            Assert.Equal(payBillId, initialBlocker.SettlementSourceId);
+
+            var payBillAttempt = await reviewRepository.AttemptReverseAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                userId,
+                CancellationToken.None);
+            Assert.NotNull(payBillAttempt);
+
+            var payBillSubmit = await reviewRepository.SubmitReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                payBillAttempt!.RequestId!.Value,
+                userId,
+                CancellationToken.None);
+            Assert.NotNull(payBillSubmit);
+            Assert.Equal("submitted", payBillSubmit!.OutcomeCode);
+
+            var payBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                payBillAttempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+            Assert.NotNull(payBillExecute);
+            Assert.Equal("execution_request_recorded", payBillExecute!.OutcomeCode);
+
+            var payBillLifecycle = await lifecycleStore.ReverseAsync(
+                CompanyId,
+                payBillJournalEntryId,
+                userId,
+                CancellationToken.None);
+
+            payBillCompensationJournalEntryId = payBillLifecycle.CompensationJournalEntryId;
+
+            var payBillCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
+                new CompanyId(CompanyId),
+                "pay_bill",
+                payBillId,
+                payBillAttempt.RequestId.Value,
+                userId,
+                payBillLifecycle.CompensationJournalEntryId,
+                payBillLifecycle.CompensationDisplayNumber,
+                payBillLifecycle.CompensationSourceType,
+                payBillLifecycle.LifecycleAt,
+                CancellationToken.None);
+
+            Assert.NotNull(payBillCompletion);
+            Assert.Equal("journal_entry_reversed", payBillCompletion!.OutcomeCode);
+            settlementApplicationId = Guid.Empty;
+
+            var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                CancellationToken.None);
+            Assert.Empty(clearedBlockers);
+
+            var readyBillPlan = await reviewRepository.GetReverseRequestExecutionPlanAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                billAttempt.RequestId.Value,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+            Assert.NotNull(readyBillPlan);
+            Assert.True(readyBillPlan!.CanExecute);
+            Assert.Equal("planned", readyBillPlan.OverallStatus);
+
+            var readyBillExecute = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                billAttempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+            Assert.NotNull(readyBillExecute);
+            Assert.Equal("execution_request_recorded", readyBillExecute!.OutcomeCode);
+
+            var billLifecycle = await lifecycleStore.ReverseAsync(
+                CompanyId,
+                billJournalEntryId,
+                userId,
+                CancellationToken.None);
+
+            billCompensationJournalEntryId = billLifecycle.CompensationJournalEntryId;
+
+            var billCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
+                new CompanyId(CompanyId),
+                "bill",
+                billId,
+                billAttempt.RequestId.Value,
+                userId,
+                billLifecycle.CompensationJournalEntryId,
+                billLifecycle.CompensationDisplayNumber,
+                billLifecycle.CompensationSourceType,
+                billLifecycle.LifecycleAt,
+                CancellationToken.None);
+
+            Assert.NotNull(billCompletion);
+            Assert.True(billCompletion!.Executed);
+            Assert.Equal("journal_entry_reversed", billCompletion.OutcomeCode);
+            Assert.Equal("bill_reversal", billCompletion.Request.CompensationSourceType);
+
+            var billStatus = await GetDocumentStatusAsync(connectionFactory, "bills", billId, CancellationToken.None);
+            var payBillStatus = await GetDocumentStatusAsync(connectionFactory, "pay_bills", payBillId, CancellationToken.None);
+            var billJournalStatus = await GetJournalEntryStatusAsync(connectionFactory, billJournalEntryId, CancellationToken.None);
+            var payBillJournalStatus = await GetJournalEntryStatusAsync(connectionFactory, payBillJournalEntryId, CancellationToken.None);
+            var openItem = await GetApOpenItemSnapshotAsync(connectionFactory, openItemId, CancellationToken.None);
+            var billReview = await journalEntryReviewStore.GetAsync(CompanyId, billJournalEntryId, CancellationToken.None);
+            var billCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, billCompensationJournalEntryId, CancellationToken.None);
+            var payBillReview = await journalEntryReviewStore.GetAsync(CompanyId, payBillJournalEntryId, CancellationToken.None);
+            var payBillCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, payBillCompensationJournalEntryId, CancellationToken.None);
+            var billSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "bill", billId, CancellationToken.None);
+            var payBillSourceReview = await reviewRepository.GetSourceDocumentAsync(new CompanyId(CompanyId), "pay_bill", payBillId, CancellationToken.None);
+
+            Assert.Equal("reversed", billStatus);
+            Assert.Equal("reversed", payBillStatus);
+            Assert.Equal("reversed", billJournalStatus);
+            Assert.Equal("reversed", payBillJournalStatus);
+            Assert.NotNull(openItem);
+            Assert.Equal("voided", openItem!.Status);
+            Assert.Equal(0m, openItem.OpenAmountTx);
+            Assert.Equal(0m, openItem.OpenAmountBase);
+
+            Assert.NotNull(billReview);
+            Assert.Equal("reversed", billReview!.Status);
+            Assert.Equal("EUR", billReview.TransactionCurrencyCode);
+            Assert.Equal("USD", billReview.BaseCurrencyCode);
+            Assert.Equal(fxSnapshotId, billReview.FxSnapshotId);
+
+            Assert.NotNull(billCompensationReview);
+            Assert.Equal("bill_reversal", billCompensationReview!.SourceType);
+            Assert.Equal("EUR", billCompensationReview.TransactionCurrencyCode);
+            Assert.Equal("USD", billCompensationReview.BaseCurrencyCode);
+            Assert.Equal(fxSnapshotId, billCompensationReview.FxSnapshotId);
+            Assert.Contains("snapshot", billCompensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+
+            Assert.NotNull(payBillReview);
+            Assert.Equal("reversed", payBillReview!.Status);
+            Assert.Equal("EUR", payBillReview.TransactionCurrencyCode);
+            Assert.Equal("USD", payBillReview.BaseCurrencyCode);
+            Assert.Null(payBillReview.FxSnapshotId);
+
+            Assert.NotNull(payBillCompensationReview);
+            Assert.Equal("pay_bill_reversal", payBillCompensationReview!.SourceType);
+            Assert.Equal("EUR", payBillCompensationReview.TransactionCurrencyCode);
+            Assert.Equal("USD", payBillCompensationReview.BaseCurrencyCode);
+            Assert.Null(payBillCompensationReview.FxSnapshotId);
+            Assert.Contains("header-only", payBillCompensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+
+            Assert.NotNull(billSourceReview);
+            Assert.Equal("reversed", billSourceReview!.JournalEntryStatus);
+            Assert.Equal("EUR", billSourceReview.TransactionCurrencyCode);
+            Assert.Equal("USD", billSourceReview.BaseCurrencyCode);
+            Assert.Equal(100m, billSourceReview.TotalAmount);
+
+            Assert.NotNull(payBillSourceReview);
+            Assert.Equal("reversed", payBillSourceReview!.JournalEntryStatus);
+            Assert.Equal("EUR", payBillSourceReview.TransactionCurrencyCode);
+            Assert.Equal("USD", payBillSourceReview.BaseCurrencyCode);
+            Assert.Equal(100m, payBillSourceReview.TotalAmount);
+        }
+        finally
+        {
+            await CleanupSettlementApplicationAsync(connectionFactory, settlementApplicationId, CancellationToken.None);
+            await CleanupAuditLogEntityAsync(connectionFactory, billId, CancellationToken.None);
+            await CleanupAuditLogEntityAsync(connectionFactory, payBillId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, billCompensationJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, payBillCompensationJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, billJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, payBillJournalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "pay_bill_lines", "pay_bill_id", "pay_bills", payBillId, CancellationToken.None);
+            await CleanupApOpenItemAsync(connectionFactory, openItemId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "bill_lines", "bill_id", "bills", billId, CancellationToken.None);
+            await CleanupFxSnapshotAsync(connectionFactory, fxSnapshotId, CancellationToken.None);
             await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
             await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
             await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
@@ -1984,6 +2779,361 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             await CleanupApOpenItemAsync(connectionFactory, sourceVendorCreditOpenItemId, CancellationToken.None);
             await CleanupApOpenItemAsync(connectionFactory, targetBillOpenItemId, CancellationToken.None);
             await CleanupDraftAsync(connectionFactory, "vendor_credit_lines", "vendor_credit_id", "vendor_credits", vendorCreditId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
+            await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
+            await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task CompleteReverseRequestExecutionAsync_AllowsForeignCurrencyVendorCreditReverseAfterBlockingVendorCreditApplicationIsUnapplied()
+    {
+        var connectionFactory = new PostgresConnectionFactory(GetConnectionString());
+        var infrastructureConnectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
+        var vendorCreditRepository = new PostgresVendorCreditDocumentRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var reviewRepository = new PostgresAccountingDocumentReviewRepository(connectionFactory, new PostgresExecutionContextAccessor());
+        var journalEntryReviewStore = new PostgreSqlJournalEntryReviewStore(infrastructureConnectionFactory);
+        var numberLookup = new PostgreSqlJournalEntryNumberLookup(infrastructureConnectionFactory);
+        var lifecycleStore = new PostgreSqlJournalEntryLifecycleStore(infrastructureConnectionFactory, numberLookup);
+
+        Guid payableControlAccountId = Guid.Empty;
+        Guid expenseAccountId = Guid.Empty;
+        Guid userId = Guid.Empty;
+        Guid vendorCreditId = Guid.Empty;
+        Guid billId = Guid.NewGuid();
+        Guid vendorCreditApplicationId = Guid.Empty;
+        Guid sourceVendorCreditOpenItemId = Guid.Empty;
+        Guid targetBillOpenItemId = Guid.Empty;
+        Guid vendorCreditJournalEntryId = Guid.Empty;
+        Guid vendorCreditApplicationJournalEntryId = Guid.Empty;
+        Guid vendorCreditCompensationJournalEntryId = Guid.Empty;
+        Guid vendorCreditApplicationCompensationJournalEntryId = Guid.Empty;
+        Guid sourceApplicationId = Guid.Empty;
+        Guid targetApplicationId = Guid.Empty;
+        Guid fxSnapshotId = Guid.Empty;
+        var createdUser = false;
+
+        try
+        {
+            (userId, createdUser) = await GetOrCreateUserAsync(connectionFactory, CancellationToken.None);
+            payableControlAccountId = await CreatePayableControlAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+            expenseAccountId = await CreateExpenseAccountAsync(connectionFactory, CompanyId, CancellationToken.None);
+
+            var fxDate = await ReserveUniqueSnapshotDateAsync(connectionFactory, "USD", "EUR", CancellationToken.None);
+            fxSnapshotId = await CreateManualFxSnapshotAsync(
+                connectionFactory,
+                "USD",
+                "EUR",
+                userId,
+                fxDate,
+                1.25m,
+                CancellationToken.None);
+
+            vendorCreditId = (await vendorCreditRepository.SaveDraftAsync(
+                new VendorCreditDraftSaveModel(
+                    null,
+                    new CompanyId(CompanyId),
+                    new UserId(userId),
+                    VendorId,
+                    new DateOnly(2026, 4, 14),
+                    new DateOnly(2026, 5, 14),
+                    "EUR",
+                    "USD",
+                    fxSnapshotId,
+                    1.25m,
+                    fxDate,
+                    "manual",
+                    "Foreign currency vendor credit blocked-then-reversed smoke",
+                    [new VendorCreditDraftLineSaveModel(1, expenseAccountId, "FX blocked then reversed", 100m, null, 0m, false)]),
+                CancellationToken.None)).DocumentId;
+            await MarkDocumentPostedAsync(connectionFactory, "vendor_credits", vendorCreditId, CancellationToken.None);
+
+            vendorCreditJournalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "vendor_credit",
+                vendorCreditId,
+                payableControlAccountId,
+                expenseAccountId,
+                125m,
+                "JE-SMOKE-AP-CHAIN-VC-FX-001",
+                CancellationToken.None,
+                transactionCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                transactionAmount: 100m,
+                exchangeRate: 1.25m,
+                exchangeRateDate: fxDate,
+                exchangeRateSource: "manual",
+                fxSnapshotId: fxSnapshotId);
+
+            sourceVendorCreditOpenItemId = await CreateApOpenItemForSourceAsync(
+                connectionFactory,
+                CompanyId,
+                VendorId,
+                "vendor_credit",
+                vendorCreditId,
+                CancellationToken.None,
+                balanceSide: "debit",
+                amountTx: 100m,
+                amountBase: 125m,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD");
+
+            targetBillOpenItemId = await CreateApOpenItemForSourceAsync(
+                connectionFactory,
+                CompanyId,
+                VendorId,
+                "bill",
+                billId,
+                CancellationToken.None,
+                amountTx: 100m,
+                amountBase: 125m,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD");
+
+            vendorCreditApplicationId = await InsertVendorCreditApplicationAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                VendorId,
+                sourceVendorCreditOpenItemId,
+                targetBillOpenItemId,
+                CancellationToken.None,
+                documentCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                totalAmount: 100m,
+                appliedAmountTx: 100m,
+                applicationDate: fxDate);
+
+            sourceApplicationId = await ApplySettlementApplicationForOpenItemAsync(
+                connectionFactory,
+                CompanyId,
+                "ap_open_item",
+                sourceVendorCreditOpenItemId,
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                userId,
+                CancellationToken.None,
+                appliedAmountTx: 100m,
+                appliedAmountBase: 125m);
+
+            targetApplicationId = await ApplySettlementApplicationForOpenItemAsync(
+                connectionFactory,
+                CompanyId,
+                "ap_open_item",
+                targetBillOpenItemId,
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                userId,
+                CancellationToken.None,
+                appliedAmountTx: 100m,
+                appliedAmountBase: 125m);
+
+            vendorCreditApplicationJournalEntryId = await InsertJournalEntryWithBalancedLinesAsync(
+                connectionFactory,
+                CompanyId,
+                userId,
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                expenseAccountId,
+                payableControlAccountId,
+                125m,
+                "JE-SMOKE-AP-CHAIN-VCA-FX-001",
+                CancellationToken.None,
+                transactionCurrencyCode: "EUR",
+                baseCurrencyCode: "USD",
+                transactionAmount: 100m,
+                exchangeRate: 1.25m,
+                exchangeRateDate: fxDate,
+                exchangeRateSource: "manual");
+
+            var vendorCreditAttempt = await reviewRepository.AttemptReverseAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                userId,
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditAttempt);
+            Assert.Equal("request_recorded", vendorCreditAttempt!.OutcomeCode);
+
+            var vendorCreditSubmit = await reviewRepository.SubmitReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                vendorCreditAttempt.RequestId!.Value,
+                userId,
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditSubmit);
+            Assert.Equal("submitted", vendorCreditSubmit!.OutcomeCode);
+
+            var blockedVendorCreditExecute = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                vendorCreditAttempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+            Assert.NotNull(blockedVendorCreditExecute);
+            Assert.Equal("blocked_by_subledger_truth", blockedVendorCreditExecute!.OutcomeCode);
+
+            var initialBlocker = Assert.Single(await reviewRepository.ListSubledgerReverseBlockersAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                CancellationToken.None));
+            Assert.Equal(vendorCreditApplicationId, initialBlocker.SettlementSourceId);
+
+            var vendorCreditApplicationAttempt = await reviewRepository.AttemptReverseAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                userId,
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditApplicationAttempt);
+
+            var vendorCreditApplicationSubmit = await reviewRepository.SubmitReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                vendorCreditApplicationAttempt!.RequestId!.Value,
+                userId,
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditApplicationSubmit);
+            Assert.Equal("submitted", vendorCreditApplicationSubmit!.OutcomeCode);
+
+            var vendorCreditApplicationExecute = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                vendorCreditApplicationAttempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditApplicationExecute);
+            Assert.Equal("execution_request_recorded", vendorCreditApplicationExecute!.OutcomeCode);
+
+            var vendorCreditApplicationLifecycle = await lifecycleStore.ReverseAsync(
+                CompanyId,
+                vendorCreditApplicationJournalEntryId,
+                userId,
+                CancellationToken.None);
+            vendorCreditApplicationCompensationJournalEntryId = vendorCreditApplicationLifecycle.CompensationJournalEntryId;
+
+            var vendorCreditApplicationCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit_application",
+                vendorCreditApplicationId,
+                vendorCreditApplicationAttempt.RequestId.Value,
+                userId,
+                vendorCreditApplicationLifecycle.CompensationJournalEntryId,
+                vendorCreditApplicationLifecycle.CompensationDisplayNumber,
+                vendorCreditApplicationLifecycle.CompensationSourceType,
+                vendorCreditApplicationLifecycle.LifecycleAt,
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditApplicationCompletion);
+            Assert.Equal("journal_entry_reversed", vendorCreditApplicationCompletion!.OutcomeCode);
+            sourceApplicationId = Guid.Empty;
+            targetApplicationId = Guid.Empty;
+
+            var clearedBlockers = await reviewRepository.ListSubledgerReverseBlockersAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                CancellationToken.None);
+            Assert.Empty(clearedBlockers);
+
+            var readyVendorCreditExecute = await reviewRepository.ExecuteReverseRequestAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                vendorCreditAttempt.RequestId.Value,
+                userId,
+                new DateOnly(2026, 4, 14),
+                CancellationToken.None);
+            Assert.NotNull(readyVendorCreditExecute);
+            Assert.Equal("execution_request_recorded", readyVendorCreditExecute!.OutcomeCode);
+
+            var vendorCreditLifecycle = await lifecycleStore.ReverseAsync(
+                CompanyId,
+                vendorCreditJournalEntryId,
+                userId,
+                CancellationToken.None);
+            vendorCreditCompensationJournalEntryId = vendorCreditLifecycle.CompensationJournalEntryId;
+
+            var vendorCreditCompletion = await reviewRepository.CompleteReverseRequestExecutionAsync(
+                new CompanyId(CompanyId),
+                "vendor_credit",
+                vendorCreditId,
+                vendorCreditAttempt.RequestId.Value,
+                userId,
+                vendorCreditLifecycle.CompensationJournalEntryId,
+                vendorCreditLifecycle.CompensationDisplayNumber,
+                vendorCreditLifecycle.CompensationSourceType,
+                vendorCreditLifecycle.LifecycleAt,
+                CancellationToken.None);
+            Assert.NotNull(vendorCreditCompletion);
+            Assert.True(vendorCreditCompletion!.Executed);
+            Assert.Equal("journal_entry_reversed", vendorCreditCompletion.OutcomeCode);
+
+            var vendorCreditStatus = await GetDocumentStatusAsync(connectionFactory, "vendor_credits", vendorCreditId, CancellationToken.None);
+            var vendorCreditApplicationStatus = await GetDocumentStatusAsync(connectionFactory, "vendor_credit_applications", vendorCreditApplicationId, CancellationToken.None);
+            var vendorCreditJournalStatus = await GetJournalEntryStatusAsync(connectionFactory, vendorCreditJournalEntryId, CancellationToken.None);
+            var vendorCreditApplicationJournalStatus = await GetJournalEntryStatusAsync(connectionFactory, vendorCreditApplicationJournalEntryId, CancellationToken.None);
+            var sourceOpenItem = await GetApOpenItemSnapshotAsync(connectionFactory, sourceVendorCreditOpenItemId, CancellationToken.None);
+            var targetOpenItem = await GetApOpenItemSnapshotAsync(connectionFactory, targetBillOpenItemId, CancellationToken.None);
+            var vendorCreditReview = await journalEntryReviewStore.GetAsync(CompanyId, vendorCreditJournalEntryId, CancellationToken.None);
+            var vendorCreditCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, vendorCreditCompensationJournalEntryId, CancellationToken.None);
+            var vendorCreditApplicationReview = await journalEntryReviewStore.GetAsync(CompanyId, vendorCreditApplicationJournalEntryId, CancellationToken.None);
+            var vendorCreditApplicationCompensationReview = await journalEntryReviewStore.GetAsync(CompanyId, vendorCreditApplicationCompensationJournalEntryId, CancellationToken.None);
+
+            Assert.Equal("reversed", vendorCreditStatus);
+            Assert.Equal("reversed", vendorCreditApplicationStatus);
+            Assert.Equal("reversed", vendorCreditJournalStatus);
+            Assert.Equal("reversed", vendorCreditApplicationJournalStatus);
+            Assert.NotNull(sourceOpenItem);
+            Assert.Equal("voided", sourceOpenItem!.Status);
+            Assert.Equal(0m, sourceOpenItem.OpenAmountTx);
+            Assert.Equal(0m, sourceOpenItem.OpenAmountBase);
+            Assert.NotNull(targetOpenItem);
+            Assert.Equal("open", targetOpenItem!.Status);
+            Assert.Equal(100m, targetOpenItem.OpenAmountTx);
+            Assert.Equal(125m, targetOpenItem.OpenAmountBase);
+
+            Assert.NotNull(vendorCreditReview);
+            Assert.Equal("EUR", vendorCreditReview!.TransactionCurrencyCode);
+            Assert.Equal("USD", vendorCreditReview.BaseCurrencyCode);
+            Assert.Equal(fxSnapshotId, vendorCreditReview.FxSnapshotId);
+            Assert.NotNull(vendorCreditCompensationReview);
+            Assert.Equal("vendor_credit_reversal", vendorCreditCompensationReview!.SourceType);
+            Assert.Equal(fxSnapshotId, vendorCreditCompensationReview.FxSnapshotId);
+            Assert.Contains("snapshot", vendorCreditCompensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+
+            Assert.NotNull(vendorCreditApplicationReview);
+            Assert.Equal("EUR", vendorCreditApplicationReview!.TransactionCurrencyCode);
+            Assert.Equal("USD", vendorCreditApplicationReview.BaseCurrencyCode);
+            Assert.Null(vendorCreditApplicationReview.FxSnapshotId);
+            Assert.NotNull(vendorCreditApplicationCompensationReview);
+            Assert.Equal("vendor_credit_application_reversal", vendorCreditApplicationCompensationReview!.SourceType);
+            Assert.Null(vendorCreditApplicationCompensationReview.FxSnapshotId);
+            Assert.Contains("header-only", vendorCreditApplicationCompensationReview.FxTraceLabel, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await CleanupSettlementApplicationAsync(connectionFactory, sourceApplicationId, CancellationToken.None);
+            await CleanupSettlementApplicationAsync(connectionFactory, targetApplicationId, CancellationToken.None);
+            await CleanupAuditLogEntityAsync(connectionFactory, vendorCreditId, CancellationToken.None);
+            await CleanupAuditLogEntityAsync(connectionFactory, vendorCreditApplicationId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, vendorCreditCompensationJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, vendorCreditApplicationCompensationJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, vendorCreditJournalEntryId, CancellationToken.None);
+            await CleanupJournalEntryAsync(connectionFactory, vendorCreditApplicationJournalEntryId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "vendor_credit_application_lines", "vendor_credit_application_id", "vendor_credit_applications", vendorCreditApplicationId, CancellationToken.None);
+            await CleanupApOpenItemAsync(connectionFactory, sourceVendorCreditOpenItemId, CancellationToken.None);
+            await CleanupApOpenItemAsync(connectionFactory, targetBillOpenItemId, CancellationToken.None);
+            await CleanupDraftAsync(connectionFactory, "vendor_credit_lines", "vendor_credit_id", "vendor_credits", vendorCreditId, CancellationToken.None);
+            await CleanupFxSnapshotAsync(connectionFactory, fxSnapshotId, CancellationToken.None);
             await CleanupAccountAsync(connectionFactory, expenseAccountId, CancellationToken.None);
             await CleanupAccountAsync(connectionFactory, payableControlAccountId, CancellationToken.None);
             await CleanupUserAsync(connectionFactory, userId, createdUser, CancellationToken.None);
@@ -2550,6 +3700,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
     {
         var accountId = Guid.NewGuid();
         var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
+        var suffix = entityNumber[^6..];
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -2575,8 +3726,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
               @id,
               @company_id,
               @entity_number,
-              '2000',
-              'Smoke Accounts Payable',
+              @code,
+              @name,
               'liability',
               'accounts_payable',
               true,
@@ -2591,6 +3742,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("id", accountId);
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("entity_number", entityNumber);
+        command.Parameters.AddWithValue("code", $"AP-{suffix}");
+        command.Parameters.AddWithValue("name", $"Smoke Accounts Payable {suffix}");
         await command.ExecuteNonQueryAsync(cancellationToken);
         return accountId;
     }
@@ -2915,12 +4068,22 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid creditAccountId,
         decimal amount,
         string displayNumber,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string transactionCurrencyCode = "USD",
+        string baseCurrencyCode = "USD",
+        decimal? transactionAmount = null,
+        decimal? exchangeRate = null,
+        DateOnly? exchangeRateDate = null,
+        string exchangeRateSource = "smoke",
+        Guid? fxSnapshotId = null)
     {
         var journalEntryId = Guid.NewGuid();
         var debitLineId = Guid.NewGuid();
         var creditLineId = Guid.NewGuid();
         var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
+        var totalTransactionAmount = transactionAmount ?? amount;
+        var effectiveExchangeRate = exchangeRate ?? (transactionCurrencyCode == baseCurrencyCode ? 1m : amount / totalTransactionAmount);
+        var effectiveExchangeRateDate = exchangeRateDate ?? new DateOnly(2026, 4, 14);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -2943,6 +4106,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   exchange_rate,
                   exchange_rate_date,
                   exchange_rate_source,
+                  fx_rate_snapshot_id,
                   total_tx_debit,
                   total_tx_credit,
                   total_debit,
@@ -2960,13 +4124,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   'posted',
                   @source_type,
                   @source_id,
-                  'USD',
-                  'USD',
-                  1,
-                  current_date,
-                  'smoke',
-                  @amount,
-                  @amount,
+                  @transaction_currency_code,
+                  @base_currency_code,
+                  @exchange_rate,
+                  @exchange_rate_date,
+                  @exchange_rate_source,
+                  @fx_rate_snapshot_id,
+                  @transaction_amount,
+                  @transaction_amount,
                   @amount,
                   @amount,
                   @posting_run_id,
@@ -2981,6 +4146,13 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("display_number", displayNumber);
             headerCommand.Parameters.AddWithValue("source_type", sourceType);
             headerCommand.Parameters.AddWithValue("source_id", sourceId);
+            headerCommand.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+            headerCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+            headerCommand.Parameters.AddWithValue("exchange_rate", effectiveExchangeRate);
+            headerCommand.Parameters.AddWithValue("exchange_rate_date", effectiveExchangeRateDate);
+            headerCommand.Parameters.AddWithValue("exchange_rate_source", exchangeRateSource);
+            headerCommand.Parameters.AddWithValue("fx_rate_snapshot_id", (object?)fxSnapshotId ?? DBNull.Value);
+            headerCommand.Parameters.AddWithValue("transaction_amount", totalTransactionAmount);
             headerCommand.Parameters.AddWithValue("amount", amount);
             headerCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             headerCommand.Parameters.AddWithValue("idempotency_key", $"smoke-je-balanced:{sourceType}:{sourceId:D}");
@@ -2988,10 +4160,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await InsertJournalEntryLineAsync(connection, transaction, companyId, journalEntryId, debitLineId, 1, debitAccountId, amount, 0m, "Smoke debit", cancellationToken);
-        await InsertJournalEntryLineAsync(connection, transaction, companyId, journalEntryId, creditLineId, 2, creditAccountId, 0m, amount, "Smoke credit", cancellationToken);
-        await InsertLedgerEntryAsync(connection, transaction, companyId, journalEntryId, debitLineId, debitAccountId, amount, 0m, cancellationToken);
-        await InsertLedgerEntryAsync(connection, transaction, companyId, journalEntryId, creditLineId, creditAccountId, 0m, amount, cancellationToken);
+        await InsertJournalEntryLineAsync(connection, transaction, companyId, journalEntryId, debitLineId, 1, debitAccountId, totalTransactionAmount, 0m, "Smoke debit", cancellationToken, amount, 0m);
+        await InsertJournalEntryLineAsync(connection, transaction, companyId, journalEntryId, creditLineId, 2, creditAccountId, 0m, totalTransactionAmount, "Smoke credit", cancellationToken, 0m, amount);
+        await InsertLedgerEntryAsync(connection, transaction, companyId, journalEntryId, debitLineId, debitAccountId, amount, 0m, cancellationToken, transactionCurrencyCode, totalTransactionAmount, 0m);
+        await InsertLedgerEntryAsync(connection, transaction, companyId, journalEntryId, creditLineId, creditAccountId, 0m, amount, cancellationToken, transactionCurrencyCode, 0m, totalTransactionAmount);
 
         await transaction.CommitAsync(cancellationToken);
         return journalEntryId;
@@ -3032,9 +4204,15 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid sourceId,
         CancellationToken cancellationToken,
         decimal amount = 72m,
-        string balanceSide = "credit")
+        string balanceSide = "credit",
+        decimal? amountTx = null,
+        decimal? amountBase = null,
+        string documentCurrencyCode = "USD",
+        string baseCurrencyCode = "USD")
     {
         var openItemId = Guid.NewGuid();
+        var effectiveAmountTx = amountTx ?? amount;
+        var effectiveAmountBase = amountBase ?? amount;
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -3065,12 +4243,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
               @source_type,
               @source_id,
               @due_date,
-              'USD',
-              'USD',
-              @amount,
-              @amount,
-              @amount,
-              @amount,
+              @document_currency_code,
+              @base_currency_code,
+              @amount_tx,
+              @amount_base,
+              @amount_tx,
+              @amount_base,
               @balance_side,
               'open',
               now(),
@@ -3083,7 +4261,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("source_type", sourceType);
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("due_date", new DateOnly(2026, 5, 14));
-        command.Parameters.AddWithValue("amount", amount);
+        command.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        command.Parameters.AddWithValue("amount_tx", effectiveAmountTx);
+        command.Parameters.AddWithValue("amount_base", effectiveAmountBase);
         command.Parameters.AddWithValue("balance_side", balanceSide);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return openItemId;
@@ -3113,10 +4294,18 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid vendorId,
         Guid paymentAccountId,
         Guid targetApOpenItemId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string documentCurrencyCode = "USD",
+        string baseCurrencyCode = "USD",
+        decimal fxRate = 1m,
+        string fxSource = "smoke",
+        decimal totalAmount = 1m,
+        decimal appliedAmountTx = 1m,
+        DateOnly? paymentDate = null)
     {
         var payBillId = Guid.NewGuid();
         var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
+        var effectivePaymentDate = paymentDate ?? new DateOnly(2026, 4, 14);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -3155,13 +4344,13 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   'posted',
                   @payment_date,
                   @bank_account_id,
-                  'USD',
-                  'USD',
-                  1,
+                  @document_currency_code,
+                  @base_currency_code,
+                  @fx_rate,
                   @payment_date,
                   @payment_date,
-                  'smoke',
-                  1,
+                  @fx_source,
+                  @total_amount,
                   'Pay bill reverse smoke',
                   now(),
                   @created_by_user_id
@@ -3172,8 +4361,13 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("payment_number", $"PB-{entityNumber[^6..]}");
             headerCommand.Parameters.AddWithValue("vendor_id", vendorId);
-            headerCommand.Parameters.AddWithValue("payment_date", new DateOnly(2026, 4, 14));
+            headerCommand.Parameters.AddWithValue("payment_date", effectivePaymentDate);
             headerCommand.Parameters.AddWithValue("bank_account_id", paymentAccountId);
+            headerCommand.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
+            headerCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+            headerCommand.Parameters.AddWithValue("fx_rate", fxRate);
+            headerCommand.Parameters.AddWithValue("fx_source", fxSource);
+            headerCommand.Parameters.AddWithValue("total_amount", totalAmount);
             headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -3195,12 +4389,13 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   @pay_bill_id,
                   1,
                   @target_ap_open_item_id,
-                  1
+                  @applied_amount_tx
                 );
                 """;
             lineCommand.Parameters.AddWithValue("company_id", companyId);
             lineCommand.Parameters.AddWithValue("pay_bill_id", payBillId);
             lineCommand.Parameters.AddWithValue("target_ap_open_item_id", targetApOpenItemId);
+            lineCommand.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
             await lineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -3215,10 +4410,16 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid vendorId,
         Guid sourceVendorCreditApOpenItemId,
         Guid targetBillApOpenItemId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string documentCurrencyCode = "USD",
+        string baseCurrencyCode = "USD",
+        decimal totalAmount = 1m,
+        decimal appliedAmountTx = 1m,
+        DateOnly? applicationDate = null)
     {
         var vendorCreditApplicationId = Guid.NewGuid();
         var entityNumber = await ReserveEntityNumberAsync(connectionFactory, cancellationToken);
+        var effectiveApplicationDate = applicationDate ?? new DateOnly(2026, 4, 14);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -3251,9 +4452,9 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   @vendor_id,
                   'posted',
                   @application_date,
-                  'USD',
-                  'USD',
-                  1,
+                  @document_currency_code,
+                  @base_currency_code,
+                  @total_amount,
                   'Vendor credit application reverse smoke',
                   now(),
                   @created_by_user_id
@@ -3264,7 +4465,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
             headerCommand.Parameters.AddWithValue("application_number", $"VCA-{entityNumber[^6..]}");
             headerCommand.Parameters.AddWithValue("vendor_id", vendorId);
-            headerCommand.Parameters.AddWithValue("application_date", new DateOnly(2026, 4, 14));
+            headerCommand.Parameters.AddWithValue("application_date", effectiveApplicationDate);
+            headerCommand.Parameters.AddWithValue("document_currency_code", documentCurrencyCode);
+            headerCommand.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+            headerCommand.Parameters.AddWithValue("total_amount", totalAmount);
             headerCommand.Parameters.AddWithValue("created_by_user_id", userId);
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -3288,13 +4492,14 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
                   1,
                   @source_vendor_credit_ap_open_item_id,
                   @target_bill_ap_open_item_id,
-                  1
+                  @applied_amount_tx
                 );
                 """;
             lineCommand.Parameters.AddWithValue("company_id", companyId);
             lineCommand.Parameters.AddWithValue("vendor_credit_application_id", vendorCreditApplicationId);
             lineCommand.Parameters.AddWithValue("source_vendor_credit_ap_open_item_id", sourceVendorCreditApOpenItemId);
             lineCommand.Parameters.AddWithValue("target_bill_ap_open_item_id", targetBillApOpenItemId);
+            lineCommand.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
             await lineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -3322,7 +4527,9 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         string sourceType,
         Guid sourceId,
         Guid userId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        decimal appliedAmountTx = 1m,
+        decimal appliedAmountBase = 1m)
     {
         var applicationId = Guid.NewGuid();
 
@@ -3350,8 +4557,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
               @source_id,
               @target_open_item_type,
               @target_open_item_id,
-              1,
-              1,
+              @applied_amount_tx,
+              @applied_amount_base,
               @created_by_user_id
             );
             """;
@@ -3362,6 +4569,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("source_id", sourceId);
         command.Parameters.AddWithValue("target_open_item_type", targetOpenItemType);
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
+        command.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
+        command.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
         command.Parameters.AddWithValue("created_by_user_id", userId);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return applicationId;
@@ -3375,7 +4584,9 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         string sourceType,
         Guid sourceId,
         Guid userId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        decimal appliedAmountTx = 1m,
+        decimal appliedAmountBase = 1m)
     {
         var applicationId = await CreateSettlementApplicationForOpenItemAsync(
             connectionFactory,
@@ -3385,7 +4596,9 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             sourceType,
             sourceId,
             userId,
-            cancellationToken);
+            cancellationToken,
+            appliedAmountTx,
+            appliedAmountBase);
 
         var targetTable = targetOpenItemType == "ar_open_item" ? "ar_open_items" : "ap_open_items";
 
@@ -3394,8 +4607,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.CommandText =
             $"""
             update {targetTable}
-            set open_amount_tx = open_amount_tx - 1,
-                open_amount_base = open_amount_base - 1,
+            set open_amount_tx = open_amount_tx - @applied_amount_tx,
+                open_amount_base = open_amount_base - @applied_amount_base,
                 status = 'partially_applied',
                 updated_at = now()
             where company_id = @company_id
@@ -3403,6 +4616,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             """;
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("target_open_item_id", targetOpenItemId);
+        command.Parameters.AddWithValue("applied_amount_tx", appliedAmountTx);
+        command.Parameters.AddWithValue("applied_amount_base", appliedAmountBase);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return applicationId;
@@ -3564,7 +4779,9 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         decimal txDebit,
         decimal txCredit,
         string description,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        decimal? baseDebit = null,
+        decimal? baseCredit = null)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -3605,8 +4822,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("description", description);
         command.Parameters.AddWithValue("tx_debit", txDebit);
         command.Parameters.AddWithValue("tx_credit", txCredit);
-        command.Parameters.AddWithValue("debit", txDebit);
-        command.Parameters.AddWithValue("credit", txCredit);
+        command.Parameters.AddWithValue("debit", baseDebit ?? txDebit);
+        command.Parameters.AddWithValue("credit", baseCredit ?? txCredit);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -3619,7 +4836,10 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid accountId,
         decimal debit,
         decimal credit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string transactionCurrencyCode = "USD",
+        decimal? transactionDebit = null,
+        decimal? transactionCredit = null)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -3648,7 +4868,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
               @account_id,
               @debit,
               @credit,
-              'USD',
+              @transaction_currency_code,
               @tx_debit,
               @tx_credit,
               now()
@@ -3661,8 +4881,144 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         command.Parameters.AddWithValue("account_id", accountId);
         command.Parameters.AddWithValue("debit", debit);
         command.Parameters.AddWithValue("credit", credit);
-        command.Parameters.AddWithValue("tx_debit", debit);
-        command.Parameters.AddWithValue("tx_credit", credit);
+        command.Parameters.AddWithValue("transaction_currency_code", transactionCurrencyCode);
+        command.Parameters.AddWithValue("tx_debit", transactionDebit ?? debit);
+        command.Parameters.AddWithValue("tx_credit", transactionCredit ?? credit);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<Guid> CreateManualFxSnapshotAsync(
+        PostgresConnectionFactory connectionFactory,
+        string baseCurrencyCode,
+        string quoteCurrencyCode,
+        Guid userId,
+        DateOnly requestedDate,
+        decimal rate,
+        CancellationToken cancellationToken)
+    {
+        var snapshotId = Guid.NewGuid();
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            insert into company_fx_rate_snapshots (
+              id,
+              company_id,
+              base_currency_code,
+              quote_currency_code,
+              requested_date,
+              effective_date,
+              rate,
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
+              provider_key,
+              row_origin,
+              snapshot_semantics,
+              system_market_rate_id,
+              notes,
+              created_by_user_id
+            )
+            values (
+              @id,
+              @company_id,
+              @base_currency_code,
+              @quote_currency_code,
+              @requested_date,
+              @effective_date,
+              @rate,
+              'spot',
+              'direct',
+              'general',
+              'normal',
+              @provider_key,
+              'manual',
+              'manual',
+              null,
+              'Payable FX bill smoke snapshot',
+              @created_by_user_id
+            );
+            """;
+        command.Parameters.AddWithValue("id", snapshotId);
+        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
+        command.Parameters.AddWithValue("requested_date", requestedDate);
+        command.Parameters.AddWithValue("effective_date", requestedDate);
+        command.Parameters.AddWithValue("rate", rate);
+        command.Parameters.AddWithValue("provider_key", $"smoke-{quoteCurrencyCode.ToLowerInvariant()}-{snapshotId:N}");
+        command.Parameters.AddWithValue("created_by_user_id", userId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return snapshotId;
+    }
+
+    private static async Task<DateOnly> ReserveUniqueSnapshotDateAsync(
+        PostgresConnectionFactory connectionFactory,
+        string baseCurrencyCode,
+        string quoteCurrencyCode,
+        CancellationToken cancellationToken)
+    {
+        var start = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(45);
+        for (var offset = 0; offset < 540; offset++)
+        {
+            var candidate = start.AddDays(offset);
+            if (!await SnapshotIdentityExistsAsync(
+                    connectionFactory,
+                    baseCurrencyCode,
+                    quoteCurrencyCode,
+                    candidate,
+                    cancellationToken))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("Could not reserve a unique payable FX snapshot date.");
+    }
+
+    private static async Task<bool> SnapshotIdentityExistsAsync(
+        PostgresConnectionFactory connectionFactory,
+        string baseCurrencyCode,
+        string quoteCurrencyCode,
+        DateOnly requestedDate,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select 1
+            from company_fx_rate_snapshots
+            where company_id = @company_id
+              and base_currency_code = @base_currency_code
+              and quote_currency_code = @quote_currency_code
+              and requested_date = @requested_date
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
+        command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
+        command.Parameters.AddWithValue("requested_date", requestedDate);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task CleanupFxSnapshotAsync(
+        PostgresConnectionFactory connectionFactory,
+        Guid snapshotId,
+        CancellationToken cancellationToken)
+    {
+        if (snapshotId == Guid.Empty)
+        {
+            return;
+        }
+
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "delete from company_fx_rate_snapshots where id = @snapshot_id;";
+        command.Parameters.AddWithValue("snapshot_id", snapshotId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

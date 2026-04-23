@@ -720,7 +720,10 @@
 
             if (result.Value is null)
             {
-                _error = result.ErrorMessage ?? "Unable to post the receipt.";
+                _error = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "Unable to post the receipt.");
                 return;
             }
 

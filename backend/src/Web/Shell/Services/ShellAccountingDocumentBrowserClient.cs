@@ -48,9 +48,9 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
 
             if (!response.IsSuccessStatusCode)
             {
-                var error = await ReadErrorMessageAsync(response, cancellationToken);
-                logger.LogWarning("Unable to load accounting source documents for company {CompanyId}: {Error}", companyId, error);
-                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error);
+                var error = await ReadErrorAsync(response, cancellationToken);
+                logger.LogWarning("Unable to load accounting source documents for company {CompanyId}: {Error}", companyId, error.Message);
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error.Message, error.Code);
             }
 
             var items = await response.Content.ReadFromJsonAsync<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>(cancellationToken)
@@ -90,9 +90,9 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
 
             if (!response.IsSuccessStatusCode)
             {
-                var error = await ReadErrorMessageAsync(response, cancellationToken);
-                logger.LogWarning("Unable to load purchase orders for company {CompanyId}: {Error}", companyId, error);
-                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error);
+                var error = await ReadErrorAsync(response, cancellationToken);
+                logger.LogWarning("Unable to load purchase orders for company {CompanyId}: {Error}", companyId, error.Message);
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error.Message, error.Code);
             }
 
             var items = await response.Content.ReadFromJsonAsync<IReadOnlyList<ShellPurchaseOrderBrowserItem>>(cancellationToken)
@@ -159,9 +159,9 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
 
             if (!response.IsSuccessStatusCode)
             {
-                var error = await ReadErrorMessageAsync(response, cancellationToken);
-                logger.LogWarning("Unable to load receipts for company {CompanyId}: {Error}", companyId, error);
-                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error);
+                var error = await ReadErrorAsync(response, cancellationToken);
+                logger.LogWarning("Unable to load receipts for company {CompanyId}: {Error}", companyId, error.Message);
+                return WebShellAuthenticatedApiResult<IReadOnlyList<ShellAccountingSourceDocumentBrowserItem>>.Failure(error.Message, error.Code);
             }
 
             var items = await response.Content.ReadFromJsonAsync<IReadOnlyList<ShellReceiptBrowserItem>>(cancellationToken)
@@ -206,24 +206,24 @@ public sealed class ShellAccountingDocumentBrowserClient(HttpClient httpClient, 
             ReceiptPurchaseVarianceStatus = item.GrIrSettlement?.PurchaseVarianceStatus
         };
 
-    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<ShellErrorPayload> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
         {
             var payload = await response.Content.ReadFromJsonAsync<ShellErrorPayload>(cancellationToken);
             if (!string.IsNullOrWhiteSpace(payload?.Message))
             {
-                return payload.Message;
+                return payload;
             }
         }
         catch
         {
         }
 
-        return $"Loading documents failed with HTTP {(int)response.StatusCode}.";
+        return new ShellErrorPayload(null, $"Loading documents failed with HTTP {(int)response.StatusCode}.");
     }
 
-    private sealed record class ShellErrorPayload(string? Message);
+    private sealed record class ShellErrorPayload(string? Code, string Message);
 
     private sealed record class ShellPurchaseOrderBrowserItem
     {

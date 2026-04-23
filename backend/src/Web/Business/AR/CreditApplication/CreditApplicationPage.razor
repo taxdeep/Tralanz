@@ -15,6 +15,56 @@
         Prepare governed AR credit applications from open customer items in the active company context.
     </p>
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">AR Settlement Chain</MudText>
+                <MudText Typo="Typo.h5">@CreditApplicationStageLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@CreditApplicationStageSummary</MudText>
+            </div>
+            <MudChip T="string" Variant="Variant.Filled" Color="@CreditApplicationStageColor">@CreditApplicationStageBadge</MudChip>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Source credit lane</MudText>
+                <MudText Typo="Typo.h6">@CreditApplicationSourceLaneLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@CreditApplicationSourceLaneSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current next step</MudText>
+                <MudText Typo="Typo.h6">@CreditApplicationNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@CreditApplicationNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Related AR lane</MudText>
+                <MudText Typo="Typo.h6">@CreditApplicationRelatedLaneLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@CreditApplicationRelatedLaneSummary</MudText>
+            </MudPaper>
+        </div>
+
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildCreditNoteBrowserHref()">
+                Review Credit Notes
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@BuildInvoiceBrowserHref()">
+                Review Invoices
+            </MudButton>
+            @if (SelectedCustomerId.HasValue)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="@BuildReceivePaymentHref()">
+                    Open Receive Payment
+                </MudButton>
+            }
+            @if (_postedResult is not null && _preparedDraft is not null)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPostedCreditApplicationDetailHref()">
+                    Continue Posted Application Review
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+
     <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
         Active company: @ShellSession.ActiveCompanyId
         <br />
@@ -205,6 +255,12 @@
                 <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">
                     Open Journal Entry Review
                 </MudButton>
+                @if (SelectedCustomerId.HasValue)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="@BuildReceivePaymentHref()">
+                        Back to Receive Payment
+                    </MudButton>
+                }
             </div>
         </MudPaper>
     }
@@ -225,6 +281,81 @@
     private decimal _appliedAmountTx;
     private CreditApplicationDraftResult? _preparedDraft;
     private ArSettlementPostingResult? _postedResult;
+    [SupplyParameterFromQuery(Name = "customerId")]
+    public Guid? CustomerId { get; set; }
+    private Guid? SelectedCustomerId => Guid.TryParse(_selectedCustomerIdText, out var value) ? value : null;
+    private string CreditApplicationStageLabel => _postedResult is not null
+        ? "Credit application posted"
+        : _preparedDraft is not null
+            ? "Application draft prepared"
+            : TryGetSelectedSourceCredit(out _) && TryGetSelectedTargetInvoice(out _) && _appliedAmountTx > 0m
+                ? "Application intent selected"
+                : _sourceCredits.Count > 0 || _targetInvoices.Count > 0
+                    ? "Open credit and invoice candidates loaded"
+                    : "Start credit application";
+    private string CreditApplicationStageSummary => _postedResult is not null
+        ? "The credit application is now formal AR settlement truth and can be reviewed through the posted document and JE lane."
+        : _preparedDraft is not null
+            ? "The governed application draft is ready. Post it when the credit should formally offset invoice truth."
+            : TryGetSelectedSourceCredit(out _) && TryGetSelectedTargetInvoice(out _) && _appliedAmountTx > 0m
+                ? "Source credit and target invoice are chosen. Prepare the governed document so offset truth becomes explicit."
+                : _sourceCredits.Count > 0 || _targetInvoices.Count > 0
+                    ? "The workbench found candidates. Choose one credit, one invoice, and the amount to apply."
+                    : "This lane consumes posted credit notes against posted invoices for the same customer.";
+    private string CreditApplicationStageBadge => _postedResult is not null
+        ? "Posted"
+        : _preparedDraft is not null
+            ? "Prepared"
+            : TryGetSelectedSourceCredit(out _) && TryGetSelectedTargetInvoice(out _) && _appliedAmountTx > 0m
+                ? "Selected"
+                : _sourceCredits.Count > 0 || _targetInvoices.Count > 0
+                    ? "Loaded"
+                    : "New";
+    private Color CreditApplicationStageColor => _postedResult is not null
+        ? Color.Success
+        : _preparedDraft is not null
+            ? Color.Info
+            : TryGetSelectedSourceCredit(out _) && TryGetSelectedTargetInvoice(out _) && _appliedAmountTx > 0m
+                ? Color.Warning
+                : _sourceCredits.Count > 0 || _targetInvoices.Count > 0
+                    ? Color.Info
+                    : Color.Default;
+    private string CreditApplicationSourceLaneLabel => _sourceCredits.Count switch
+    {
+        > 0 => $"{_sourceCredits.Count} source credit candidate(s)",
+        _ when SelectedCustomerId is null => "Customer not selected",
+        _ => "No open credit notes loaded"
+    };
+    private string CreditApplicationSourceLaneSummary => _sourceCredits.Count switch
+    {
+        > 0 => "Posted credit-note open items are available and can legally offset posted invoice truth.",
+        _ when SelectedCustomerId is null => "Pick the customer first so the workbench can discover matching credit notes and invoices.",
+        _ => "No posted credit notes with open credit balance are currently available for this customer."
+    };
+    private string CreditApplicationNextStepTitle => _postedResult is not null
+        ? "Review posted application"
+        : _preparedDraft is not null
+            ? "Post the application draft"
+            : TryGetSelectedSourceCredit(out _) && TryGetSelectedTargetInvoice(out _) && _appliedAmountTx > 0m
+                ? "Prepare the application draft"
+                : _sourceCredits.Count > 0 || _targetInvoices.Count > 0
+                    ? "Choose credit + invoice + amount"
+                    : "Load open items";
+    private string CreditApplicationNextStepSummary => _postedResult is not null
+        ? "Use posted document review and JE review to confirm continuity, then return to adjacent AR settlement lanes only if more work remains."
+        : _preparedDraft is not null
+            ? "Posting will formalize the offset between credit-note truth and invoice truth."
+            : TryGetSelectedSourceCredit(out _) && TryGetSelectedTargetInvoice(out _) && _appliedAmountTx > 0m
+                ? "Preparation turns the selected source/target pair into a governed application document."
+                : _sourceCredits.Count > 0 || _targetInvoices.Count > 0
+                    ? "The candidates are here; now choose the exact source credit, target invoice, and amount to apply."
+                    : "No application can start until this customer has both posted open credits and posted open invoices.";
+    private string CreditApplicationRelatedLaneLabel => SelectedCustomerId.HasValue
+        ? "Receive payment still available"
+        : "Choose customer first";
+    private string CreditApplicationRelatedLaneSummary => SelectedCustomerId.HasValue
+        ? "If cash settlement is also needed for this customer, return to Receive Payment. Both lanes operate on the same customer-scoped open-item truth."
+        : "Receive Payment and Credit Application share the same customer-scoped AR truth, so customer selection is the first gate.";
 
     protected override async Task OnInitializedAsync()
     {
@@ -232,6 +363,10 @@
         try
         {
             _customers = (await LookupService.ListCustomersAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
+            if (CustomerId.HasValue && _customers.Any(item => item.Id == CustomerId.Value))
+            {
+                _selectedCustomerIdText = CustomerId.Value.ToString();
+            }
             if (_customers.Count == 1)
             {
                 _selectedCustomerIdText = _customers[0].Id.ToString();
@@ -437,4 +572,24 @@
             "credit_application" => $"{displayNumber} | Credit Application",
             _ => displayNumber
         };
+
+    private string BuildCreditNoteBrowserHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/documents/source-browser?sourceType=credit_note&counterpartyRole=customer&counterpartyId={SelectedCustomerId.Value:D}"
+            : "/documents/source-browser?sourceType=credit_note&counterpartyRole=customer";
+
+    private string BuildInvoiceBrowserHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/documents/source-browser?sourceType=invoice&counterpartyRole=customer&counterpartyId={SelectedCustomerId.Value:D}"
+            : "/documents/source-browser?sourceType=invoice&counterpartyRole=customer";
+
+    private string BuildReceivePaymentHref() =>
+        SelectedCustomerId.HasValue
+            ? $"/ar/receive-payment?customerId={SelectedCustomerId.Value:D}"
+            : "/ar/receive-payment";
+
+    private string BuildPostedCreditApplicationDetailHref() =>
+        _preparedDraft is null
+            ? string.Empty
+            : $"/documents/credit_application/{_preparedDraft.DocumentId:D}";
 }

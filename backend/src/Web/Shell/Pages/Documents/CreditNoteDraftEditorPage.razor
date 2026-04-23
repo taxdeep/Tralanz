@@ -319,7 +319,7 @@
                 _fxSnapshotId,
                 CancellationToken.None);
             if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(postResult, CancellationToken.None)) return;
-            if (postResult.Value is null) { _error = postResult.ErrorMessage ?? "Unable to post the credit note draft."; return; }
+            if (postResult.Value is null) { _error = WebShellPostingFeedback.DescribeFailure(postResult.ErrorCode, postResult.ErrorMessage, "Unable to post the credit note draft."); return; }
             _postedResult = postResult.Value;
             if (_saved is not null)
             {

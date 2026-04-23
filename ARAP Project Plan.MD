@@ -36,6 +36,228 @@ Current sequencing note:
 
 The repo is not at a clean "Phase 1" state for the external 7-phase master prompt. We already have parts of later accounting phases implemented. So execution should follow repo reality, not restart from a theoretical earlier phase.
 
+## AR v1 delivery target
+
+The next product-grade delivery target is not "all AR eventually exists".
+
+The next delivery target is:
+
+- `AR v1 = a deliverable customer-side receivables module`
+- with a complete operator-facing chain from commercial handoff into receivable truth, receipt/application truth, credit truth, open-item truth, JE continuity, and multicurrency continuity
+- without reopening unrelated platform, inventory, payment-provider, or reporting programs during the same slice
+
+This plan therefore treats `AR` as the next focused business stream and intentionally avoids broadening scope every time a neighboring capability becomes visible.
+
+### AR v1 in-scope surface
+
+The following surfaces are in scope for the next deliverable AR slice:
+
+- `Customer` lookup continuity as needed by AR document entry
+- `Quote`
+- `SalesOrder`
+- `Invoice`
+- `CustomerReceipt / Receive Payment`
+- `PaymentApplication / Credit Application`
+- `CreditNote`
+- `AR open-item truth`
+- `AR aging drill-down continuity`
+- `JE review / source trace / multicurrency continuity` for AR-owned accounting outcomes
+
+These surfaces should become product-grade together, not as isolated page rewrites.
+
+### AR v1 intentionally out of scope
+
+The following AR-adjacent capabilities remain explicitly deferred from the first AR deliverable target:
+
+- `CustomerDeposit`
+- `Return`
+- `Refund`
+- `CustomerStatement`
+- `Collection`
+- `WriteOff` as a full standalone business module beyond the already-governed adjustment/write-off control lane
+- payment-provider operational truth
+- payment-gateway reconciliation truth
+- inventory-owned fulfillment or packing-slip truth beyond the current governed handoff seams
+
+Authority note:
+
+- this does not demote those objects from the long-term AR authority boundary
+- it only means they are not allowed to expand the immediate AR delivery target until the in-scope surface is product-grade
+
+### AR v1 surface map
+
+Current status by in-scope AR surface:
+
+- `Quote`
+  - authority exists
+  - source-browser continuity exists
+  - product-grade lifecycle/workbench still needs closure
+- `SalesOrder`
+  - authority exists
+  - source-browser continuity exists
+  - partial shipment / partial invoice operator surface exists
+  - product-grade lifecycle/workbench still needs closure as a commercial handoff surface
+- `Invoice`
+  - draft create/update/read/post exists
+  - detail / JE review / governed reverse continuity exists
+  - multicurrency and JE continuity are materially in place
+- `CustomerReceipt / Receive Payment`
+  - draft preparation / posting / reverse continuity exists
+  - candidate loading and JE continuity exist
+  - multicurrency chain has backend regression closure
+- `PaymentApplication / Credit Application`
+  - draft preparation / posting / reverse continuity exists
+  - target/source open-item linkage exists
+  - multicurrency chain has backend regression closure
+- `CreditNote`
+  - draft create/update/read/post exists
+  - detail / JE review / governed reverse continuity exists
+  - credit-side blocker/unapply/reversal loop exists
+- `AR open-item truth`
+  - drill-down, application trail, governed adjustment/write-off control, readiness, and execution exist
+  - operator-facing summary and policy continuity exist
+- `AR aging`
+  - backend report exists
+  - first AR-facing workbench route now exists
+  - customer/open-item drill-down and settlement continuity are formally surfaced as part of AR v1 closure
+- `JE / multicurrency continuity`
+  - manual JE, FX revaluation, invoice, receipt, credit-note, and credit-application multicurrency chains are already materially closed at the backend/test level
+  - final AR v1 work should consume that foundation rather than reopening JE scope
+
+### AR v1 authoritative entry map
+
+Current repo entry points that should be treated as the authoritative starting surfaces for AR v1:
+
+- `Quote`
+  - current entry: `/documents/source-browser?sourceType=quote`
+  - current edit surface: `/documents/quote/draft-editor`
+  - current issue: quote exists as a document/editor surface, but it is not yet framed as a first-class AR commercial workbench
+- `SalesOrder`
+  - current entry: `/documents/source-browser?sourceType=sales_order`
+  - current edit surface: `/documents/sales-order/draft-editor`
+  - current issue: SO handoff into invoice already exists, but the page still behaves more like a document lane than a polished AR commercial control surface
+- `Invoice`
+  - current entry: `/documents/invoice/draft-editor`
+  - current review/browser continuity: source browser, source detail, JE review, and receive-payment handoff already exist
+- `CustomerReceipt / Receive Payment`
+  - current entry: `/ar/receive-payment`
+  - current continuity: linked source-document detail, open-item drill-down, and JE review continuity already exist
+- `PaymentApplication / Credit Application`
+  - current entry: `/ar/credit-application`
+  - current continuity: linked source-document detail, open-item drill-down, and JE review continuity already exist
+- `CreditNote`
+  - current entry: `/documents/credit-note/draft-editor`
+  - current continuity: source detail, JE review, blocker/unapply, and governed reverse continuity already exist
+- `AR open-item truth`
+  - current entry: `/open-items/ar/{openItemId}`
+  - note: the route is currently shared as `/open-items/{OpenItemType}/{OpenItemId}`, which is structurally acceptable, but AR v1 UX should still present it as an AR-owned drill-down from AR pages instead of as a generic orphan utility
+- `AR aging`
+  - current backend entry exists at `/reports/ar-aging`
+  - current AR-facing workbench: `/ar/aging`
+  - current product note: aging is now part of the formal AR surface and should be treated as the exposure review entry before receipt/application action
+- `Customer setup continuity`
+  - current supporting entry: `/company/customer-vendor-setup`
+  - current product issue: this works as a dependency bridge, but AR v1 still needs to decide how much customer context should feel AR-native vs company-setup-native
+
+### AR surface closure gap list
+
+Based on the current repo surface, the first AR closure pass should assume these concrete gaps:
+
+1. `Quote` lacks a product-grade AR workbench identity
+   - it exists in navigation and has a draft editor
+   - but it still behaves more like a source-document lane than a complete AR commercial surface
+
+2. `SalesOrder` lacks final commercial-control framing
+   - the editor and browser path exist
+   - invoice handoff exists
+   - but the operator story from quote acceptance into sales-order execution is still not explicit enough to be called product-grade AR
+
+3. `Invoice / CreditNote` remain document-strong but workflow-light
+   - they already have draft/post/detail/JE continuity
+   - the next closure step is not core backend truth
+   - the next closure step is making operator next steps, lifecycle meaning, and cross-page continuity feel intentional and complete
+
+4. `Receive Payment / Credit Application` already have strong backend truth but still need final AR-native UX closure
+   - they already have draft preparation, posting, JE continuity, and open-item drill-down
+   - the remaining gap is product-grade guidance, terminology, and a cleaner AR-native visual language under the new UI baseline
+
+5. `AR aging` is the clearest missing product surface
+   - backend API/report truth existed ahead of the UI
+   - an AR-facing workbench now closes the biggest product-surface gap
+   - remaining work is no longer "create aging surface" but "include aging in final AR delivery verification"
+
+6. `Customer context` is still mostly dependency-driven rather than AR-led
+   - AR pages can deep-link into customer/vendor setup
+   - but AR v1 should decide whether customer readiness is only a setup prerequisite or part of the AR commercial/receivables workflow itself
+
+7. `AR design language` is not yet applied
+   - routes and workflows exist
+   - but the new `Ant Design Blazor + Tailwind CSS + Tabler Icons` baseline has not yet been turned into actual AR product surfaces
+
+### AR v1 UI/UX baseline
+
+AR v1 should use one consistent operator-facing UI system:
+
+- primary component system: `Ant Design Blazor`
+- supporting utility/layout layer: `Tailwind CSS`
+- icon system: `Tabler Icons`
+
+Rules:
+
+- do not treat `MudBlazor` as the target design language for new AR product surfaces
+- do not perform a repo-wide UI migration as part of AR v1
+- use this baseline for AR pages that are newly introduced, materially redesigned, or promoted from demo-grade to product-grade
+- keep Shell navigation/company context/backend-owned workflow cues intact while modernizing the AR surface itself
+
+AP follow-on note:
+
+- once AP becomes the next product-grade stream, it should adopt the same UI/UX baseline so AR/AP stay visually and operationally aligned
+
+### AR v1 delivery gaps
+
+The main gaps between current repo state and AR delivery are now:
+
+1. `Quote / SalesOrder` are not yet treated as fully product-grade AR commercial surfaces
+2. AR status language still needs to be normalized to the authority draft instead of remaining partly page-local
+3. AR browser/detail/open-item/aging continuity needs one final pass so operators can move through the module without context resets
+4. the AR surface must be re-centered around business chains instead of around individual page completion
+5. UI/API end-to-end product verification is still lighter than backend regression verification
+
+### AR v1 execution sequence
+
+AR work should now proceed in this order:
+
+1. `AR surface closure`
+   - lock the authoritative AR v1 pages and workbenches
+   - confirm which current pages remain transitional and which become official product surfaces
+2. `Commercial chain closure`
+   - `Quote -> SalesOrder -> Invoice`
+   - make the commercial handoff explicit without pretending Quote/SO are accounting truth
+3. `Receivable settlement chain closure`
+   - `Invoice -> Receive Payment`
+   - `CreditNote -> Credit Application`
+   - keep open-item truth and JE continuity explicit
+4. `Lifecycle and reversal closure`
+   - invoice / receipt / credit-note / application reverse continuity
+   - blocker visibility, governed unapply, and source-trace continuity
+5. `AR operator review closure`
+   - browser/detail/open-item/aging/readiness wording and decision cues
+   - finish the pages that still expose backend truth without a clear operator next step
+6. `AR delivery verification`
+   - verify AR by business chain, not by page inventory
+
+### AR v1 delivery gate
+
+AR should be treated as deliverable only when all of the following are true:
+
+- `Quote -> SalesOrder -> Invoice` works as one governed commercial handoff story
+- `Invoice -> Receive Payment` works as one governed receivable story
+- `CreditNote -> Credit Application` works as one governed credit story
+- AR open-item truth, adjustment control, and aging drill-down stay continuous from browser to detail
+- linked JE review and multicurrency review are reachable from AR product surfaces without operator dead-ends
+- AR lifecycle/reversal wording matches backend legality and authority draft semantics
+- UI/API product verification confirms the operator-facing paths, not only the backend tests
+
 ## Planning anchor
 
 - `Inventory` must be planned as a `multi-warehouse` capability from the start.
@@ -334,10 +556,18 @@ The imported `Volo.Abp.LeptonXLiteTheme.SourceCode` package can be integrated as
 
 Recommended stance:
 
-- keep the current Citus Blazor Web App + MudBlazor accounting workflow design as the primary product surface
+- keep `Blazor Web App` as the delivery host, but do not treat `MudBlazor` as the long-term AR/AP product surface
+- `AR` now adopts `Ant Design Blazor` as the primary component system, `Tailwind CSS` as supporting utility styling, and `Tabler Icons` as the icon set
+- `AP` should follow the same UI/UX baseline when its next product-grade surface work resumes, so AR/AP converge on one operator-facing design language instead of diverging by module
+- this is a controlled AR/AP business-surface decision, not a repo-wide mandate to rewrite every existing shell, setup, GL, or inventory page immediately
 - absorb LeptonX patterns selectively for Citus-governed account/admin pages, layout density, theme-token organization, and shell polish
 - do not let LeptonX generic admin layout override Citus accounting-specific navigation, company context, source-document review, AR/AP control panels, or backend-owned workflow cues
 - avoid deep coupling to the imported `5.1.1` source package while the repository is moving on `.NET 11 + C# 15 preview`; use it as reference material unless a specific component proves worth adapting
+
+Operational note:
+
+- AR/AP implementation should now advance by complete business chains, not by isolated control swaps or one-page-at-a-time cosmetic rewrites
+- if a future AR/AP slice needs a product-level decision on design density, information hierarchy, or workflow interaction that materially affects authority boundaries, stop and realign before implementation
 
 ## Phase F.1 checkpoint
 

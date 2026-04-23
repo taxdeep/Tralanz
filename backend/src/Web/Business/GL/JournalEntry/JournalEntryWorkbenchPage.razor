@@ -715,7 +715,9 @@
         }
         catch (Exception ex)
         {
-            _errorText = ex.Message;
+            _errorText = string.IsNullOrWhiteSpace(ex.Message)
+                ? "The journal entry workbench could not be loaded right now."
+                : ex.Message;
         }
         finally
         {
@@ -742,7 +744,9 @@
         }
         catch (Exception ex)
         {
-            _ledgerErrorText = ex.Message;
+            _ledgerErrorText = string.IsNullOrWhiteSpace(ex.Message)
+                ? "The ledger account balances could not be loaded right now."
+                : ex.Message;
         }
         finally
         {
@@ -770,9 +774,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _fxBatchErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
-                    ? "FX revaluation batch history is unavailable."
-                    : result.ErrorMessage;
+                _fxBatchErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "FX revaluation batch history is unavailable.");
                 return;
             }
 
@@ -780,7 +785,10 @@
         }
         catch (Exception ex)
         {
-            _fxBatchErrorText = ex.Message;
+            _fxBatchErrorText = DescribeCommandFailure(
+                null,
+                ex.Message,
+                "FX revaluation batch history is unavailable.");
         }
         finally
         {
@@ -821,9 +829,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _fxErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
-                    ? "FX revaluation batch could not be prepared."
-                    : result.ErrorMessage;
+                _fxErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "FX revaluation batch could not be prepared.");
                 return;
             }
 
@@ -833,7 +842,10 @@
         }
         catch (Exception ex)
         {
-            _fxErrorText = ex.Message;
+            _fxErrorText = DescribeCommandFailure(
+                null,
+                ex.Message,
+                "FX revaluation batch could not be prepared.");
         }
         finally
         {
@@ -867,9 +879,10 @@
 
             if (result.Value is null || !string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
-                _fxErrorText = string.IsNullOrWhiteSpace(result.ErrorMessage)
-                    ? "FX revaluation batch could not be posted."
-                    : result.ErrorMessage;
+                _fxErrorText = DescribeCommandFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "FX revaluation batch could not be posted.");
                 return;
             }
 
@@ -881,7 +894,10 @@
         }
         catch (Exception ex)
         {
-            _fxErrorText = ex.Message;
+            _fxErrorText = DescribeCommandFailure(
+                null,
+                ex.Message,
+                "FX revaluation batch could not be posted.");
         }
         finally
         {
@@ -1086,6 +1102,28 @@
 
     private static string DisplayPolicy(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Default" : value;
+
+    private static string DescribeCommandFailure(string? errorCode, string? errorMessage, string fallbackMessage)
+    {
+        if (string.Equals(errorCode, "posting_period_closed", StringComparison.Ordinal))
+        {
+            return "The posting date falls inside a closed period for the active primary book. Move the posting date into an open period or adjust the lock in Book Governance.";
+        }
+
+        if (string.Equals(errorCode, "invalid_document_status", StringComparison.Ordinal))
+        {
+            return "This FX revaluation batch is no longer in the right lifecycle state for the requested action. Refresh the workbench and continue from the latest batch status.";
+        }
+
+        if (string.Equals(errorCode, "not_found", StringComparison.Ordinal))
+        {
+            return "The requested FX revaluation batch could not be found in the active company context. Refresh the workbench and select it again from Recent FX Batches.";
+        }
+
+        return string.IsNullOrWhiteSpace(errorMessage)
+            ? fallbackMessage
+            : errorMessage;
+    }
 
     private static string FormatOption(string option) =>
         string.Equals(option, AllOption, StringComparison.OrdinalIgnoreCase)

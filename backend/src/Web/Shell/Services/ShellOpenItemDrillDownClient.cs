@@ -119,7 +119,8 @@ public sealed class ShellOpenItemDrillDownClient(HttpClient httpClient, ILogger<
             if (!response.IsSuccessStatusCode)
             {
                 return WebShellAuthenticatedApiResult<ShellOpenItemAdjustmentRequestAttemptSummary>.Failure(
-                    result?.Message ?? $"The adjustment request returned HTTP {(int)response.StatusCode}.");
+                    result?.Message ?? $"The adjustment request returned HTTP {(int)response.StatusCode}.",
+                    string.IsNullOrWhiteSpace(result?.OutcomeCode) ? null : result.OutcomeCode);
             }
 
             return result is null
@@ -264,7 +265,8 @@ public sealed class ShellOpenItemDrillDownClient(HttpClient httpClient, ILogger<
             return WebShellAuthenticatedApiResult<ShellOpenItemAdjustmentExecutionResultSummary>.Failure(
                 string.IsNullOrWhiteSpace(error?.Message)
                     ? $"Adjustment execution returned HTTP {(int)response.StatusCode}."
-                    : error.Message);
+                    : error.Message,
+                error?.Code);
         }
         catch (Exception ex)
         {
@@ -320,7 +322,10 @@ public sealed class ShellOpenItemDrillDownClient(HttpClient httpClient, ILogger<
             if (!response.IsSuccessStatusCode)
             {
                 return WebShellAuthenticatedApiResult<ShellOpenItemAdjustmentTransitionResultSummary>.Failure(
-                    result?.Message ?? $"The adjustment transition returned HTTP {(int)response.StatusCode}.");
+                    result?.Message ?? $"The adjustment transition returned HTTP {(int)response.StatusCode}.",
+                    string.IsNullOrWhiteSpace(result?.OutcomeCode)
+                        ? (string.IsNullOrWhiteSpace(result?.TransitionCode) ? null : result.TransitionCode)
+                        : result.OutcomeCode);
             }
 
             return result is null
@@ -358,7 +363,8 @@ public sealed class ShellOpenItemDrillDownClient(HttpClient httpClient, ILogger<
 
             if (!response.IsSuccessStatusCode)
             {
-                return WebShellAuthenticatedApiResult<T>.Failure(await ReadErrorMessageAsync(response, cancellationToken));
+                var error = await ReadErrorAsync(response, cancellationToken);
+                return WebShellAuthenticatedApiResult<T>.Failure(error.Message, error.Code);
             }
 
             var payload = await response.Content.ReadFromJsonAsync<T>(cancellationToken);
@@ -374,39 +380,55 @@ public sealed class ShellOpenItemDrillDownClient(HttpClient httpClient, ILogger<
         }
     }
 
-    private static async Task<string> ReadErrorMessageAsync(
+    private static async Task<ShellApiErrorPayload> ReadErrorAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            return WebShellBusinessSessionClient.AuthenticationRequiredError;
+            return new ShellApiErrorPayload(null, WebShellBusinessSessionClient.AuthenticationRequiredError);
         }
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return "The requested open item resource was not found in the active company context.";
+            return new ShellApiErrorPayload("not_found", "The requested open item resource was not found in the active company context.");
         }
 
         try
         {
             var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
+            string? code = null;
+            if (payload?["code"]?.GetValue<string>() is { Length: > 0 } payloadCode)
+            {
+                code = payloadCode;
+            }
+            else if (payload?["outcomeCode"]?.GetValue<string>() is { Length: > 0 } outcomeCode)
+            {
+                code = outcomeCode;
+            }
+            else if (payload?["transitionCode"]?.GetValue<string>() is { Length: > 0 } transitionCode)
+            {
+                code = transitionCode;
+            }
+
             if (payload?["message"]?.GetValue<string>() is { Length: > 0 } message)
             {
-                return message;
+                return new ShellApiErrorPayload(code, message);
             }
 
             if (payload?["error"]?.GetValue<string>() is { Length: > 0 } error)
             {
-                return error;
+                return new ShellApiErrorPayload(code, error);
             }
         }
         catch
         {
         }
 
-        return $"Open item request returned HTTP {(int)response.StatusCode}.";
+        return new ShellApiErrorPayload(null, $"Open item request returned HTTP {(int)response.StatusCode}.");
     }
+
+    private sealed record class ShellApiErrorPayload(string? Code, string Message);
 
     private static bool TryBuildAdjustmentPath(string? openItemType, Guid openItemId, string leaf, out string path)
     {

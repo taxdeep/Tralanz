@@ -234,7 +234,9 @@
         }
         catch (Exception ex)
         {
-            _errorText = ex.Message;
+            _errorText = string.IsNullOrWhiteSpace(ex.Message)
+                ? "The manual journal source review could not be loaded right now."
+                : ex.Message;
         }
         finally
         {

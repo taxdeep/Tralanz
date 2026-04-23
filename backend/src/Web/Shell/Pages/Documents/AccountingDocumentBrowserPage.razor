@@ -81,6 +81,37 @@
         </MudAlert>
     }
 
+    @if (ShowsCommercialLanePanel)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                <div>
+                    <MudText Typo="Typo.subtitle2">Commercial Chain</MudText>
+                    <MudText Typo="Typo.h5">@CommercialLaneTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@CommercialLaneSummary</MudText>
+                </div>
+                <MudChip T="string" Variant="Variant.Filled" Color="@CommercialLaneColor">@CommercialLaneBadge</MudChip>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Current lane</MudText>
+                    <MudText Typo="Typo.h6">@CommercialLaneCurrentStepTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@CommercialLaneCurrentStepSummary</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Next operator move</MudText>
+                    <MudText Typo="Typo.h6">@CommercialLaneNextStepTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@CommercialLaneNextStepSummary</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Read surface</MudText>
+                    <MudText Typo="Typo.h6">@CommercialLaneReadSurfaceTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@CommercialLaneReadSurfaceSummary</MudText>
+                </MudPaper>
+            </div>
+        </MudPaper>
+    }
+
     @if (string.Equals(_selectedSourceType, "purchase_order", StringComparison.OrdinalIgnoreCase))
     {
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
@@ -156,6 +187,37 @@
                        Disabled="WritesBlocked"
                        StartIcon="@Icons.Material.Filled.AssignmentTurnedIn">
                 New Sales Order
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       Href="/documents/source-browser?sourceType=quote"
+                       StartIcon="@Icons.Material.Filled.RequestQuote">
+                Review Quotes
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Success"
+                       Href="/documents/invoice/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.ReceiptLong">
+                Start Invoice
+            </MudButton>
+        </div>
+    }
+    else if (string.Equals(_selectedSourceType, "invoice", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/documents/invoice/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.ReceiptLong">
+                New Invoice
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Success"
+                       Href="/ar/receive-payment"
+                       StartIcon="@Icons.Material.Filled.Payments">
+                Continue to Receive Payment
             </MudButton>
         </div>
     }
@@ -503,6 +565,78 @@
         BuildFilterLabel();
     private string CurrentFocusLabel => BuildFocusLabel();
     private string CurrentFocusDescription => BuildFocusDescription();
+    private bool ShowsCommercialLanePanel =>
+        _selectedSourceType is "quote" or "sales_order" or "invoice";
+    private string CommercialLaneTitle => _selectedSourceType switch
+    {
+        "quote" => "Quote pipeline",
+        "sales_order" => "Sales order pipeline",
+        "invoice" => "Invoice pipeline",
+        _ => "Commercial chain"
+    };
+    private string CommercialLaneSummary => _selectedSourceType switch
+    {
+        "quote" => "Quotes stay in the non-posting commercial offer lane. Acceptance and conversion are the hand-off into committed demand truth.",
+        "sales_order" => "Sales orders own committed customer demand. Shipment and invoice truth close them over time.",
+        "invoice" => "Invoices turn demand truth into AR truth. Posted invoices belong in JE review and Receive Payment, not back in the quote lane.",
+        _ => "Commercial chain"
+    };
+    private Color CommercialLaneColor => _selectedSourceType switch
+    {
+        "quote" => Color.Info,
+        "sales_order" => Color.Success,
+        "invoice" => Color.Warning,
+        _ => Color.Default
+    };
+    private string CommercialLaneBadge => _selectedSourceType switch
+    {
+        "quote" => "Offer truth",
+        "sales_order" => "Demand truth",
+        "invoice" => "AR truth",
+        _ => "Pipeline"
+    };
+    private string CommercialLaneCurrentStepTitle => _selectedSourceType switch
+    {
+        "quote" => "Review accepted offers",
+        "sales_order" => "Review outbound control",
+        "invoice" => "Review posted receivable anchors",
+        _ => "Review pipeline"
+    };
+    private string CommercialLaneCurrentStepSummary => _selectedSourceType switch
+    {
+        "quote" => "Saved and accepted quotes should be reviewed for the next conversion into sales orders.",
+        "sales_order" => "Issued, partially shipped, and partially invoiced orders need operator follow-through until outbound truth closes them.",
+        "invoice" => "Submitted and posted invoices should be reviewed for JE continuity and readiness for settlement.",
+        _ => "Review current stage"
+    };
+    private string CommercialLaneNextStepTitle => _selectedSourceType switch
+    {
+        "quote" => "Convert accepted quote",
+        "sales_order" => "Continue shipment or invoice",
+        "invoice" => "Move into receive payment",
+        _ => "Continue chain"
+    };
+    private string CommercialLaneNextStepSummary => _selectedSourceType switch
+    {
+        "quote" => "Once commercial intent is accepted, the next real hand-off is into a sales order.",
+        "sales_order" => "The next valid operator move depends on coverage: shipment-first, invoice-first, or close once both are complete.",
+        "invoice" => "After posting, invoices should feed settlement rather than stay in drafting workflows.",
+        _ => "Continue chain"
+    };
+    private string CommercialLaneReadSurfaceTitle => _selectedSourceType switch
+    {
+        "quote" => "Quote workbench + quote browser",
+        "sales_order" => "SO workbench + source browser",
+        "invoice" => "Invoice detail + JE review + receive payment",
+        _ => "Workbench + browser"
+    };
+    private string CommercialLaneReadSurfaceSummary => _selectedSourceType switch
+    {
+        "quote" => "Use the quote workbench to shape the offer, then return here to monitor the pipeline.",
+        "sales_order" => "Use the SO workbench for outbound truth, and come back here to review the broader demand pipeline.",
+        "invoice" => "Use invoice detail and JE review for posted truth, then continue into Receive Payment when settlement starts.",
+        _ => "Read surface"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -557,7 +691,10 @@
 
         if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
         {
-            _errorText = result.ErrorMessage;
+            _errorText = WebShellPostingFeedback.DescribeFailure(
+                result.ErrorCode,
+                result.ErrorMessage,
+                "Unable to load source documents right now.");
         }
 
         if (_items.Count == 0)

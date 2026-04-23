@@ -180,26 +180,6 @@ public sealed class JournalEntryReviewStoreSmokeTests
             await ExecuteDeleteAsync(connection, transaction, "delete from company_fx_rate_snapshots where id = @id;", snapshotId.Value, cancellationToken);
         }
 
-        await ExecuteNonIdDeleteAsync(
-            connection,
-            transaction,
-            """
-            delete from accounts
-            where company_id = @company_id
-              and system_role in ('accounts_receivable:EUR', 'accounts_payable:EUR');
-            """,
-            cancellationToken);
-
-        await ExecuteNonIdDeleteAsync(
-            connection,
-            transaction,
-            """
-            delete from company_currencies
-            where company_id = @company_id
-              and currency_code = 'EUR';
-            """,
-            cancellationToken);
-
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -217,16 +197,4 @@ public sealed class JournalEntryReviewStoreSmokeTests
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task ExecuteNonIdDeleteAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sql,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
 }

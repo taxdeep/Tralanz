@@ -381,10 +381,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -439,10 +436,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -497,10 +491,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -555,10 +546,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -1372,7 +1360,7 @@ accounting.MapGet(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -1405,7 +1393,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -1658,7 +1646,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -1952,7 +1940,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -2686,6 +2674,7 @@ accounting.MapPost(
             {
                 return Results.Conflict(new
                 {
+                    code = ResolveAccountingOperationErrorCode(ex.Message),
                     request.RequestId,
                     CompanyId = request.CompanyId.Value,
                     request.SourceType,
@@ -3232,10 +3221,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3297,10 +3283,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3387,7 +3370,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3429,7 +3412,7 @@ accounting.MapPut(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3449,7 +3432,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3520,10 +3503,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3600,7 +3580,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3639,7 +3619,7 @@ accounting.MapPut(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3710,10 +3690,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3803,7 +3780,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3849,7 +3826,7 @@ accounting.MapPut(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3869,7 +3846,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -3889,7 +3866,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4092,10 +4069,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4272,7 +4246,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4300,7 +4274,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4344,7 +4318,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4377,7 +4351,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4410,7 +4384,7 @@ accounting.MapPut(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4445,7 +4419,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4478,7 +4452,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4504,7 +4478,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4530,7 +4504,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4556,7 +4530,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4582,7 +4556,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4604,7 +4578,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -4630,11 +4604,11 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
         catch (ArgumentException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return Results.BadRequest(new { code = "invalid_operation", message = ex.Message });
         }
     });
 
@@ -4871,7 +4845,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5100,7 +5074,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5135,7 +5109,7 @@ accounting.MapPut(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5155,7 +5129,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5175,7 +5149,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5195,7 +5169,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5215,7 +5189,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5235,7 +5209,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5255,7 +5229,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5275,7 +5249,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5295,7 +5269,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5363,7 +5337,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5400,7 +5374,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5436,7 +5410,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5472,7 +5446,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5495,7 +5469,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5571,7 +5545,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5610,7 +5584,7 @@ accounting.MapPut(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5680,10 +5654,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5808,10 +5779,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -5880,10 +5848,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -6008,10 +5973,7 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
@@ -6080,14 +6042,42 @@ accounting.MapPost(
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new
-            {
-                message = ex.Message
-            });
+            return AccountingOperationBadRequest(ex);
         }
     });
 
 app.Run();
+
+static IResult AccountingOperationBadRequest(InvalidOperationException exception)
+{
+    var code = ResolveAccountingOperationErrorCode(exception.Message);
+    return Results.BadRequest(new
+    {
+        code,
+        message = exception.Message
+    });
+}
+
+static string ResolveAccountingOperationErrorCode(string message)
+{
+    if (message.Contains("locked by", StringComparison.OrdinalIgnoreCase)
+        && message.Contains("through", StringComparison.OrdinalIgnoreCase))
+    {
+        return "posting_period_closed";
+    }
+
+    if (message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+    {
+        return "not_found";
+    }
+
+    if (message.Contains("Only draft", StringComparison.OrdinalIgnoreCase))
+    {
+        return "invalid_document_status";
+    }
+
+    return "invalid_operation";
+}
 
 static IResult? RequireOpenItemAdjustmentApprovalAuthority(
     BusinessSessionContext? session,

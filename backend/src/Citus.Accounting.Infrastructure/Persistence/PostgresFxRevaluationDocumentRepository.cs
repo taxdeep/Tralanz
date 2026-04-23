@@ -91,9 +91,39 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         DateOnly fxEffectiveDate;
         string fxSource;
         string? memo;
+        var hasBatchGovernanceColumns = await FxBatchGovernanceColumnsExistAsync(scope, cancellationToken);
+        var hasBatchRateMetadataColumns = await FxBatchRateMetadataColumnsExistAsync(scope, cancellationToken);
+        var governanceProjection = hasBatchGovernanceColumns
+            ? """
+                           b.company_book_id,
+                           b.book_code,
+                           b.accounting_standard,
+                           b.revaluation_profile,
+                           b.fx_rounding_policy,
+              """
+            : """
+                           null::uuid as company_book_id,
+                           'PRIMARY'::text as book_code,
+                           'ASPE'::text as accounting_standard,
+                           'monetary_open_item_closing'::text as revaluation_profile,
+                           'currency_precision'::text as fx_rounding_policy,
+              """;
+        var rateMetadataProjection = hasBatchRateMetadataColumns
+            ? """
+                           b.rate_type,
+                           b.quote_basis,
+                           b.rate_use_case,
+                           b.posting_reason,
+              """
+            : """
+                           'closing'::text as rate_type,
+                           'direct'::text as quote_basis,
+                           'remeasurement'::text as rate_use_case,
+                           'revaluation'::text as posting_reason,
+              """;
 
         await using (var headerCommand = scope.CreateCommand(
-                         """
+                         $"""
                          select
                            b.id,
                            b.entity_number,
@@ -101,20 +131,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                            b.status,
                            b.batch_kind,
                            b.reversal_of_fx_revaluation_batch_id,
-                           b.company_book_id,
-                           b.book_code,
-                           b.accounting_standard,
-                           b.revaluation_profile,
-                           b.fx_rounding_policy,
+                           {governanceProjection}
                            b.revaluation_date,
                            b.transaction_currency_code,
                            b.base_currency_code,
                            b.fx_rate_snapshot_id,
                            b.fx_rate,
-                           b.rate_type,
-                           b.quote_basis,
-                           b.rate_use_case,
-                           b.posting_reason,
+                           {rateMetadataProjection}
                            b.fx_requested_date,
                            b.fx_effective_date,
                            b.fx_source,
@@ -348,9 +371,11 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             _connections,
             _executionContextAccessor,
             cancellationToken);
+        var hasBatchGovernanceColumns = await FxBatchGovernanceColumnsExistAsync(scope, cancellationToken);
 
         await using var command = scope.CreateCommand(
-            """
+            hasBatchGovernanceColumns
+                ? """
             select
               b.id,
               b.entity_number,
@@ -405,6 +430,71 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               b.accounting_standard,
               b.revaluation_profile,
               b.fx_rounding_policy,
+              b.revaluation_date,
+              b.transaction_currency_code,
+              b.base_currency_code,
+              b.fx_rate_snapshot_id,
+              b.fx_rate,
+              linked_je.id,
+              linked_je.display_number,
+              linked_je.posted_at,
+              linked_je.created_at,
+              b.created_at,
+              b.updated_at
+            order by coalesce(linked_je.posted_at, linked_je.created_at, b.updated_at, b.created_at) desc,
+                     b.display_number desc
+            limit @take;
+            """
+                : """
+            select
+              b.id,
+              b.entity_number,
+              b.display_number,
+              b.status,
+              b.batch_kind,
+              b.reversal_of_fx_revaluation_batch_id,
+              null::uuid as company_book_id,
+              'PRIMARY'::text as book_code,
+              'ASPE'::text as accounting_standard,
+              'monetary_open_item_closing'::text as revaluation_profile,
+              'currency_precision'::text as fx_rounding_policy,
+              b.revaluation_date,
+              b.transaction_currency_code,
+              b.base_currency_code,
+              b.fx_rate_snapshot_id,
+              b.fx_rate,
+              count(l.id)::int as line_count,
+              coalesce(sum(l.unrealized_fx_amount), 0) as unrealized_total_base,
+              linked_je.id as linked_journal_entry_id,
+              linked_je.display_number as linked_journal_entry_display_number,
+              linked_je.posted_at as linked_journal_posted_at,
+              b.created_at,
+              b.updated_at
+            from fx_revaluation_batches b
+            left join fx_revaluation_batch_lines l
+              on l.company_id = b.company_id
+             and l.fx_revaluation_batch_id = b.id
+            left join lateral (
+              select
+                je.id,
+                je.display_number,
+                je.posted_at,
+                je.created_at
+              from journal_entries je
+              where je.company_id = b.company_id
+                and je.source_type = 'fx_revaluation'
+                and je.source_id = b.id
+              order by coalesce(je.posted_at, je.created_at) desc
+              limit 1
+            ) linked_je on true
+            where b.company_id = @company_id
+            group by
+              b.id,
+              b.entity_number,
+              b.display_number,
+              b.status,
+              b.batch_kind,
+              b.reversal_of_fx_revaluation_batch_id,
               b.revaluation_date,
               b.transaction_currency_code,
               b.base_currency_code,
@@ -799,18 +889,51 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         string? memo,
         CancellationToken cancellationToken)
     {
-        await using var headerCommand = scope.CreateCommand(
-            """
-            insert into fx_revaluation_batches (
-              id,
-              company_id,
+        var hasBatchGovernanceColumns = await FxBatchGovernanceColumnsExistAsync(scope, cancellationToken);
+        var hasBatchRateMetadataColumns = await FxBatchRateMetadataColumnsExistAsync(scope, cancellationToken);
+        var governanceColumns = hasBatchGovernanceColumns
+            ? """
               company_book_id,
-              entity_number,
-              display_number,
               book_code,
               accounting_standard,
               revaluation_profile,
               fx_rounding_policy,
+              """
+            : string.Empty;
+        var governanceValues = hasBatchGovernanceColumns
+            ? """
+              @company_book_id,
+              @book_code,
+              @accounting_standard,
+              @revaluation_profile,
+              @fx_rounding_policy,
+              """
+            : string.Empty;
+        var rateMetadataColumns = hasBatchRateMetadataColumns
+            ? """
+              rate_type,
+              quote_basis,
+              rate_use_case,
+              posting_reason,
+              """
+            : string.Empty;
+        var rateMetadataValues = hasBatchRateMetadataColumns
+            ? """
+              @rate_type,
+              @quote_basis,
+              @rate_use_case,
+              @posting_reason,
+              """
+            : string.Empty;
+
+        await using var headerCommand = scope.CreateCommand(
+            $"""
+            insert into fx_revaluation_batches (
+              id,
+              company_id,
+              entity_number,
+              display_number,
+              {governanceColumns}
               status,
               batch_kind,
               reversal_of_fx_revaluation_batch_id,
@@ -819,10 +942,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               base_currency_code,
               fx_rate_snapshot_id,
               fx_rate,
-              rate_type,
-              quote_basis,
-              rate_use_case,
-              posting_reason,
+              {rateMetadataColumns}
               fx_requested_date,
               fx_effective_date,
               fx_source,
@@ -834,13 +954,9 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             values (
               @id,
               @company_id,
-              @company_book_id,
               @entity_number,
               @display_number,
-              @book_code,
-              @accounting_standard,
-              @revaluation_profile,
-              @fx_rounding_policy,
+              {governanceValues}
               'draft',
               @batch_kind,
               @reversal_of_fx_revaluation_batch_id,
@@ -849,10 +965,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
               @base_currency_code,
               @fx_rate_snapshot_id,
               @fx_rate,
-              @rate_type,
-              @quote_basis,
-              @rate_use_case,
-              @posting_reason,
+              {rateMetadataValues}
               @fx_requested_date,
               @fx_effective_date,
               @fx_source,
@@ -865,13 +978,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         headerCommand.Parameters.AddWithValue("id", batchId);
         headerCommand.Parameters.AddWithValue("company_id", companyId);
-        headerCommand.Parameters.AddWithValue("company_book_id", bookPolicy.BookId == Guid.Empty ? DBNull.Value : (object)bookPolicy.BookId);
         headerCommand.Parameters.AddWithValue("entity_number", entityNumber);
         headerCommand.Parameters.AddWithValue("display_number", displayNumber);
-        headerCommand.Parameters.AddWithValue("book_code", bookPolicy.BookCode);
-        headerCommand.Parameters.AddWithValue("accounting_standard", bookPolicy.AccountingStandard);
-        headerCommand.Parameters.AddWithValue("revaluation_profile", bookPolicy.RevaluationProfile);
-        headerCommand.Parameters.AddWithValue("fx_rounding_policy", bookPolicy.FxRoundingPolicy);
         headerCommand.Parameters.AddWithValue("batch_kind", batchKind);
         headerCommand.Parameters.AddWithValue(
             "reversal_of_fx_revaluation_batch_id",
@@ -896,6 +1004,22 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
                 ? DBNull.Value
                 : (object)memo.Trim());
         headerCommand.Parameters.AddWithValue("created_by_user_id", createdByUserId);
+        if (hasBatchGovernanceColumns)
+        {
+            headerCommand.Parameters.AddWithValue("company_book_id", bookPolicy.BookId == Guid.Empty ? DBNull.Value : (object)bookPolicy.BookId);
+            headerCommand.Parameters.AddWithValue("book_code", bookPolicy.BookCode);
+            headerCommand.Parameters.AddWithValue("accounting_standard", bookPolicy.AccountingStandard);
+            headerCommand.Parameters.AddWithValue("revaluation_profile", bookPolicy.RevaluationProfile);
+            headerCommand.Parameters.AddWithValue("fx_rounding_policy", bookPolicy.FxRoundingPolicy);
+        }
+        if (hasBatchRateMetadataColumns)
+        {
+            headerCommand.Parameters.AddWithValue("rate_type", fxSnapshot.RateType);
+            headerCommand.Parameters.AddWithValue("quote_basis", fxSnapshot.QuoteBasis);
+            headerCommand.Parameters.AddWithValue("rate_use_case", fxSnapshot.RateUseCase);
+            headerCommand.Parameters.AddWithValue("posting_reason", fxSnapshot.PostingReason);
+        }
+
         await headerCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1096,28 +1220,51 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         Guid documentId,
         CancellationToken cancellationToken)
     {
+        var hasBatchGovernanceColumns = await FxBatchGovernanceColumnsExistAsync(scope, cancellationToken);
+        var hasBatchRateMetadataColumns = await FxBatchRateMetadataColumnsExistAsync(scope, cancellationToken);
+        var governanceProjection = hasBatchGovernanceColumns
+            ? """
+              b.company_book_id,
+              b.book_code,
+              b.accounting_standard,
+              b.revaluation_profile,
+              b.fx_rounding_policy,
+              """
+            : """
+              null::uuid as company_book_id,
+              'PRIMARY'::text as book_code,
+              'ASPE'::text as accounting_standard,
+              'monetary_open_item_closing'::text as revaluation_profile,
+              'currency_precision'::text as fx_rounding_policy,
+              """;
+        var rateMetadataProjection = hasBatchRateMetadataColumns
+            ? """
+              b.rate_type,
+              b.quote_basis,
+              b.rate_use_case,
+              b.posting_reason,
+              """
+            : """
+              'closing'::text as rate_type,
+              'direct'::text as quote_basis,
+              'remeasurement'::text as rate_use_case,
+              'revaluation'::text as posting_reason,
+              """;
         await using var command = scope.CreateCommand(
-            """
+            $"""
             select
               b.id,
               b.display_number,
               b.status,
               b.batch_kind,
               b.posted_at,
-              b.company_book_id,
-              b.book_code,
-              b.accounting_standard,
-              b.revaluation_profile,
-              b.fx_rounding_policy,
+              {governanceProjection}
               b.revaluation_date,
               b.transaction_currency_code,
               b.base_currency_code,
               b.fx_rate_snapshot_id,
               b.fx_rate,
-              b.rate_type,
-              b.quote_basis,
-              b.rate_use_case,
-              b.posting_reason,
+              {rateMetadataProjection}
               b.fx_requested_date,
               b.fx_effective_date,
               b.fx_source
@@ -1330,6 +1477,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         CancellationToken cancellationToken)
     {
         var lines = new List<FxRevaluationPreparedLine>();
+        var lineRows = new List<FxRevaluationLineRow>();
         await using var command = scope.CreateCommand(
             """
             select
@@ -1354,47 +1502,63 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("document_id", sourceBatch.Id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            var lineNumber = reader.GetInt32(reader.GetOrdinal("line_number"));
-            var description = reader.GetString(reader.GetOrdinal("description"));
-            var targetOpenItemType = reader.GetString(reader.GetOrdinal("target_open_item_type"));
-            var targetOpenItemId = reader.GetGuid(reader.GetOrdinal("target_open_item_id"));
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                lineRows.Add(new FxRevaluationLineRow(
+                    reader.GetInt32(reader.GetOrdinal("line_number")),
+                    reader.GetString(reader.GetOrdinal("target_open_item_type")),
+                    reader.GetGuid(reader.GetOrdinal("target_open_item_id")),
+                    reader.GetString(reader.GetOrdinal("target_balance_side")),
+                    reader.GetGuid(reader.GetOrdinal("target_control_account_id")),
+                    reader.GetGuid(reader.GetOrdinal("offset_account_id")),
+                    reader.GetGuid(reader.GetOrdinal("party_id")),
+                    reader.GetString(reader.GetOrdinal("description")),
+                    reader.GetDecimal(reader.GetOrdinal("open_amount_tx")),
+                    reader.GetDecimal(reader.GetOrdinal("carrying_amount_base")),
+                    reader.GetDecimal(reader.GetOrdinal("revalued_amount_base")),
+                    reader.GetDecimal(reader.GetOrdinal("unrealized_fx_amount")),
+                    null));
+            }
+        }
+
+        foreach (var lineRow in lineRows)
+        {
             var currentOpenItem = await LoadCurrentOpenItemAsync(
                 scope,
                 companyId,
-                targetOpenItemType,
-                targetOpenItemId,
+                lineRow.TargetOpenItemType,
+                lineRow.TargetOpenItemId,
                 cancellationToken);
 
-            if (currentOpenItem.PartyId != reader.GetGuid(reader.GetOrdinal("party_id")))
+            if (currentOpenItem.PartyId != lineRow.PartyId)
             {
                 throw new InvalidOperationException(
-                    $"FX revaluation unwind line {lineNumber} no longer matches the target party.");
+                    $"FX revaluation unwind line {lineRow.LineNumber} no longer matches the target party.");
             }
 
-            var targetBalanceSide = reader.GetString(reader.GetOrdinal("target_balance_side"));
+            var targetBalanceSide = lineRow.TargetBalanceSide;
             if (!string.Equals(currentOpenItem.BalanceSide, targetBalanceSide, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"FX revaluation unwind line {lineNumber} cannot be prepared because the target balance side changed outside the supported flow.");
+                    $"FX revaluation unwind line {lineRow.LineNumber} cannot be prepared because the target balance side changed outside the supported flow.");
             }
 
             if (currentOpenItem.Status == "voided")
             {
                 throw new InvalidOperationException(
-                    $"FX revaluation unwind line {lineNumber} targets an open item that is voided.");
+                    $"FX revaluation unwind line {lineRow.LineNumber} targets an open item that is voided.");
             }
 
-            var originalOpenAmountTx = reader.GetDecimal(reader.GetOrdinal("open_amount_tx"));
-            var sourceCarryingAmountBase = reader.GetDecimal(reader.GetOrdinal("carrying_amount_base"));
-            var sourceRevaluedAmountBase = reader.GetDecimal(reader.GetOrdinal("revalued_amount_base"));
+            var originalOpenAmountTx = lineRow.OpenAmountTx;
+            var sourceCarryingAmountBase = lineRow.CarryingAmountBase;
+            var sourceRevaluedAmountBase = lineRow.RevaluedAmountBase;
             var settlementSequence = await LoadSettlementSequenceAsync(
                 scope,
                 companyId,
-                targetOpenItemType,
-                targetOpenItemId,
+                lineRow.TargetOpenItemType,
+                lineRow.TargetOpenItemId,
                 sourceBatch.PostedAt ?? throw new InvalidOperationException(
                     "Posted FX revaluation batch is missing posted_at."),
                 cancellationToken);
@@ -1410,13 +1574,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             if (Round6(currentOpenItem.OpenAmountTx) != Round6(expectedRemainingRevalued.OpenAmountTx))
             {
                 throw new InvalidOperationException(
-                    $"FX revaluation unwind line {lineNumber} cannot be prepared because the target open amount changed outside the supported settlement flow.");
+                    $"FX revaluation unwind line {lineRow.LineNumber} cannot be prepared because the target open amount changed outside the supported settlement flow.");
             }
 
             if (Round6(currentOpenItem.OpenAmountBase) != Round6(expectedRemainingRevalued.OpenAmountBase))
             {
                 throw new InvalidOperationException(
-                    $"FX revaluation unwind line {lineNumber} cannot be prepared because the target carrying base changed outside the supported settlement flow.");
+                    $"FX revaluation unwind line {lineRow.LineNumber} cannot be prepared because the target carrying base changed outside the supported settlement flow.");
             }
 
             if (currentOpenItem.OpenAmountTx == 0m || currentOpenItem.Status == "closed")
@@ -1432,14 +1596,14 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             }
 
             lines.Add(new FxRevaluationPreparedLine(
-                lineNumber,
-                targetOpenItemType,
-                targetOpenItemId,
+                lineRow.LineNumber,
+                lineRow.TargetOpenItemType,
+                lineRow.TargetOpenItemId,
                 targetBalanceSide,
-                reader.GetGuid(reader.GetOrdinal("target_control_account_id")),
-                reader.GetGuid(reader.GetOrdinal("offset_account_id")),
-                reader.GetGuid(reader.GetOrdinal("party_id")),
-                $"Next-period unwind of {sourceBatch.DisplayNumber} line {lineNumber}: {description}",
+                lineRow.TargetControlAccountId,
+                lineRow.OffsetAccountId,
+                lineRow.PartyId,
+                $"Next-period unwind of {sourceBatch.DisplayNumber} line {lineRow.LineNumber}: {lineRow.Description}",
                 expectedRemainingRevalued.OpenAmountTx,
                 expectedRemainingRevalued.OpenAmountBase,
                 expectedRemainingCarrying.OpenAmountBase,
@@ -1762,6 +1926,17 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
+        if (!await BookGovernanceTablesExistAsync(scope, cancellationToken))
+        {
+            if (requestedBookId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "FX revaluation book selection requires company book governance tables to be installed.");
+            }
+
+            return BuildFallbackPrimaryBookPolicy(companyBaseCurrencyCode);
+        }
+
         if (!requestedBookId.HasValue)
         {
             await EnsureDefaultPrimaryBookPolicyAsync(
@@ -1796,6 +1971,67 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         return policy;
     }
+
+    private static async Task<bool> BookGovernanceTablesExistAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select count(*)
+            from information_schema.tables
+            where table_schema = current_schema()
+              and table_name in ('company_books', 'company_book_remeasurement_policies');
+            """);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0) == 2;
+    }
+
+    private static async Task<bool> FxBatchGovernanceColumnsExistAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = current_schema()
+              and table_name = 'fx_revaluation_batches'
+              and column_name in ('company_book_id', 'book_code', 'accounting_standard', 'revaluation_profile', 'fx_rounding_policy');
+            """);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0) == 5;
+    }
+
+    private static async Task<bool> FxBatchRateMetadataColumnsExistAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = current_schema()
+              and table_name = 'fx_revaluation_batches'
+              and column_name in ('rate_type', 'quote_basis', 'rate_use_case', 'posting_reason');
+            """);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0) == 4;
+    }
+
+    private static ResolvedRemeasurementBookPolicy BuildFallbackPrimaryBookPolicy(string companyBaseCurrencyCode) =>
+        new(
+            Guid.Empty,
+            "PRIMARY",
+            "ASPE",
+            companyBaseCurrencyCode,
+            companyBaseCurrencyCode,
+            "monetary_open_item_closing",
+            "currency_precision",
+            "closing",
+            "direct",
+            "remeasurement",
+            "revaluation");
 
     private static async Task EnsureDefaultPrimaryBookPolicyAsync(
         PostgresCommandScope scope,

@@ -19,7 +19,8 @@ public sealed class JournalEntrySourceDocumentTraceClient(
         if (string.IsNullOrWhiteSpace(normalizedSourceType) || sourceId == Guid.Empty)
         {
             return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(
-                "Source document trace is not available for this journal entry source.");
+                "Source document trace is not available for this journal entry source.",
+                "not_found");
         }
 
         try
@@ -40,20 +41,21 @@ public sealed class JournalEntrySourceDocumentTraceClient(
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(
-                    "Source document summary was not found in the active company context.");
+                return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.NotFound(
+                    "Source document summary was not found in the active company context.",
+                    "not_found");
             }
 
             if (!response.IsSuccessStatusCode)
             {
-                var error = await TryReadErrorMessageAsync(response, cancellationToken);
+                var error = await ReadErrorAsync(response, cancellationToken);
                 logger.LogWarning(
                     "Source document trace request failed for {SourceType} {SourceId}: {StatusCode} {Error}",
                     normalizedSourceType,
                     sourceId,
                     response.StatusCode,
-                    error);
-                return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(error);
+                    error.Message);
+                return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(error.Message, error.Code);
             }
 
             var summary = await response.Content.ReadFromJsonAsync<JournalEntrySourceDocumentTraceSummary>(
@@ -119,19 +121,20 @@ public sealed class JournalEntrySourceDocumentTraceClient(
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(
-                "FX revaluation source batch was not found in the active company context.");
+            return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.NotFound(
+                "FX revaluation source batch was not found in the active company context.",
+                "not_found");
         }
 
         if (!response.IsSuccessStatusCode)
         {
-            var error = await TryReadErrorMessageAsync(response, cancellationToken);
+            var error = await ReadErrorAsync(response, cancellationToken);
             logger.LogWarning(
                 "FX revaluation source trace request failed for {SourceId}: {StatusCode} {Error}",
                 sourceId,
                 response.StatusCode,
-                error);
-            return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(error);
+                error.Message);
+            return JournalEntryFxRevaluationApiResult<JournalEntrySourceDocumentTraceSummary>.Failure(error.Message, error.Code);
         }
 
         var detail = await response.Content.ReadFromJsonAsync<JournalEntryFxRevaluationBatchDetail>(
@@ -200,30 +203,48 @@ public sealed class JournalEntrySourceDocumentTraceClient(
         return $"{kind}; {detail.Lines.Count} line(s); FX {detail.FxRate:0.######} {detail.FxRateType}/{detail.FxRateUseCase}.";
     }
 
-    private static async Task<string> TryReadErrorMessageAsync(
+    private static async Task<JournalEntrySourceDocumentTraceErrorPayload> ReadErrorAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
         try
         {
             var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: cancellationToken);
+            string? code = null;
+            if (payload?["code"]?.GetValue<string>() is { Length: > 0 } payloadCode)
+            {
+                code = payloadCode;
+            }
+            else if (payload?["outcomeCode"]?.GetValue<string>() is { Length: > 0 } outcomeCode)
+            {
+                code = outcomeCode;
+            }
+            else if (payload?["transitionCode"]?.GetValue<string>() is { Length: > 0 } transitionCode)
+            {
+                code = transitionCode;
+            }
+
             if (payload?["message"]?.GetValue<string>() is { Length: > 0 } message)
             {
-                return message;
+                return new JournalEntrySourceDocumentTraceErrorPayload(code, message);
             }
 
             if (payload?["error"]?.GetValue<string>() is { Length: > 0 } error)
             {
-                return error;
+                return new JournalEntrySourceDocumentTraceErrorPayload(code, error);
             }
         }
         catch
         {
         }
 
-        return $"Source document trace returned HTTP {(int)response.StatusCode}.";
+        return new JournalEntrySourceDocumentTraceErrorPayload(
+            null,
+            $"Source document trace returned HTTP {(int)response.StatusCode}.");
     }
 }
+
+internal sealed record class JournalEntrySourceDocumentTraceErrorPayload(string? Code, string Message);
 
 public sealed record class JournalEntrySourceDocumentTraceSummary
 {

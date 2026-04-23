@@ -113,6 +113,53 @@
         </MudAlert>
     }
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">Commercial Chain</MudText>
+                <MudText Typo="Typo.h5">@InvoiceCommercialStageLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@InvoiceCommercialStageSummary</MudText>
+            </div>
+            <MudChip T="string" Color="@InvoiceCommercialStageColor" Variant="Variant.Filled">@InvoiceCommercialStageBadge</MudChip>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Source demand</MudText>
+                <MudText Typo="Typo.h6">@InvoiceSourceLinkLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@InvoiceSourceLinkSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current next step</MudText>
+                <MudText Typo="Typo.h6">@InvoicePostingPathLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@InvoicePostingPathSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Settlement lane</MudText>
+                <MudText Typo="Typo.h6">@InvoiceSettlementLaneLabel</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@InvoiceSettlementLaneSummary</MudText>
+            </MudPaper>
+        </div>
+
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer">
+                Open Invoice Pipeline
+            </MudButton>
+            @if (_loadedSourceSalesOrderId.HasValue)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@BuildSourceSalesOrderHref()">
+                    Open Source Sales Order
+                </MudButton>
+            }
+            @if (_saved is not null && _postedResult is not null)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildReceivePaymentHref()">
+                    Continue to Receive Payment
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+
     @if (WritesBlocked)
     {
         <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">@ShellState.WriteBlockMessage</MudAlert>
@@ -539,6 +586,48 @@
             : _saved is not null
                 ? "The draft is saved but not yet submitted. Submit it before posting so the invoice lifecycle moves through the controlled AR lane."
                 : "The first invoice path is now: build the draft, submit it, post it, then continue into Receive Payment.";
+    private string InvoiceCommercialStageLabel => _postedResult is not null
+        ? "Invoice posted into AR truth"
+        : IsPosted
+            ? "Invoice already posted"
+            : IsSubmitted
+                ? "Submitted and awaiting post"
+                : _saved is not null
+                    ? "Draft invoice in progress"
+                    : "Start invoice hand-off";
+    private string InvoiceCommercialStageSummary => _postedResult is not null
+        ? "Receivable and revenue truth already exist. The next operator step is settlement, not more drafting."
+        : IsPosted
+            ? "This invoice has already become formal AR truth and now belongs in downstream settlement and review."
+            : IsSubmitted
+                ? "The draft has left the editable lane. Post it when the AR truth is ready to become formal."
+                : _saved is not null
+                    ? "The invoice draft exists but AR truth has not started yet."
+                    : "This lane converts demand truth into receivable truth once the invoice is posted.";
+    private string InvoiceCommercialStageBadge => _postedResult?.Status ?? (_saved?.Status ?? "new");
+    private Color InvoiceCommercialStageColor => _postedResult is not null || IsPosted
+        ? Color.Success
+        : IsSubmitted
+            ? Color.Warning
+            : _saved is not null
+                ? Color.Info
+                : Color.Default;
+    private string InvoiceSourceLinkLabel => !string.IsNullOrWhiteSpace(_sourceSalesOrderDisplayNumber)
+        ? _sourceSalesOrderDisplayNumber
+        : !string.IsNullOrWhiteSpace(_sourceShipmentDisplayNumber)
+            ? _sourceShipmentDisplayNumber
+            : "Direct invoice";
+    private string InvoiceSourceLinkSummary => !string.IsNullOrWhiteSpace(_sourceSalesOrderDisplayNumber)
+        ? "The sales order remains demand truth while this invoice becomes AR truth."
+        : !string.IsNullOrWhiteSpace(_sourceShipmentDisplayNumber)
+            ? "Shipment remains fulfillment truth while this invoice becomes AR truth."
+            : "This invoice was started directly without a quote/SO/shipment hand-off.";
+    private string InvoiceSettlementLaneLabel => _postedResult is not null || IsPosted
+        ? "Ready for receive payment"
+        : "Settlement not open yet";
+    private string InvoiceSettlementLaneSummary => _postedResult is not null || IsPosted
+        ? "Once the receivable needs settlement, continue from Receive Payment so cash and application truth can take over."
+        : "Receive Payment should stay closed until this invoice is formally posted.";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -768,7 +857,10 @@
 
             if (postResult.Value is null)
             {
-                _error = postResult.ErrorMessage ?? "Unable to post the invoice draft.";
+                _error = WebShellPostingFeedback.DescribeFailure(
+                    postResult.ErrorCode,
+                    postResult.ErrorMessage,
+                    "Unable to post the invoice draft.");
                 return;
             }
 
@@ -1260,6 +1352,16 @@
         Guid.TryParse(_customerIdText, out var customerId)
             ? $"/ar/receive-payment?origin=company-ready&customerId={customerId:D}"
             : "/ar/receive-payment?origin=company-ready";
+
+    private string BuildReceivePaymentHref() =>
+        Guid.TryParse(_customerIdText, out var customerId)
+            ? $"/ar/receive-payment?customerId={customerId:D}"
+            : "/ar/receive-payment";
+
+    private string BuildSourceSalesOrderHref() =>
+        _loadedSourceSalesOrderId.HasValue
+            ? $"/documents/sales-order/draft-editor?draftId={_loadedSourceSalesOrderId.Value:D}"
+            : "/documents/source-browser?sourceType=sales_order";
 
     private string BuildShipmentHandoffHref() =>
         _saved is null

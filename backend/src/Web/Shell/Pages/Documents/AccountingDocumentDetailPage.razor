@@ -1972,7 +1972,10 @@
             if (result.Value is null)
             {
                 _reverseCommandSeverity = Severity.Warning;
-                _reverseCommandMessage = result.ErrorMessage ?? "The reverse command did not return a response. Check API availability and business-session headers.";
+                _reverseCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "The reverse command did not return a response. Check API availability and business-session headers.");
             }
             else
             {
@@ -2012,7 +2015,10 @@
             if (result.Value is null)
             {
                 _purchaseOrderApprovalCommandSeverity = Severity.Warning;
-                _purchaseOrderApprovalCommandMessage = result.ErrorMessage ?? "The purchase order approval command did not return a response.";
+                _purchaseOrderApprovalCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "The purchase order approval command did not return a response.");
             }
             else
             {
@@ -2058,7 +2064,10 @@
             if (result.Value is null)
             {
                 _purchaseOrderApprovalCommandSeverity = Severity.Warning;
-                _purchaseOrderApprovalCommandMessage = result.ErrorMessage ?? "The purchase order lifecycle command did not return a response.";
+                _purchaseOrderApprovalCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "The purchase order lifecycle command did not return a response.");
             }
             else
             {
@@ -2102,7 +2111,10 @@
             if (result.Value is null)
             {
                 _purchaseOrderApprovalCommandSeverity = Severity.Warning;
-                _purchaseOrderApprovalCommandMessage = result.ErrorMessage ?? "The purchase order quantity command did not return a response.";
+                _purchaseOrderApprovalCommandMessage = WebShellPostingFeedback.DescribeFailure(
+                    result.ErrorCode,
+                    result.ErrorMessage,
+                    "The purchase order quantity command did not return a response.");
             }
             else
             {

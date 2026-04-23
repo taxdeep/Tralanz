@@ -123,7 +123,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
             var affectedRows = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {
-                throw new InvalidOperationException("The draft could not be updated. Only draft manual journals can be modified.");
+                throw new JournalEntryWorkflowException("invalid_document_status", "The draft could not be updated. Only draft manual journals can be modified.");
             }
 
             documentNumber = draft.DocumentNumber;

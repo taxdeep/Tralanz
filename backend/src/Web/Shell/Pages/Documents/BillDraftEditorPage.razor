@@ -819,7 +819,7 @@
                 _fxSnapshotId,
                 CancellationToken.None);
             if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(postResult, CancellationToken.None)) return;
-            if (postResult.Value is null) { _error = postResult.ErrorMessage ?? "Unable to post the bill draft."; return; }
+            if (postResult.Value is null) { _error = WebShellPostingFeedback.DescribeFailure(postResult.ErrorCode, postResult.ErrorMessage, "Unable to post the bill draft."); return; }
             _postedResult = postResult.Value;
             if (_saved is not null)
             {
@@ -1170,7 +1170,10 @@
         _receiptHandoffSummary = result.Value;
         if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
         {
-            _error = result.ErrorMessage;
+            _error = WebShellPostingFeedback.DescribeFailure(
+                result.ErrorCode,
+                result.ErrorMessage,
+                "Unable to load receipt-first matching truth right now.");
         }
     }
 
