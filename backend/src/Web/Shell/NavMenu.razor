@@ -3,255 +3,255 @@
 @inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 
-<nav class="ws-nav">
-    <div class="ws-nav__section">
-        <div class="ws-nav__section-title">Workspace</div>
-        <NavLink href="/" Match="NavLinkMatch.All" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" />
-            <span class="ws-nav__label">Dashboard</span>
+<nav class="bz-nav">
+    <div class="bz-nav__section">
+        <div class="bz-nav__section-title">Workspace</div>
+        <NavLink href="/" Match="NavLinkMatch.All" class="bz-nav__link">
+            <i class="ti ti-layout-dashboard bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Dashboard</span>
         </NavLink>
-        <NavLink href="/documents/source-browser" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
-            <span class="ws-nav__label">Source Documents</span>
+        <NavLink href="/documents/source-browser" class="bz-nav__link">
+            <i class="ti ti-files bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Source Documents</span>
         </NavLink>
-        <NavLink href="/profile" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
-            <span class="ws-nav__label">Profile</span>
+        <NavLink href="/profile" class="bz-nav__link">
+            <i class="ti ti-user-circle bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Profile</span>
         </NavLink>
     </div>
 
-    <div class="ws-nav__section">
-        <div class="ws-nav__section-title">Receivables</div>
-        <NavLink href="/ar/receive-payment" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Payments" Size="Size.Small" />
-            <span class="ws-nav__label">Receive Payment</span>
+    <div class="bz-nav__section">
+        <div class="bz-nav__section-title">Receivables</div>
+        <NavLink href="/ar/receive-payment" class="bz-nav__link">
+            <i class="ti ti-cash-register bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Receive Payment</span>
         </NavLink>
-        <NavLink href="/ar/credit-application" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Size="Size.Small" />
-            <span class="ws-nav__label">Credit Application</span>
+        <NavLink href="/ar/credit-application" class="bz-nav__link">
+            <i class="ti ti-arrows-exchange bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Credit Application</span>
         </NavLink>
-        <NavLink href="/ar/aging" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" />
-            <span class="ws-nav__label">AR Aging</span>
+        <NavLink href="/ar/aging" class="bz-nav__link">
+            <i class="ti ti-chart-bar-popular bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">AR Aging</span>
         </NavLink>
-        <NavLink href="/documents/source-browser?sourceType=quote" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
-            <span class="ws-nav__label">Quotes</span>
+        <NavLink href="/documents/source-browser?sourceType=quote" class="bz-nav__link">
+            <i class="ti ti-file-text-ai bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Quotes</span>
         </NavLink>
-        <NavLink href="/documents/source-browser?sourceType=sales_order" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
-            <span class="ws-nav__label">Sales Orders</span>
+        <NavLink href="/documents/source-browser?sourceType=sales_order" class="bz-nav__link">
+            <i class="ti ti-file-check bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Sales Orders</span>
         </NavLink>
-        <NavLink href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" />
-            <span class="ws-nav__label">Invoices</span>
+        <NavLink href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer" class="bz-nav__link">
+            <i class="ti ti-file-invoice bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Invoices</span>
         </NavLink>
     @if (WritesBlocked)
     {
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
-            <span class="ws-nav__label">Quote Draft</span>
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Quote Draft</span>
         </span>
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
-            <span class="ws-nav__label">SO Draft</span>
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">SO Draft</span>
         </span>
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" />
-            <span class="ws-nav__label">Invoice Draft</span>
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Invoice Draft</span>
         </span>
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.CreditScore" Size="Size.Small" />
-            <span class="ws-nav__label">Credit Note Draft</span>
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Credit Note Draft</span>
         </span>
     }
     else
     {
-        <NavLink href="/documents/quote/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
-            <span class="ws-nav__label">Quote Draft</span>
+        <NavLink href="/documents/quote/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Quote Draft</span>
         </NavLink>
-        <NavLink href="/documents/sales-order/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
-            <span class="ws-nav__label">SO Draft</span>
+        <NavLink href="/documents/sales-order/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">SO Draft</span>
         </NavLink>
-        <NavLink href="/documents/invoice/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Small" />
-            <span class="ws-nav__label">Invoice Draft</span>
+        <NavLink href="/documents/invoice/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Invoice Draft</span>
         </NavLink>
-        <NavLink href="/documents/credit-note/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.CreditScore" Size="Size.Small" />
-            <span class="ws-nav__label">Credit Note Draft</span>
-        </NavLink>
-    }
-    </div>
-
-    <div class="ws-nav__section">
-        <div class="ws-nav__section-title">Payables</div>
-        <NavLink href="/ap/pay-bill" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
-            <span class="ws-nav__label">Pay Bill</span>
-        </NavLink>
-        <NavLink href="/ap/aging" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" />
-            <span class="ws-nav__label">AP Aging</span>
-        </NavLink>
-        <NavLink href="/documents/source-browser?sourceType=purchase_order" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" />
-            <span class="ws-nav__label">Purchase Orders</span>
-        </NavLink>
-        <NavLink href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
-            <span class="ws-nav__label">Bills</span>
-        </NavLink>
-        <NavLink href="/documents/source-browser?sourceType=receipt" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Inventory" Size="Size.Small" />
-            <span class="ws-nav__label">Receipts</span>
-        </NavLink>
-        <NavLink href="/documents/purchase-orders/approval-requests" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Approval" Size="Size.Small" />
-            <span class="ws-nav__label">PO Approvals</span>
-        </NavLink>
-    @if (WritesBlocked)
-    {
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.AddBusiness" Size="Size.Small" />
-            <span class="ws-nav__label">PO Draft</span>
-        </span>
-    }
-    else
-    {
-        <NavLink href="/documents/purchase-order/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.AddBusiness" Size="Size.Small" />
-            <span class="ws-nav__label">PO Draft</span>
-        </NavLink>
-    }
-    @if (WritesBlocked)
-    {
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.MoveToInbox" Size="Size.Small" />
-            <span class="ws-nav__label">Receipt Draft</span>
-        </span>
-    }
-    else
-    {
-        <NavLink href="/documents/receipt/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.MoveToInbox" Size="Size.Small" />
-            <span class="ws-nav__label">Receipt Draft</span>
-        </NavLink>
-    }
-        <NavLink href="/ap/vendor-credit-application" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
-            <span class="ws-nav__label">Vendor Credit Application</span>
-        </NavLink>
-    @if (WritesBlocked)
-    {
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
-            <span class="ws-nav__label">Bill Draft</span>
-        </span>
-    }
-    else
-    {
-        <NavLink href="/documents/bill/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
-            <span class="ws-nav__label">Bill Draft</span>
-        </NavLink>
-    }
-    @if (WritesBlocked)
-    {
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
-            <span class="ws-nav__label">Vendor Credit Draft</span>
-        </span>
-    }
-    else
-    {
-        <NavLink href="/documents/vendor-credit/draft-editor" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
-            <span class="ws-nav__label">Vendor Credit Draft</span>
+        <NavLink href="/documents/credit-note/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Credit Note Draft</span>
         </NavLink>
     }
     </div>
 
-    <div class="ws-nav__section">
-        <div class="ws-nav__section-title">Company</div>
-        <NavLink href="/company/book-governance" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Small" />
-            <span class="ws-nav__label">Book Governance</span>
+    <div class="bz-nav__section">
+        <div class="bz-nav__section-title">Payables</div>
+        <NavLink href="/ap/pay-bill" class="bz-nav__link">
+            <i class="ti ti-credit-card-pay bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Pay Bill</span>
         </NavLink>
-        <NavLink href="/company/bank-and-cash-setup" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" />
-            <span class="ws-nav__label">Bank & Cash</span>
+        <NavLink href="/ap/aging" class="bz-nav__link">
+            <i class="ti ti-chart-donut-2 bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">AP Aging</span>
         </NavLink>
-        <NavLink href="/company/tax-setup" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Percent" Size="Size.Small" />
-            <span class="ws-nav__label">Tax Setup</span>
+        <NavLink href="/documents/source-browser?sourceType=purchase_order" class="bz-nav__link">
+            <i class="ti ti-clipboard-list bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Purchase Orders</span>
         </NavLink>
-        <NavLink href="/company/customer-vendor-setup" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Handshake" Size="Size.Small" />
-            <span class="ws-nav__label">Customers & Vendors</span>
+        <NavLink href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor" class="bz-nav__link">
+            <i class="ti ti-file-description bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Bills</span>
         </NavLink>
-        <NavLink href="/company/product-service-setup" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" />
-            <span class="ws-nav__label">Products & Services</span>
+        <NavLink href="/documents/source-browser?sourceType=receipt" class="bz-nav__link">
+            <i class="ti ti-package-import bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Receipts</span>
+        </NavLink>
+        <NavLink href="/documents/purchase-orders/approval-requests" class="bz-nav__link">
+            <i class="ti ti-checklist bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">PO Approvals</span>
+        </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">PO Draft</span>
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/purchase-order/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">PO Draft</span>
+        </NavLink>
+    }
+    @if (WritesBlocked)
+    {
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Receipt Draft</span>
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/receipt/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Receipt Draft</span>
+        </NavLink>
+    }
+        <NavLink href="/ap/vendor-credit-application" class="bz-nav__link">
+            <i class="ti ti-credit-card-refund bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Vendor Credit Application</span>
+        </NavLink>
+    @if (WritesBlocked)
+    {
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Bill Draft</span>
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/bill/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Bill Draft</span>
+        </NavLink>
+    }
+    @if (WritesBlocked)
+    {
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Vendor Credit Draft</span>
+        </span>
+    }
+    else
+    {
+        <NavLink href="/documents/vendor-credit/draft-editor" class="bz-nav__link">
+            <i class="ti ti-file-pencil bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Vendor Credit Draft</span>
+        </NavLink>
+    }
+    </div>
+
+    <div class="bz-nav__section">
+        <div class="bz-nav__section-title">Company</div>
+        <NavLink href="/company/book-governance" class="bz-nav__link">
+            <i class="ti ti-book-2 bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Book Governance</span>
+        </NavLink>
+        <NavLink href="/company/bank-and-cash-setup" class="bz-nav__link">
+            <i class="ti ti-building-bank bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Bank & Cash</span>
+        </NavLink>
+        <NavLink href="/company/tax-setup" class="bz-nav__link">
+            <i class="ti ti-percentage bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Tax Setup</span>
+        </NavLink>
+        <NavLink href="/company/customer-vendor-setup" class="bz-nav__link">
+            <i class="ti ti-users-group bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Customers & Vendors</span>
+        </NavLink>
+        <NavLink href="/company/product-service-setup" class="bz-nav__link">
+            <i class="ti ti-package bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Products & Services</span>
         </NavLink>
     </div>
 
     @if (_showInventoryFoundation)
     {
-        <div class="ws-nav__section">
-            <div class="ws-nav__section-title">Inventory</div>
-            <NavLink href="/company/inventory-foundation" class="ws-nav__link">
-                <MudIcon Icon="@Icons.Material.Filled.Warehouse" Size="Size.Small" />
-                <span class="ws-nav__label">Foundation</span>
+        <div class="bz-nav__section">
+            <div class="bz-nav__section-title">Inventory</div>
+            <NavLink href="/company/inventory-foundation" class="bz-nav__link">
+                <i class="ti ti-building-warehouse bz-nav__icon" aria-hidden="true"></i>
+                <span class="bz-nav__label">Foundation</span>
             </NavLink>
-            <NavLink href="/company/inventory-purchase-receipt" class="ws-nav__link">
-                <MudIcon Icon="@Icons.Material.Filled.MoveToInbox" Size="Size.Small" />
-                <span class="ws-nav__label">Receipt Control</span>
+            <NavLink href="/company/inventory-purchase-receipt" class="bz-nav__link">
+                <i class="ti ti-package-import bz-nav__icon" aria-hidden="true"></i>
+                <span class="bz-nav__label">Receipt Control</span>
             </NavLink>
-            <NavLink href="/company/inventory-shipment" class="ws-nav__link">
-                <MudIcon Icon="@Icons.Material.Filled.LocalShipping" Size="Size.Small" />
-                <span class="ws-nav__label">Shipment</span>
+            <NavLink href="/company/inventory-shipment" class="bz-nav__link">
+                <i class="ti ti-truck-delivery bz-nav__icon" aria-hidden="true"></i>
+                <span class="bz-nav__label">Shipment</span>
             </NavLink>
-            <NavLink href="/company/inventory-transfer" class="ws-nav__link">
-                <MudIcon Icon="@Icons.Material.Filled.SyncAlt" Size="Size.Small" />
-                <span class="ws-nav__label">Warehouse Transfer</span>
+            <NavLink href="/company/inventory-transfer" class="bz-nav__link">
+                <i class="ti ti-arrows-transfer-up-down bz-nav__icon" aria-hidden="true"></i>
+                <span class="bz-nav__label">Warehouse Transfer</span>
             </NavLink>
-            <NavLink href="/company/inventory-availability" class="ws-nav__link">
-                <MudIcon Icon="@Icons.Material.Filled.FactCheck" Size="Size.Small" />
-                <span class="ws-nav__label">Availability</span>
+            <NavLink href="/company/inventory-availability" class="bz-nav__link">
+                <i class="ti ti-clipboard-data bz-nav__icon" aria-hidden="true"></i>
+                <span class="bz-nav__label">Availability</span>
             </NavLink>
         </div>
     }
 
-    <div class="ws-nav__section">
-        <div class="ws-nav__section-title">Governance</div>
-        <NavLink href="/company/membership-permissions" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Small" />
-            <span class="ws-nav__label">Memberships</span>
+    <div class="bz-nav__section">
+        <div class="bz-nav__section-title">Governance</div>
+        <NavLink href="/company/membership-permissions" class="bz-nav__link">
+            <i class="ti ti-users bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Memberships</span>
         </NavLink>
-        <NavLink href="/company/open-item-adjustment-account-mappings" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Schema" Size="Size.Small" />
-            <span class="ws-nav__label">Adjustment Mapping</span>
+        <NavLink href="/company/open-item-adjustment-account-mappings" class="bz-nav__link">
+            <i class="ti ti-schema bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Adjustment Mapping</span>
         </NavLink>
     @if (WritesBlocked)
     {
-        <span class="ws-nav__link ws-nav__link--disabled" title="@ShellState.WriteBlockMessage">
-            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" />
-            <span class="ws-nav__label">Journal Entry</span>
+        <span class="bz-nav__link bz-nav__link--disabled" title="@ShellState.WriteBlockMessage">
+            <i class="ti ti-writing-sign bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Journal Entry</span>
         </span>
     }
     else
     {
-        <NavLink href="/gl/journal-entries" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" />
-            <span class="ws-nav__label">Journal Entry</span>
+        <NavLink href="/gl/journal-entries" class="bz-nav__link">
+            <i class="ti ti-writing-sign bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Journal Entry</span>
         </NavLink>
     }
-        <NavLink href="/settings/user-preferences/system-setup" class="ws-nav__link">
-            <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" />
-            <span class="ws-nav__label">Preferences</span>
+        <NavLink href="/settings/user-preferences/system-setup" class="bz-nav__link">
+            <i class="ti ti-adjustments-horizontal bz-nav__icon" aria-hidden="true"></i>
+            <span class="bz-nav__label">Preferences</span>
         </NavLink>
     </div>
 </nav>

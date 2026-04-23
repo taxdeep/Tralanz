@@ -32,6 +32,7 @@ using Modules.Company.MultiCurrency;
 using Modules.GL.JournalEntry;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Options;
+using AntDesign;
 using MudBlazor.Services;
 using Web.Shell.Adapters;
 using Web.Shell.Configuration;
@@ -67,6 +68,7 @@ builder.Services
     });
 
 builder.Services.AddMudServices();
+builder.Services.AddAntDesign();
 builder.Services.Configure<WebShellAppHostOptions>(builder.Configuration.GetSection(WebShellAppHostOptions.SectionName));
 builder.Services.Configure<PlatformEmailDeliveryOptions>(builder.Configuration.GetSection(PlatformEmailDeliveryOptions.SectionName));
 builder.Services.AddScoped<WebShellState>();

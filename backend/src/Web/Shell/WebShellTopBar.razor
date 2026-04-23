@@ -4,43 +4,47 @@
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
 @inject WebShellState ShellState
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined">
-        @PrimaryRole
-    </MudChip>
+<div class="bz-topbar">
+    <div class="bz-topbar__meta">
+        <span class="bz-topbar__pill bz-topbar__pill--role">
+            <i class="ti ti-shield-check" aria-hidden="true"></i>
+            @PrimaryRole
+        </span>
 
-    @if (ShellState.IsCompanyReadOnly)
-    {
-        <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled">
-            Read-only company
-        </MudChip>
-    }
+        @if (ShellState.IsCompanyReadOnly)
+        {
+            <span class="bz-topbar__pill bz-topbar__pill--warning">
+                <i class="ti ti-lock" aria-hidden="true"></i>
+                Read-only company
+            </span>
+        }
+    </div>
 
-    <MudStack Spacing="0">
-        <MudText Typo="Typo.caption" Class="text-secondary">User</MudText>
-        <MudText Typo="Typo.body2">@ShellState.User.DisplayName</MudText>
-    </MudStack>
+    <div class="bz-topbar__identity">
+        <span class="bz-topbar__label">User</span>
+        <span class="bz-topbar__value">@ShellState.User.DisplayName</span>
+    </div>
 
-    <MudStack Spacing="0" Style="min-width: 260px;">
-        <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
-        <MudSelect T="Guid"
-                   Dense="true"
-                   Disabled="@IsCompanySwitcherDisabled"
-                   Value="@SelectedCompanyId"
-                   ValueChanged="OnCompanyChangedAsync">
+    <label class="bz-topbar__company">
+        <span class="bz-topbar__label">Active company</span>
+        <select class="bz-topbar__select"
+                value="@SelectedCompanyId"
+                disabled="@IsCompanySwitcherDisabled"
+                @onchange="OnSelectedCompanyChangedAsync">
             @foreach (var company in ShellState.AvailableCompanies)
             {
-                <MudSelectItem T="Guid" Value="@company.Id">
+                <option value="@company.Id">
                     @company.CompanyName (@company.CompanyCode)@(company.IsReadOnly ? " | read-only" : string.Empty)
-                </MudSelectItem>
+                </option>
             }
-        </MudSelect>
-    </MudStack>
+        </select>
+    </label>
 
-    <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="SignOutAsync">
-        Sign out
-    </MudButton>
-</MudStack>
+    <button type="button" class="bz-topbar__button" @onclick="SignOutAsync">
+        <i class="ti ti-logout-2" aria-hidden="true"></i>
+        <span>Sign out</span>
+    </button>
+</div>
 
 @code
 {
@@ -49,6 +53,16 @@
     private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
 
     private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
+
+    private async Task OnSelectedCompanyChangedAsync(ChangeEventArgs args)
+    {
+        if (!Guid.TryParse(args.Value?.ToString(), out var companyId))
+        {
+            return;
+        }
+
+        await OnCompanyChangedAsync(companyId);
+    }
 
     private async Task OnCompanyChangedAsync(Guid companyId)
     {

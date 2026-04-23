@@ -19,8 +19,8 @@
 }
 else if (!ShellState.IsAuthenticated)
 {
-    <MudMainContent Class="ws-main ws-main--login">
-        <MudContainer MaxWidth="MaxWidth.Small" Class="pa-6">
+    <main class="bz-main bz-main--login">
+        <div class="bz-login-shell">
             @if (IsLoginRoute)
             {
                 @Body
@@ -29,60 +29,78 @@ else if (!ShellState.IsAuthenticated)
             {
                 <MudProgressLinear Indeterminate="true" Color="Color.Info" />
             }
-        </MudContainer>
-    </MudMainContent>
+        </div>
+    </main>
 }
 else
 {
-    <MudLayout>
-        <MudAppBar Elevation="1" Class="ws-appbar">
-            <div class="ws-appbar__brand">
-                <span class="ws-appbar__mark">C</span>
-                <span>Citus Web Shell</span>
-            </div>
-            <MudSpacer />
-            <WebShellTopBar />
-        </MudAppBar>
-
-        <MudDrawer Open="true"
-                   Width="316px"
-                   Elevation="1"
-                   Variant="DrawerVariant.Responsive"
-                   Breakpoint="Breakpoint.Md"
-                   Class="ws-drawer">
-            <div class="ws-brand">
-                <div class="ws-brand__badge">C</div>
-                <div>
-                    <div class="ws-brand__eyebrow">Citus</div>
-                    <div class="ws-brand__title">Web Shell</div>
-                    <div class="ws-brand__subtitle">Business workspace</div>
+    <div class="bz-shell">
+        <header class="bz-shell__topbar">
+            <div class="bz-shell__brand">
+                <div class="bz-shell__brand-mark">
+                    <i class="ti ti-scale-outline" aria-hidden="true"></i>
+                </div>
+                <div class="bz-shell__brand-copy">
+                    <div class="bz-shell__brand-title">Balanciz</div>
+                    <div class="bz-shell__brand-subtitle">Operator workspace</div>
                 </div>
             </div>
-            <ErrorBoundary>
-                <ChildContent>
-                    <NavMenu />
-                </ChildContent>
-                <ErrorContent>
-                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
-                        Navigation could not be loaded. Refresh the page after sign-in completes.
-                    </MudAlert>
-                </ErrorContent>
-            </ErrorBoundary>
-        </MudDrawer>
 
-        <MudMainContent Class="ws-main">
-            <ErrorBoundary>
-                <ChildContent>
-                    @Body
-                </ChildContent>
-                <ErrorContent>
-                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
-                        This workspace page could not be loaded. The session is still active; refresh or return to Home.
-                    </MudAlert>
-                </ErrorContent>
-            </ErrorBoundary>
-        </MudMainContent>
-    </MudLayout>
+            <div class="bz-shell__status-rail">
+                <span class="bz-shell__status-pill">
+                    <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true"></i>
+                    T-layout shell
+                </span>
+                <span class="bz-shell__status-pill">
+                    <i class="ti ti-building-bank" aria-hidden="true"></i>
+                    Business control
+                </span>
+            </div>
+
+            <div class="bz-shell__topbar-controls">
+                <WebShellTopBar />
+            </div>
+        </header>
+
+        <div class="bz-shell__body">
+            <aside class="bz-shell__sidebar">
+                <div class="bz-sidebar__summary">
+                    <div class="bz-sidebar__summary-badge">B</div>
+                    <div>
+                        <div class="bz-sidebar__summary-label">Balanciz</div>
+                        <div class="bz-sidebar__summary-title">Workspace</div>
+                        <div class="bz-sidebar__summary-text">Commercial, accounting, and control surfaces.</div>
+                    </div>
+                </div>
+
+                <ErrorBoundary>
+                    <ChildContent>
+                        <NavMenu />
+                    </ChildContent>
+                    <ErrorContent>
+                        <div class="bz-shell__error">
+                            <i class="ti ti-alert-circle" aria-hidden="true"></i>
+                            Navigation could not be loaded. Refresh the page after sign-in completes.
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
+            </aside>
+
+            <main class="bz-main">
+                <ErrorBoundary>
+                    <ChildContent>
+                        @Body
+                    </ChildContent>
+                    <ErrorContent>
+                        <div class="bz-shell__error">
+                            <i class="ti ti-alert-circle" aria-hidden="true"></i>
+                            This workspace page could not be loaded. The session is still active; refresh or return to Home.
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
+            </main>
+        </div>
+    </div>
 }
 
 @code

@@ -1,86 +1,290 @@
-.ws-appbar {
+.bz-shell {
+    min-height: 100vh;
     background:
-        linear-gradient(180deg, rgba(18, 27, 36, 0.98), rgba(10, 16, 23, 0.98));
-    border-bottom: 1px solid rgba(124, 149, 168, 0.15);
-    min-height: 62px;
+        radial-gradient(circle at 0% 0%, rgba(74, 144, 226, 0.18), transparent 28rem),
+        radial-gradient(circle at 100% 0%, rgba(24, 144, 255, 0.12), transparent 22rem),
+        linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+}
+
+.bz-shell__topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    min-height: 72px;
+    padding: 0 1.4rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(6, 11, 22, 0.88);
     backdrop-filter: blur(14px);
 }
 
-.ws-appbar__brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.72rem;
-    color: #edf6fa;
-    font-size: 1rem;
-    font-weight: 760;
-}
-
-.ws-appbar__mark {
-    display: inline-grid;
-    width: 2rem;
-    height: 2rem;
-    place-items: center;
-    border: 1px solid rgba(111, 207, 151, 0.45);
-    border-radius: 8px;
-    color: #10202a;
-    background: linear-gradient(135deg, #7ab6d9, #6fcf97);
-    font-weight: 850;
-}
-
-.ws-drawer {
-    background:
-        linear-gradient(180deg, rgba(17, 26, 35, 0.98), rgba(8, 13, 19, 0.98));
-    border-right: 1px solid rgba(124, 149, 168, 0.18);
-}
-
-.ws-brand {
+.bz-shell__brand {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1rem 0.95rem;
-    border-bottom: 1px solid rgba(124, 149, 168, 0.15);
-    background: rgba(255, 255, 255, 0.025);
+    gap: 0.9rem;
 }
 
-.ws-brand__badge {
+.bz-shell__brand-mark {
     display: grid;
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 2.8rem;
+    height: 2.8rem;
     place-items: center;
-    border-radius: 10px;
-    color: #10202a;
-    background: linear-gradient(135deg, #7ab6d9, #6fcf97);
-    font-size: 1.1rem;
-    font-weight: 850;
-    box-shadow: 0 10px 28px rgba(111, 207, 151, 0.14);
+    border-radius: 12px;
+    background: linear-gradient(135deg, #1677ff, #36cfc9);
+    color: #f8fbff;
+    box-shadow: 0 14px 30px rgba(22, 119, 255, 0.22);
+    font-size: 1.3rem;
 }
 
-.ws-brand__eyebrow {
-    color: #7ab6d9;
-    font-size: 0.74rem;
-    text-transform: uppercase;
+.bz-shell__brand-copy {
+    display: grid;
+    gap: 0.12rem;
 }
 
-.ws-brand__title {
-    margin-top: 0.15rem;
-    color: #e4edf3;
-    font-size: 1.08rem;
-    font-weight: 700;
+.bz-shell__brand-title {
+    color: #f8fbff;
+    font-size: 1.12rem;
+    font-weight: 800;
+    letter-spacing: 0;
 }
 
-.ws-brand__subtitle {
-    margin-top: 0.2rem;
-    color: #90a4b5;
+.bz-shell__brand-subtitle {
+    color: #94a3b8;
     font-size: 0.8rem;
 }
 
-.ws-main {
-    min-height: 100vh;
-    background:
-        radial-gradient(circle at 28% 0%, rgba(122, 182, 217, 0.09), transparent 30rem),
-        linear-gradient(180deg, rgba(13, 19, 26, 0.96), rgba(8, 13, 18, 1));
+.bz-shell__status-rail {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
 }
 
-.ws-main--login {
-    padding-top: 4rem;
+.bz-shell__status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.44rem 0.78rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #cbd5e1;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.bz-shell__topbar-controls {
+    min-width: 0;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.42rem 0.72rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__pill--role {
+    border: 1px solid rgba(54, 207, 201, 0.28);
+    background: rgba(20, 184, 166, 0.14);
+    color: #a7f3d0;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__pill--warning {
+    border: 1px solid rgba(250, 173, 20, 0.24);
+    background: rgba(250, 173, 20, 0.14);
+    color: #fde68a;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__identity,
+.bz-shell__topbar-controls ::deep .bz-topbar__company {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__label {
+    color: #94a3b8;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__value {
+    color: #e2e8f0;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__select {
+    min-width: 280px;
+    min-height: 2.45rem;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.76);
+    color: #e2e8f0;
+    outline: none;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.45rem;
+    padding: 0.58rem 0.92rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #f8fafc;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.bz-shell__topbar-controls ::deep .bz-topbar__button:hover {
+    border-color: rgba(22, 119, 255, 0.4);
+    background: rgba(22, 119, 255, 0.14);
+    transform: translateY(-1px);
+}
+
+.bz-shell__body {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    min-height: calc(100vh - 72px);
+}
+
+.bz-shell__sidebar {
+    border-right: 1px solid rgba(148, 163, 184, 0.14);
+    background:
+        linear-gradient(180deg, rgba(8, 15, 29, 0.94), rgba(7, 13, 24, 0.98));
+}
+
+.bz-sidebar__summary {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1.15rem 1.05rem 1rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.bz-sidebar__summary-badge {
+    display: grid;
+    width: 3rem;
+    height: 3rem;
+    place-items: center;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #1677ff, #36cfc9);
+    color: #f8fbff;
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+
+.bz-sidebar__summary-label {
+    color: #60a5fa;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.bz-sidebar__summary-title {
+    margin-top: 0.18rem;
+    color: #f8fafc;
+    font-size: 1.06rem;
+    font-weight: 800;
+}
+
+.bz-sidebar__summary-text {
+    margin-top: 0.22rem;
+    color: #94a3b8;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.bz-main {
+    min-height: 100%;
+    background:
+        linear-gradient(180deg, rgba(10, 17, 31, 0.96), rgba(15, 23, 42, 0.98));
+}
+
+.bz-main--login {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 2rem 1rem;
+}
+
+.bz-login-shell {
+    width: min(100%, 760px);
+}
+
+.bz-shell__error {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(248, 113, 113, 0.24);
+    border-radius: 12px;
+    background: rgba(127, 29, 29, 0.2);
+    color: #fecaca;
+    font-weight: 600;
+}
+
+@media (max-width: 1180px) {
+    .bz-shell__topbar {
+        grid-template-columns: 1fr;
+        justify-items: start;
+        padding: 1rem;
+    }
+
+    .bz-shell__status-rail,
+    .bz-shell__topbar-controls {
+        width: 100%;
+    }
+
+    .bz-shell__topbar-controls ::deep .bz-topbar {
+        justify-content: space-between;
+    }
+}
+
+@media (max-width: 980px) {
+    .bz-shell__body {
+        grid-template-columns: 1fr;
+    }
+
+    .bz-shell__sidebar {
+        border-right: 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    }
+}
+
+@media (max-width: 720px) {
+    .bz-shell__topbar-controls ::deep .bz-topbar {
+        justify-content: flex-start;
+    }
+
+    .bz-shell__topbar-controls ::deep .bz-topbar__select {
+        min-width: 100%;
+    }
 }
