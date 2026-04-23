@@ -28,7 +28,9 @@ public sealed record PostingFragment(
     string Description,
     string? TaxComponentType = null,
     string? ControlRole = null,
-    Guid? PartyId = null);
+    Guid? PartyId = null,
+    string? PostingRole = null,
+    int? SourceLineNumber = null);
 
 public sealed record TaxComputationLine(
     int LineNumber,

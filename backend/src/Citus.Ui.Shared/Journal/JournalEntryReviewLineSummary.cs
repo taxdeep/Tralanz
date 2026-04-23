@@ -31,4 +31,8 @@ public sealed record class JournalEntryReviewLineSummary
     public string? ControlRole { get; init; }
 
     public Guid? PartyId { get; init; }
+
+    public string? PostingRole { get; init; }
+
+    public int? SourceLineNumber { get; init; }
 }

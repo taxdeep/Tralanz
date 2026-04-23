@@ -31,6 +31,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             _connections,
             _executionContextAccessor,
             cancellationToken);
+        await EnsureJournalEntryLineAuditColumnsAsync(scope, cancellationToken);
 
         var idempotencyKey = context.IdempotencyKey?.Trim();
         if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -206,7 +207,9 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                debit,
                                credit,
                                tax_component_type,
-                               control_role
+                               control_role,
+                               posting_role,
+                               source_line_number
                              )
                              values (
                                @id,
@@ -222,7 +225,9 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                @debit,
                                @credit,
                                @tax_component_type,
-                               @control_role
+                               @control_role,
+                               @posting_role,
+                               @source_line_number
                              );
                              """))
             {
@@ -254,6 +259,14 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                     string.IsNullOrWhiteSpace(line.ControlRole)
                         ? DBNull.Value
                         : (object)line.ControlRole);
+                lineCommand.Parameters.AddWithValue(
+                    "posting_role",
+                    string.IsNullOrWhiteSpace(line.PostingRole)
+                        ? DBNull.Value
+                        : (object)line.PostingRole);
+                lineCommand.Parameters.AddWithValue(
+                    "source_line_number",
+                    line.SourceLineNumber.HasValue ? (object)line.SourceLineNumber.Value : DBNull.Value);
                 await lineCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -314,6 +327,19 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
 
     private static decimal Round6(decimal value) =>
         Math.Round(value, 6, MidpointRounding.ToEven);
+
+    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            alter table journal_entry_lines
+              add column if not exists posting_role text null,
+              add column if not exists source_line_number integer null;
+            """);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static async Task<JournalEntryWriteResult?> TryFindExistingByIdempotencyKeyAsync(
         PostgresCommandScope scope,

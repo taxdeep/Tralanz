@@ -57,6 +57,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await EnsureJournalEntryLineAuditColumnsAsync(connection, transaction, cancellationToken);
 
         var original = await LoadOriginalAsync(connection, transaction, companyId, journalEntryId, cancellationToken)
             ?? throw new InvalidOperationException("The journal entry could not be found in the active company context.");
@@ -222,6 +223,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                       credit,
                       tax_component_type,
                       control_role,
+                      posting_role,
+                      source_line_number,
                       created_at
                     )
                     values (
@@ -239,6 +242,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                       @credit,
                       @tax_component_type,
                       @control_role,
+                      @posting_role,
+                      @source_line_number,
                       now()
                     );
                     """;
@@ -258,6 +263,8 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 lineCommand.Parameters.AddWithValue("credit", credit);
                 lineCommand.Parameters.AddWithValue("tax_component_type", (object?)line.TaxComponentType ?? DBNull.Value);
                 lineCommand.Parameters.AddWithValue("control_role", (object?)line.ControlRole ?? DBNull.Value);
+                lineCommand.Parameters.AddWithValue("posting_role", (object?)line.PostingRole ?? DBNull.Value);
+                lineCommand.Parameters.AddWithValue("source_line_number", (object?)line.SourceLineNumber ?? DBNull.Value);
                 await lineCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -560,7 +567,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
               credit,
               tax_component_type,
               control_role,
-              party_id
+              party_id,
+              posting_role,
+              source_line_number
             from journal_entry_lines
             where company_id = @company_id
               and journal_entry_id = @journal_entry_id
@@ -582,10 +591,28 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
                 reader.GetDecimal(reader.GetOrdinal("credit")),
                 reader.IsDBNull(reader.GetOrdinal("tax_component_type")) ? null : reader.GetString(reader.GetOrdinal("tax_component_type")),
                 reader.IsDBNull(reader.GetOrdinal("control_role")) ? null : reader.GetString(reader.GetOrdinal("control_role")),
-                reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : reader.GetGuid(reader.GetOrdinal("party_id"))));
+                reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : reader.GetGuid(reader.GetOrdinal("party_id")),
+                reader.IsDBNull(reader.GetOrdinal("posting_role")) ? null : reader.GetString(reader.GetOrdinal("posting_role")),
+                reader.IsDBNull(reader.GetOrdinal("source_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("source_line_number"))));
         }
 
         return lines;
+    }
+
+    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            alter table journal_entry_lines
+              add column if not exists posting_role text null,
+              add column if not exists source_line_number integer null;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<LifecycleCompensation?> TryFindExistingCompensationAsync(
@@ -703,7 +730,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
         decimal Credit,
         string? TaxComponentType,
         string? ControlRole,
-        Guid? PartyId);
+        Guid? PartyId,
+        string? PostingRole,
+        int? SourceLineNumber);
 
     private sealed record class LifecycleCompensation(
         Guid Id,

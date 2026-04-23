@@ -833,6 +833,11 @@
         JournalEntryReviewLine line,
         IReadOnlySet<string> sourceAccountCodes)
     {
+        if (!string.IsNullOrWhiteSpace(line.PostingRole))
+        {
+            return new PostingRoleKey(5, line.PostingRole);
+        }
+
         if (sourceAccountCodes.Contains(line.AccountCode))
         {
             return new PostingRoleKey(10, "Source account");
@@ -930,6 +935,16 @@
         if (line.IsRealizedFxLine)
         {
             markers.Add("realized fx");
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.PostingRole))
+        {
+            markers.Add($"role: {line.PostingRole}");
+        }
+
+        if (line.SourceLineNumber.HasValue)
+        {
+            markers.Add($"source line: {line.SourceLineNumber.Value}");
         }
 
         return string.Join(" | ", markers);

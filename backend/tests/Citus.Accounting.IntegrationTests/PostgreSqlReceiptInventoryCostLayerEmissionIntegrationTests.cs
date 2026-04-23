@@ -1444,7 +1444,9 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               debit numeric(20, 6) not null,
               credit numeric(20, 6) not null,
               tax_component_type text null,
-              control_role text null
+              control_role text null,
+              posting_role text null,
+              source_line_number integer null
             );
 
             create table ledger_entries (

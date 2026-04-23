@@ -66,6 +66,8 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(125m, revenue.Debit);
                 Assert.Equal(0m, revenue.Credit);
                 Assert.Equal("Credit note revenue reversal for CN-0001 line 1: Returned goods", revenue.Description);
+                Assert.Equal("source_line:revenue_reversal", revenue.PostingRole);
+                Assert.Equal(1, revenue.SourceLineNumber);
             },
             tax =>
             {
@@ -73,6 +75,8 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(25m, tax.Debit);
                 Assert.Equal(0m, tax.Credit);
                 Assert.Equal("sales_tax_payable", tax.TaxComponentType);
+                Assert.Equal("tax:sales_tax_payable", tax.PostingRole);
+                Assert.Equal(1, tax.SourceLineNumber);
             },
             receivable =>
             {
@@ -80,6 +84,7 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(0m, receivable.Debit);
                 Assert.Equal(150m, receivable.Credit);
                 Assert.Equal("accounts_receivable", receivable.ControlRole);
+                Assert.Equal("control:accounts_receivable", receivable.PostingRole);
             });
     }
 
@@ -146,6 +151,8 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(0m, expense.Debit);
                 Assert.Equal(125m, expense.Credit);
                 Assert.Equal("Vendor credit expense reversal for VC-0001 line 1: Supplier rebate", expense.Description);
+                Assert.Equal("source_line:expense_reversal", expense.PostingRole);
+                Assert.Equal(1, expense.SourceLineNumber);
             },
             recoverableTax =>
             {
@@ -153,6 +160,8 @@ public sealed class CreditDocumentPostingTests
                 Assert.Equal(0m, recoverableTax.Debit);
                 Assert.Equal(25m, recoverableTax.Credit);
                 Assert.Equal("purchase_tax_recoverable", recoverableTax.TaxComponentType);
+                Assert.Equal("tax:purchase_tax_recoverable", recoverableTax.PostingRole);
+                Assert.Equal(1, recoverableTax.SourceLineNumber);
             });
     }
 }

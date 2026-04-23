@@ -32,6 +32,10 @@ public sealed class JournalEntryReviewLine
 
     public Guid? PartyId { get; init; }
 
+    public string? PostingRole { get; init; }
+
+    public int? SourceLineNumber { get; init; }
+
     public string? AccountSystemRole { get; init; }
 
     public string? AccountSystemKey { get; init; }

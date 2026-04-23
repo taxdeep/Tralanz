@@ -27,6 +27,7 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
             _connections,
             _executionContextAccessor,
             cancellationToken);
+        await EnsureJournalEntryLineAuditColumnsAsync(scope, cancellationToken);
 
         var items = new List<JournalEntryReviewListItem>();
 
@@ -98,6 +99,7 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
             _connections,
             _executionContextAccessor,
             cancellationToken);
+        await EnsureJournalEntryLineAuditColumnsAsync(scope, cancellationToken);
 
         JournalEntryReview? review = null;
 
@@ -214,7 +216,9 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
                            jel.credit,
                            jel.tax_component_type,
                            jel.control_role,
-                           jel.party_id
+                           jel.party_id,
+                           jel.posting_role,
+                           jel.source_line_number
                          from journal_entry_lines jel
                          inner join accounts a
                            on a.company_id = jel.company_id
@@ -245,7 +249,9 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
                     reader.GetDecimal(reader.GetOrdinal("credit")),
                     reader.IsDBNull(reader.GetOrdinal("tax_component_type")) ? null : reader.GetString(reader.GetOrdinal("tax_component_type")),
                     reader.IsDBNull(reader.GetOrdinal("control_role")) ? null : reader.GetString(reader.GetOrdinal("control_role")),
-                    reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : reader.GetGuid(reader.GetOrdinal("party_id"))));
+                    reader.IsDBNull(reader.GetOrdinal("party_id")) ? null : reader.GetGuid(reader.GetOrdinal("party_id")),
+                    reader.IsDBNull(reader.GetOrdinal("posting_role")) ? null : reader.GetString(reader.GetOrdinal("posting_role")),
+                    reader.IsDBNull(reader.GetOrdinal("source_line_number")) ? null : reader.GetInt32(reader.GetOrdinal("source_line_number"))));
             }
         }
 
@@ -253,6 +259,19 @@ public sealed class PostgresJournalEntryReviewRepository : IJournalEntryReviewRe
         {
             Lines = lines
         };
+    }
+
+    private static async Task EnsureJournalEntryLineAuditColumnsAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            alter table journal_entry_lines
+              add column if not exists posting_role text null,
+              add column if not exists source_line_number integer null;
+            """);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<JournalEntryReviewListItem?> FindBySourceAsync(

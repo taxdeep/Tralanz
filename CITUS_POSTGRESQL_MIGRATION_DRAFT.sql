@@ -1161,6 +1161,8 @@ CREATE TABLE journal_entry_lines (
   credit numeric(20,6) NOT NULL DEFAULT 0,
   tax_component_type text,
   control_role text,
+  posting_role text,
+  source_line_number integer,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT journal_entry_lines_nonnegative_chk CHECK (
     tx_debit >= 0 AND tx_credit >= 0 AND debit >= 0 AND credit >= 0

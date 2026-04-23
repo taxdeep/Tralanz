@@ -1053,7 +1053,9 @@ public sealed record JournalEntryReviewLine(
     decimal Credit,
     string? TaxComponentType,
     string? ControlRole,
-    Guid? PartyId);
+    Guid? PartyId,
+    string? PostingRole,
+    int? SourceLineNumber);
 
 public interface IAccountingReportRepository
 {

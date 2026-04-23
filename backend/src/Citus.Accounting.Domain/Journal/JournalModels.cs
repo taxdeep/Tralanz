@@ -13,7 +13,9 @@ public sealed record JournalEntryDraftLine(
     decimal Credit,
     string? TaxComponentType = null,
     string? ControlRole = null,
-    Guid? PartyId = null);
+    Guid? PartyId = null,
+    string? PostingRole = null,
+    int? SourceLineNumber = null);
 
 public sealed class JournalEntryDraft
 {
@@ -71,7 +73,9 @@ public sealed record JournalEntryLine(
     decimal Credit,
     string? TaxComponentType = null,
     string? ControlRole = null,
-    Guid? PartyId = null);
+    Guid? PartyId = null,
+    string? PostingRole = null,
+    int? SourceLineNumber = null);
 
 public sealed class JournalEntry
 {

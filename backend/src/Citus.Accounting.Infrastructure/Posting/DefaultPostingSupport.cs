@@ -372,7 +372,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             0m,
             $"Accounts Receivable for invoice {invoice.DisplayNumber.Value}",
             ControlRole: "accounts_receivable",
-            PartyId: invoice.PartyId));
+            PartyId: invoice.PartyId,
+            PostingRole: "control:accounts_receivable"));
 
         foreach (var line in invoice.InvoiceLines)
         {
@@ -384,7 +385,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 line.LineAmount,
                 0m,
                 baseRevenue,
-                BuildSourceLineDescription("Invoice revenue", invoice.DisplayNumber.Value, line.LineNumber, line.Description)));
+                BuildSourceLineDescription("Invoice revenue", invoice.DisplayNumber.Value, line.LineNumber, line.Description),
+                PostingRole: "source_line:revenue",
+                SourceLineNumber: line.LineNumber));
 
             if (line.TaxAmount > 0m)
             {
@@ -397,7 +400,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     0m,
                     baseTax,
                     $"Sales tax for invoice {invoice.DisplayNumber.Value} line {line.LineNumber}",
-                    TaxComponentType: "sales_tax_payable"));
+                    TaxComponentType: "sales_tax_payable",
+                    PostingRole: "tax:sales_tax_payable",
+                    SourceLineNumber: line.LineNumber));
             }
         }
 
@@ -421,7 +426,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 baseRevenue,
                 0m,
-                BuildSourceLineDescription("Credit note revenue reversal", creditNote.DisplayNumber.Value, line.LineNumber, line.Description)));
+                BuildSourceLineDescription("Credit note revenue reversal", creditNote.DisplayNumber.Value, line.LineNumber, line.Description),
+                PostingRole: "source_line:revenue_reversal",
+                SourceLineNumber: line.LineNumber));
 
             if (line.TaxAmount > 0m)
             {
@@ -434,7 +441,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     baseTax,
                     0m,
                     $"Sales tax reversal for credit note {creditNote.DisplayNumber.Value} line {line.LineNumber}",
-                    TaxComponentType: "sales_tax_payable"));
+                    TaxComponentType: "sales_tax_payable",
+                    PostingRole: "tax:sales_tax_payable",
+                    SourceLineNumber: line.LineNumber));
             }
         }
 
@@ -448,7 +457,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             arCreditBase,
             $"Accounts Receivable credit for credit note {creditNote.DisplayNumber.Value}",
             ControlRole: "accounts_receivable",
-            PartyId: creditNote.PartyId));
+            PartyId: creditNote.PartyId,
+            PostingRole: "control:accounts_receivable"));
 
         EnsureBalancedBaseCurrency(fragments);
         return fragments;
@@ -474,7 +484,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 baseExpense,
                 0m,
-                BuildSourceLineDescription("Bill expense", bill.DisplayNumber.Value, line.LineNumber, line.Description)));
+                BuildSourceLineDescription("Bill expense", bill.DisplayNumber.Value, line.LineNumber, line.Description),
+                PostingRole: "source_line:expense",
+                SourceLineNumber: line.LineNumber));
 
             if (line.TaxAmount > 0m && line.IsTaxRecoverable)
             {
@@ -487,7 +499,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     baseTax,
                     0m,
                     $"Recoverable purchase tax for bill {bill.DisplayNumber.Value} line {line.LineNumber}",
-                    TaxComponentType: "purchase_tax_recoverable"));
+                    TaxComponentType: "purchase_tax_recoverable",
+                    PostingRole: "tax:purchase_tax_recoverable",
+                    SourceLineNumber: line.LineNumber));
             }
         }
 
@@ -501,7 +515,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             apCreditBase,
             $"Accounts Payable for bill {bill.DisplayNumber.Value}",
             ControlRole: "accounts_payable",
-            PartyId: bill.PartyId));
+            PartyId: bill.PartyId,
+            PostingRole: "control:accounts_payable"));
 
         EnsureBalancedBaseCurrency(fragments);
         return fragments;
@@ -522,7 +537,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 0m,
                 $"Accounts Payable credit reduction for vendor credit {vendorCredit.DisplayNumber.Value}",
                 ControlRole: "accounts_payable",
-                PartyId: vendorCredit.PartyId)
+                PartyId: vendorCredit.PartyId,
+                PostingRole: "control:accounts_payable")
         };
 
         foreach (var line in vendorCredit.VendorCreditLines)
@@ -539,7 +555,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 expenseAmount,
                 0m,
                 baseExpense,
-                BuildSourceLineDescription("Vendor credit expense reversal", vendorCredit.DisplayNumber.Value, line.LineNumber, line.Description)));
+                BuildSourceLineDescription("Vendor credit expense reversal", vendorCredit.DisplayNumber.Value, line.LineNumber, line.Description),
+                PostingRole: "source_line:expense_reversal",
+                SourceLineNumber: line.LineNumber));
 
             if (line.TaxAmount > 0m && line.IsTaxRecoverable)
             {
@@ -552,7 +570,9 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     0m,
                     baseTax,
                     $"Recoverable purchase tax reversal for vendor credit {vendorCredit.DisplayNumber.Value} line {line.LineNumber}",
-                    TaxComponentType: "purchase_tax_recoverable"));
+                    TaxComponentType: "purchase_tax_recoverable",
+                    PostingRole: "tax:purchase_tax_recoverable",
+                    SourceLineNumber: line.LineNumber));
             }
         }
 
@@ -1164,7 +1184,9 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
                 fragment.Credit,
                 fragment.TaxComponentType,
                 fragment.ControlRole,
-                fragment.PartyId))
+                fragment.PartyId,
+                ResolvePostingRole(fragment),
+                fragment.SourceLineNumber))
             .ToArray();
 
         return new JournalEntryDraft(
@@ -1175,6 +1197,26 @@ public sealed class DefaultJournalAggregator : IJournalAggregator
             document.BaseCurrencyCode,
             fxResult.Snapshot,
             lines);
+    }
+
+    private static string ResolvePostingRole(PostingFragment fragment)
+    {
+        if (!string.IsNullOrWhiteSpace(fragment.PostingRole))
+        {
+            return fragment.PostingRole.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(fragment.ControlRole))
+        {
+            return $"control:{fragment.ControlRole.Trim()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(fragment.TaxComponentType))
+        {
+            return $"tax:{fragment.TaxComponentType.Trim()}";
+        }
+
+        return "source_line";
     }
 
     private static void EnsureJournalInvariants(

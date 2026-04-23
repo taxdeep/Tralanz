@@ -6443,7 +6443,9 @@ static JournalEntryReviewLineSummary MapJournalEntryReviewLine(JournalEntryRevie
         Credit = line.Credit,
         TaxComponentType = line.TaxComponentType,
         ControlRole = line.ControlRole,
-        PartyId = line.PartyId
+        PartyId = line.PartyId,
+        PostingRole = line.PostingRole,
+        SourceLineNumber = line.SourceLineNumber
     };
 
 static string MapJournalEntrySourceTypeLabel(string sourceType) =>
