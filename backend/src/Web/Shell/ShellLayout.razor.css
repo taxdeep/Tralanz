@@ -11,7 +11,7 @@
     top: 0;
     z-index: 40;
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(360px, 680px) auto;
     align-items: center;
     gap: 1rem;
     min-height: 72px;
@@ -56,23 +56,56 @@
     font-size: 0.8rem;
 }
 
-.bz-shell__status-rail {
+.bz-shell__search {
+    position: relative;
     display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.6rem;
+    align-items: center;
+    width: min(100%, 680px);
+    justify-self: center;
 }
 
-.bz-shell__status-pill {
+.bz-shell__search-icon {
+    position: absolute;
+    left: 0.92rem;
+    color: #7c8aa5;
+    font-size: 1rem;
+    pointer-events: none;
+}
+
+.bz-shell__search-input {
+    width: 100%;
+    min-height: 2.9rem;
+    padding: 0.72rem 7rem 0.72rem 2.6rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.78);
+    color: #e2e8f0;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.bz-shell__search-input::placeholder {
+    color: #6b7a95;
+}
+
+.bz-shell__search-input:focus {
+    border-color: rgba(22, 119, 255, 0.55);
+    background: rgba(15, 23, 42, 0.92);
+    box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.12);
+}
+
+.bz-shell__search-shortcut {
+    position: absolute;
+    right: 0.72rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    padding: 0.44rem 0.78rem;
+    padding: 0.34rem 0.54rem;
     border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 999px;
-    background: rgba(15, 23, 42, 0.72);
-    color: #cbd5e1;
-    font-size: 0.76rem;
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.8);
+    color: #94a3b8;
+    font-size: 0.68rem;
     font-weight: 700;
 }
 
@@ -258,7 +291,7 @@
         padding: 1rem;
     }
 
-    .bz-shell__status-rail,
+    .bz-shell__search,
     .bz-shell__topbar-controls {
         width: 100%;
     }
@@ -280,6 +313,14 @@
 }
 
 @media (max-width: 720px) {
+    .bz-shell__search-input {
+        padding-right: 1rem;
+    }
+
+    .bz-shell__search-shortcut {
+        display: none;
+    }
+
     .bz-shell__topbar-controls ::deep .bz-topbar {
         justify-content: flex-start;
     }

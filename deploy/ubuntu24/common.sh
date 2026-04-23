@@ -1372,17 +1372,19 @@ upgrade_main() {
   repo_version="$(read_repo_version)"
   installed_version="$(trim_whitespace "${CITUS_APP_VERSION:-}")"
 
-  if [[ -n "${repo_version}" ]]; then
-    log "Target repository version: ${repo_version}."
-  fi
-
-  if [[ -n "${installed_version}" ]]; then
-    log "Installed deployment version: ${installed_version}."
-  fi
+  log "Upgrade version check:"
+  log "  Current installed version: ${installed_version:-unknown}"
+  log "  Target repository version: ${repo_version:-unknown}"
 
   if [[ -n "${repo_version}" && -n "${installed_version}" && "${repo_version}" == "${installed_version}" ]]; then
-    log "Installed version already matches the repository version. Skipping upgrade."
+    log "Current installed version already matches the target repository version. Skipping upgrade."
     return 0
+  fi
+
+  if [[ -n "${repo_version}" ]]; then
+    log "Proceeding with upgrade: ${installed_version:-unknown} -> ${repo_version}"
+  else
+    log "Proceeding with upgrade using the repository working tree because no target version file was found."
   fi
 
   stop_application_services
