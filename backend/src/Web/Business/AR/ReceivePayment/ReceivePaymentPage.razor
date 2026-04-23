@@ -9,13 +9,25 @@
 
 <PageTitle>Receive Payment</PageTitle>
 
-<div style="padding:2rem 2.25rem;color:#d9e2ea;">
-    <h1 style="margin:0 0 0.75rem 0;">Receive Payment</h1>
-    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:56rem;">
-        Prepare governed AR receipt drafts from existing open receivables in the active company context.
-    </p>
+<section class="bz-flow-page">
+    <header class="bz-flow-page__hero">
+        <div>
+            <div class="bz-flow-page__eyebrow">
+                <i class="ti ti-cash-register" aria-hidden="true"></i>
+                AR settlement workbench
+            </div>
+            <h1 class="bz-flow-page__title">Receive Payment</h1>
+            <p class="bz-flow-page__description">
+                Prepare governed AR receipt drafts from existing open receivables in the active company context.
+            </p>
+        </div>
+        <div class="bz-flow-page__hero-status">
+            <div class="bz-flow-page__hero-status-label">Stage</div>
+            <div class="bz-flow-page__hero-status-value">@SettlementStageBadge</div>
+        </div>
+    </header>
 
-    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+    <MudPaper Class="pa-4 bz-flow-page__card bz-flow-page__chain" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
             <div>
                 <MudText Typo="Typo.subtitle2">AR Settlement Chain</MudText>
@@ -43,7 +55,7 @@
             </MudPaper>
         </div>
 
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+        <div class="bz-flow-page__actions">
             <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildInvoiceBrowserHref()">
                 Review Invoices
             </MudButton>
@@ -64,13 +76,13 @@
 
     @if (IsCompanyReadyHandOff)
     {
-        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Class="bz-flow-page__alert">
             Company-ready hand-off opened the AR settlement workbench so you can continue from the first invoice stage into the first receipt stage once customers, bank accounts, and posted receivables exist.
         </MudAlert>
 
-        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0" Style="margin-bottom:1rem;">
             <MudText Typo="Typo.subtitle2" Class="mb-2">First-company continuity</MudText>
-            <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+            <div class="bz-flow-page__actions">
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/documents/invoice/draft-editor?origin=company-ready">
                     Start First Invoice
                 </MudButton>
@@ -93,7 +105,7 @@
         </MudPaper>
     }
 
-    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="bz-flow-page__alert">
         Active company: @ShellSession.ActiveCompanyId
         <br />
         Current user: @ShellSession.CurrentUserId
@@ -101,33 +113,33 @@
 
     @if (WritesBlocked)
     {
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="bz-flow-page__alert">
             @ShellSession.WriteBlockMessage
         </MudAlert>
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudPaper Class="pa-4" Elevation="0">
+    <div class="bz-flow-page__metric-grid">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0">
             <MudText Typo="Typo.caption">Bank Readiness</MudText>
             <MudText Typo="Typo.h6">@BankReadinessLabel</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@BankReadinessSummary</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0">
             <MudText Typo="Typo.caption">Customer Readiness</MudText>
             <MudText Typo="Typo.h6">@CustomerReadinessLabel</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@CustomerReadinessSummary</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0">
             <MudText Typo="Typo.caption">Receivable Trail</MudText>
             <MudText Typo="Typo.h6">@ReceivableTrailLabel</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@ReceivableTrailSummary</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0">
             <MudText Typo="Typo.caption">Settlement Availability</MudText>
             <MudText Typo="Typo.h6">@SettlementAvailabilityLabel</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@SettlementAvailabilitySummary</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0">
             <MudText Typo="Typo.caption">Source Follow-up</MudText>
             <MudText Typo="Typo.h6">@SourceFollowUpLabel</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@SourceFollowUpSummary</MudText>
@@ -136,7 +148,7 @@
 
     @if (IsCompanyReadyHandOff)
     {
-        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0" Style="margin-bottom:1rem;">
             <MudText Typo="Typo.subtitle2" Class="mb-2">Recommended next operator steps</MudText>
             <MudList T="string" Dense="true">
                 <MudListItem Text="1">
@@ -153,7 +165,7 @@
 
         @if (ShouldShowSettlementGapPanel)
         {
-            <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0" Style="margin-bottom:1rem;">
                 <MudText Typo="Typo.subtitle2" Class="mb-2">First receipt gap</MudText>
                 <MudText Typo="Typo.body2" Class="mb-3">@ReceiptGapSummary</MudText>
                 <MudList T="string" Dense="true" Class="mb-3">
@@ -164,7 +176,7 @@
                         </MudListItem>
                     }
                 </MudList>
-                <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                <div class="bz-flow-page__actions">
                     @if (_customers.Count == 0)
                     {
                         <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/company/customer-vendor-setup?origin=company-ready">
@@ -185,7 +197,7 @@
         }
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
+    <div class="bz-flow-page__form-grid">
         <MudSelect T="string" Label="Customer" Variant="Variant.Outlined" @bind-Value="_selectedCustomerIdText">
             @foreach (var customer in _customers)
             {
@@ -202,14 +214,14 @@
         <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" />
     </div>
 
-    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+    <div class="bz-flow-page__toolbar">
         <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="_isBusy" OnClick="LoadCandidatesAsync">Load Open Receivables</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_isBusy || _rows.Count == 0 || WritesBlocked)" OnClick="PrepareDraftAsync">Prepare Draft</MudButton>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_errorText))
     {
-        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Style="margin-bottom:1rem;">@_errorText</MudAlert>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="bz-flow-page__alert">@_errorText</MudAlert>
     }
 
     @if (_rows.Count > 0)
@@ -236,7 +248,7 @@
 
     @if (_rows.Any(static row => row.AppliedAmountTx > 0))
     {
-        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0" Style="margin-bottom:1rem;">
             <MudText Typo="Typo.h6">Apply Preview</MudText>
             <MudText Typo="Typo.body2" Class="mb-3">
                 @($"{_rows.Count(static row => row.AppliedAmountTx > 0)} open item(s) selected | Total apply {_rows.Where(static row => row.AppliedAmountTx > 0).Sum(static row => row.AppliedAmountTx):N2}")
@@ -271,7 +283,7 @@
 
     @if (_preparedDraft is not null)
     {
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0">
             <MudText Typo="Typo.h6">Prepared Draft</MudText>
             <MudText Typo="Typo.body2">Document Id: @_preparedDraft.DocumentId</MudText>
             <MudText Typo="Typo.body2">Payment: @_preparedDraft.PaymentNumber</MudText>
@@ -281,7 +293,7 @@
             <MudText Typo="Typo.body2">Total: @_preparedDraft.TotalAmount</MudText>
             <MudText Typo="Typo.body2">Status: @_preparedDraft.Status</MudText>
 
-            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <div class="bz-flow-page__actions">
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@($"/documents/receive_payment/{_preparedDraft.DocumentId:D}")">
                     Open Prepared Draft Detail
                 </MudButton>
@@ -327,18 +339,18 @@
 
     @if (_postedResult is not null)
     {
-        <MudPaper Class="pa-4" Elevation="0" Style="margin-top:1rem;">
+        <MudPaper Class="pa-4 bz-flow-page__card" Elevation="0" Style="margin-top:1rem;">
             <MudText Typo="Typo.h6">Posted Review Continuity</MudText>
             <MudText Typo="Typo.body2">Journal Entry: @_postedResult.JournalEntryDisplayNumber</MudText>
             <MudText Typo="Typo.body2">Posted At: @_postedResult.PostedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
             <MudText Typo="Typo.body2">Status: @_postedResult.Status</MudText>
             @if (_postedResult.Warnings.Count > 0)
             {
-                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-top:1rem;">
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="bz-flow-page__alert bz-flow-page__alert--inline">
                     @string.Join(" | ", _postedResult.Warnings)
                 </MudAlert>
             }
-            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <div class="bz-flow-page__actions">
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@BuildPostedReceivePaymentDetailHref()">
                     Open Posted Document
                 </MudButton>
@@ -354,7 +366,7 @@
             </div>
         </MudPaper>
     }
-</div>
+</section>
 
 @code {
     private List<(Guid Id, string DisplayLabel, string CurrencyCode)> _customers = [];
