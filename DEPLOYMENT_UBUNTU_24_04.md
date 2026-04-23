@@ -50,6 +50,12 @@ sudo ./upgrade.sh \
   --email ops@example.com
 ```
 
+Version-aware upgrade behavior:
+
+- the repository version is read from the root `VERSION` file
+- the deployed version is stored as `CITUS_APP_VERSION` in `/etc/citus/citus.env`
+- if both versions match, `upgrade.sh` skips the deployment before services are stopped or backups are taken
+
 Supported CLI options:
 
 - `--domain NAME` / `--server-name NAME`

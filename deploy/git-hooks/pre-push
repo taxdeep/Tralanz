@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ "${CITUS_SKIP_VERSION_HOOK:-0}" == "1" ]]; then
+  exit 0
+fi
+
+readonly REMOTE_NAME="${1:-origin}"
+readonly REMOTE_URL="${2:-}"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+
+mapfile -t PUSH_REFS < <(cat)
+
+if [[ "${#PUSH_REFS[@]}" -eq 0 ]]; then
+  exit 0
+fi
+
+current_branch="$(git -C "${REPO_ROOT}" symbolic-ref --quiet --short HEAD || true)"
+if [[ -z "${current_branch}" ]]; then
+  exit 0
+fi
+
+bash "${SCRIPT_DIR}/bump-version.sh"
+git -C "${REPO_ROOT}" add VERSION backend/Directory.Build.props
+git -C "${REPO_ROOT}" commit --amend --no-edit --no-verify
+
+push_args=()
+for push_ref in "${PUSH_REFS[@]}"; do
+  read -r local_ref local_sha remote_ref remote_sha <<< "${push_ref}"
+
+  if [[ "${local_sha}" =~ ^0+$ ]]; then
+    push_args+=(":${remote_ref}")
+  else
+    push_args+=("${local_ref}:${remote_ref}")
+  fi
+done
+
+printf 'Auto-bumped Citus version before push to %s (%s).\n' "${REMOTE_NAME}" "${REMOTE_URL}"
+CITUS_SKIP_VERSION_HOOK=1 git -C "${REPO_ROOT}" push --no-verify "${REMOTE_NAME}" "${push_args[@]}"
+echo "The original push is being cancelled intentionally because the hook already completed the versioned push."
+exit 1

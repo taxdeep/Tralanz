@@ -24,6 +24,7 @@ readonly APT_RETRIES="${CITUS_APT_RETRIES:-5}"
 readonly APT_HTTP_TIMEOUT="${CITUS_APT_HTTP_TIMEOUT:-30}"
 readonly APT_PRIMARY_MIRROR="${CITUS_APT_PRIMARY_MIRROR:-http://archive.ubuntu.com/ubuntu}"
 readonly APT_SECURITY_MIRROR="${CITUS_APT_SECURITY_MIRROR:-http://security.ubuntu.com/ubuntu}"
+readonly VERSION_FILE="${REPO_ROOT}/VERSION"
 
 log() {
   printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -32,6 +33,23 @@ log() {
 fail() {
   echo "ERROR: $*" >&2
   exit 1
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value%$'\r'}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+read_repo_version() {
+  [[ -f "${VERSION_FILE}" ]] || return 0
+
+  local version
+  version="$(trim_whitespace "$(head -n 1 "${VERSION_FILE}")")"
+  [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "Unsupported version format in ${VERSION_FILE}: ${version}"
+  printf '%s' "${version}"
 }
 
 print_usage() {
@@ -152,6 +170,7 @@ load_env_file() {
   CITUS_HTTPS_REDIRECT="${CITUS_HTTPS_REDIRECT:-1}"
   CITUS_CERTBOT_EMAIL="${CITUS_CERTBOT_EMAIL:-}"
   CITUS_AUTO_START="${CITUS_AUTO_START:-1}"
+  CITUS_APP_VERSION="${CITUS_APP_VERSION:-}"
 
   : "${CITUS_FRONTEND_PORT:?Missing CITUS_FRONTEND_PORT}"
   : "${CITUS_ACCOUNTING_API_PORT:?Missing CITUS_ACCOUNTING_API_PORT}"
@@ -224,6 +243,7 @@ ensure_env_defaults() {
   append_env_if_missing "CITUS_HTTPS_REDIRECT" "1"
   append_env_if_missing "CITUS_CERTBOT_EMAIL" ""
   append_env_if_missing "CITUS_AUTO_START" "1"
+  append_env_if_missing "CITUS_APP_VERSION" ""
   append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "3010"
   append_env_if_missing "AppHost__SysAdminApiBaseUrl" "http://127.0.0.1:5089/"
   append_env_if_missing "AppHost__BusinessAppBaseUrl" "http://127.0.0.1:3000/"
@@ -1289,7 +1309,17 @@ Important note:
   Web.Shell currently uses CompanyAccess/bootstrap shell context; production identity hardening is still pending.
   Citus services auto-start: ${CITUS_AUTO_START}
   HTTPS enabled:             ${CITUS_ENABLE_HTTPS}
+  Deployed version:          ${CITUS_APP_VERSION:-unknown}
 EOF
+}
+
+persist_repo_version_to_env() {
+  local repo_version
+  repo_version="$(read_repo_version)"
+  [[ -n "${repo_version}" ]] || return 0
+
+  set_env_value "CITUS_APP_VERSION" "${repo_version}"
+  export CITUS_APP_VERSION="${repo_version}"
 }
 
 install_main() {
@@ -1321,6 +1351,7 @@ install_main() {
   else
     log "Application services were left stopped by operator choice."
   fi
+  persist_repo_version_to_env
   print_install_summary
 }
 
@@ -1336,6 +1367,24 @@ upgrade_main() {
   ensure_env_defaults
   configure_runtime_preferences "upgrade"
   load_env_file
+
+  local repo_version installed_version
+  repo_version="$(read_repo_version)"
+  installed_version="$(trim_whitespace "${CITUS_APP_VERSION:-}")"
+
+  if [[ -n "${repo_version}" ]]; then
+    log "Target repository version: ${repo_version}."
+  fi
+
+  if [[ -n "${installed_version}" ]]; then
+    log "Installed deployment version: ${installed_version}."
+  fi
+
+  if [[ -n "${repo_version}" && -n "${installed_version}" && "${repo_version}" == "${installed_version}" ]]; then
+    log "Installed version already matches the repository version. Skipping upgrade."
+    return 0
+  fi
+
   stop_application_services
   backup_datastores
   sync_source_tree
@@ -1354,5 +1403,6 @@ upgrade_main() {
   else
     log "Application services were left stopped by operator choice."
   fi
+  persist_repo_version_to_env
   log "Upgrade complete."
 }
