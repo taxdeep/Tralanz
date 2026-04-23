@@ -258,6 +258,198 @@ AR should be treated as deliverable only when all of the following are true:
 - AR lifecycle/reversal wording matches backend legality and authority draft semantics
 - UI/API product verification confirms the operator-facing paths, not only the backend tests
 
+## AP v1 delivery target
+
+The next AP product-grade delivery target is not "all AP eventually exists".
+
+The next delivery target is:
+
+- `AP v1 = a deliverable vendor-side payables module`
+- with a complete operator-facing chain from ordered/procurement handoff into payable truth, payment/application truth, vendor-credit truth, open-item truth, JE continuity, and multicurrency continuity
+- without reopening unrelated treasury, inventory-receipt, warehouse, or reporting programs during the same slice
+
+This plan therefore treats `AP` as the follow-on focused business stream after AR closure and intentionally avoids broadening scope every time a neighboring capability becomes visible.
+
+### AP v1 in-scope surface
+
+The following surfaces are in scope for the next deliverable AP slice:
+
+- `Vendor` lookup continuity as needed by AP document entry
+- `PurchaseOrder`
+- `Bill`
+- `VendorCredit`
+- `VendorPayment / Pay Bill`
+- `VendorCreditApplication`
+- `AP open-item truth`
+- `AP aging drill-down continuity`
+- `JE review / source trace / multicurrency continuity` for AP-owned accounting outcomes
+
+These surfaces should become product-grade together, not as isolated page rewrites.
+
+### AP v1 intentionally out of scope
+
+The following AP-adjacent capabilities remain explicitly deferred from the first AP deliverable target:
+
+- `VendorPrepayment / Deposit`
+- `VendorRefund`
+- `VendorStatement`
+- `Dispute / Claim` as a standalone product surface
+- `WriteOff` as a full standalone business module beyond the already-governed adjustment/write-off control lane
+- treasury-provider operational truth
+- bank-provider reconciliation truth
+- inventory-owned receipt / warehouse truth beyond the current governed PO-to-bill and receipt handoff seams
+
+Authority note:
+
+- this does not demote those objects from the long-term AP authority boundary
+- it only means they are not allowed to expand the immediate AP delivery target until the in-scope surface is product-grade
+
+### AP v1 surface map
+
+Current status by in-scope AP surface:
+
+- `PurchaseOrder`
+  - authority exists
+  - source-browser continuity exists
+  - detail / approval request / lifecycle audit continuity exists
+  - product-grade AP workbench and bill-handoff framing still need closure
+- `Bill`
+  - draft create/update/read/post exists
+  - detail / JE review / governed reverse continuity exists
+  - PO anchor and receipt-matching continuity exist
+  - multicurrency and JE continuity are materially in place
+- `VendorCredit`
+  - draft create/update/read/post exists
+  - detail / JE review / governed reverse continuity exists
+  - credit-side blocker/unapply/reversal loop exists
+- `VendorPayment / Pay Bill`
+  - draft preparation / posting / reverse continuity exists
+  - candidate loading and JE continuity exist
+  - multicurrency chain has backend regression closure
+- `VendorCreditApplication`
+  - draft preparation / posting / reverse continuity exists
+  - target/source open-item linkage exists
+  - multicurrency chain has backend regression closure
+- `AP open-item truth`
+  - drill-down, application trail, governed adjustment/write-off control, readiness, and execution exist
+  - operator-facing summary and policy continuity exist
+- `AP aging`
+  - backend report exists
+  - older business-blazor client exists
+  - first AP-facing workbench route now exists
+  - vendor/open-item/source continuity is now formally surfaced as part of AP v1 closure
+- `JE / multicurrency continuity`
+  - manual JE, FX revaluation, bill, pay-bill, vendor-credit, and vendor-credit-application multicurrency chains are already materially closed at the backend/test level
+  - final AP v1 work should consume that foundation rather than reopening JE scope
+
+### AP v1 authoritative entry map
+
+Current repo entry points that should be treated as the authoritative starting surfaces for AP v1:
+
+- `PurchaseOrder`
+  - current entry: `/documents/source-browser?sourceType=purchase_order`
+  - current edit surface: `/documents/purchase-order/draft-editor`
+  - current detail/review surface: `/documents/purchase_order/{id}`
+  - current issue: PO exists as a document/editor/review lane, but it is not yet framed as a first-class AP procurement workbench
+- `Bill`
+  - current entry: `/documents/bill/draft-editor`
+  - current review/browser continuity: source browser, source detail, JE review, PO anchor, and pay-bill handoff already exist
+- `VendorPayment / Pay Bill`
+  - current entry: `/ap/pay-bill`
+  - current continuity: linked source-document detail, open-item drill-down, and JE review continuity already exist
+- `VendorCreditApplication`
+  - current entry: `/ap/vendor-credit-application`
+  - current continuity: linked source-document detail, open-item drill-down, and JE review continuity already exist
+- `VendorCredit`
+  - current entry: `/documents/vendor-credit/draft-editor`
+  - current continuity: source detail, JE review, blocker/unapply, and governed reverse continuity already exist
+- `AP open-item truth`
+  - current entry: `/open-items/ap/{openItemId}`
+  - note: the route is currently shared as `/open-items/{OpenItemType}/{OpenItemId}`, which is structurally acceptable, but AP v1 UX should still present it as an AP-owned drill-down from AP pages instead of as a generic orphan utility
+- `AP aging`
+  - current backend entry exists at `/reports/ap-aging`
+  - current AP-facing workbench: `/ap/aging`
+  - current product note: aging is now part of the formal AP surface and should be treated as the exposure review entry before payment/application action
+- `Vendor setup continuity`
+  - current supporting entry: `/company/customer-vendor-setup`
+  - current product issue: this works as a dependency bridge, but AP v1 still needs to decide how much vendor readiness should feel AP-native vs company-setup-native
+
+### AP surface closure gap list
+
+Based on the current repo surface, the first AP closure pass should assume these concrete gaps:
+
+1. `PurchaseOrder` lacks a product-grade AP workbench identity
+   - it exists in navigation and has a draft/detail path
+   - but it still behaves more like a source-document lane than a complete procurement control surface
+
+2. `PurchaseOrder -> Bill` handoff lacks final AP framing
+   - the PO anchor and bill continuity already exist
+   - but the operator story from approved/released ordered truth into bill execution is still not explicit enough to be called product-grade AP
+
+3. `Bill / VendorCredit` remain document-strong but workflow-light
+   - they already have draft/post/detail/JE continuity
+   - the next closure step is not core backend truth
+   - the next closure step is making operator next steps, lifecycle meaning, PO/receipt anchoring, and cross-page continuity feel intentional and complete
+
+4. `Pay Bill / Vendor Credit Application` already have strong backend truth but still need final AP-native UX closure
+   - they already have draft preparation, posting, JE continuity, and open-item drill-down
+   - the remaining gap is product-grade guidance, terminology, and a cleaner AP-native visual language under the new UI baseline
+
+5. `AP aging` is the clearest missing product surface
+   - backend API/report truth existed ahead of the UI
+   - an AP-facing workbench now closes the biggest product-surface gap
+   - remaining work is no longer "create aging surface" but "include aging in final AP delivery verification"
+
+6. `Vendor context` is still mostly dependency-driven rather than AP-led
+   - AP pages can deep-link into customer/vendor setup
+   - but AP v1 should decide whether vendor readiness is only a setup prerequisite or part of the AP procurement/payables workflow itself
+
+7. `AP design language` is not yet applied
+   - routes and workflows exist
+   - but the new `Ant Design Blazor + Tailwind CSS + Tabler Icons` baseline has not yet been turned into actual AP product surfaces
+
+### AP v1 UI/UX baseline
+
+AP v1 should use one consistent operator-facing UI system:
+
+- primary component system: `Ant Design Blazor`
+- supporting utility/layout layer: `Tailwind CSS`
+- icon system: `Tabler Icons`
+
+Rules:
+
+- do not treat `MudBlazor` as the target design language for new AP product surfaces
+- do not perform a repo-wide UI migration as part of AP v1
+- use this baseline for AP pages that are newly introduced, materially redesigned, or promoted from demo-grade to product-grade
+- keep Shell navigation/company context/backend-owned workflow cues intact while modernizing the AP surface itself
+
+Alignment note:
+
+- AP should follow the same UI/UX baseline as AR so operator-facing working habits, hierarchy, and iconography stay aligned across receivables and payables
+
+### AP v1 delivery gaps
+
+The main gaps between current repo state and AP delivery are now:
+
+1. `PurchaseOrder` is not yet treated as a fully product-grade AP procurement surface
+2. `Bill / VendorCredit` need operator-grade next-step framing, not new posting truth
+3. `Pay Bill / Vendor Credit Application` need final AP-native UX closure
+4. `AP aging` still needs a formal workbench surface
+5. `Vendor readiness` still needs a clear product stance inside AP
+6. `Ant Design Blazor + Tailwind + Tabler Icons` still need to be applied to AP product surfaces
+
+### AP v1 delivery gate
+
+AP should be treated as deliverable only when all of the following are true:
+
+- `PurchaseOrder -> Bill` works as one governed procurement-to-payable handoff story
+- `Bill -> Pay Bill` works as one governed payable settlement story
+- `VendorCredit -> Vendor Credit Application` works as one governed vendor-credit story
+- AP open-item truth, adjustment control, and aging drill-down stay continuous from browser to detail
+- linked JE review and multicurrency review are reachable from AP product surfaces without operator dead-ends
+- AP lifecycle/reversal wording matches backend legality and authority semantics
+- UI/API product verification confirms the operator-facing paths, not only the backend tests
+
 ## Planning anchor
 
 - `Inventory` must be planned as a `multi-warehouse` capability from the start.

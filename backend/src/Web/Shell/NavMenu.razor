@@ -92,9 +92,17 @@
             <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Size="Size.Small" />
             <span class="ws-nav__label">Pay Bill</span>
         </NavLink>
+        <NavLink href="/ap/aging" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" />
+            <span class="ws-nav__label">AP Aging</span>
+        </NavLink>
         <NavLink href="/documents/source-browser?sourceType=purchase_order" class="ws-nav__link">
             <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" />
             <span class="ws-nav__label">Purchase Orders</span>
+        </NavLink>
+        <NavLink href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor" class="ws-nav__link">
+            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
+            <span class="ws-nav__label">Bills</span>
         </NavLink>
         <NavLink href="/documents/source-browser?sourceType=receipt" class="ws-nav__link">
             <MudIcon Icon="@Icons.Material.Filled.Inventory" Size="Size.Small" />
@@ -134,7 +142,7 @@
     }
         <NavLink href="/ap/vendor-credit-application" class="ws-nav__link">
             <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" />
-            <span class="ws-nav__label">Vendor Credit</span>
+            <span class="ws-nav__label">Vendor Credit Application</span>
         </NavLink>
     @if (WritesBlocked)
     {

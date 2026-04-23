@@ -147,6 +147,45 @@
     </div>
 
     <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">AP Settlement Chain</MudText>
+                <MudText Typo="Typo.h5">@ApSettlementLaneTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementLaneSummary</MudText>
+            </div>
+            <MudChip T="string" Variant="Variant.Filled" Color="@ApSettlementLaneColor">@ApSettlementLaneBadge</MudChip>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current lane</MudText>
+                <MudText Typo="Typo.h6">@ApSettlementLaneCurrentStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementLaneCurrentStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Next operator move</MudText>
+                <MudText Typo="Typo.h6">@ApSettlementLaneNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementLaneNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Procurement anchor</MudText>
+                <MudText Typo="Typo.h6">@ApSettlementLaneAnchorTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementLaneAnchorSummary</MudText>
+            </MudPaper>
+        </div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor">
+                Review Bill Pipeline
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@BuildPurchaseOrderBrowserLaneHref()">
+                Review Purchase Orders
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPayBillLaneHref()">
+                Continue to Pay Bill
+            </MudButton>
+        </div>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
             <MudText Typo="Typo.h6">Lines</MudText>
             <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
@@ -614,6 +653,28 @@
         "no_inventory_handoff" => "This bill is not participating in receipt-first matching, so AP posting remains controlled only by the draft lifecycle lane.",
         _ => "Receipt-first matching truth has not been loaded yet."
     };
+    private string ApSettlementLaneTitle => "Bill pipeline";
+    private string ApSettlementLaneSummary => "Bills convert procurement demand into governed AP truth. After posting, the operator should move into Pay Bill or vendor-credit application rather than return to procurement editing.";
+    private Color ApSettlementLaneColor => _postedResult is not null ? Color.Success : IsSubmitted ? Color.Warning : Color.Info;
+    private string ApSettlementLaneBadge => _postedResult is not null ? "Payable truth" : IsSubmitted ? "Awaiting post" : "Draft AP lane";
+    private string ApSettlementLaneCurrentStepTitle => _postedResult is not null ? "Review posted payable anchor" : IsSubmitted ? "Review submitted bill" : "Shape payable truth";
+    private string ApSettlementLaneCurrentStepSummary => _postedResult is not null
+        ? "This bill is already posted and can now participate in JE review and payable settlement."
+        : IsSubmitted
+            ? "The draft has moved into the governed submission lane. Receipt and posting guards now decide the next move."
+            : "Use the bill workbench to bind vendor, expense, tax, and PO anchor truth before the payable is formalized.";
+    private string ApSettlementLaneNextStepTitle => _postedResult is not null ? "Move into Pay Bill" : CanPost ? "Post into AP truth" : IsSubmitted ? "Resolve posting blockers" : "Save, submit, then post";
+    private string ApSettlementLaneNextStepSummary => _postedResult is not null
+        ? "The next valid AP operator move is settlement. Continue into Pay Bill once the payable should be paid."
+        : CanPost
+            ? "The bill is ready to move from draft/submitted review into formal AP posting."
+            : IsSubmitted
+                ? BillPostingPathSummary
+                : "The normal bill lane is draft, submit, post, then settle in Pay Bill.";
+    private string ApSettlementLaneAnchorTitle => _purchaseOrder is not null ? $"PO {_purchaseOrder.DisplayNumber}" : "PO optional";
+    private string ApSettlementLaneAnchorSummary => _purchaseOrder is not null
+        ? "This bill is anchored to governed purchase-order truth, so procurement and payable review stay continuous."
+        : "Bills can still be entered without a PO anchor, but the procurement-first lane is to convert released purchase-order truth into payable anchors.";
     private static string FormatReceiptGroupMatchStatus(string? matchStatus) => matchStatus switch
     {
         "no_receipt" => "No receipt yet",
@@ -1140,6 +1201,16 @@
         Guid.TryParse(_vendorIdText, out var vendorId)
             ? $"/ap/pay-bill?origin=company-ready&vendorId={vendorId:D}"
             : "/ap/pay-bill?origin=company-ready";
+
+    private string BuildPayBillLaneHref() =>
+        Guid.TryParse(_vendorIdText, out var vendorId)
+            ? $"/ap/pay-bill?vendorId={vendorId:D}"
+            : "/ap/pay-bill";
+
+    private string BuildPurchaseOrderBrowserLaneHref() =>
+        Guid.TryParse(_vendorIdText, out var vendorId)
+            ? $"/documents/source-browser?sourceType=purchase_order&counterpartyRole=vendor&counterpartyId={vendorId:D}"
+            : "/documents/source-browser?sourceType=purchase_order&counterpartyRole=vendor";
 
     private string BuildPostedDetailHref() =>
         _saved is null

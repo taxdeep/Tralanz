@@ -77,6 +77,45 @@
         </MudPaper>
     </div>
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">AP Procurement Chain</MudText>
+                <MudText Typo="Typo.h5">@PurchaseOrderLaneTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLaneSummary</MudText>
+            </div>
+            <MudChip T="string" Variant="Variant.Filled" Color="@PurchaseOrderLaneColor">@PurchaseOrderLaneBadge</MudChip>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current lane</MudText>
+                <MudText Typo="Typo.h6">@PurchaseOrderLaneCurrentStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLaneCurrentStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Next operator move</MudText>
+                <MudText Typo="Typo.h6">@PurchaseOrderLaneNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLaneNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Payables hand-off</MudText>
+                <MudText Typo="Typo.h6">@PurchaseOrderLanePayablesTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLanePayablesSummary</MudText>
+            </MudPaper>
+        </div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/source-browser?sourceType=purchase_order">
+                Review Purchase Order Pipeline
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/documents/purchase-orders/approval-requests">
+                Review Approval Requests
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPurchaseOrderBillDraftHref()" Disabled="@(WritesBlocked || !Guid.TryParse(_vendorIdText, out _))">
+                Continue to Bill
+            </MudButton>
+        </div>
+    </MudPaper>
+
     @if (OperationalItems.Count == 0)
     {
         <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Style="margin-bottom:1rem;">
@@ -174,6 +213,20 @@
             .OrderBy(static item => item.ItemCode)
             .ToArray() ?? [];
     private decimal EstimatedAmount => _lines.Sum(static line => line.LineTotal);
+    private string PurchaseOrderLaneTitle => "Purchase order pipeline";
+    private string PurchaseOrderLaneSummary => "Purchase orders own ordered vendor demand. Approval, release, receipt, and bill truth should all hand off from this procurement lane.";
+    private Color PurchaseOrderLaneColor => CanEditDraft ? Color.Primary : Color.Warning;
+    private string PurchaseOrderLaneBadge => CanEditDraft ? "Ordered truth" : "Review hand-off";
+    private string PurchaseOrderLaneCurrentStepTitle => CanEditDraft ? "Shape ordered truth" : "Review saved ordered truth";
+    private string PurchaseOrderLaneCurrentStepSummary => CanEditDraft
+        ? "Use the PO draft to define vendor, item, quantity, and estimated amount before approval and downstream AP work begin."
+        : "This PO has already moved beyond the editable draft lane. Use detail review for approval, release, or closure context.";
+    private string PurchaseOrderLaneNextStepTitle => CanEditDraft ? "Save, approve, then release" : "Open review and continue lifecycle";
+    private string PurchaseOrderLaneNextStepSummary => CanEditDraft
+        ? "Once the draft is shaped, the next operator move is to save it and move through approval/release so bill and receipt anchors can rely on it."
+        : "Continue from the PO detail and approval queue to complete lifecycle decisions before AP settlement starts.";
+    private string PurchaseOrderLanePayablesTitle => "Bill from released demand";
+    private string PurchaseOrderLanePayablesSummary => "Bills should inherit vendor and ordered context from the PO lane so AP truth starts from governed procurement anchors.";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -448,6 +501,24 @@
 
     private string BuildDetailHref() =>
         _saved is null ? string.Empty : $"/documents/purchase_order/{_saved.DocumentId:D}";
+
+    private string BuildPurchaseOrderBillDraftHref()
+    {
+        var href = "/documents/bill/draft-editor";
+        var query = new List<string>();
+
+        if (_saved is not null)
+        {
+            query.Add($"purchaseOrderId={_saved.DocumentId:D}");
+        }
+
+        if (Guid.TryParse(_vendorIdText, out var vendorId))
+        {
+            query.Add($"vendorId={vendorId:D}");
+        }
+
+        return query.Count == 0 ? href : $"{href}?{string.Join("&", query)}";
+    }
 
     private sealed class PurchaseOrderLineEditor
     {

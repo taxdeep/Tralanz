@@ -111,6 +111,36 @@
             </div>
         </MudPaper>
     }
+    else if (ShowsPayablesLanePanel)
+    {
+        <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                <div>
+                    <MudText Typo="Typo.subtitle2">AP Procurement Chain</MudText>
+                    <MudText Typo="Typo.h5">@PayablesLaneTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@PayablesLaneSummary</MudText>
+                </div>
+                <MudChip T="string" Variant="Variant.Filled" Color="@PayablesLaneColor">@PayablesLaneBadge</MudChip>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Current lane</MudText>
+                    <MudText Typo="Typo.h6">@PayablesLaneCurrentStepTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@PayablesLaneCurrentStepSummary</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Next operator move</MudText>
+                    <MudText Typo="Typo.h6">@PayablesLaneNextStepTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@PayablesLaneNextStepSummary</MudText>
+                </MudPaper>
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.caption">Read surface</MudText>
+                    <MudText Typo="Typo.h6">@PayablesLaneReadSurfaceTitle</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@PayablesLaneReadSurfaceSummary</MudText>
+                </MudPaper>
+            </div>
+        </MudPaper>
+    }
 
     @if (string.Equals(_selectedSourceType, "purchase_order", StringComparison.OrdinalIgnoreCase))
     {
@@ -127,6 +157,37 @@
                        Href="/documents/purchase-orders/approval-requests"
                        StartIcon="@Icons.Material.Filled.Approval">
                 Approval Requests
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Success"
+                       Href="/documents/bill/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.Description">
+                Continue to Bill
+            </MudButton>
+        </div>
+    }
+    else if (string.Equals(_selectedSourceType, "bill", StringComparison.OrdinalIgnoreCase))
+    {
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Href="/documents/bill/draft-editor"
+                       Disabled="WritesBlocked"
+                       StartIcon="@Icons.Material.Filled.Description">
+                New Bill
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       Href="/documents/source-browser?sourceType=purchase_order&counterpartyRole=vendor"
+                       StartIcon="@Icons.Material.Filled.Assignment">
+                Review Purchase Orders
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Success"
+                       Href="/ap/pay-bill"
+                       StartIcon="@Icons.Material.Filled.Payments">
+                Continue to Pay Bill
             </MudButton>
         </div>
     }
@@ -567,6 +628,8 @@
     private string CurrentFocusDescription => BuildFocusDescription();
     private bool ShowsCommercialLanePanel =>
         _selectedSourceType is "quote" or "sales_order" or "invoice";
+    private bool ShowsPayablesLanePanel =>
+        _selectedSourceType is "purchase_order" or "bill";
     private string CommercialLaneTitle => _selectedSourceType switch
     {
         "quote" => "Quote pipeline",
@@ -635,6 +698,66 @@
         "quote" => "Use the quote workbench to shape the offer, then return here to monitor the pipeline.",
         "sales_order" => "Use the SO workbench for outbound truth, and come back here to review the broader demand pipeline.",
         "invoice" => "Use invoice detail and JE review for posted truth, then continue into Receive Payment when settlement starts.",
+        _ => "Read surface"
+    };
+    private string PayablesLaneTitle => _selectedSourceType switch
+    {
+        "purchase_order" => "Purchase order pipeline",
+        "bill" => "Bill pipeline",
+        _ => "AP chain"
+    };
+    private string PayablesLaneSummary => _selectedSourceType switch
+    {
+        "purchase_order" => "Purchase orders own governed vendor demand. Approval, release, receipt, and bill truth should all hand off from this procurement lane.",
+        "bill" => "Bills convert procurement demand into payable anchors. After posting, the next AP move is settlement in Pay Bill.",
+        _ => "AP chain"
+    };
+    private Color PayablesLaneColor => _selectedSourceType switch
+    {
+        "purchase_order" => Color.Primary,
+        "bill" => Color.Info,
+        _ => Color.Default
+    };
+    private string PayablesLaneBadge => _selectedSourceType switch
+    {
+        "purchase_order" => "Ordered truth",
+        "bill" => "Payable truth",
+        _ => "AP chain"
+    };
+    private string PayablesLaneCurrentStepTitle => _selectedSourceType switch
+    {
+        "purchase_order" => "Review approved and released demand",
+        "bill" => "Review bill anchors",
+        _ => "Review lane"
+    };
+    private string PayablesLaneCurrentStepSummary => _selectedSourceType switch
+    {
+        "purchase_order" => "Released POs and approval requests should be reviewed here before operators move into receipt or bill capture.",
+        "bill" => "Submitted and posted bills should be reviewed for PO/receipt continuity, JE continuity, and readiness for payment.",
+        _ => "Review current stage"
+    };
+    private string PayablesLaneNextStepTitle => _selectedSourceType switch
+    {
+        "purchase_order" => "Convert released PO to bill",
+        "bill" => "Move into Pay Bill",
+        _ => "Continue chain"
+    };
+    private string PayablesLaneNextStepSummary => _selectedSourceType switch
+    {
+        "purchase_order" => "Once procurement truth is approved and released, the next valid AP hand-off is to create or review the matching bill.",
+        "bill" => "After posting, bills belong in settlement rather than back in procurement editing.",
+        _ => "Continue chain"
+    };
+    private string PayablesLaneReadSurfaceTitle => _selectedSourceType switch
+    {
+        "purchase_order" => "PO detail + approval queue",
+        "bill" => "Bill detail + JE review + Pay Bill",
+        _ => "Workbench + browser"
+    };
+    private string PayablesLaneReadSurfaceSummary => _selectedSourceType switch
+    {
+        "purchase_order" => "Use PO detail and the approval queue for lifecycle review, then return here to monitor procurement truth across vendors.",
+        "bill" => "Use bill detail and JE review for posted truth, then continue into Pay Bill when settlement begins.",
         _ => "Read surface"
     };
 

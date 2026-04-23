@@ -28,6 +28,45 @@
         </MudAlert>
     }
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">AP Settlement Chain</MudText>
+                <MudText Typo="Typo.h5">@VendorCreditApplicationChainTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@VendorCreditApplicationChainSummary</MudText>
+            </div>
+            <MudChip T="string" Variant="Variant.Filled" Color="@VendorCreditApplicationChainColor">@VendorCreditApplicationChainBadge</MudChip>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current lane</MudText>
+                <MudText Typo="Typo.h6">@VendorCreditApplicationChainCurrentStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@VendorCreditApplicationChainCurrentStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Next operator move</MudText>
+                <MudText Typo="Typo.h6">@VendorCreditApplicationChainNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@VendorCreditApplicationChainNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Related AP lane</MudText>
+                <MudText Typo="Typo.h6">@VendorCreditApplicationChainRelatedLaneTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@VendorCreditApplicationChainRelatedLaneSummary</MudText>
+            </MudPaper>
+        </div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildVendorBillBrowserHref()">
+                Review Bills
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@BuildVendorCreditBrowserHref()">
+                Review Vendor Credits
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPayBillHref()">
+                Back to Pay Bill
+            </MudButton>
+        </div>
+    </MudPaper>
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-bottom:1rem;">
         <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_selectedVendorIdText">
             @foreach (var vendor in _vendors)
@@ -205,12 +244,18 @@
                 <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">
                     Open Journal Entry Review
                 </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildPayBillHref()">
+                    Back to Pay Bill
+                </MudButton>
             </div>
         </MudPaper>
     }
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "vendorId")]
+    public Guid? VendorId { get; set; }
+
     private List<(Guid Id, string DisplayLabel, string CurrencyCode)> _vendors = [];
     private string? _selectedVendorIdText;
     private string? _memo;
@@ -225,6 +270,24 @@
     private decimal _appliedAmountTx;
     private VendorCreditApplicationDraftResult? _preparedDraft;
     private ApSettlementPostingResult? _postedResult;
+    private string VendorCreditApplicationChainTitle => "Vendor credit application pipeline";
+    private string VendorCreditApplicationChainSummary => "Vendor Credit Application offsets payable truth with vendor-credit truth. It is the credit-side companion to cash settlement in Pay Bill.";
+    private Color VendorCreditApplicationChainColor => _postedResult is not null ? Color.Success : _preparedDraft is not null ? Color.Warning : Color.Info;
+    private string VendorCreditApplicationChainBadge => _postedResult is not null ? "Application posted" : _preparedDraft is not null ? "Draft prepared" : "Credit workbench";
+    private string VendorCreditApplicationChainCurrentStepTitle => _postedResult is not null ? "Review posted application" : _preparedDraft is not null ? "Review prepared application" : "Load source credit and target bill";
+    private string VendorCreditApplicationChainCurrentStepSummary => _postedResult is not null
+        ? "The vendor credit application is posted and available through document detail and JE review."
+        : _preparedDraft is not null
+            ? "The draft is prepared. Review source and target open items, then post to formalize the credit offset."
+            : "Choose the vendor, then load both vendor-credit and bill open items so the application can be governed against real AP truth.";
+    private string VendorCreditApplicationChainNextStepTitle => _postedResult is not null ? "Review remaining settlement" : _preparedDraft is not null ? "Post draft" : "Prepare application draft";
+    private string VendorCreditApplicationChainNextStepSummary => _postedResult is not null
+        ? "After posting, return to Pay Bill if cash settlement still remains for this vendor."
+        : _preparedDraft is not null
+            ? "Posting the draft turns credit-offset intent into posted AP and JE truth."
+            : "The next valid move is to convert the selected source credit and target bill into a governed application draft.";
+    private string VendorCreditApplicationChainRelatedLaneTitle => "Pay Bill";
+    private string VendorCreditApplicationChainRelatedLaneSummary => "Use Pay Bill for cash settlement and Vendor Credit Application for credit offsets. Both consume the same AP open-item truth from different settlement sides.";
 
     protected override async Task OnInitializedAsync()
     {
@@ -232,7 +295,11 @@
         try
         {
             _vendors = (await LookupService.ListVendorsAsync(ShellSession.ActiveCompanyId, CancellationToken.None)).ToList();
-            if (_vendors.Count == 1)
+            if (VendorId.HasValue && _vendors.Any(item => item.Id == VendorId.Value))
+            {
+                _selectedVendorIdText = VendorId.Value.ToString();
+            }
+            else if (_vendors.Count == 1)
             {
                 _selectedVendorIdText = _vendors[0].Id.ToString();
             }
@@ -379,6 +446,21 @@
         _errorText = ShellSession.WriteBlockMessage;
         return true;
     }
+
+    private string BuildPayBillHref() =>
+        Guid.TryParse(_selectedVendorIdText, out var vendorId)
+            ? $"/ap/pay-bill?vendorId={vendorId:D}"
+            : "/ap/pay-bill";
+
+    private string BuildVendorBillBrowserHref() =>
+        Guid.TryParse(_selectedVendorIdText, out var vendorId)
+            ? $"/documents/source-browser?sourceType=bill&counterpartyRole=vendor&counterpartyId={vendorId:D}"
+            : "/documents/source-browser?sourceType=bill&counterpartyRole=vendor";
+
+    private string BuildVendorCreditBrowserHref() =>
+        Guid.TryParse(_selectedVendorIdText, out var vendorId)
+            ? $"/documents/source-browser?sourceType=vendor_credit&counterpartyRole=vendor&counterpartyId={vendorId:D}"
+            : "/documents/source-browser?sourceType=vendor_credit&counterpartyRole=vendor";
 
     private sealed class RowState
     {

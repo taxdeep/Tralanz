@@ -87,6 +87,45 @@
         </MudPaper>
     </div>
 
+    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+                <MudText Typo="Typo.subtitle2">AP Settlement Chain</MudText>
+                <MudText Typo="Typo.h5">@ApSettlementChainTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementChainSummary</MudText>
+            </div>
+            <MudChip T="string" Variant="Variant.Filled" Color="@ApSettlementChainColor">@ApSettlementChainBadge</MudChip>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Current lane</MudText>
+                <MudText Typo="Typo.h6">@ApSettlementChainCurrentStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementChainCurrentStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Next operator move</MudText>
+                <MudText Typo="Typo.h6">@ApSettlementChainNextStepTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementChainNextStepSummary</MudText>
+            </MudPaper>
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.caption">Related AP lane</MudText>
+                <MudText Typo="Typo.h6">@ApSettlementChainRelatedLaneTitle</MudText>
+                <MudText Typo="Typo.body2" Class="text-secondary">@ApSettlementChainRelatedLaneSummary</MudText>
+            </MudPaper>
+        </div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@BuildVendorBillHref()">
+                Review Bills
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@BuildVendorCreditBrowserHref()">
+                Review Vendor Credits
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildVendorCreditApplicationHref()">
+                Continue to Vendor Credit Application
+            </MudButton>
+        </div>
+    </MudPaper>
+
     @if (IsCompanyReadyHandOff)
     {
         <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
@@ -298,6 +337,9 @@
                 <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="@($"/gl/journal-entry/review/{_postedResult.JournalEntryId:D}")">
                     Open Journal Entry Review
                 </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildVendorCreditApplicationHref()">
+                    Continue to Vendor Credit Application
+                </MudButton>
             </div>
         </MudPaper>
     }
@@ -380,6 +422,24 @@
         _ when VendorId.HasValue && SelectedVendorId == VendorId => "Because this vendor came from the first-bill hand-off, the next check is whether the first bill is still draft, has been reversed, or was already consumed by another vendor-payment path.",
         _ => "The next legal check is the matching source-document history for this vendor: posted bill, posted vendor credit, reversal trail, or prior payment consumption."
     };
+    private string ApSettlementChainTitle => "Pay bill pipeline";
+    private string ApSettlementChainSummary => "Pay Bill settles open AP anchors. Once payment truth is posted, the next adjacent AP lane is vendor-credit application when credits need to offset remaining payables.";
+    private Color ApSettlementChainColor => _postedResult is not null ? Color.Success : _preparedDraft is not null ? Color.Warning : Color.Info;
+    private string ApSettlementChainBadge => _postedResult is not null ? "Settlement posted" : _preparedDraft is not null ? "Draft prepared" : "Settlement workbench";
+    private string ApSettlementChainCurrentStepTitle => _postedResult is not null ? "Review posted settlement" : _preparedDraft is not null ? "Review prepared payment" : "Load and settle open payables";
+    private string ApSettlementChainCurrentStepSummary => _postedResult is not null
+        ? "The vendor payment has been posted and is now available through document detail and JE review."
+        : _preparedDraft is not null
+            ? "The draft is prepared. Review applied source documents, then post the payment into governed AP truth."
+            : "Pick a vendor, load payable candidates, then prepare the payment draft from real open-item truth.";
+    private string ApSettlementChainNextStepTitle => _postedResult is not null ? "Review related credit lanes" : _preparedDraft is not null ? "Post draft" : "Prepare settlement draft";
+    private string ApSettlementChainNextStepSummary => _postedResult is not null
+        ? "If vendor credits also need to offset payables, continue into vendor-credit application from the same vendor context."
+        : _preparedDraft is not null
+            ? "Posting the draft turns settlement intent into posted AP and JE truth."
+            : "The first valid move is to convert loaded payables into a governed pay-bill draft.";
+    private string ApSettlementChainRelatedLaneTitle => "Vendor credit application";
+    private string ApSettlementChainRelatedLaneSummary => "Pay Bill and Vendor Credit Application both consume AP open-item truth. Use payment for cash settlement and credit application for vendor-credit offset.";
     private bool ShouldShowSettlementGapPanel => _vendors.Count == 0 || SelectedVendorId is null || (_rows.Count == 0 && SelectedVendorId.HasValue);
     private string VendorPaymentGapSummary => _vendors.Count switch
     {
@@ -604,6 +664,16 @@
         SelectedVendorId.HasValue
             ? $"/documents/source-browser?origin=company-ready&sourceType=bill&counterpartyRole=vendor&counterpartyId={SelectedVendorId.Value:D}"
             : "/documents/source-browser?origin=company-ready&sourceType=bill&counterpartyRole=vendor";
+
+    private string BuildVendorCreditBrowserHref() =>
+        SelectedVendorId.HasValue
+            ? $"/documents/source-browser?sourceType=vendor_credit&counterpartyRole=vendor&counterpartyId={SelectedVendorId.Value:D}"
+            : "/documents/source-browser?sourceType=vendor_credit&counterpartyRole=vendor";
+
+    private string BuildVendorCreditApplicationHref() =>
+        SelectedVendorId.HasValue
+            ? $"/ap/vendor-credit-application?vendorId={SelectedVendorId.Value:D}"
+            : "/ap/vendor-credit-application";
 
     private sealed class RowState
     {

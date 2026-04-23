@@ -38,6 +38,7 @@ using Web.Shell.Configuration;
 using Web.Shell.Services;
 using Web.Shell.State;
 using Web.Business.AP.PayBill;
+using Web.Business.AP.Aging;
 using Web.Business.AP.SettlementLookup;
 using Web.Business.AP.SettlementPosting;
 using Web.Business.AP.VendorCreditApplication;
@@ -157,6 +158,13 @@ builder.Services.AddHttpClient<ArAgingReportClient>(
         })
     .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<ApSettlementPostingClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<ApAgingReportClient>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
