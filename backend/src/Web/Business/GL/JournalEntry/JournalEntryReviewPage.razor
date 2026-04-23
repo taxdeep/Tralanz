@@ -396,11 +396,22 @@
                                     <span class="je-review-fact__label">Line delta</span>
                                     <span class="je-review-fact__value">@reconciliation.LineDelta</span>
                                 </div>
+                                <div class="je-review-fact">
+                                    <span class="je-review-fact__label">JE source-line evidence</span>
+                                    <span class="je-review-fact__value">@reconciliation.SourceLineEvidenceLabel</span>
+                                </div>
                                 @if (!string.IsNullOrWhiteSpace(reconciliation.UnmappedSourceAccountLabel))
                                 {
                                     <div class="je-review-fact">
                                         <span class="je-review-fact__label">Unmapped source accounts</span>
                                         <span class="je-review-fact__value">@reconciliation.UnmappedSourceAccountLabel</span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(reconciliation.UnmatchedSourceLineLabel))
+                                {
+                                    <div class="je-review-fact">
+                                        <span class="je-review-fact__label">Unmatched source lines</span>
+                                        <span class="je-review-fact__value">@reconciliation.UnmatchedSourceLineLabel</span>
                                     </div>
                                 }
                             </div>
@@ -740,6 +751,32 @@
             .ToArray();
         var mappedSourceAccountCount = sourceAccountCodes.Length - unmappedSourceAccounts.Length;
         var postingRoleRows = BuildPostingRoleRows(review, sourceAccountCodes).ToArray();
+        var sourceLineNumbers = sourceTrace.Lines
+            .Select(static line => line.LineNumber)
+            .Where(static lineNumber => lineNumber > 0)
+            .Distinct()
+            .Order()
+            .ToArray();
+        var journalSourceLineNumbers = review.Lines
+            .Select(static line => line.SourceLineNumber)
+            .Where(static lineNumber => lineNumber.HasValue && lineNumber.Value > 0)
+            .Select(static lineNumber => lineNumber!.Value)
+            .Distinct()
+            .Order()
+            .ToArray();
+        var matchedSourceLineCount = sourceLineNumbers.Intersect(journalSourceLineNumbers).Count();
+        var unmatchedSourceLines = sourceLineNumbers.Except(journalSourceLineNumbers).ToArray();
+        var unmatchedSourceLineLabel = unmatchedSourceLines.Length == 0
+            ? string.Empty
+            : string.Join(", ", unmatchedSourceLines.Take(8));
+        if (unmatchedSourceLines.Length > 8)
+        {
+            unmatchedSourceLineLabel = $"{unmatchedSourceLineLabel}, +{unmatchedSourceLines.Length - 8}";
+        }
+
+        var sourceLineEvidenceLabel = sourceLineNumbers.Length == 0
+            ? "No source lines"
+            : $"{matchedSourceLineCount} / {sourceLineNumbers.Length}";
         var unmappedSourceAccountLabel = unmappedSourceAccounts.Length == 0
             ? string.Empty
             : string.Join(", ", unmappedSourceAccounts.Take(4));
@@ -765,7 +802,9 @@
                 unmappedSourceAccountLabel,
                 postingRoleRows,
                 amountDelta,
-                lineDelta);
+                lineDelta,
+                sourceLineEvidenceLabel,
+                unmatchedSourceLineLabel);
         }
 
         if (amountDelta == 0m)
@@ -782,7 +821,9 @@
                 unmappedSourceAccountLabel,
                 postingRoleRows,
                 amountDelta,
-                lineDelta);
+                lineDelta,
+                sourceLineEvidenceLabel,
+                unmatchedSourceLineLabel);
         }
 
         return new SourceTraceReconciliation(
@@ -797,7 +838,9 @@
             unmappedSourceAccountLabel,
             postingRoleRows,
             amountDelta,
-            lineDelta);
+            lineDelta,
+            sourceLineEvidenceLabel,
+            unmatchedSourceLineLabel);
     }
 
     private static IEnumerable<SourceTracePostingRoleRow> BuildPostingRoleRows(
@@ -835,7 +878,7 @@
     {
         if (!string.IsNullOrWhiteSpace(line.PostingRole))
         {
-            return new PostingRoleKey(5, line.PostingRole);
+            return BuildPostingRoleKey(line.PostingRole);
         }
 
         if (sourceAccountCodes.Contains(line.AccountCode))
@@ -874,6 +917,26 @@
         return new PostingRoleKey(90, $"Other {line.RootType}");
     }
 
+    private static PostingRoleKey BuildPostingRoleKey(string postingRole)
+    {
+        var normalized = postingRole.Trim();
+        var sortOrder = normalized switch
+        {
+            "manual_journal" => 5,
+            _ when normalized.StartsWith("source_line:", StringComparison.OrdinalIgnoreCase) => 10,
+            _ when normalized.StartsWith("inventory:", StringComparison.OrdinalIgnoreCase) => 15,
+            _ when normalized.StartsWith("cash:", StringComparison.OrdinalIgnoreCase) => 20,
+            _ when normalized.StartsWith("settlement:", StringComparison.OrdinalIgnoreCase) => 25,
+            _ when normalized.StartsWith("control:", StringComparison.OrdinalIgnoreCase) => 30,
+            _ when normalized.StartsWith("tax:", StringComparison.OrdinalIgnoreCase) => 40,
+            _ when normalized.StartsWith("fx:", StringComparison.OrdinalIgnoreCase) => 50,
+            _ when normalized.StartsWith("adjustment:", StringComparison.OrdinalIgnoreCase) => 60,
+            _ => 80
+        };
+
+        return new PostingRoleKey(sortOrder, DisplayPostingRole(normalized));
+    }
+
     private static string BuildRoleEvidence(IReadOnlyCollection<JournalEntryReviewLine> lines)
     {
         var accounts = lines
@@ -883,12 +946,6 @@
             .Order(StringComparer.OrdinalIgnoreCase)
             .Take(4)
             .ToArray();
-
-        if (accounts.Length == 0)
-        {
-            return "No account code";
-        }
-
         var suffix = lines
             .Select(static line => line.AccountCode)
             .Where(static accountCode => !string.IsNullOrWhiteSpace(accountCode))
@@ -897,7 +954,80 @@
             ? ", ..."
             : string.Empty;
 
-        return string.Join(", ", accounts) + suffix;
+        var accountEvidence = accounts.Length == 0
+            ? "No account code"
+            : string.Join(", ", accounts) + suffix;
+
+        var sourceLines = lines
+            .Select(static line => line.SourceLineNumber)
+            .Where(static lineNumber => lineNumber.HasValue && lineNumber.Value > 0)
+            .Select(static lineNumber => lineNumber!.Value)
+            .Distinct()
+            .Order()
+            .Take(8)
+            .ToArray();
+
+        if (sourceLines.Length == 0)
+        {
+            return accountEvidence;
+        }
+
+        var sourceLineSuffix = lines
+            .Select(static line => line.SourceLineNumber)
+            .Where(static lineNumber => lineNumber.HasValue && lineNumber.Value > 0)
+            .Select(static lineNumber => lineNumber!.Value)
+            .Distinct()
+            .Count() > sourceLines.Length
+            ? ", ..."
+            : string.Empty;
+
+        return $"{accountEvidence} | source lines {string.Join(", ", sourceLines)}{sourceLineSuffix}";
+    }
+
+    private static string DisplayPostingRole(string postingRole)
+    {
+        if (string.IsNullOrWhiteSpace(postingRole))
+        {
+            return "Unclassified";
+        }
+
+        var normalized = postingRole.Trim();
+        if (string.Equals(normalized, "manual_journal", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Manual journal";
+        }
+
+        var parts = normalized.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+        {
+            return HumanizeToken(normalized);
+        }
+
+        var group = parts[0].ToLowerInvariant();
+        var detail = HumanizeToken(parts[1]);
+        return group switch
+        {
+            "source_line" => $"Source line: {detail}",
+            "control" => $"Control: {detail}",
+            "tax" => $"Tax: {detail}",
+            "settlement" => $"Settlement: {detail}",
+            "cash" => $"Cash: {detail}",
+            "fx" => $"FX: {detail}",
+            "inventory" => $"Inventory: {detail}",
+            "adjustment" => $"Adjustment: {detail}",
+            _ => $"{HumanizeToken(group)}: {detail}"
+        };
+    }
+
+    private static string HumanizeToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return "n/a";
+        }
+
+        var text = token.Replace('_', ' ').Replace('-', ' ').Trim();
+        return text.Length == 0 ? "n/a" : char.ToUpperInvariant(text[0]) + text[1..];
     }
 
     private static bool ContainsToken(string? value, string token) =>
@@ -939,7 +1069,7 @@
 
         if (!string.IsNullOrWhiteSpace(line.PostingRole))
         {
-            markers.Add($"role: {line.PostingRole}");
+            markers.Add($"role: {DisplayPostingRole(line.PostingRole)}");
         }
 
         if (line.SourceLineNumber.HasValue)
@@ -982,7 +1112,9 @@
         string UnmappedSourceAccountLabel,
         IReadOnlyList<SourceTracePostingRoleRow> PostingRoleRows,
         decimal AmountDelta,
-        int LineDelta);
+        int LineDelta,
+        string SourceLineEvidenceLabel,
+        string UnmatchedSourceLineLabel);
 
     private sealed record SourceTracePostingRoleRow(
         string RoleLabel,
