@@ -1,20 +1,17 @@
-@inject NavigationManager NavigationManager
 @inject WebShellState ShellState
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
 @inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 
-<nav class="bz-rail">
-    <div class="bz-rail__group">
+<nav class="bz-sidebar-nav">
+    <div class="bz-sidebar-nav__create">
         <button type="button"
-                class="bz-rail__action @( _isCreateMenuOpen ? "bz-rail__action--active" : null )"
+                class="bz-sidebar-nav__create-button"
                 @onclick="ToggleCreateMenu"
                 aria-expanded="@_isCreateMenuOpen"
                 aria-controls="balanciz-create-menu">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-plus" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">Create</span>
+            <i class="ti ti-plus" aria-hidden="true"></i>
+            <span>Create</span>
         </button>
 
         @if (_isCreateMenuOpen)
@@ -68,73 +65,178 @@
                 </div>
             </div>
         }
-
-        <a class="bz-rail__action" href="/documents/source-browser">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-bookmark" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">Bookmarks</span>
-        </a>
-
-        <NavLink href="/" Match="NavLinkMatch.All" class="bz-rail__action">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-home-2" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">Home</span>
-        </NavLink>
     </div>
 
-    <div class="bz-rail__group bz-rail__group--secondary">
-        <NavLink href="/documents/source-browser" class="bz-rail__action">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-files" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">Docs</span>
-        </NavLink>
+    <div class="bz-sidebar-nav__sections">
+        <section class="bz-sidebar-nav__section">
+            <button type="button" class="bz-sidebar-nav__section-toggle" @onclick="ToggleCore">
+                <span>Core</span>
+                <i class="ti @( _coreExpanded ? "ti-chevron-up" : "ti-chevron-down" )" aria-hidden="true"></i>
+            </button>
+            @if (_coreExpanded)
+            {
+                <div class="bz-sidebar-nav__items">
+                    <NavLink href="/" Match="NavLinkMatch.All" class="bz-sidebar-nav__link">
+                        <i class="ti ti-layout-dashboard bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Dashboard</span>
+                    </NavLink>
+                    <NavLink href="/documents/source-browser" class="bz-sidebar-nav__link">
+                        <i class="ti ti-files bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Source Documents</span>
+                    </NavLink>
+                    <NavLink href="/profile" class="bz-sidebar-nav__link">
+                        <i class="ti ti-user-circle bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Profile</span>
+                    </NavLink>
+                </div>
+            }
+        </section>
 
-        <NavLink href="/transactions" class="bz-rail__action">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-search" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">Search</span>
-        </NavLink>
+        <section class="bz-sidebar-nav__section">
+            <button type="button" class="bz-sidebar-nav__section-toggle" @onclick="ToggleSales">
+                <span>Sales &amp; Get Paid</span>
+                <i class="ti @( _salesExpanded ? "ti-chevron-up" : "ti-chevron-down" )" aria-hidden="true"></i>
+            </button>
+            @if (_salesExpanded)
+            {
+                <div class="bz-sidebar-nav__items">
+                    <NavLink href="/company/customer-vendor-setup" class="bz-sidebar-nav__link">
+                        <i class="ti ti-users-group bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Customers</span>
+                    </NavLink>
+                    <NavLink href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer" class="bz-sidebar-nav__link">
+                        <i class="ti ti-receipt-2 bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Sales Transactions</span>
+                    </NavLink>
+                    <NavLink href="/documents/source-browser?sourceType=quote" class="bz-sidebar-nav__link">
+                        <i class="ti ti-file-text-ai bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Quotes</span>
+                    </NavLink>
+                    <NavLink href="/documents/source-browser?sourceType=sales_order" class="bz-sidebar-nav__link">
+                        <i class="ti ti-file-check bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Sales Orders</span>
+                    </NavLink>
+                    <NavLink href="/ar/aging" class="bz-sidebar-nav__link">
+                        <i class="ti ti-chart-bar-popular bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Customer Statement</span>
+                    </NavLink>
+                    <NavLink href="/ar/receive-payment" class="bz-sidebar-nav__link">
+                        <i class="ti ti-cash-register bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Receive Payment</span>
+                    </NavLink>
+                </div>
+            }
+        </section>
 
-        <NavLink href="/ar/aging" class="bz-rail__action">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-cash-register" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">AR</span>
-        </NavLink>
-
-        <NavLink href="/ap/aging" class="bz-rail__action">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-credit-card-pay" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">AP</span>
-        </NavLink>
-
-        <NavLink href="/gl/journal-entries" class="bz-rail__action">
-            <span class="bz-rail__action-icon">
-                <i class="ti ti-writing-sign" aria-hidden="true"></i>
-            </span>
-            <span class="bz-rail__action-label">Accounting</span>
-        </NavLink>
+        <section class="bz-sidebar-nav__section">
+            <button type="button" class="bz-sidebar-nav__section-toggle" @onclick="ToggleExpense">
+                <span>Expense &amp; Bills</span>
+                <i class="ti @( _expenseExpanded ? "ti-chevron-up" : "ti-chevron-down" )" aria-hidden="true"></i>
+            </button>
+            @if (_expenseExpanded)
+            {
+                <div class="bz-sidebar-nav__items">
+                    <NavLink href="/documents/bill/draft-editor?origin=expense" class="bz-sidebar-nav__link">
+                        <i class="ti ti-file-description bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Expenses</span>
+                    </NavLink>
+                    <NavLink href="/company/customer-vendor-setup" class="bz-sidebar-nav__link">
+                        <i class="ti ti-building-store bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Vendors</span>
+                    </NavLink>
+                    <NavLink href="/documents/source-browser?sourceType=purchase_order" class="bz-sidebar-nav__link">
+                        <i class="ti ti-clipboard-list bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Purchase Orders</span>
+                    </NavLink>
+                    <NavLink href="/ap/aging" class="bz-sidebar-nav__link">
+                        <i class="ti ti-chart-donut-2 bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>AP Aging</span>
+                    </NavLink>
+                    <NavLink href="/ap/pay-bill" class="bz-sidebar-nav__link">
+                        <i class="ti ti-credit-card-pay bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Pay Bills</span>
+                    </NavLink>
+                </div>
+            }
+        </section>
 
         @if (_showInventoryFoundation)
         {
-            <NavLink href="/company/inventory-foundation" class="bz-rail__action">
-                <span class="bz-rail__action-icon">
-                    <i class="ti ti-building-warehouse" aria-hidden="true"></i>
-                </span>
-                <span class="bz-rail__action-label">Inventory</span>
-            </NavLink>
+            <section class="bz-sidebar-nav__section">
+                <button type="button" class="bz-sidebar-nav__section-toggle" @onclick="ToggleInventory">
+                    <span>Inventory</span>
+                    <i class="ti @( _inventoryExpanded ? "ti-chevron-up" : "ti-chevron-down" )" aria-hidden="true"></i>
+                </button>
+                @if (_inventoryExpanded)
+                {
+                    <div class="bz-sidebar-nav__items">
+                        <NavLink href="/company/product-service-setup" class="bz-sidebar-nav__link">
+                            <i class="ti ti-package bz-sidebar-nav__icon" aria-hidden="true"></i>
+                            <span>Products &amp; Services</span>
+                        </NavLink>
+                        <NavLink href="/company/inventory-foundation" class="bz-sidebar-nav__link">
+                            <i class="ti ti-building-warehouse bz-sidebar-nav__icon" aria-hidden="true"></i>
+                            <span>Warehouses</span>
+                        </NavLink>
+                        <NavLink href="/company/inventory-transfer" class="bz-sidebar-nav__link">
+                            <i class="ti ti-arrows-transfer-up-down bz-sidebar-nav__icon" aria-hidden="true"></i>
+                            <span>Warehouse Transfers</span>
+                        </NavLink>
+                        <NavLink href="/company/inventory-return-receive" class="bz-sidebar-nav__link">
+                            <i class="ti ti-arrow-back-up bz-sidebar-nav__icon" aria-hidden="true"></i>
+                            <span>Return Receipts</span>
+                        </NavLink>
+                    </div>
+                }
+            </section>
         }
+
+        <section class="bz-sidebar-nav__section">
+            <button type="button" class="bz-sidebar-nav__section-toggle" @onclick="ToggleControl">
+                <span>Company &amp; Governance</span>
+                <i class="ti @( _controlExpanded ? "ti-chevron-up" : "ti-chevron-down" )" aria-hidden="true"></i>
+            </button>
+            @if (_controlExpanded)
+            {
+                <div class="bz-sidebar-nav__items">
+                    <NavLink href="/company/book-governance" class="bz-sidebar-nav__link">
+                        <i class="ti ti-book-2 bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Book Governance</span>
+                    </NavLink>
+                    <NavLink href="/company/bank-and-cash-setup" class="bz-sidebar-nav__link">
+                        <i class="ti ti-building-bank bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Bank &amp; Cash</span>
+                    </NavLink>
+                    <NavLink href="/company/tax-setup" class="bz-sidebar-nav__link">
+                        <i class="ti ti-percentage bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Tax Setup</span>
+                    </NavLink>
+                    <NavLink href="/company/membership-permissions" class="bz-sidebar-nav__link">
+                        <i class="ti ti-users bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Memberships</span>
+                    </NavLink>
+                    <NavLink href="/gl/journal-entries" class="bz-sidebar-nav__link">
+                        <i class="ti ti-writing-sign bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Journal Entries</span>
+                    </NavLink>
+                    <NavLink href="/settings/user-preferences/system-setup" class="bz-sidebar-nav__link">
+                        <i class="ti ti-adjustments-horizontal bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Preferences</span>
+                    </NavLink>
+                </div>
+            }
+        </section>
     </div>
 </nav>
 
 @code {
     private bool _showInventoryFoundation = true;
     private bool _isCreateMenuOpen;
+    private bool _coreExpanded = true;
+    private bool _salesExpanded = true;
+    private bool _expenseExpanded = true;
+    private bool _inventoryExpanded = true;
+    private bool _controlExpanded = true;
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
 
@@ -157,14 +259,16 @@
         }
     }
 
-    private void ToggleCreateMenu()
-    {
-        _isCreateMenuOpen = !_isCreateMenuOpen;
-    }
-
+    private void ToggleCreateMenu() => _isCreateMenuOpen = !_isCreateMenuOpen;
     private Task CloseCreateMenu()
     {
         _isCreateMenuOpen = false;
         return Task.CompletedTask;
     }
+
+    private void ToggleCore() => _coreExpanded = !_coreExpanded;
+    private void ToggleSales() => _salesExpanded = !_salesExpanded;
+    private void ToggleExpense() => _expenseExpanded = !_expenseExpanded;
+    private void ToggleInventory() => _inventoryExpanded = !_inventoryExpanded;
+    private void ToggleControl() => _controlExpanded = !_controlExpanded;
 }

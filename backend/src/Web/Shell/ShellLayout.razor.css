@@ -203,7 +203,7 @@
 
 .bz-shell__body {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: 292px minmax(0, 1fr);
     min-height: calc(100vh - 72px);
 }
 
@@ -211,7 +211,7 @@
     position: relative;
     overflow: visible;
     border-right: 1px solid rgba(148, 163, 184, 0.14);
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    background: linear-gradient(180deg, rgba(8, 15, 29, 0.98), rgba(7, 13, 24, 0.98));
 }
 
 .bz-main {
