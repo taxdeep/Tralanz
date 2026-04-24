@@ -20,11 +20,6 @@
         }
     </div>
 
-    <div class="bz-topbar__identity">
-        <span class="bz-topbar__label">User</span>
-        <span class="bz-topbar__value">@ShellState.User.DisplayName</span>
-    </div>
-
     <label class="bz-topbar__company">
         <span class="bz-topbar__label">Active company</span>
         <select class="bz-topbar__select"
@@ -40,19 +35,54 @@
         </select>
     </label>
 
-    <button type="button" class="bz-topbar__button" @onclick="SignOutAsync">
-        <i class="ti ti-logout-2" aria-hidden="true"></i>
-        <span>Sign out</span>
-    </button>
+    <div class="bz-topbar__user-menu">
+        <button type="button"
+                class="bz-topbar__user-trigger"
+                @onclick="ToggleUserMenu"
+                aria-expanded="@_userMenuOpen"
+                aria-haspopup="menu">
+            <span class="bz-topbar__avatar">@UserInitials</span>
+            <span class="bz-topbar__identity">
+                <span class="bz-topbar__label">User</span>
+                <span class="bz-topbar__value">@ShellState.User.DisplayName</span>
+            </span>
+            <i class="ti ti-chevron-down bz-topbar__user-caret" aria-hidden="true"></i>
+        </button>
+
+        @if (_userMenuOpen)
+        {
+            <div class="bz-topbar__menu" role="menu">
+                <a class="bz-topbar__menu-item" href="/profile" @onclick="CloseUserMenu" role="menuitem">
+                    <i class="ti ti-user-circle" aria-hidden="true"></i>
+                    <span>Profile</span>
+                </a>
+                <button type="button" class="bz-topbar__menu-item" @onclick="SignOutFromMenuAsync" role="menuitem">
+                    <i class="ti ti-logout-2" aria-hidden="true"></i>
+                    <span>Sign out</span>
+                </button>
+            </div>
+        }
+    </div>
 </div>
 
 @code
 {
     private string PrimaryRole => ShellState.User.Roles.FirstOrDefault() ?? "user";
+    private bool _userMenuOpen;
 
     private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
 
     private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
+    private string UserInitials =>
+        string.Join(
+            string.Empty,
+            ShellState.User.DisplayName
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Take(2)
+                .Select(static part => char.ToUpperInvariant(part[0])))
+        is { Length: > 0 } initials
+            ? initials
+            : "U";
 
     private async Task OnSelectedCompanyChangedAsync(ChangeEventArgs args)
     {
@@ -85,6 +115,22 @@
         ShellState.ApplyAuthenticatedSession(ShellState.SessionToken, result.Context, result.ExpiresAtUtc);
         Snackbar.Add($"Active company switched to {result.Context.ActiveCompany.CompanyName}.", Severity.Success);
         NavigationManager.NavigateTo("/");
+    }
+
+    private void ToggleUserMenu()
+    {
+        _userMenuOpen = !_userMenuOpen;
+    }
+
+    private void CloseUserMenu()
+    {
+        _userMenuOpen = false;
+    }
+
+    private async Task SignOutFromMenuAsync()
+    {
+        _userMenuOpen = false;
+        await SignOutAsync();
     }
 
     private async Task SignOutAsync()
