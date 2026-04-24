@@ -2,10 +2,11 @@
     display: grid;
     gap: 1.25rem;
     width: 100%;
-    max-width: 1560px;
-    padding: 1.35rem clamp(1rem, 2vw, 2rem) 2.75rem;
+    max-width: none;
+    padding: 1.35rem clamp(0.9rem, 1.6vw, 1.4rem) 2.75rem clamp(0.9rem, 1.6vw, 1.4rem);
     margin-inline: 0;
-    justify-self: stretch;
+    justify-self: start;
+    align-content: start;
     color: #d9e2ea;
 }
 

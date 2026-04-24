@@ -322,8 +322,8 @@ public sealed class ShellCounterpartyOnboardingClient(PostgreSqlConnectionFactor
               where id = @company_id
             )
             select distinct
-              code,
-              name
+              codes.code as code,
+              curr.name as name
             from (
               select c.base_currency_code as code
               from base_company c
