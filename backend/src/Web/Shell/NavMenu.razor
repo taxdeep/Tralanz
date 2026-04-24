@@ -2,6 +2,7 @@
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
 @inject Web.Shell.Services.WebShellCompanyOnboardingClient OnboardingClient
 @inject Web.Shell.Services.WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject IJSRuntime JS
 
 <nav class="bz-sidebar-nav">
     <div class="bz-sidebar-nav__create">
@@ -230,6 +231,8 @@
 </nav>
 
 @code {
+    private const string SidebarStateStorageKey = "balanciz.sidebar.sections.v1";
+
     private bool _showInventoryFoundation = true;
     private bool _isCreateMenuOpen;
     private bool _coreExpanded = true;
@@ -237,6 +240,7 @@
     private bool _expenseExpanded = true;
     private bool _inventoryExpanded = true;
     private bool _controlExpanded = true;
+    private bool _sidebarStateLoaded;
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
 
@@ -259,6 +263,17 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_sidebarStateLoaded)
+        {
+            return;
+        }
+
+        _sidebarStateLoaded = true;
+        await LoadSidebarStateAsync();
+    }
+
     private void ToggleCreateMenu() => _isCreateMenuOpen = !_isCreateMenuOpen;
     private Task CloseCreateMenu()
     {
@@ -266,9 +281,98 @@
         return Task.CompletedTask;
     }
 
-    private void ToggleCore() => _coreExpanded = !_coreExpanded;
-    private void ToggleSales() => _salesExpanded = !_salesExpanded;
-    private void ToggleExpense() => _expenseExpanded = !_expenseExpanded;
-    private void ToggleInventory() => _inventoryExpanded = !_inventoryExpanded;
-    private void ToggleControl() => _controlExpanded = !_controlExpanded;
+    private async Task ToggleCore()
+    {
+        _coreExpanded = !_coreExpanded;
+        await PersistSidebarStateAsync();
+    }
+
+    private async Task ToggleSales()
+    {
+        _salesExpanded = !_salesExpanded;
+        await PersistSidebarStateAsync();
+    }
+
+    private async Task ToggleExpense()
+    {
+        _expenseExpanded = !_expenseExpanded;
+        await PersistSidebarStateAsync();
+    }
+
+    private async Task ToggleInventory()
+    {
+        _inventoryExpanded = !_inventoryExpanded;
+        await PersistSidebarStateAsync();
+    }
+
+    private async Task ToggleControl()
+    {
+        _controlExpanded = !_controlExpanded;
+        await PersistSidebarStateAsync();
+    }
+
+    private async Task LoadSidebarStateAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", SidebarStateStorageKey);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            var state = System.Text.Json.JsonSerializer.Deserialize<SidebarSectionState>(raw);
+            if (state is null)
+            {
+                return;
+            }
+
+            _coreExpanded = state.CoreExpanded;
+            _salesExpanded = state.SalesExpanded;
+            _expenseExpanded = state.ExpenseExpanded;
+            _inventoryExpanded = state.InventoryExpanded;
+            _controlExpanded = state.ControlExpanded;
+
+            StateHasChanged();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task PersistSidebarStateAsync()
+    {
+        if (!_sidebarStateLoaded)
+        {
+            return;
+        }
+
+        try
+        {
+            var raw = System.Text.Json.JsonSerializer.Serialize(new SidebarSectionState(
+                _coreExpanded,
+                _salesExpanded,
+                _expenseExpanded,
+                _inventoryExpanded,
+                _controlExpanded));
+
+            await JS.InvokeVoidAsync("localStorage.setItem", SidebarStateStorageKey, raw);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private sealed record SidebarSectionState(
+        bool CoreExpanded,
+        bool SalesExpanded,
+        bool ExpenseExpanded,
+        bool InventoryExpanded,
+        bool ControlExpanded);
 }
