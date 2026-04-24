@@ -93,14 +93,14 @@
                 <div>
                     <div class="bz-metric-card__label">Active customers</div>
                     <div class="bz-metric-card__value">@_summary.ActiveCustomers.Count</div>
-                    <p>
-                        @_summary.ActiveCustomers.Count switch
+                    <p>@(
+                        _summary.ActiveCustomers.Count switch
                         {
                             0 => "No customer truth exists yet for the current company.",
                             1 => "The company already has one active customer and can bind the first receivable to it.",
                             _ => $"The company already has {_summary.ActiveCustomers.Count} active customers."
                         }
-                    </p>
+                    )</p>
                 </div>
             </article>
             <article class="bz-metric-card">
@@ -108,14 +108,14 @@
                 <div>
                     <div class="bz-metric-card__label">Active vendors</div>
                     <div class="bz-metric-card__value">@_summary.ActiveVendors.Count</div>
-                    <p>
-                        @_summary.ActiveVendors.Count switch
+                    <p>@(
+                        _summary.ActiveVendors.Count switch
                         {
                             0 => "No vendor truth exists yet for the current company.",
                             1 => "The company already has one active vendor and can bind the first payable to it.",
                             _ => $"The company already has {_summary.ActiveVendors.Count} active vendors."
                         }
-                    </p>
+                    )</p>
                 </div>
             </article>
             <article class="bz-metric-card">
