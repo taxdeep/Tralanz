@@ -1,7 +1,5 @@
 @page "/company/customer-vendor-setup"
 @using Web.Shell.Services
-@using AntDesign
-@using AntButtonType = AntDesign.ButtonType
 @rendermode InteractiveServer
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -28,9 +26,9 @@
             </div>
             <p class="bz-counterparty-hero__summary">@SetupPageSummary</p>
             <div class="bz-counterparty-hero__tags">
-                <Tag Color="@("blue")">@ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)</Tag>
-                <Tag Color="@("cyan")">@ShellState.User.DisplayName</Tag>
-                <Tag Color="@("geekblue")">@CurrencyPolicyLabel</Tag>
+                <span class="bz-pill bz-pill--blue">@ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)</span>
+                <span class="bz-pill bz-pill--cyan">@ShellState.User.DisplayName</span>
+                <span class="bz-pill bz-pill--geekblue">@CurrencyPolicyLabel</span>
             </div>
         </div>
         <div class="bz-counterparty-hero__aside">
@@ -49,26 +47,34 @@
     <section class="bz-counterparty-status">
         @if (IsCompanyReadyHandOff)
         {
-            <Alert Type="@AlertType.Success" ShowIcon Message="Company-ready hand-off"
-                   Description="The first invoice and bill flow should bind to real customer and vendor truth instead of placeholder counterparties." />
+            <div class="bz-notice bz-notice--success">
+                <div class="bz-notice__title"><i class="ti ti-circle-check" aria-hidden="true"></i><span>Company-ready hand-off</span></div>
+                <div class="bz-notice__description">The first invoice and bill flow should bind to real customer and vendor truth instead of placeholder counterparties.</div>
+            </div>
         }
 
         @if (IsFocusedCreateMode)
         {
-            <Alert Type="@AlertType.Info" ShowIcon Message="Create and return"
-                   Description="Finish creating the new counterparty and we will take you back to the document you came from and select it automatically." />
+            <div class="bz-notice bz-notice--info">
+                <div class="bz-notice__title"><i class="ti ti-arrow-back-up" aria-hidden="true"></i><span>Create and return</span></div>
+                <div class="bz-notice__description">Finish creating the new counterparty and we will take you back to the document you came from and select it automatically.</div>
+            </div>
         }
 
         @if (!string.IsNullOrWhiteSpace(_error))
         {
-            <Alert Type="@AlertType.Error" ShowIcon Message="We could not finish loading this setup page"
-                   Description="@_error" />
+            <div class="bz-notice bz-notice--error">
+                <div class="bz-notice__title"><i class="ti ti-alert-circle" aria-hidden="true"></i><span>We could not finish loading this setup page</span></div>
+                <div class="bz-notice__description">@_error</div>
+            </div>
         }
 
         @if (WritesBlocked)
         {
-            <Alert Type="@AlertType.Warning" ShowIcon Message="Writes are currently blocked"
-                   Description="@ShellState.WriteBlockMessage" />
+            <div class="bz-notice bz-notice--warning">
+                <div class="bz-notice__title"><i class="ti ti-lock" aria-hidden="true"></i><span>Writes are currently blocked</span></div>
+                <div class="bz-notice__description">@ShellState.WriteBlockMessage</div>
+            </div>
         }
     </section>
 
@@ -123,8 +129,10 @@
         </section>
 
         <section class="bz-counterparty-note">
-            <Alert Type="@AlertType.Info" ShowIcon Message="Minimum viable counterparty surface"
-                   Description="Optional fields improve contact readiness, but company-scoped name truth is the real blocker for first invoice and bill activity." />
+            <div class="bz-notice bz-notice--subtle">
+                <div class="bz-notice__title"><i class="ti ti-info-circle" aria-hidden="true"></i><span>Minimum viable counterparty surface</span></div>
+                <div class="bz-notice__description">Optional fields improve contact readiness, but company-scoped name truth is the real blocker for first invoice and bill activity.</div>
+            </div>
         </section>
 
         <section class="bz-counterparty-forms @(IsFocusedCreateMode ? "bz-counterparty-forms--focused" : string.Empty)">
@@ -136,7 +144,7 @@
                             <div class="bz-editor-card__eyebrow">Customer</div>
                             <h2>@(_editingCustomerId.HasValue ? "Edit customer" : "Add customer")</h2>
                         </div>
-                        <Tag Color="@("blue")">Receivables</Tag>
+                        <span class="bz-pill bz-pill--blue">Receivables</span>
                     </div>
                     @RenderCounterpartyForm(_customer, true)
                 </article>
@@ -150,7 +158,7 @@
                             <div class="bz-editor-card__eyebrow">Vendor</div>
                             <h2>@(_editingVendorId.HasValue ? "Edit vendor" : "Add vendor")</h2>
                         </div>
-                        <Tag Color="@("purple")">Payables</Tag>
+                        <span class="bz-pill bz-pill--purple">Payables</span>
                     </div>
                     @RenderCounterpartyForm(_vendor, false)
                 </article>
@@ -166,7 +174,7 @@
                             <div class="bz-truth-card__eyebrow">Customer truth</div>
                             <h2>Managed customers</h2>
                         </div>
-                        <Tag Color="@("cyan")">@_summary.Customers.Count records</Tag>
+                        <span class="bz-pill bz-pill--cyan">@_summary.Customers.Count records</span>
                     </div>
                     @if (_summary.Customers.Count == 0)
                     {
@@ -197,14 +205,14 @@
                                             <td>@BuildContactSummary(customer)</td>
                                             <td>
                                                 <div class="bz-table-actions">
-                                                    <Button Type="@AntButtonType.Link" OnClick="@(() => EditCustomer(customer))" Disabled="@(_isSaving || WritesBlocked)">Edit</Button>
+                                                    <button type="button" class="bz-link-button" @onclick="@(() => EditCustomer(customer))" disabled="@(_isSaving || WritesBlocked)">Edit</button>
                                                     @if (customer.IsActive)
                                                     {
-                                                        <Button Type="@AntButtonType.Link" Danger="true" OnClick="@(() => SetCustomerActiveAsync(customer, false))" Disabled="@(_isSaving || WritesBlocked)">Deactivate</Button>
+                                                        <button type="button" class="bz-link-button bz-link-button--danger" @onclick="@(() => SetCustomerActiveAsync(customer, false))" disabled="@(_isSaving || WritesBlocked)">Deactivate</button>
                                                     }
                                                     else
                                                     {
-                                                        <Button Type="@AntButtonType.Link" OnClick="@(() => SetCustomerActiveAsync(customer, true))" Disabled="@(_isSaving || WritesBlocked)">Reactivate</Button>
+                                                        <button type="button" class="bz-link-button" @onclick="@(() => SetCustomerActiveAsync(customer, true))" disabled="@(_isSaving || WritesBlocked)">Reactivate</button>
                                                     }
                                                 </div>
                                             </td>
@@ -222,7 +230,7 @@
                             <div class="bz-truth-card__eyebrow">Vendor truth</div>
                             <h2>Managed vendors</h2>
                         </div>
-                        <Tag Color="@("magenta")">@_summary.Vendors.Count records</Tag>
+                        <span class="bz-pill bz-pill--magenta">@_summary.Vendors.Count records</span>
                     </div>
                     @if (_summary.Vendors.Count == 0)
                     {
@@ -253,14 +261,14 @@
                                             <td>@BuildContactSummary(vendor)</td>
                                             <td>
                                                 <div class="bz-table-actions">
-                                                    <Button Type="@AntButtonType.Link" OnClick="@(() => EditVendor(vendor))" Disabled="@(_isSaving || WritesBlocked)">Edit</Button>
+                                                    <button type="button" class="bz-link-button" @onclick="@(() => EditVendor(vendor))" disabled="@(_isSaving || WritesBlocked)">Edit</button>
                                                     @if (vendor.IsActive)
                                                     {
-                                                        <Button Type="@AntButtonType.Link" Danger="true" OnClick="@(() => SetVendorActiveAsync(vendor, false))" Disabled="@(_isSaving || WritesBlocked)">Deactivate</Button>
+                                                        <button type="button" class="bz-link-button bz-link-button--danger" @onclick="@(() => SetVendorActiveAsync(vendor, false))" disabled="@(_isSaving || WritesBlocked)">Deactivate</button>
                                                     }
                                                     else
                                                     {
-                                                        <Button Type="@AntButtonType.Link" OnClick="@(() => SetVendorActiveAsync(vendor, true))" Disabled="@(_isSaving || WritesBlocked)">Reactivate</Button>
+                                                        <button type="button" class="bz-link-button" @onclick="@(() => SetVendorActiveAsync(vendor, true))" disabled="@(_isSaving || WritesBlocked)">Reactivate</button>
                                                     }
                                                 </div>
                                             </td>
@@ -285,11 +293,11 @@
                 <div class="bz-action-card__buttons">
                     @if (IsCompanyReadyHandOff)
                     {
-                        <Button Type="@AntButtonType.Default" Href="/company/ready">Back To Company Ready</Button>
+                        <a class="bz-btn bz-btn--secondary" href="/company/ready">Back To Company Ready</a>
                     }
-                    <Button Type="@AntButtonType.Primary" Href="/documents/invoice/draft-editor?origin=company-ready">Open First Invoice</Button>
-                    <Button Type="@AntButtonType.Default" Href="/documents/bill/draft-editor?origin=company-ready">Open First Bill</Button>
-                    <Button Type="@AntButtonType.Link" Href="/">Back To Workspace</Button>
+                    <a class="bz-btn bz-btn--primary" href="/documents/invoice/draft-editor?origin=company-ready">Open First Invoice</a>
+                    <a class="bz-btn bz-btn--secondary" href="/documents/bill/draft-editor?origin=company-ready">Open First Bill</a>
+                    <a class="bz-link-button" href="/">Back To Workspace</a>
                 </div>
             </article>
 
@@ -301,12 +309,12 @@
                             <div class="bz-truth-card__eyebrow">Latest customer continuity</div>
                             <h2>@_lastCreatedCustomerName</h2>
                         </div>
-                        <Tag Color="@("green")">Ready</Tag>
+                        <span class="bz-pill bz-pill--green">Ready</span>
                     </div>
                     <p>Customer <strong>@_lastCreatedCustomerName</strong> was just created. Carry that exact counterparty straight into the first invoice flow instead of re-selecting it manually.</p>
                     <div class="bz-action-card__buttons">
-                        <Button Type="@AntButtonType.Primary" Href="@BuildInvoiceHref(_lastCreatedCustomerId)">Continue to First Invoice</Button>
-                        <Button Type="@AntButtonType.Default" Href="/ar/receive-payment?origin=company-ready">Open Receive Payment Later</Button>
+                        <a class="bz-btn bz-btn--primary" href="@BuildInvoiceHref(_lastCreatedCustomerId)">Continue to First Invoice</a>
+                        <a class="bz-btn bz-btn--secondary" href="/ar/receive-payment?origin=company-ready">Open Receive Payment Later</a>
                     </div>
                 </article>
             }
@@ -319,12 +327,12 @@
                             <div class="bz-truth-card__eyebrow">Latest vendor continuity</div>
                             <h2>@_lastCreatedVendorName</h2>
                         </div>
-                        <Tag Color="@("purple")">Ready</Tag>
+                        <span class="bz-pill bz-pill--purple">Ready</span>
                     </div>
                     <p>Vendor <strong>@_lastCreatedVendorName</strong> was just created. Carry that exact counterparty straight into the first bill flow instead of re-selecting it manually.</p>
                     <div class="bz-action-card__buttons">
-                        <Button Type="@AntButtonType.Primary" Href="@BuildBillHref(_lastCreatedVendorId)">Continue to First Bill</Button>
-                        <Button Type="@AntButtonType.Default" Href="/ap/pay-bill?origin=company-ready">Open Pay Bill Later</Button>
+                        <a class="bz-btn bz-btn--primary" href="@BuildBillHref(_lastCreatedVendorId)">Continue to First Bill</a>
+                        <a class="bz-btn bz-btn--secondary" href="/ap/pay-bill?origin=company-ready">Open Pay Bill Later</a>
                     </div>
                 </article>
             }
@@ -523,16 +531,18 @@
             }
         </div>
         <div class="bz-counterparty-form__actions">
-            <Button Type="@(isCustomer ? AntButtonType.Primary : AntButtonType.Default)"
-                    Disabled="@(_isSaving || WritesBlocked)"
-                    OnClick="@(isCustomer ? SaveCustomerAsync : SaveVendorAsync)">
+            <button type="button"
+                    class="@(isCustomer ? "bz-btn bz-btn--primary" : "bz-btn bz-btn--secondary")"
+                    disabled="@(_isSaving || WritesBlocked)"
+                    @onclick="@(isCustomer ? SaveCustomerAsync : SaveVendorAsync)">
                 @(_isSaving ? "Saving..." : isCustomer ? _editingCustomerId.HasValue ? "Save Customer" : "Add Customer" : _editingVendorId.HasValue ? "Save Vendor" : "Add Vendor")
-            </Button>
-            <Button Type="@AntButtonType.Default"
-                    Disabled="@_isSaving"
-                    OnClick="@(() => ClearEditor(editor))">
+            </button>
+            <button type="button"
+                    class="bz-btn bz-btn--ghost"
+                    disabled="@_isSaving"
+                    @onclick="@(() => ClearEditor(editor))">
                 @((isCustomer ? _editingCustomerId : _editingVendorId).HasValue ? "Cancel Edit" : "Clear")
-            </Button>
+            </button>
         </div>
     </div>;
 
