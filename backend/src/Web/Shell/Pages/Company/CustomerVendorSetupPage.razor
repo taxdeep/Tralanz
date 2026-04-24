@@ -1,5 +1,7 @@
 @page "/company/customer-vendor-setup"
 @using Web.Shell.Services
+@using AntDesign
+@using AntButtonType = AntDesign.ButtonType
 @rendermode InteractiveServer
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -10,312 +12,323 @@
 
 <PageTitle>Customer & Vendor Setup</PageTitle>
 
-<div style="padding:1.75rem;display:grid;gap:1rem;">
-    <MudPaper Elevation="0" Class="pa-5">
-        <MudStack Spacing="2">
-            <MudText Typo="Typo.overline" Class="text-secondary">Company Setup</MudText>
-            <MudText Typo="Typo.h4">@SetupPageTitle</MudText>
-            <MudText Typo="Typo.body1" Class="text-secondary">
-                @SetupPageSummary
-            </MudText>
-            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
-                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
-                    @ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)
-                </MudChip>
-                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
-                    @ShellState.User.DisplayName
-                </MudChip>
-            </MudStack>
-        </MudStack>
-    </MudPaper>
+<div class="bz-counterparty-page">
+    <section class="bz-counterparty-hero">
+        <div class="bz-counterparty-hero__content">
+            <div class="bz-counterparty-hero__eyebrow">
+                <i class="ti ti-building-store" aria-hidden="true"></i>
+                <span>Company Setup</span>
+            </div>
+            <div class="bz-counterparty-hero__heading-row">
+                <h1>@SetupPageTitle</h1>
+                @if (IsFocusedCreateMode)
+                {
+                    <span class="bz-counterparty-mode-pill">Focused create mode</span>
+                }
+            </div>
+            <p class="bz-counterparty-hero__summary">@SetupPageSummary</p>
+            <div class="bz-counterparty-hero__tags">
+                <Tag Color="@("blue")">@ShellState.ActiveCompany.CompanyName (@ShellState.ActiveCompany.CompanyCode)</Tag>
+                <Tag Color="@("cyan")">@ShellState.User.DisplayName</Tag>
+                <Tag Color="@("geekblue")">@CurrencyPolicyLabel</Tag>
+            </div>
+        </div>
+        <div class="bz-counterparty-hero__aside">
+            <div class="bz-counterparty-hero-card">
+                <div class="bz-counterparty-hero-card__label">Workflow intent</div>
+                <div class="bz-counterparty-hero-card__title">@(IsCustomerCreateIntent ? "Customer hand-off" : IsVendorCreateIntent ? "Vendor hand-off" : "Counterparty readiness")</div>
+                <p>
+                    @(IsFocusedCreateMode
+                        ? "Create the counterparty needed by the originating document, then we will return you there with the new entity already selected."
+                        : "Stand up company-scoped counterparty truth before the first receivable and payable flow begins.")
+                </p>
+            </div>
+        </div>
+    </section>
 
-    @if (IsCompanyReadyHandOff)
-    {
-        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
-            Company-ready hand-off brought you here because the first invoice and bill flow should bind to real customer and vendor truth instead of placeholder counterparties.
-        </MudAlert>
-    }
+    <section class="bz-counterparty-status">
+        @if (IsCompanyReadyHandOff)
+        {
+            <Alert Type="@AlertType.Success" ShowIcon Message="Company-ready hand-off"
+                   Description="The first invoice and bill flow should bind to real customer and vendor truth instead of placeholder counterparties." />
+        }
 
-    @if (IsFocusedCreateMode)
-    {
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-            Finish creating the new @(IsCustomerCreateIntent ? "customer" : "vendor"), then we will take you back to the document you came from and select it automatically.
-        </MudAlert>
-    }
+        @if (IsFocusedCreateMode)
+        {
+            <Alert Type="@AlertType.Info" ShowIcon Message="Create and return"
+                   Description="Finish creating the new counterparty and we will take you back to the document you came from and select it automatically." />
+        }
 
-    @if (!string.IsNullOrWhiteSpace(_error))
-    {
-        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
-            @_error
-        </MudAlert>
-    }
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <Alert Type="@AlertType.Error" ShowIcon Message="We could not finish loading this setup page"
+                   Description="@_error" />
+        }
 
-    @if (WritesBlocked)
-    {
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
-            @ShellState.WriteBlockMessage
-        </MudAlert>
-    }
+        @if (WritesBlocked)
+        {
+            <Alert Type="@AlertType.Warning" ShowIcon Message="Writes are currently blocked"
+                   Description="@ShellState.WriteBlockMessage" />
+        }
+    </section>
 
     @if (_summary is null)
     {
-        <MudPaper Elevation="0" Class="pa-5">
-            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
-        </MudPaper>
+        <section class="bz-counterparty-loading">
+            <div class="bz-counterparty-loading__bar"></div>
+            <p>Loading company counterparty truth...</p>
+        </section>
     }
     else
     {
-        <MudGrid>
-            <MudItem xs="12" md="4">
-                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
-                    <MudText Typo="Typo.caption" Class="text-secondary">Active customers</MudText>
-                    <MudText Typo="Typo.h5">@_summary.ActiveCustomers.Count</MudText>
-                    <MudText Typo="Typo.body2" Class="text-secondary">
+        <section class="bz-counterparty-metrics">
+            <article class="bz-metric-card">
+                <div class="bz-metric-card__icon bz-metric-card__icon--customer"><i class="ti ti-users" aria-hidden="true"></i></div>
+                <div>
+                    <div class="bz-metric-card__label">Active customers</div>
+                    <div class="bz-metric-card__value">@_summary.ActiveCustomers.Count</div>
+                    <p>
                         @_summary.ActiveCustomers.Count switch
                         {
                             0 => "No customer truth exists yet for the current company.",
                             1 => "The company already has one active customer and can bind the first receivable to it.",
                             _ => $"The company already has {_summary.ActiveCustomers.Count} active customers."
                         }
-                    </MudText>
-                </MudPaper>
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
-                    <MudText Typo="Typo.caption" Class="text-secondary">Active vendors</MudText>
-                    <MudText Typo="Typo.h5">@_summary.ActiveVendors.Count</MudText>
-                    <MudText Typo="Typo.body2" Class="text-secondary">
+                    </p>
+                </div>
+            </article>
+            <article class="bz-metric-card">
+                <div class="bz-metric-card__icon bz-metric-card__icon--vendor"><i class="ti ti-building-bank" aria-hidden="true"></i></div>
+                <div>
+                    <div class="bz-metric-card__label">Active vendors</div>
+                    <div class="bz-metric-card__value">@_summary.ActiveVendors.Count</div>
+                    <p>
                         @_summary.ActiveVendors.Count switch
                         {
                             0 => "No vendor truth exists yet for the current company.",
                             1 => "The company already has one active vendor and can bind the first payable to it.",
                             _ => $"The company already has {_summary.ActiveVendors.Count} active vendors."
                         }
-                    </MudText>
-                </MudPaper>
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
-                    <MudText Typo="Typo.caption" Class="text-secondary">Currency policy</MudText>
-                    <MudText Typo="Typo.h6">@CurrencyPolicyLabel</MudText>
-                    <MudText Typo="Typo.body2" Class="text-secondary">@CurrencyPolicySummary</MudText>
-                </MudPaper>
-            </MudItem>
-        </MudGrid>
+                    </p>
+                </div>
+            </article>
+            <article class="bz-metric-card">
+                <div class="bz-metric-card__icon bz-metric-card__icon--policy"><i class="ti ti-coins" aria-hidden="true"></i></div>
+                <div>
+                    <div class="bz-metric-card__label">Currency policy</div>
+                    <div class="bz-metric-card__value bz-metric-card__value--small">@CurrencyPolicyLabel</div>
+                    <p>@CurrencyPolicySummary</p>
+                </div>
+            </article>
+        </section>
 
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-            This is intentionally the minimum counterparty surface. Optional fields improve contact readiness, but company-scoped name truth is the real blocker for first invoice and bill activity.
-        </MudAlert>
+        <section class="bz-counterparty-note">
+            <Alert Type="@AlertType.Info" ShowIcon Message="Minimum viable counterparty surface"
+                   Description="Optional fields improve contact readiness, but company-scoped name truth is the real blocker for first invoice and bill activity." />
+        </section>
 
-        <MudGrid>
+        <section class="bz-counterparty-forms @(IsFocusedCreateMode ? "bz-counterparty-forms--focused" : string.Empty)">
             @if (!IsVendorCreateIntent)
             {
-                <MudItem xs="12" lg="@(IsFocusedCreateMode ? 12 : 6)">
-                    <MudPaper Elevation="0" Class="pa-5">
-                        <MudStack Spacing="2">
-                            <MudText Typo="Typo.h6">@(_editingCustomerId.HasValue ? "Edit customer" : "Add customer")</MudText>
-                            @RenderCounterpartyForm(_customer, true)
-                        </MudStack>
-                    </MudPaper>
-                </MudItem>
+                <article class="bz-editor-card">
+                    <div class="bz-editor-card__header">
+                        <div>
+                            <div class="bz-editor-card__eyebrow">Customer</div>
+                            <h2>@(_editingCustomerId.HasValue ? "Edit customer" : "Add customer")</h2>
+                        </div>
+                        <Tag Color="@("blue")">Receivables</Tag>
+                    </div>
+                    @RenderCounterpartyForm(_customer, true)
+                </article>
             }
 
             @if (!IsCustomerCreateIntent)
             {
-                <MudItem xs="12" lg="@(IsFocusedCreateMode ? 12 : 6)">
-                    <MudPaper Elevation="0" Class="pa-5">
-                        <MudStack Spacing="2">
-                            <MudText Typo="Typo.h6">@(_editingVendorId.HasValue ? "Edit vendor" : "Add vendor")</MudText>
-                            @RenderCounterpartyForm(_vendor, false)
-                        </MudStack>
-                    </MudPaper>
-                </MudItem>
+                <article class="bz-editor-card">
+                    <div class="bz-editor-card__header">
+                        <div>
+                            <div class="bz-editor-card__eyebrow">Vendor</div>
+                            <h2>@(_editingVendorId.HasValue ? "Edit vendor" : "Add vendor")</h2>
+                        </div>
+                        <Tag Color="@("purple")">Payables</Tag>
+                    </div>
+                    @RenderCounterpartyForm(_vendor, false)
+                </article>
             }
-        </MudGrid>
+        </section>
 
         @if (!IsFocusedCreateMode)
         {
-            <MudGrid>
-                <MudItem xs="12" lg="6">
-                    <MudPaper Elevation="0" Class="pa-5">
-                        <MudText Typo="Typo.h6" Class="mb-3">Customer truth</MudText>
-                        @if (_summary.Customers.Count == 0)
-                        {
-                            <MudText Typo="Typo.body2" Class="text-secondary">No customer truth exists yet.</MudText>
-                        }
-                        else
-                        {
-                            <MudTable Items="_summary.Customers" Dense="true" Hover="true" Bordered="true">
-                                <HeaderContent>
-                                    <MudTh>Name</MudTh>
-                                    <MudTh>Entity #</MudTh>
-                                    <MudTh>Currency</MudTh>
-                                    <MudTh>Status</MudTh>
-                                    <MudTh>Contact</MudTh>
-                                    <MudTh>Actions</MudTh>
-                                </HeaderContent>
-                                <RowTemplate>
-                                    <MudTd>@context.DisplayName</MudTd>
-                                    <MudTd>@context.EntityNumber</MudTd>
-                                    <MudTd>@context.DefaultCurrencyCode</MudTd>
-                                    <MudTd>@GetStatusLabel(context)</MudTd>
-                                    <MudTd>@BuildContactSummary(context)</MudTd>
-                                    <MudTd>
-                                        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                                            <MudButton Variant="Variant.Text"
-                                                       Size="Size.Small"
-                                                       Color="Color.Primary"
-                                                       Disabled="@(_isSaving || WritesBlocked)"
-                                                       OnClick="@(() => EditCustomer(context))">
-                                                Edit
-                                            </MudButton>
-                                            @if (context.IsActive)
-                                            {
-                                                <MudButton Variant="Variant.Text"
-                                                           Size="Size.Small"
-                                                           Color="Color.Warning"
-                                                           Disabled="@(_isSaving || WritesBlocked)"
-                                                           OnClick="@(() => SetCustomerActiveAsync(context, false))">
-                                                    Deactivate
-                                                </MudButton>
-                                            }
-                                            else
-                                            {
-                                                <MudButton Variant="Variant.Text"
-                                                           Size="Size.Small"
-                                                           Color="Color.Success"
-                                                           Disabled="@(_isSaving || WritesBlocked)"
-                                                           OnClick="@(() => SetCustomerActiveAsync(context, true))">
-                                                    Reactivate
-                                                </MudButton>
-                                            }
-                                        </div>
-                                    </MudTd>
-                                </RowTemplate>
-                            </MudTable>
-                        }
-                    </MudPaper>
-                </MudItem>
+            <section class="bz-counterparty-truth-grid">
+                <article class="bz-truth-card">
+                    <div class="bz-truth-card__header">
+                        <div>
+                            <div class="bz-truth-card__eyebrow">Customer truth</div>
+                            <h2>Managed customers</h2>
+                        </div>
+                        <Tag Color="@("cyan")">@_summary.Customers.Count records</Tag>
+                    </div>
+                    @if (_summary.Customers.Count == 0)
+                    {
+                        <div class="bz-empty-state">No customer truth exists yet.</div>
+                    }
+                    else
+                    {
+                        <div class="bz-table-wrap">
+                            <table class="bz-data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Entity #</th>
+                                        <th>Currency</th>
+                                        <th>Status</th>
+                                        <th>Contact</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var customer in _summary.Customers)
+                                    {
+                                        <tr>
+                                            <td>@customer.DisplayName</td>
+                                            <td>@customer.EntityNumber</td>
+                                            <td>@customer.DefaultCurrencyCode</td>
+                                            <td>@GetStatusLabel(customer)</td>
+                                            <td>@BuildContactSummary(customer)</td>
+                                            <td>
+                                                <div class="bz-table-actions">
+                                                    <Button Type="@AntButtonType.Link" OnClick="@(() => EditCustomer(customer))" Disabled="@(_isSaving || WritesBlocked)">Edit</Button>
+                                                    @if (customer.IsActive)
+                                                    {
+                                                        <Button Type="@AntButtonType.Link" Danger="true" OnClick="@(() => SetCustomerActiveAsync(customer, false))" Disabled="@(_isSaving || WritesBlocked)">Deactivate</Button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <Button Type="@AntButtonType.Link" OnClick="@(() => SetCustomerActiveAsync(customer, true))" Disabled="@(_isSaving || WritesBlocked)">Reactivate</Button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </article>
 
-                <MudItem xs="12" lg="6">
-                    <MudPaper Elevation="0" Class="pa-5">
-                        <MudText Typo="Typo.h6" Class="mb-3">Vendor truth</MudText>
-                        @if (_summary.Vendors.Count == 0)
-                        {
-                            <MudText Typo="Typo.body2" Class="text-secondary">No vendor truth exists yet.</MudText>
-                        }
-                        else
-                        {
-                            <MudTable Items="_summary.Vendors" Dense="true" Hover="true" Bordered="true">
-                                <HeaderContent>
-                                    <MudTh>Name</MudTh>
-                                    <MudTh>Entity #</MudTh>
-                                    <MudTh>Currency</MudTh>
-                                    <MudTh>Status</MudTh>
-                                    <MudTh>Contact</MudTh>
-                                    <MudTh>Actions</MudTh>
-                                </HeaderContent>
-                                <RowTemplate>
-                                    <MudTd>@context.DisplayName</MudTd>
-                                    <MudTd>@context.EntityNumber</MudTd>
-                                    <MudTd>@context.DefaultCurrencyCode</MudTd>
-                                    <MudTd>@GetStatusLabel(context)</MudTd>
-                                    <MudTd>@BuildContactSummary(context)</MudTd>
-                                    <MudTd>
-                                        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                                            <MudButton Variant="Variant.Text"
-                                                       Size="Size.Small"
-                                                       Color="Color.Primary"
-                                                       Disabled="@(_isSaving || WritesBlocked)"
-                                                       OnClick="@(() => EditVendor(context))">
-                                                Edit
-                                            </MudButton>
-                                            @if (context.IsActive)
-                                            {
-                                                <MudButton Variant="Variant.Text"
-                                                           Size="Size.Small"
-                                                           Color="Color.Warning"
-                                                           Disabled="@(_isSaving || WritesBlocked)"
-                                                           OnClick="@(() => SetVendorActiveAsync(context, false))">
-                                                    Deactivate
-                                                </MudButton>
-                                            }
-                                            else
-                                            {
-                                                <MudButton Variant="Variant.Text"
-                                                           Size="Size.Small"
-                                                           Color="Color.Success"
-                                                           Disabled="@(_isSaving || WritesBlocked)"
-                                                           OnClick="@(() => SetVendorActiveAsync(context, true))">
-                                                    Reactivate
-                                                </MudButton>
-                                            }
-                                        </div>
-                                    </MudTd>
-                                </RowTemplate>
-                            </MudTable>
-                        }
-                    </MudPaper>
-                </MudItem>
-            </MudGrid>
+                <article class="bz-truth-card">
+                    <div class="bz-truth-card__header">
+                        <div>
+                            <div class="bz-truth-card__eyebrow">Vendor truth</div>
+                            <h2>Managed vendors</h2>
+                        </div>
+                        <Tag Color="@("magenta")">@_summary.Vendors.Count records</Tag>
+                    </div>
+                    @if (_summary.Vendors.Count == 0)
+                    {
+                        <div class="bz-empty-state">No vendor truth exists yet.</div>
+                    }
+                    else
+                    {
+                        <div class="bz-table-wrap">
+                            <table class="bz-data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Entity #</th>
+                                        <th>Currency</th>
+                                        <th>Status</th>
+                                        <th>Contact</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var vendor in _summary.Vendors)
+                                    {
+                                        <tr>
+                                            <td>@vendor.DisplayName</td>
+                                            <td>@vendor.EntityNumber</td>
+                                            <td>@vendor.DefaultCurrencyCode</td>
+                                            <td>@GetStatusLabel(vendor)</td>
+                                            <td>@BuildContactSummary(vendor)</td>
+                                            <td>
+                                                <div class="bz-table-actions">
+                                                    <Button Type="@AntButtonType.Link" OnClick="@(() => EditVendor(vendor))" Disabled="@(_isSaving || WritesBlocked)">Edit</Button>
+                                                    @if (vendor.IsActive)
+                                                    {
+                                                        <Button Type="@AntButtonType.Link" Danger="true" OnClick="@(() => SetVendorActiveAsync(vendor, false))" Disabled="@(_isSaving || WritesBlocked)">Deactivate</Button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <Button Type="@AntButtonType.Link" OnClick="@(() => SetVendorActiveAsync(vendor, true))" Disabled="@(_isSaving || WritesBlocked)">Reactivate</Button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </article>
+            </section>
         }
 
-        <MudPaper Elevation="0" Class="pa-5">
-            <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
-            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-                @if (IsCompanyReadyHandOff)
-                {
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/ready">
-                        Back To Company Ready
-                    </MudButton>
-                }
-                <MudButton Variant="Variant.Filled" Color="Color.Success" Href="/documents/invoice/draft-editor?origin=company-ready">
-                    Open First Invoice
-                </MudButton>
-                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/bill/draft-editor?origin=company-ready">
-                    Open First Bill
-                </MudButton>
-                <MudButton Variant="Variant.Text" Color="Color.Default" Href="/">
-                    Back To Workspace
-                </MudButton>
-            </MudStack>
-        </MudPaper>
+        <section class="bz-counterparty-actions-grid">
+            <article class="bz-action-card">
+                <div class="bz-truth-card__header">
+                    <div>
+                        <div class="bz-truth-card__eyebrow">Next workspaces</div>
+                        <h2>Continue the workflow</h2>
+                    </div>
+                </div>
+                <div class="bz-action-card__buttons">
+                    @if (IsCompanyReadyHandOff)
+                    {
+                        <Button Type="@AntButtonType.Default" Href="/company/ready">Back To Company Ready</Button>
+                    }
+                    <Button Type="@AntButtonType.Primary" Href="/documents/invoice/draft-editor?origin=company-ready">Open First Invoice</Button>
+                    <Button Type="@AntButtonType.Default" Href="/documents/bill/draft-editor?origin=company-ready">Open First Bill</Button>
+                    <Button Type="@AntButtonType.Link" Href="/">Back To Workspace</Button>
+                </div>
+            </article>
 
-        @if (_lastCreatedCustomerId.HasValue)
-        {
-            <MudPaper Elevation="0" Class="pa-5">
-                <MudText Typo="Typo.h6" Class="mb-2">Latest customer continuity</MudText>
-                <MudText Typo="Typo.body2" Class="mb-3">
-                    Customer <strong>@_lastCreatedCustomerName</strong> was just created. Carry that exact counterparty straight into the first invoice flow instead of re-selecting it manually.
-                </MudText>
-                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-                    <MudButton Variant="Variant.Filled" Color="Color.Success" Href="@BuildInvoiceHref(_lastCreatedCustomerId)">
-                        Continue to First Invoice
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/ar/receive-payment?origin=company-ready">
-                        Open Receive Payment Later
-                    </MudButton>
-                </MudStack>
-            </MudPaper>
-        }
+            @if (_lastCreatedCustomerId.HasValue)
+            {
+                <article class="bz-action-card">
+                    <div class="bz-truth-card__header">
+                        <div>
+                            <div class="bz-truth-card__eyebrow">Latest customer continuity</div>
+                            <h2>@_lastCreatedCustomerName</h2>
+                        </div>
+                        <Tag Color="@("green")">Ready</Tag>
+                    </div>
+                    <p>Customer <strong>@_lastCreatedCustomerName</strong> was just created. Carry that exact counterparty straight into the first invoice flow instead of re-selecting it manually.</p>
+                    <div class="bz-action-card__buttons">
+                        <Button Type="@AntButtonType.Primary" Href="@BuildInvoiceHref(_lastCreatedCustomerId)">Continue to First Invoice</Button>
+                        <Button Type="@AntButtonType.Default" Href="/ar/receive-payment?origin=company-ready">Open Receive Payment Later</Button>
+                    </div>
+                </article>
+            }
 
-        @if (_lastCreatedVendorId.HasValue)
-        {
-            <MudPaper Elevation="0" Class="pa-5">
-                <MudText Typo="Typo.h6" Class="mb-2">Latest vendor continuity</MudText>
-                <MudText Typo="Typo.body2" Class="mb-3">
-                    Vendor <strong>@_lastCreatedVendorName</strong> was just created. Carry that exact counterparty straight into the first bill flow instead of re-selecting it manually.
-                </MudText>
-                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-                    <MudButton Variant="Variant.Filled" Color="Color.Info" Href="@BuildBillHref(_lastCreatedVendorId)">
-                        Continue to First Bill
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/ap/pay-bill?origin=company-ready">
-                        Open Pay Bill Later
-                    </MudButton>
-                </MudStack>
-            </MudPaper>
-        }
+            @if (_lastCreatedVendorId.HasValue)
+            {
+                <article class="bz-action-card">
+                    <div class="bz-truth-card__header">
+                        <div>
+                            <div class="bz-truth-card__eyebrow">Latest vendor continuity</div>
+                            <h2>@_lastCreatedVendorName</h2>
+                        </div>
+                        <Tag Color="@("purple")">Ready</Tag>
+                    </div>
+                    <p>Vendor <strong>@_lastCreatedVendorName</strong> was just created. Carry that exact counterparty straight into the first bill flow instead of re-selecting it manually.</p>
+                    <div class="bz-action-card__buttons">
+                        <Button Type="@AntButtonType.Primary" Href="@BuildBillHref(_lastCreatedVendorId)">Continue to First Bill</Button>
+                        <Button Type="@AntButtonType.Default" Href="/ap/pay-bill?origin=company-ready">Open Pay Bill Later</Button>
+                    </div>
+                </article>
+            }
+        </section>
     }
 </div>
 
@@ -448,101 +461,58 @@
         }
     }
 
-    private RenderFragment RenderCounterpartyForm(CounterpartyEditorState editor, bool isCustomer) => @<div>
-        <MudGrid>
-            <MudItem xs="12">
-                <MudTextField T="string"
-                              Label="Company name"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.DisplayName" />
-            </MudItem>
-            <MudItem xs="12" md="6">
+    private RenderFragment RenderCounterpartyForm(CounterpartyEditorState editor, bool isCustomer) => @<div class="bz-counterparty-form">
+        <div class="bz-counterparty-form__grid">
+            <div class="bz-field bz-field--span-12">
+                <label>Company name</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.DisplayName" />
+            </div>
+            <div class="bz-field bz-field--span-6">
+                <label>Currency</label>
                 @if (_summary?.MultiCurrencyEnabled == true)
                 {
-                    <MudSelect T="string"
-                               Label="Currency"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense"
-                               Disabled="@(_isSaving || WritesBlocked)"
-                               @bind-Value="editor.CurrencyCode">
+                    <select disabled="@(_isSaving || WritesBlocked)" @bind="editor.CurrencyCode">
                         @foreach (var currency in _summary.EnabledCurrencies)
                         {
-                            <MudSelectItem T="string" Value="@currency.Code">
-                                @currency.DisplayLabel
-                            </MudSelectItem>
+                            <option value="@currency.Code">@currency.DisplayLabel</option>
                         }
-                    </MudSelect>
+                    </select>
                 }
                 else
                 {
-                    <MudTextField T="string"
-                                  Label="Currency"
-                                  Variant="Variant.Outlined"
-                                  Margin="Margin.Dense"
-                                  Disabled="true"
-                                  Value="@(_summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)" />
+                    <input disabled="true" value="@(_summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)" />
                 }
-            </MudItem>
-            <MudItem xs="12" md="6">
-                <MudTextField T="string"
-                              Label="Email"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.Email" />
-            </MudItem>
-            <MudItem xs="12" md="6">
-                <MudTextField T="string"
-                              Label="Phone"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.Phone" />
-            </MudItem>
-            <MudItem xs="12" md="6">
-                <MudTextField T="string"
-                              Label="Address line"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.AddressLine" />
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudTextField T="string"
-                              Label="City"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.City" />
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudTextField T="string"
-                              Label="Province / State"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.ProvinceOrState" />
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudTextField T="string"
-                              Label="Postal code"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.PostalCode" />
-            </MudItem>
-            <MudItem xs="12">
-                <MudTextField T="string"
-                              Label="Country"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Disabled="@(_isSaving || WritesBlocked)"
-                              @bind-Value="editor.Country" />
-            </MudItem>
-        </MudGrid>
-        <MudText Typo="Typo.body2" Class="text-secondary">
+            </div>
+            <div class="bz-field bz-field--span-6">
+                <label>Email</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.Email" />
+            </div>
+            <div class="bz-field bz-field--span-6">
+                <label>Phone</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.Phone" />
+            </div>
+            <div class="bz-field bz-field--span-6">
+                <label>Address line</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.AddressLine" />
+            </div>
+            <div class="bz-field bz-field--span-4">
+                <label>City</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.City" />
+            </div>
+            <div class="bz-field bz-field--span-4">
+                <label>Province / State</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.ProvinceOrState" />
+            </div>
+            <div class="bz-field bz-field--span-4">
+                <label>Postal code</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.PostalCode" />
+            </div>
+            <div class="bz-field bz-field--span-12">
+                <label>Country</label>
+                <input disabled="@(_isSaving || WritesBlocked)" @bind="editor.Country" />
+            </div>
+        </div>
+        <div class="bz-counterparty-form__hint">
             @if (_summary?.MultiCurrencyEnabled == true)
             {
                 <span>Because multi-currency is enabled, this @((isCustomer ? "customer" : "vendor")) must choose one enabled company currency.</span>
@@ -551,21 +521,19 @@
             {
                 <span>This company currently operates in the base currency only, so new @((isCustomer ? "customers" : "vendors")) inherit @_summary?.BaseCurrencyCode automatically.</span>
             }
-        </MudText>
-        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-            <MudButton Variant="Variant.Filled"
-                       Color="@(isCustomer ? Color.Success : Color.Info)"
-                       Disabled="@(_isSaving || WritesBlocked)"
-                       OnClick="@(isCustomer ? SaveCustomerAsync : SaveVendorAsync)">
+        </div>
+        <div class="bz-counterparty-form__actions">
+            <Button Type="@(isCustomer ? AntButtonType.Primary : AntButtonType.Default)"
+                    Disabled="@(_isSaving || WritesBlocked)"
+                    OnClick="@(isCustomer ? SaveCustomerAsync : SaveVendorAsync)">
                 @(_isSaving ? "Saving..." : isCustomer ? _editingCustomerId.HasValue ? "Save Customer" : "Add Customer" : _editingVendorId.HasValue ? "Save Vendor" : "Add Vendor")
-            </MudButton>
-            <MudButton Variant="Variant.Text"
-                       Color="Color.Default"
-                       Disabled="@(_isSaving)"
-                       OnClick="@(() => ClearEditor(editor))">
+            </Button>
+            <Button Type="@AntButtonType.Default"
+                    Disabled="@_isSaving"
+                    OnClick="@(() => ClearEditor(editor))">
                 @((isCustomer ? _editingCustomerId : _editingVendorId).HasValue ? "Cancel Edit" : "Clear")
-            </MudButton>
-        </MudStack>
+            </Button>
+        </div>
     </div>;
 
     private async Task SaveCustomerAsync()
