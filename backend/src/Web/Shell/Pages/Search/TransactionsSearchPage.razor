@@ -108,6 +108,35 @@
             </div>
         </section>
     }
+
+    @if (string.IsNullOrWhiteSpace(_searchText) && _recentSelections.Count > 0)
+    {
+        <section class="unity-transactions__recent">
+            <div class="unity-transactions__group-header">
+                <h2>Recently opened</h2>
+                <span>@_recentSelections.Count item(s)</span>
+            </div>
+            <div class="unity-transactions__cards">
+                @foreach (var recentSelection in _recentSelections)
+                {
+                    <button type="button"
+                            class="unity-transactions__card"
+                            @onclick="@(() => NavigateToRecentSelectionAsync(recentSelection))">
+                        <div class="unity-transactions__card-primary">@recentSelection.PrimaryText</div>
+                        @if (!string.IsNullOrWhiteSpace(recentSelection.SecondaryText))
+                        {
+                            <div class="unity-transactions__card-secondary">@recentSelection.SecondaryText</div>
+                        }
+                        <div class="unity-transactions__card-meta">
+                            <span>@recentSelection.EntityType.Replace('_', ' ')</span>
+                            <span>@recentSelection.ClickCount click(s)</span>
+                            <span>@recentSelection.LastClickedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                        </div>
+                    </button>
+                }
+            </div>
+        </section>
+    }
 </section>
 
 @code
@@ -119,6 +148,7 @@
     private bool _isLoading;
     private UnitySearchResult? _result;
     private IReadOnlyList<UnitySearchRecentQueryRecord> _recentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+    private IReadOnlyList<UnitySearchRecentSelectionRecord> _recentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -138,6 +168,11 @@
                 ShellState.CurrentUserId,
                 SearchScopeContext.GlobalTransactions,
                 10);
+            _recentSelections = await SearchClient.ListRecentSelectionsAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                SearchScopeContext.GlobalTransactions,
+                8);
             return;
         }
 
@@ -169,6 +204,7 @@
                 _searchText,
                 30);
             _recentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+            _recentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
         }
         finally
         {
@@ -192,5 +228,16 @@
         _searchText = queryText;
         Navigation.NavigateTo($"/transactions?q={Uri.EscapeDataString(queryText)}");
         await Task.CompletedTask;
+    }
+
+    private async Task NavigateToRecentSelectionAsync(UnitySearchRecentSelectionRecord selection)
+    {
+        await SearchClient.RecordClickAsync(
+            ShellState.ActiveCompany.Id,
+            ShellState.CurrentUserId,
+            SearchScopeContext.GlobalTransactions,
+            selection.EntityType,
+            selection.SourceId);
+        Navigation.NavigateTo(selection.NavigationHref);
     }
 }

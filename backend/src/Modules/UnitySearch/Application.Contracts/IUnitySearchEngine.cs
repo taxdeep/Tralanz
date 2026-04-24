@@ -11,6 +11,13 @@ public interface IUnitySearchEngine
         int take,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
+        Guid companyId,
+        Guid userId,
+        string context,
+        int take,
+        CancellationToken cancellationToken);
+
     Task RecordClickAsync(
         Guid companyId,
         Guid userId,

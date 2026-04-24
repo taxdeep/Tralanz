@@ -22,12 +22,21 @@ public sealed class UnitySearchEngine(
                     Math.Clamp(query.Take, 1, 10),
                     cancellationToken)
                 : Array.Empty<UnitySearchRecentQueryRecord>();
+            var recentSelections = query.UserId.HasValue
+                ? await ListRecentSelectionsAsync(
+                    query.CompanyId,
+                    query.UserId.Value,
+                    query.Context,
+                    Math.Clamp(query.Take, 1, 8),
+                    cancellationToken)
+                : Array.Empty<UnitySearchRecentSelectionRecord>();
 
             return new UnitySearchResult
             {
                 QueryText = string.Empty,
                 Context = query.Context,
-                RecentQueries = recentQueries
+                RecentQueries = recentQueries,
+                RecentSelections = recentSelections
             };
         }
 
@@ -81,6 +90,17 @@ public sealed class UnitySearchEngine(
         int take,
         CancellationToken cancellationToken) =>
         statsStore.ListRecentQueriesAsync(companyId, userId, context, take, cancellationToken);
+
+    public async Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
+        Guid companyId,
+        Guid userId,
+        string context,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        await projectionStore.EnsureProjectionFreshAsync(companyId, cancellationToken);
+        return await statsStore.ListRecentSelectionsAsync(companyId, userId, context, take, cancellationToken);
+    }
 
     public Task RecordClickAsync(
         Guid companyId,

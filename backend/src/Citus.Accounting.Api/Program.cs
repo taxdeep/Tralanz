@@ -2999,6 +2999,30 @@ accounting.MapGet(
         return Results.Ok(results);
     });
 
+accounting.MapGet(
+    "/unity-search/recent-selections",
+    async (
+        [AsParameters] UnitySearchRecentHttpQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IUnitySearchEngine engine,
+        CancellationToken cancellationToken) =>
+    {
+        var userId = query.UserId ?? sessionAccessor.Current?.UserId;
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Results.Ok(Array.Empty<UnitySearchRecentSelectionRecord>());
+        }
+
+        var results = await engine.ListRecentSelectionsAsync(
+            query.CompanyId,
+            userId.Value,
+            string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
+            query.Take ?? 8,
+            cancellationToken);
+
+        return Results.Ok(results);
+    });
+
 accounting.MapPost(
     "/unity-search/clicks",
     async (

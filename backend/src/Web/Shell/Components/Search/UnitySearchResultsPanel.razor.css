@@ -33,6 +33,23 @@
     gap: 0.45rem;
 }
 
+.unity-search-panel__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.unity-search-panel__chip {
+    border: 1px solid rgba(122, 182, 217, 0.18);
+    border-radius: 999px;
+    background: rgba(12, 18, 25, 0.72);
+    color: #d9e2ea;
+    padding: 0.5rem 0.78rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .unity-search-panel__item {
     border: 0;
     border-radius: 14px;
@@ -58,4 +75,9 @@
 .unity-search-panel__secondary {
     font-size: 0.78rem;
     color: #97a8b7;
+}
+
+.unity-search-panel__meta {
+    font-size: 0.73rem;
+    color: #7ab6d9;
 }

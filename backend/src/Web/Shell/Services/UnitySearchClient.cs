@@ -72,6 +72,33 @@ public sealed class UnitySearchClient(HttpClient httpClient, ILogger<UnitySearch
         return Array.Empty<UnitySearchRecentQueryRecord>();
     }
 
+    public async Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
+        Guid companyId,
+        Guid userId,
+        string context,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var requestUri =
+            $"accounting/unity-search/recent-selections?companyId={companyId:D}&context={Uri.EscapeDataString(context)}&userId={userId:D}&take={Math.Clamp(take, 1, 20)}";
+
+        try
+        {
+            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<IReadOnlyList<UnitySearchRecentSelectionRecord>>(cancellationToken)
+                    ?? Array.Empty<UnitySearchRecentSelectionRecord>();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "UnitySearch recent selection lookup failed for {Context}.", context);
+        }
+
+        return Array.Empty<UnitySearchRecentSelectionRecord>();
+    }
+
     public async Task RecordClickAsync(
         Guid companyId,
         Guid userId,

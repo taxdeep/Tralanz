@@ -10,5 +10,7 @@ public sealed record class UnitySearchResult
 
     public IReadOnlyList<UnitySearchRecentQueryRecord> RecentQueries { get; init; } = Array.Empty<UnitySearchRecentQueryRecord>();
 
+    public IReadOnlyList<UnitySearchRecentSelectionRecord> RecentSelections { get; init; } = Array.Empty<UnitySearchRecentSelectionRecord>();
+
     public int TotalCount { get; init; }
 }

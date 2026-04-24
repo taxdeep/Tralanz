@@ -48,6 +48,64 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         return items;
     }
 
+    public async Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
+        Guid companyId,
+        Guid userId,
+        string context,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+        var items = new List<UnitySearchRecentSelectionRecord>();
+
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              stats.entity_type,
+              stats.source_id,
+              doc.group_key,
+              doc.primary_text,
+              doc.secondary_text,
+              doc.navigation_href,
+              stats.click_count,
+              stats.last_clicked_at_utc
+            from search_click_stats stats
+            join search_documents doc
+              on doc.company_id = stats.company_id
+             and doc.entity_type = stats.entity_type
+             and doc.source_id = stats.source_id
+            where stats.company_id = @company_id
+              and stats.user_id = @user_id
+              and stats.context = @context
+            order by stats.last_clicked_at_utc desc, stats.click_count desc
+            limit @take;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("context", context);
+        command.Parameters.AddWithValue("take", Math.Clamp(take, 1, 20));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new UnitySearchRecentSelectionRecord
+            {
+                EntityType = reader.GetString(reader.GetOrdinal("entity_type")),
+                SourceId = reader.GetGuid(reader.GetOrdinal("source_id")),
+                GroupKey = reader.GetString(reader.GetOrdinal("group_key")),
+                PrimaryText = reader.GetString(reader.GetOrdinal("primary_text")),
+                SecondaryText = reader.GetString(reader.GetOrdinal("secondary_text")),
+                NavigationHref = reader.GetString(reader.GetOrdinal("navigation_href")),
+                ClickCount = reader.GetInt32(reader.GetOrdinal("click_count")),
+                LastClickedAtUtc = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_clicked_at_utc"))
+            });
+        }
+
+        return items;
+    }
+
     public async Task RecordQueryAsync(
         Guid companyId,
         Guid userId,

@@ -58,12 +58,19 @@ else
                        placeholder="Search transactions, contacts, products..."
                        value="@_shellSearchTerm"
                        @oninput="OnShellSearchInputAsync"
+                       @onfocus="HandleTopbarSearchFocusAsync"
+                       @onblur="HandleTopbarSearchBlurAsync"
                        aria-label="Search workspace" />
                 <span class="bz-shell__search-shortcut" aria-hidden="true">UnitySearch</span>
 
-                @if ((_shellSearchGroups?.Count ?? 0) > 0)
+                @if (_showTopbarSearchPanel && ((_shellSearchGroups?.Count ?? 0) > 0 || (_shellRecentQueries?.Count ?? 0) > 0 || (_shellRecentSelections?.Count ?? 0) > 0))
                 {
-                    <UnitySearchResultsPanel Groups="_shellSearchGroups" OnItemSelected="HandleTopbarSuggestionSelectedAsync" />
+                    <UnitySearchResultsPanel Groups="_shellSearchGroups"
+                                             RecentQueries="_shellRecentQueries"
+                                             RecentSelections="_shellRecentSelections"
+                                             OnItemSelected="HandleTopbarSuggestionSelectedAsync"
+                                             OnRecentQuerySelected="HandleTopbarRecentQuerySelectedAsync"
+                                             OnRecentSelectionSelected="HandleTopbarRecentSelectionSelectedAsync" />
                 }
             </form>
 
@@ -137,7 +144,11 @@ else
     private bool _isShellReady;
     private string _shellSearchTerm = string.Empty;
     private IReadOnlyList<UnitySearchGroupResult> _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+    private IReadOnlyList<UnitySearchRecentQueryRecord> _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+    private IReadOnlyList<UnitySearchRecentSelectionRecord> _shellRecentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
     private CancellationTokenSource? _searchDebounceCts;
+    private CancellationTokenSource? _searchPanelBlurCts;
+    private bool _showTopbarSearchPanel;
 
     private bool IsLoginRoute =>
         NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
@@ -217,13 +228,69 @@ else
         if (string.IsNullOrWhiteSpace(term))
         {
             _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            _showTopbarSearchPanel = false;
             NavigationManager.NavigateTo("/transactions");
             return Task.CompletedTask;
         }
 
         _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+        _showTopbarSearchPanel = false;
         NavigationManager.NavigateTo($"/transactions?q={Uri.EscapeDataString(term)}");
         return Task.CompletedTask;
+    }
+
+    private async Task HandleTopbarSearchFocusAsync(FocusEventArgs _)
+    {
+        _searchPanelBlurCts?.Cancel();
+        _searchPanelBlurCts?.Dispose();
+        _searchPanelBlurCts = null;
+        _showTopbarSearchPanel = true;
+
+        if (!ShellState.IsAuthenticated || ShellState.ActiveCompany.Id == Guid.Empty || ShellState.CurrentUserId == Guid.Empty)
+        {
+            _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+            _shellRecentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_shellSearchTerm.Trim()))
+        {
+            return;
+        }
+
+        _shellRecentQueries = await UnitySearchClient.ListRecentQueriesAsync(
+            ShellState.ActiveCompany.Id,
+            ShellState.CurrentUserId,
+            SearchScopeContext.GlobalTopbar,
+            6);
+        _shellRecentSelections = await UnitySearchClient.ListRecentSelectionsAsync(
+            ShellState.ActiveCompany.Id,
+            ShellState.CurrentUserId,
+            SearchScopeContext.GlobalTopbar,
+            6);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleTopbarSearchBlurAsync(FocusEventArgs _)
+    {
+        _searchPanelBlurCts?.Cancel();
+        _searchPanelBlurCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchPanelBlurCts = cts;
+
+        try
+        {
+            await Task.Delay(160, cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                _showTopbarSearchPanel = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task OnShellSearchInputAsync(ChangeEventArgs args)
@@ -231,10 +298,13 @@ else
         _shellSearchTerm = args.Value?.ToString() ?? string.Empty;
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+        _showTopbarSearchPanel = true;
 
         if (!ShellState.IsAuthenticated || ShellState.ActiveCompany.Id == Guid.Empty)
         {
             _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+            _shellRecentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
             return;
         }
 
@@ -242,6 +312,19 @@ else
         if (trimmed.Length < 2)
         {
             _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            if (ShellState.CurrentUserId != Guid.Empty)
+            {
+                _shellRecentQueries = await UnitySearchClient.ListRecentQueriesAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    SearchScopeContext.GlobalTopbar,
+                    6);
+                _shellRecentSelections = await UnitySearchClient.ListRecentSelectionsAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    SearchScopeContext.GlobalTopbar,
+                    6);
+            }
             StateHasChanged();
             return;
         }
@@ -262,6 +345,8 @@ else
             if (!cts.IsCancellationRequested)
             {
                 _shellSearchGroups = result.Groups;
+                _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+                _shellRecentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -279,6 +364,9 @@ else
     private async Task HandleTopbarSuggestionSelectedAsync(UnitySearchSuggestion suggestion)
     {
         _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+        _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+        _shellRecentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
+        _showTopbarSearchPanel = false;
         if (ShellState.IsAuthenticated && ShellState.ActiveCompany.Id != Guid.Empty)
         {
             await UnitySearchClient.RecordClickAsync(
@@ -292,9 +380,39 @@ else
         NavigationManager.NavigateTo(suggestion.NavigationHref);
     }
 
+    private Task HandleTopbarRecentQuerySelectedAsync(string queryText)
+    {
+        _shellSearchTerm = queryText;
+        _showTopbarSearchPanel = false;
+        NavigationManager.NavigateTo($"/transactions?q={Uri.EscapeDataString(queryText)}");
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleTopbarRecentSelectionSelectedAsync(UnitySearchRecentSelectionRecord selection)
+    {
+        _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+        _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+        _shellRecentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
+        _showTopbarSearchPanel = false;
+
+        if (ShellState.IsAuthenticated && ShellState.ActiveCompany.Id != Guid.Empty && ShellState.CurrentUserId != Guid.Empty)
+        {
+            await UnitySearchClient.RecordClickAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                SearchScopeContext.GlobalTopbar,
+                selection.EntityType,
+                selection.SourceId);
+        }
+
+        NavigationManager.NavigateTo(selection.NavigationHref);
+    }
+
     public void Dispose()
     {
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+        _searchPanelBlurCts?.Cancel();
+        _searchPanelBlurCts?.Dispose();
     }
 }
