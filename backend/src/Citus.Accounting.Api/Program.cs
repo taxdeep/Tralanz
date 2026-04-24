@@ -15,6 +15,8 @@ using Citus.Ui.Shared.Shell;
 using Citus.Accounting.Infrastructure.Fx;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
+using Citus.Modules.UnitySearch.Application;
+using Citus.Modules.UnitySearch.Application.Contracts;
 using Citus.Modules.Inventory.Application.Contracts;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Company;
@@ -22,6 +24,7 @@ using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
+using Infrastructure.PostgreSQL.UnitySearch;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.SessionContext;
 using Modules.Company.MultiBook;
@@ -130,6 +133,11 @@ builder.Services.AddScoped<PrepareFxRevaluationUnwindBatchCommandHandler>();
 builder.Services.AddScoped<PrepareFxRevaluationCascadeUnwindBatchCommandHandler>();
 builder.Services.AddScoped<PostFxRevaluationBatchCommandHandler>();
 builder.Services.AddScoped<PostFxRevaluationCascadeUnwindCommandHandler>();
+builder.Services.AddSingleton<UnitySearchPolicyRegistry>();
+builder.Services.AddSingleton<IUnitySearchProjectionStore, PostgreSqlUnitySearchProjectionStore>();
+builder.Services.AddSingleton<IUnitySearchQueryService, PostgreSqlUnitySearchQueryService>();
+builder.Services.AddSingleton<IUnitySearchStatsStore, PostgreSqlUnitySearchStatsStore>();
+builder.Services.AddSingleton<IUnitySearchEngine, UnitySearchEngine>();
 
 var app = builder.Build();
 
@@ -137,8 +145,10 @@ await using (var startupScope = app.Services.CreateAsyncScope())
 {
     var runtimeStateRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformRuntimeStateRepository>();
     var adjustmentAccountMappingRepository = startupScope.ServiceProvider.GetRequiredService<IOpenItemAdjustmentAccountMappingRepository>();
+    var unitySearchProjectionStore = startupScope.ServiceProvider.GetRequiredService<IUnitySearchProjectionStore>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
+    await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
 }
 
 var accounting = app.MapGroup("/accounting");
@@ -2941,6 +2951,77 @@ accounting.MapGet(
         }
 
         return Results.Ok(MapJournalEntryReview(review));
+    });
+
+accounting.MapGet(
+    "/unity-search",
+    async (
+        [AsParameters] UnitySearchHttpQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IUnitySearchEngine engine,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await engine.SearchAsync(
+            new UnitySearchQuery
+            {
+                CompanyId = query.CompanyId,
+                UserId = query.UserId ?? sessionAccessor.Current?.UserId,
+                Context = string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
+                SearchText = query.Query ?? string.Empty,
+                Take = query.Take ?? 10
+            },
+            cancellationToken);
+
+        return Results.Ok(result);
+    });
+
+accounting.MapGet(
+    "/unity-search/recent",
+    async (
+        [AsParameters] UnitySearchRecentHttpQuery query,
+        BusinessSessionContextAccessor sessionAccessor,
+        IUnitySearchEngine engine,
+        CancellationToken cancellationToken) =>
+    {
+        var userId = query.UserId ?? sessionAccessor.Current?.UserId;
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Results.Ok(Array.Empty<UnitySearchRecentQueryRecord>());
+        }
+
+        var results = await engine.ListRecentQueriesAsync(
+            query.CompanyId,
+            userId.Value,
+            string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
+            query.Take ?? 10,
+            cancellationToken);
+
+        return Results.Ok(results);
+    });
+
+accounting.MapPost(
+    "/unity-search/clicks",
+    async (
+        UnitySearchClickHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IUnitySearchEngine engine,
+        CancellationToken cancellationToken) =>
+    {
+        var userId = request.UserId == Guid.Empty ? sessionAccessor.Current?.UserId : request.UserId;
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Results.Accepted();
+        }
+
+        await engine.RecordClickAsync(
+            request.CompanyId,
+            userId.Value,
+            string.IsNullOrWhiteSpace(request.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : request.Context.Trim(),
+            request.EntityType,
+            request.SourceId,
+            cancellationToken);
+
+        return Results.Accepted();
     });
 
 accounting.MapPost(
@@ -6701,3 +6782,40 @@ static ApAgingOpenItemSummary MapApAgingRow(ApAgingOpenItemAmount row) =>
         SignedOpenAmountTx = row.SignedOpenAmountTx,
         SignedOpenAmountBase = row.SignedOpenAmountBase
     };
+
+internal sealed record class UnitySearchHttpQuery
+{
+    public Guid CompanyId { get; init; }
+
+    public Guid? UserId { get; init; }
+
+    public string? Context { get; init; }
+
+    public string? Query { get; init; }
+
+    public int? Take { get; init; }
+}
+
+internal sealed record class UnitySearchRecentHttpQuery
+{
+    public Guid CompanyId { get; init; }
+
+    public Guid? UserId { get; init; }
+
+    public string? Context { get; init; }
+
+    public int? Take { get; init; }
+}
+
+internal sealed record class UnitySearchClickHttpRequest
+{
+    public Guid CompanyId { get; init; }
+
+    public Guid UserId { get; init; }
+
+    public string Context { get; init; } = string.Empty;
+
+    public string EntityType { get; init; } = string.Empty;
+
+    public Guid SourceId { get; init; }
+}

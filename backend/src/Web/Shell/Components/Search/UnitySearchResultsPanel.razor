@@ -1,0 +1,41 @@
+@using Citus.Modules.UnitySearch.Application.Contracts
+
+@if ((Groups?.Count ?? 0) > 0)
+{
+    <div class="unity-search-panel" role="listbox" aria-label="Search results">
+        @foreach (var group in Groups!)
+        {
+            if (group.Items.Count == 0)
+            {
+                continue;
+            }
+
+            <section class="unity-search-panel__group">
+                <div class="unity-search-panel__heading">@group.Title</div>
+                <div class="unity-search-panel__items">
+                    @foreach (var item in group.Items)
+                    {
+                        <button type="button"
+                                class="unity-search-panel__item"
+                                @onclick="@(() => OnItemSelected.InvokeAsync(item))">
+                            <span class="unity-search-panel__primary">@item.PrimaryText</span>
+                            @if (!string.IsNullOrWhiteSpace(item.SecondaryText))
+                            {
+                                <span class="unity-search-panel__secondary">@item.SecondaryText</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@code
+{
+    [Parameter]
+    public IReadOnlyList<UnitySearchGroupResult>? Groups { get; set; }
+
+    [Parameter]
+    public EventCallback<UnitySearchSuggestion> OnItemSelected { get; set; }
+}

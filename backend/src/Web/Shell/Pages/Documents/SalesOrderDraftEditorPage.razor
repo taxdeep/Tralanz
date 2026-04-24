@@ -1,5 +1,7 @@
 @page "/documents/sales-order/draft-editor"
 @using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using Modules.CompanyAccess.SessionContext
 @using Modules.GL.JournalEntry
 @using Web.Business.AR.SettlementLookup
@@ -93,12 +95,18 @@
     }
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudSelect T="string" Label="Customer" Variant="Variant.Outlined" @bind-Value="_customerIdText" Disabled="WritesBlocked">
-            @foreach (var customer in _customers)
-            {
-                <MudSelectItem T="string" Value="@customer.Id.ToString("D")">@customer.DisplayLabel</MudSelectItem>
-            }
-        </MudSelect>
+        <div>
+            <MudText Typo="Typo.caption" Class="mb-1">Customer</MudText>
+            <UnitySearchPicker CompanyId="@ShellSession.ActiveCompanyId"
+                               UserId="@ShellState.CurrentUserId"
+                               Context="@SearchScopeContext.SalesOrderCustomerPicker"
+                               SelectedId="@SelectedCustomerId"
+                               SelectedDisplayText="@SelectedCustomerDisplayText"
+                               Placeholder="Search customer"
+                               Disabled="@WritesBlocked"
+                               OnOptionSelected="HandleCustomerSelectedAsync"
+                               OnCleared="HandleCustomerClearedAsync" />
+        </div>
         <MudDatePicker Label="Order date" Variant="Variant.Outlined" Date="_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="WritesBlocked" />
         <MudDatePicker Label="Requested ship" Variant="Variant.Outlined" Date="_requestedShipDatePicker" DateChanged="OnRequestedShipDateChanged" Disabled="WritesBlocked" />
         <MudTextField T="string" Label="Currency" Variant="Variant.Outlined" @bind-Value="_currencyCode" Disabled="WritesBlocked" />
@@ -117,13 +125,15 @@
             <RowTemplate>
                 <MudTd>@context.LineNumber</MudTd>
                 <MudTd>
-                    <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" Value="context.ProductServiceIdText" ValueChanged="@(value => ApplyProductService(context, value))" Disabled="WritesBlocked">
-                        <MudSelectItem T="string" Value="@string.Empty">Manual</MudSelectItem>
-                        @foreach (var item in _productServices)
-                        {
-                            <MudSelectItem T="string" Value="@item.Id.ToString("D")">@item.DisplayLabel</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <UnitySearchPicker CompanyId="@ShellSession.ActiveCompanyId"
+                                       UserId="@ShellState.CurrentUserId"
+                                       Context="@SearchScopeContext.SalesOrderProductServicePicker"
+                                       SelectedId="@ParseOptionalGuid(context.ProductServiceIdText)"
+                                       SelectedDisplayText="@ResolveProductServiceLabel(context.ProductServiceIdText)"
+                                       Placeholder="Search product or service"
+                                       Disabled="@WritesBlocked"
+                                       OnOptionSelected="@(option => HandleProductServiceSelectedAsync(context, option))"
+                                       OnCleared="@(async () => await HandleProductServiceClearedAsync(context))" />
                 </MudTd>
                 <MudTd>
                     <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.RevenueAccountIdText" Disabled="WritesBlocked">
@@ -138,13 +148,15 @@
                 <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" @bind-Value="context.Quantity" Disabled="WritesBlocked" /></MudTd>
                 <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0m" @bind-Value="context.UnitPrice" Disabled="WritesBlocked" /></MudTd>
                 <MudTd>
-                    <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Value="context.ItemId" ValueChanged="@(value => ApplyInventoryItem(context, value))" Disabled="WritesBlocked">
-                        <MudSelectItem T="Guid?" Value="@((Guid?)null)">No item</MudSelectItem>
-                        @foreach (var item in InventoryItems)
-                        {
-                            <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <UnitySearchPicker CompanyId="@ShellSession.ActiveCompanyId"
+                                       UserId="@ShellState.CurrentUserId"
+                                       Context="@SearchScopeContext.SalesOrderInventoryItemPicker"
+                                       SelectedId="@context.ItemId"
+                                       SelectedDisplayText="@ResolveInventoryItemLabel(context.ItemId)"
+                                       Placeholder="Search inventory item"
+                                       Disabled="@WritesBlocked"
+                                       OnOptionSelected="@(option => HandleInventoryItemSelectedAsync(context, option))"
+                                       OnCleared="@(async () => await HandleInventoryItemClearedAsync(context))" />
                 </MudTd>
                 <MudTd>
                     <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.WarehouseId" Disabled="@(WritesBlocked || context.ItemId is null)">
@@ -621,6 +633,11 @@
         _outboundControl is not null &&
         !string.Equals(_saved.Status, "closed", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(_outboundControl.AggregateStatus, "closed", StringComparison.OrdinalIgnoreCase);
+    private Guid? SelectedCustomerId => ParseOptionalGuid(_customerIdText);
+    private string? SelectedCustomerDisplayText =>
+        SelectedCustomerId.HasValue
+            ? _customers.FirstOrDefault(item => item.Id == SelectedCustomerId.Value).DisplayLabel
+            : null;
 
     private static Color GetOutboundStatusColor(string? status) =>
         status switch
@@ -714,6 +731,70 @@
             _ => "Invoice coverage has not been evaluated yet."
         };
 
+    private string? ResolveProductServiceLabel(string? productServiceIdText)
+    {
+        var productServiceId = ParseOptionalGuid(productServiceIdText);
+        if (!productServiceId.HasValue)
+        {
+            return null;
+        }
+
+        var productService = _productServices.FirstOrDefault(item => item.Id == productServiceId.Value);
+        return productService?.DisplayLabel ?? productServiceId.Value.ToString("D");
+    }
+
+    private string? ResolveInventoryItemLabel(Guid? itemId)
+    {
+        if (!itemId.HasValue)
+        {
+            return null;
+        }
+
+        var item = InventoryItems.FirstOrDefault(candidate => candidate.Id == itemId.Value);
+        return item is null ? itemId.Value.ToString("D") : $"{item.ItemCode} - {item.Name}";
+    }
+
+    private Task HandleCustomerSelectedAsync(UnitySearchPickerOption option)
+    {
+        _customerIdText = option.SourceId.ToString("D");
+        return Task.CompletedTask;
+    }
+
+    private Task HandleCustomerClearedAsync()
+    {
+        if (TryBlockWrites())
+        {
+            return Task.CompletedTask;
+        }
+
+        _customerIdText = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleProductServiceSelectedAsync(CommercialLineState line, UnitySearchPickerOption option)
+    {
+        ApplyProductService(line, option.SourceId.ToString("D"));
+        return Task.CompletedTask;
+    }
+
+    private Task HandleProductServiceClearedAsync(CommercialLineState line)
+    {
+        ApplyProductService(line, string.Empty);
+        return Task.CompletedTask;
+    }
+
+    private Task HandleInventoryItemSelectedAsync(CommercialLineState line, UnitySearchPickerOption option)
+    {
+        ApplyInventoryItem(line, option.SourceId);
+        return Task.CompletedTask;
+    }
+
+    private Task HandleInventoryItemClearedAsync(CommercialLineState line)
+    {
+        ApplyInventoryItem(line, null);
+        return Task.CompletedTask;
+    }
+
     private void AddLine() => _lines.Add(CommercialLineState.Blank(_lines.Count == 0 ? 1 : _lines.Max(static line => line.LineNumber) + 1));
 
     private void RemoveLine(CommercialLineState line)
@@ -765,6 +846,9 @@
         Snackbar.Add(ShellState.WriteBlockMessage, Severity.Warning);
         return true;
     }
+
+    private static Guid? ParseOptionalGuid(string? value) =>
+        Guid.TryParse(value, out var parsed) ? parsed : null;
 
     private sealed class CommercialLineState
     {

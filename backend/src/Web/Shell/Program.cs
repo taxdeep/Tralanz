@@ -4,6 +4,8 @@ using Citus.Platform.Core.Runtime;
 using Citus.Platform.Core.Services;
 using Citus.Platform.Infrastructure.Notifications;
 using Citus.Platform.Infrastructure.Persistence;
+using Citus.Modules.UnitySearch.Application.Contracts;
+using Citus.Modules.UnitySearch.Blazor;
 using Connectors.FX.Frankfurter;
 using Engines.FX.FxRateLookup;
 using Engines.Numbering.JournalEntry;
@@ -188,6 +190,20 @@ builder.Services.AddHttpClient<JournalEntryFxRevaluationClient>(
         })
     .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<JournalEntrySourceDocumentTraceClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<UnitySearchClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl);
+        })
+    .AddHttpMessageHandler<WebShellBusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<UnitySearchPickerService>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<WebShellAppHostOptions>>().Value;

@@ -1,25 +1,15 @@
 @using Modules.GL.JournalEntry
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using MudBlazor
 
-<MudAutocomplete T="JournalEntryAccountOption"
-                 Value="@Line.Account"
-                 ValueChanged="OnAccountChanged"
-                 SearchFunc="State.SearchAccountsAsync"
-                 ToStringFunc="FormatAccount"
-                 Variant="Variant.Outlined"
-                 Margin="Margin.Dense"
-                 Dense="true"
-                 Placeholder="Search account"
-                 ResetValueOnEmptyText="true"
-                 MaxItems="8"
-                 Class="je-account-input">
-    <ItemTemplate Context="option">
-        <div class="je-account-option">
-            <div class="je-account-option__main">@option.Code @option.Name</div>
-            <div class="je-account-option__meta">@option.TypeLabel</div>
-        </div>
-    </ItemTemplate>
-</MudAutocomplete>
+<UnitySearchPicker CompanyId="@State.Draft.CompanyId"
+                   Context="@SearchScopeContext.JournalEntryAccountPicker"
+                   SelectedId="@(Line.Account?.AccountId)"
+                   SelectedDisplayText="@(Line.Account?.DisplayText)"
+                   Placeholder="Search account"
+                   OnOptionSelected="HandleAccountSelectedAsync"
+                   OnCleared="HandleAccountClearedAsync" />
 
 @code
 {
@@ -32,12 +22,15 @@
     [Parameter]
     public EventCallback OnChanged { get; set; }
 
-    private static string FormatAccount(JournalEntryAccountOption? option) =>
-        option?.DisplayText ?? string.Empty;
-
-    private Task OnAccountChanged(JournalEntryAccountOption? option)
+    private Task HandleAccountSelectedAsync(UnitySearchPickerOption option)
     {
-        Line.Account = option;
+        Line.Account = State.AccountOptions.FirstOrDefault(account => account.AccountId == option.SourceId);
+        return OnChanged.InvokeAsync();
+    }
+
+    private Task HandleAccountClearedAsync()
+    {
+        Line.Account = null;
         return OnChanged.InvokeAsync();
     }
 }

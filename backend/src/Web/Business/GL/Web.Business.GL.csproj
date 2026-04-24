@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Modules\UnitySearch\Blazor\Citus.Modules.UnitySearch.Blazor.csproj" />
     <ProjectReference Include="..\..\..\Engines\FX\Engines.FX.csproj" />
     <ProjectReference Include="..\..\..\Engines\Numbering\Engines.Numbering.csproj" />
     <ProjectReference Include="..\..\..\Modules\Company\Modules.Company.csproj" />

@@ -1,0 +1,196 @@
+.unity-transactions {
+    display: grid;
+    gap: 1.4rem;
+}
+
+.unity-transactions__hero,
+.unity-transactions__search-shell,
+.unity-transactions__group,
+.unity-transactions__recent,
+.unity-transactions__empty {
+    border: 1px solid rgba(122, 182, 217, 0.14);
+    background: rgba(18, 26, 34, 0.86);
+    border-radius: 22px;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2);
+}
+
+.unity-transactions__hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 1.5rem;
+}
+
+.unity-transactions__eyebrow {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #7ab6d9;
+    margin-bottom: 0.4rem;
+}
+
+.unity-transactions__title {
+    margin: 0;
+    font-size: clamp(1.8rem, 3vw, 2.5rem);
+    color: #f4f8fb;
+}
+
+.unity-transactions__description {
+    margin: 0.5rem 0 0;
+    max-width: 52rem;
+    color: #97a8b7;
+    line-height: 1.6;
+}
+
+.unity-transactions__badge {
+    min-width: 13rem;
+    align-self: start;
+    padding: 1rem 1.1rem;
+    border-radius: 18px;
+    background: rgba(13, 19, 26, 0.72);
+    display: grid;
+    gap: 0.22rem;
+}
+
+.unity-transactions__badge span {
+    font-size: 0.78rem;
+    color: #97a8b7;
+}
+
+.unity-transactions__badge strong {
+    font-size: 1rem;
+    color: #d9e2ea;
+}
+
+.unity-transactions__search-shell {
+    padding: 1.25rem;
+    display: grid;
+    gap: 0.8rem;
+}
+
+.unity-transactions__search-form {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.8rem;
+    border: 1px solid rgba(122, 182, 217, 0.18);
+    border-radius: 18px;
+    padding: 0.8rem 0.9rem;
+    background: rgba(12, 18, 25, 0.78);
+}
+
+.unity-transactions__search-icon {
+    color: #7ab6d9;
+    font-size: 1rem;
+}
+
+.unity-transactions__search-input {
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #f4f8fb;
+    font-size: 0.98rem;
+}
+
+.unity-transactions__search-button {
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #7ab6d9, #8ad3bf);
+    color: #0d131a;
+    font-weight: 700;
+    padding: 0.6rem 0.95rem;
+}
+
+.unity-transactions__hint {
+    color: #97a8b7;
+    font-size: 0.86rem;
+}
+
+.unity-transactions__groups {
+    display: grid;
+    gap: 1rem;
+}
+
+.unity-transactions__group,
+.unity-transactions__recent {
+    padding: 1.15rem;
+}
+
+.unity-transactions__group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.9rem;
+}
+
+.unity-transactions__group-header h2 {
+    margin: 0;
+    font-size: 1.02rem;
+    color: #f4f8fb;
+}
+
+.unity-transactions__group-header span {
+    color: #97a8b7;
+    font-size: 0.82rem;
+}
+
+.unity-transactions__cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    gap: 0.9rem;
+}
+
+.unity-transactions__card {
+    border: 1px solid rgba(122, 182, 217, 0.1);
+    border-radius: 16px;
+    padding: 1rem;
+    background: rgba(13, 19, 26, 0.75);
+    color: #d9e2ea;
+    text-align: left;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.unity-transactions__card:hover {
+    background: rgba(18, 26, 34, 0.95);
+}
+
+.unity-transactions__card-primary {
+    font-weight: 700;
+}
+
+.unity-transactions__card-secondary {
+    color: #97a8b7;
+    font-size: 0.84rem;
+}
+
+.unity-transactions__card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    color: #7ab6d9;
+    font-size: 0.78rem;
+}
+
+.unity-transactions__recent-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+}
+
+.unity-transactions__recent-chip {
+    border: 1px solid rgba(122, 182, 217, 0.18);
+    border-radius: 999px;
+    background: rgba(12, 18, 25, 0.72);
+    color: #d9e2ea;
+    padding: 0.6rem 0.9rem;
+    display: inline-flex;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.unity-transactions__empty {
+    padding: 1.4rem;
+    color: #97a8b7;
+}

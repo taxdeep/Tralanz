@@ -1,6 +1,8 @@
 @page "/documents/purchase-order/draft-editor"
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.Inventory.Domain.Shared
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using Web.Business.AP.SettlementLookup
 @using Web.Shell.Services
 @inject WebShellState ShellState
@@ -42,12 +44,18 @@
     }
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_vendorIdText" Disabled="@DraftMutationBlocked">
-            @foreach (var vendor in _vendorOptions)
-            {
-                <MudSelectItem T="string" Value="@vendor.Id.ToString("D")">@vendor.DisplayLabel</MudSelectItem>
-            }
-        </MudSelect>
+        <div>
+            <MudText Typo="Typo.caption" Class="mb-1">Vendor</MudText>
+            <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                               UserId="@ShellState.CurrentUserId"
+                               Context="@SearchScopeContext.PurchaseOrderVendorPicker"
+                               SelectedId="@SelectedVendorId"
+                               SelectedDisplayText="@SelectedVendorDisplayText"
+                               Placeholder="Search vendor"
+                               Disabled="@DraftMutationBlocked"
+                               OnOptionSelected="HandleVendorSelectedAsync"
+                               OnCleared="HandleVendorClearedAsync" />
+        </div>
         <MudDatePicker Label="Order Date" Variant="Variant.Outlined" Date="@_orderDatePicker" DateChanged="OnOrderDateChanged" Disabled="@DraftMutationBlocked" />
         <MudDatePicker Label="Expected Date" Variant="Variant.Outlined" Date="@_expectedDatePicker" DateChanged="OnExpectedDateChanged" Disabled="@DraftMutationBlocked" />
         <MudTextField T="string" Label="Vendor Reference" Variant="Variant.Outlined" @bind-Value="_vendorReference" Disabled="@DraftMutationBlocked" />
@@ -143,13 +151,15 @@
             <RowTemplate>
                 <MudTd>@context.LineNumber</MudTd>
                 <MudTd>
-                    <MudSelect T="Guid?" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@DraftMutationBlocked" Value="context.ItemId" ValueChanged="@(value => ApplyItem(context, value))">
-                        <MudSelectItem T="Guid?" Value="@((Guid?)null)">-- Select --</MudSelectItem>
-                        @foreach (var item in OperationalItems)
-                        {
-                            <MudSelectItem T="Guid?" Value="@((Guid?)item.Id)">@($"{item.ItemCode} {item.Name}")</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       UserId="@ShellState.CurrentUserId"
+                                       Context="@SearchScopeContext.PurchaseOrderInventoryItemPicker"
+                                       SelectedId="@context.ItemId"
+                                       SelectedDisplayText="@ResolveInventoryItemLabel(context.ItemId)"
+                                       Placeholder="Search inventory item"
+                                       Disabled="@DraftMutationBlocked"
+                                       OnOptionSelected="@(option => HandleItemSelectedAsync(context, option))"
+                                       OnCleared="@(async () => await HandleItemClearedAsync(context))" />
                 </MudTd>
                 <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.Description" Disabled="@DraftMutationBlocked" /></MudTd>
                 <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Immediate="true" @bind-Value="context.OrderedQuantity" Disabled="@DraftMutationBlocked" /></MudTd>
@@ -213,6 +223,11 @@
             .OrderBy(static item => item.ItemCode)
             .ToArray() ?? [];
     private decimal EstimatedAmount => _lines.Sum(static line => line.LineTotal);
+    private Guid? SelectedVendorId => ParseOptionalGuid(_vendorIdText);
+    private string? SelectedVendorDisplayText =>
+        SelectedVendorId.HasValue
+            ? _vendorOptions.FirstOrDefault(item => item.Id == SelectedVendorId.Value).DisplayLabel
+            : null;
     private string PurchaseOrderLaneTitle => "Purchase order pipeline";
     private string PurchaseOrderLaneSummary => "Purchase orders own ordered vendor demand. Approval, release, receipt, and bill truth should all hand off from this procurement lane.";
     private Color PurchaseOrderLaneColor => CanEditDraft ? Color.Primary : Color.Warning;
@@ -336,6 +351,46 @@
         {
             _lines[index].LineNumber = index + 1;
         }
+    }
+
+    private string? ResolveInventoryItemLabel(Guid? itemId)
+    {
+        if (!itemId.HasValue)
+        {
+            return null;
+        }
+
+        var item = OperationalItems.FirstOrDefault(current => current.Id == itemId.Value);
+        return item is null ? itemId.Value.ToString("D") : $"{item.ItemCode} - {item.Name}";
+    }
+
+    private Task HandleVendorSelectedAsync(UnitySearchPickerOption option)
+    {
+        _vendorIdText = option.SourceId.ToString("D");
+        return Task.CompletedTask;
+    }
+
+    private Task HandleVendorClearedAsync()
+    {
+        if (TryBlockDraftEdits())
+        {
+            return Task.CompletedTask;
+        }
+
+        _vendorIdText = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleItemSelectedAsync(PurchaseOrderLineEditor line, UnitySearchPickerOption option)
+    {
+        ApplyItem(line, option.SourceId);
+        return Task.CompletedTask;
+    }
+
+    private Task HandleItemClearedAsync(PurchaseOrderLineEditor line)
+    {
+        ApplyItem(line, null);
+        return Task.CompletedTask;
     }
 
     private void ApplyItem(PurchaseOrderLineEditor line, Guid? itemId)
@@ -519,6 +574,9 @@
 
         return query.Count == 0 ? href : $"{href}?{string.Join("&", query)}";
     }
+
+    private static Guid? ParseOptionalGuid(string? value) =>
+        Guid.TryParse(value, out var parsed) ? parsed : null;
 
     private sealed class PurchaseOrderLineEditor
     {

@@ -1,5 +1,7 @@
 @page "/documents/bill/draft-editor"
 @using Citus.Modules.Inventory.Application.Contracts
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using Modules.CompanyAccess.SessionContext
 @using Modules.GL.JournalEntry
 @using Web.Business.AP.SettlementLookup
@@ -132,12 +134,18 @@
     }
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudSelect T="string" Label="Vendor" Variant="Variant.Outlined" @bind-Value="_vendorIdText" Disabled="@HeaderMutationBlocked">
-            @foreach (var vendor in _vendorOptions)
-            {
-                <MudSelectItem T="string" Value="@vendor.Id.ToString("D")">@vendor.DisplayLabel</MudSelectItem>
-            }
-        </MudSelect>
+        <div>
+            <MudText Typo="Typo.caption" Class="mb-1">Vendor</MudText>
+            <UnitySearchPicker CompanyId="@ShellSession.ActiveCompanyId"
+                               UserId="@ShellState.CurrentUserId"
+                               Context="@SearchScopeContext.BillVendorPicker"
+                               SelectedId="@SelectedVendorId"
+                               SelectedDisplayText="@SelectedVendorDisplayText"
+                               Placeholder="Search vendor"
+                               Disabled="@HeaderMutationBlocked"
+                               OnOptionSelected="HandleVendorSelectedAsync"
+                               OnCleared="HandleVendorClearedAsync" />
+        </div>
         <MudDatePicker Label="Bill Date" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="@DraftMutationBlocked" />
         <MudDatePicker Label="Due Date" Variant="Variant.Outlined" Date="@_dueDatePicker" DateChanged="OnDueDateChanged" Disabled="@DraftMutationBlocked" />
         <MudTextField T="string" Label="Tx Currency" Variant="Variant.Outlined" Value="_txCurrency" ValueChanged="OnCurrencyChanged" Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || DraftMutationBlocked)" />
@@ -1219,6 +1227,30 @@
                 ? $"/documents/bill/{_saved.DocumentId:D}?origin=company-ready"
                 : $"/documents/bill/{_saved.DocumentId:D}";
 
+    private Guid? SelectedVendorId => ParseOptionalGuid(_vendorIdText);
+
+    private string? SelectedVendorDisplayText =>
+        SelectedVendorId.HasValue
+            ? _vendorOptions.FirstOrDefault(item => item.Id == SelectedVendorId.Value).DisplayLabel
+            : null;
+
+    private Task HandleVendorSelectedAsync(UnitySearchPickerOption option)
+    {
+        _vendorIdText = option.SourceId.ToString("D");
+        return Task.CompletedTask;
+    }
+
+    private Task HandleVendorClearedAsync()
+    {
+        if (TryBlockDraftEdits())
+        {
+            return Task.CompletedTask;
+        }
+
+        _vendorIdText = string.Empty;
+        return Task.CompletedTask;
+    }
+
     private async Task LoadReceiptHandoffSummaryAsync()
     {
         if (!SupportsInventoryReceiptHandoff || !_documentId.HasValue)
@@ -1316,6 +1348,9 @@
 
     private string ResolveDefaultExpenseAccountIdText() =>
         _expenseAccounts.FirstOrDefault()?.AccountId.ToString("D") ?? string.Empty;
+
+    private static Guid? ParseOptionalGuid(string? value) =>
+        Guid.TryParse(value, out var parsed) ? parsed : null;
 
     private static bool CanCreateBillFromPurchaseOrder(ShellPurchaseOrderReviewSummary purchaseOrder) =>
         string.Equals(purchaseOrder.Status, "issued", StringComparison.OrdinalIgnoreCase);

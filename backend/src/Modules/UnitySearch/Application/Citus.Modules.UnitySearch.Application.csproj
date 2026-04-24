@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Application.Contracts\Citus.Modules.UnitySearch.Application.Contracts.csproj" />
+    <ProjectReference Include="..\Domain\Citus.Modules.UnitySearch.Domain.csproj" />
+    <ProjectReference Include="..\Domain.Shared\Citus.Modules.UnitySearch.Domain.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

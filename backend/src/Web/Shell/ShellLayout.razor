@@ -1,10 +1,15 @@
+@using Citus.Modules.UnitySearch.Application.Contracts
+@using Citus.Modules.UnitySearch.Domain.Shared
+@using Web.Shell.Components.Search
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
 @inject Web.Shell.Services.WebShellBusinessSessionClient SessionClient
+@inject UnitySearchClient UnitySearchClient
 @inject WebShellState ShellState
 @inject ILogger<ShellLayout> Logger
 
 @inherits LayoutComponentBase
+@implements IDisposable
 
 <MudThemeProvider Theme="_theme" IsDarkMode="true" />
 <MudPopoverProvider />
@@ -50,11 +55,16 @@ else
                 <i class="ti ti-search bz-shell__search-icon" aria-hidden="true"></i>
                 <input class="bz-shell__search-input"
                        type="search"
-                       placeholder="Search invoices, bills, journals, payments..."
-                       @bind="_shellSearchTerm"
-                       @bind:event="oninput"
+                       placeholder="Search transactions, contacts, products..."
+                       value="@_shellSearchTerm"
+                       @oninput="OnShellSearchInputAsync"
                        aria-label="Search workspace" />
-                <span class="bz-shell__search-shortcut" aria-hidden="true">Quick jump</span>
+                <span class="bz-shell__search-shortcut" aria-hidden="true">UnitySearch</span>
+
+                @if ((_shellSearchGroups?.Count ?? 0) > 0)
+                {
+                    <UnitySearchResultsPanel Groups="_shellSearchGroups" OnItemSelected="HandleTopbarSuggestionSelectedAsync" />
+                }
             </form>
 
             <div class="bz-shell__topbar-controls">
@@ -126,6 +136,8 @@ else
 
     private bool _isShellReady;
     private string _shellSearchTerm = string.Empty;
+    private IReadOnlyList<UnitySearchGroupResult> _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+    private CancellationTokenSource? _searchDebounceCts;
 
     private bool IsLoginRoute =>
         NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
@@ -204,92 +216,85 @@ else
         var term = _shellSearchTerm.Trim();
         if (string.IsNullOrWhiteSpace(term))
         {
-            NavigationManager.NavigateTo("/documents/source-browser");
+            _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            NavigationManager.NavigateTo("/transactions");
             return Task.CompletedTask;
         }
 
-        var normalized = term.ToLowerInvariant();
-        var target = ResolveShellSearchTarget(normalized);
-        NavigationManager.NavigateTo(target);
+        _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+        NavigationManager.NavigateTo($"/transactions?q={Uri.EscapeDataString(term)}");
         return Task.CompletedTask;
     }
 
-    private static string ResolveShellSearchTarget(string normalizedTerm)
+    private async Task OnShellSearchInputAsync(ChangeEventArgs args)
     {
-        if (normalizedTerm.Contains("invoice", StringComparison.Ordinal))
+        _shellSearchTerm = args.Value?.ToString() ?? string.Empty;
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+
+        if (!ShellState.IsAuthenticated || ShellState.ActiveCompany.Id == Guid.Empty)
         {
-            return "/documents/source-browser?sourceType=invoice&counterpartyRole=customer";
+            _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            return;
         }
 
-        if (normalizedTerm.Contains("quote", StringComparison.Ordinal))
+        var trimmed = _shellSearchTerm.Trim();
+        if (trimmed.Length < 2)
         {
-            return "/documents/source-browser?sourceType=quote";
+            _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            StateHasChanged();
+            return;
         }
 
-        if (normalizedTerm.Contains("sales order", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("so ", StringComparison.Ordinal) ||
-            normalizedTerm.EndsWith(" so", StringComparison.Ordinal) ||
-            normalizedTerm == "so")
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+
+        try
         {
-            return "/documents/source-browser?sourceType=sales_order";
+            await Task.Delay(220, cts.Token);
+            var result = await UnitySearchClient.SearchAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                SearchScopeContext.GlobalTopbar,
+                trimmed,
+                8,
+                cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                _shellSearchGroups = result.Groups;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "UnitySearch topbar query failed.");
+            _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleTopbarSuggestionSelectedAsync(UnitySearchSuggestion suggestion)
+    {
+        _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
+        if (ShellState.IsAuthenticated && ShellState.ActiveCompany.Id != Guid.Empty)
+        {
+            await UnitySearchClient.RecordClickAsync(
+                ShellState.ActiveCompany.Id,
+                ShellState.CurrentUserId,
+                SearchScopeContext.GlobalTopbar,
+                suggestion.EntityType,
+                suggestion.SourceId);
         }
 
-        if (normalizedTerm.Contains("receive payment", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("receipt", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("customer payment", StringComparison.Ordinal))
-        {
-            return "/ar/receive-payment";
-        }
+        NavigationManager.NavigateTo(suggestion.NavigationHref);
+    }
 
-        if (normalizedTerm.Contains("credit application", StringComparison.Ordinal))
-        {
-            return "/ar/credit-application";
-        }
-
-        if (normalizedTerm.Contains("ar aging", StringComparison.Ordinal) ||
-            normalizedTerm == "aging" ||
-            normalizedTerm.Contains("receivable aging", StringComparison.Ordinal))
-        {
-            return "/ar/aging";
-        }
-
-        if (normalizedTerm.Contains("bill", StringComparison.Ordinal))
-        {
-            return "/documents/source-browser?sourceType=bill&counterpartyRole=vendor";
-        }
-
-        if (normalizedTerm.Contains("purchase order", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("po ", StringComparison.Ordinal) ||
-            normalizedTerm.EndsWith(" po", StringComparison.Ordinal) ||
-            normalizedTerm == "po")
-        {
-            return "/documents/source-browser?sourceType=purchase_order";
-        }
-
-        if (normalizedTerm.Contains("pay bill", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("vendor payment", StringComparison.Ordinal))
-        {
-            return "/ap/pay-bill";
-        }
-
-        if (normalizedTerm.Contains("vendor credit", StringComparison.Ordinal))
-        {
-            return "/ap/vendor-credit-application";
-        }
-
-        if (normalizedTerm.Contains("ap aging", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("payable aging", StringComparison.Ordinal))
-        {
-            return "/ap/aging";
-        }
-
-        if (normalizedTerm.Contains("journal", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("gl", StringComparison.Ordinal) ||
-            normalizedTerm.Contains("fx", StringComparison.Ordinal))
-        {
-            return "/gl/journal-entries";
-        }
-
-        return "/documents/source-browser";
+    public void Dispose()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
     }
 }
