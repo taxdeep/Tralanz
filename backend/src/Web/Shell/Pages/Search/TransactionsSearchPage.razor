@@ -7,6 +7,7 @@
 @inject UnitySearchClient SearchClient
 @inject WebShellState ShellState
 @inject NavigationManager Navigation
+@inject ILogger<TransactionsSearchPage> Logger
 
 <PageTitle>Transactions | Balanciz</PageTitle>
 
@@ -43,6 +44,10 @@
     @if (_isLoading)
     {
         <div class="unity-transactions__empty">Searching the active company workspace...</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="unity-transactions__empty unity-transactions__empty--error">@_error</div>
     }
     else if (!string.IsNullOrWhiteSpace(_searchText))
     {
@@ -146,37 +151,51 @@
 
     private string _searchText = string.Empty;
     private bool _isLoading;
+    private string? _error;
     private UnitySearchResult? _result;
     private IReadOnlyList<UnitySearchRecentQueryRecord> _recentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
     private IReadOnlyList<UnitySearchRecentSelectionRecord> _recentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
 
     protected override async Task OnParametersSetAsync()
     {
-        _searchText = Query?.Trim() ?? string.Empty;
-        if (!ShellState.IsAuthenticated || ShellState.ActiveCompany.Id == Guid.Empty)
+        try
         {
+            _error = null;
+            _searchText = Query?.Trim() ?? string.Empty;
+            if (!ShellState.IsAuthenticated || ShellState.ActiveCompany.Id == Guid.Empty)
+            {
+                _result = null;
+                _recentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
+                _recentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_searchText))
+            {
+                _result = null;
+                _recentQueries = await SearchClient.ListRecentQueriesAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    SearchScopeContext.GlobalTransactions,
+                    10);
+                _recentSelections = await SearchClient.ListRecentSelectionsAsync(
+                    ShellState.ActiveCompany.Id,
+                    ShellState.CurrentUserId,
+                    SearchScopeContext.GlobalTransactions,
+                    8);
+                return;
+            }
+
+            await LoadSearchResultAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "UnitySearch transactions page failed while loading query {Query}.", Query);
             _result = null;
             _recentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
-            return;
+            _recentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
+            _error = "Search workspace could not load right now. Try again in a moment.";
         }
-
-        if (string.IsNullOrWhiteSpace(_searchText))
-        {
-            _result = null;
-            _recentQueries = await SearchClient.ListRecentQueriesAsync(
-                ShellState.ActiveCompany.Id,
-                ShellState.CurrentUserId,
-                SearchScopeContext.GlobalTransactions,
-                10);
-            _recentSelections = await SearchClient.ListRecentSelectionsAsync(
-                ShellState.ActiveCompany.Id,
-                ShellState.CurrentUserId,
-                SearchScopeContext.GlobalTransactions,
-                8);
-            return;
-        }
-
-        await LoadSearchResultAsync();
     }
 
     private async Task ExecuteSearchAsync()
@@ -197,6 +216,7 @@
         _isLoading = true;
         try
         {
+            _error = null;
             _result = await SearchClient.SearchAsync(
                 ShellState.ActiveCompany.Id,
                 ShellState.CurrentUserId,
@@ -205,6 +225,16 @@
                 30);
             _recentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
             _recentSelections = Array.Empty<UnitySearchRecentSelectionRecord>();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "UnitySearch query workbench failed for {QueryText}.", _searchText);
+            _result = new UnitySearchResult
+            {
+                QueryText = _searchText,
+                Context = SearchScopeContext.GlobalTransactions
+            };
+            _error = "Search results are temporarily unavailable for the active company.";
         }
         finally
         {

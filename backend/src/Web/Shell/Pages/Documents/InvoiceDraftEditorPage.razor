@@ -19,6 +19,7 @@
 @inject ShellSalesCommercialDocumentClient CommercialDocuments
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
+@inject NavigationManager Navigation
 
 <PageTitle>Invoice Draft</PageTitle>
 
@@ -182,8 +183,10 @@
                                SelectedId="@SelectedCustomerId"
                                SelectedDisplayText="@SelectedCustomerDisplayText"
                                Placeholder="Search customer"
+                               CreateEntityLabel="customer"
                                Disabled="@DraftMutationBlocked"
                                OnOptionSelected="HandleCustomerSelectedAsync"
+                               OnCreateRequested="HandleCreateCustomerRequestedAsync"
                                OnCleared="HandleCustomerClearedAsync" />
         </div>
         <MudDatePicker Label="Invoice Date" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="@DraftMutationBlocked" />
@@ -1434,6 +1437,12 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleCreateCustomerRequestedAsync(string displayName)
+    {
+        Navigation.NavigateTo(BuildCounterpartyCreateHref("customer", displayName));
+        return Task.CompletedTask;
+    }
+
     private Task HandleProductServiceSelectedAsync(SalesLine line, UnitySearchPickerOption option)
     {
         ApplyProductService(line, option.SourceId.ToString("D"));
@@ -1510,6 +1519,13 @@
 
     private static Guid? ParseOptionalGuid(string? value) =>
         Guid.TryParse(value, out var parsed) ? parsed : null;
+
+    private string BuildCounterpartyCreateHref(string entityType, string displayName)
+    {
+        var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
+        var normalizedReturnUrl = string.IsNullOrWhiteSpace(returnUrl) ? "/documents/invoice/draft-editor" : $"/{returnUrl}";
+        return $"/company/customer-vendor-setup?create={Uri.EscapeDataString(entityType)}&name={Uri.EscapeDataString(displayName.Trim())}&returnUrl={Uri.EscapeDataString(normalizedReturnUrl)}";
+    }
 
     private sealed class SalesLine
     {

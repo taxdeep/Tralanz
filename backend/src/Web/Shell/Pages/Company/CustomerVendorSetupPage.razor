@@ -6,6 +6,7 @@
 @inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
 @inject ShellCounterpartyOnboardingClient CounterpartyOnboarding
 @inject ISnackbar Snackbar
+@inject NavigationManager Navigation
 
 <PageTitle>Customer & Vendor Setup</PageTitle>
 
@@ -306,6 +307,15 @@
     [SupplyParameterFromQuery(Name = "origin")]
     public string? Origin { get; set; }
 
+    [SupplyParameterFromQuery(Name = "create")]
+    public string? Create { get; set; }
+
+    [SupplyParameterFromQuery(Name = "name")]
+    public string? Name { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
     private ShellCounterpartyOnboardingSummary? _summary;
     private string? _error;
     private bool _isSaving;
@@ -319,6 +329,8 @@
     private readonly CounterpartyEditorState _vendor = new();
 
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private bool IsCustomerCreateIntent => string.Equals(Create, "customer", StringComparison.OrdinalIgnoreCase);
+    private bool IsVendorCreateIntent => string.Equals(Create, "vendor", StringComparison.OrdinalIgnoreCase);
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
 
@@ -358,6 +370,7 @@
         {
             _summary = await CounterpartyOnboarding.GetSummaryAsync(ShellState.ActiveCompany.Id);
             ApplyCurrencyDefaults();
+            ApplyCreateIntentDefaults();
             _error = null;
         }
         catch (Exception ex)
@@ -386,6 +399,25 @@
         if (string.IsNullOrWhiteSpace(_vendor.CurrencyCode))
         {
             _vendor.CurrencyCode = preferredCurrencyCode;
+        }
+    }
+
+    private void ApplyCreateIntentDefaults()
+    {
+        var requestedName = Name?.Trim();
+        if (string.IsNullOrWhiteSpace(requestedName))
+        {
+            return;
+        }
+
+        if (IsCustomerCreateIntent && !_editingCustomerId.HasValue && string.IsNullOrWhiteSpace(_customer.DisplayName))
+        {
+            _customer.DisplayName = requestedName;
+        }
+
+        if (IsVendorCreateIntent && !_editingVendorId.HasValue && string.IsNullOrWhiteSpace(_vendor.DisplayName))
+        {
+            _vendor.DisplayName = requestedName;
         }
     }
 
@@ -531,6 +563,10 @@
                 _lastCreatedCustomerId = await CounterpartyOnboarding.CreateCustomerAsync(ShellState.ActiveCompany.Id, _customer.ToRequest());
                 _lastCreatedCustomerName = _customer.DisplayName.Trim();
                 Snackbar.Add("Customer created.", Severity.Success);
+                if (TryNavigateBackToOrigin("customer", _lastCreatedCustomerId))
+                {
+                    return;
+                }
             }
 
             ClearEditor(_customer);
@@ -569,6 +605,10 @@
                 _lastCreatedVendorId = await CounterpartyOnboarding.CreateVendorAsync(ShellState.ActiveCompany.Id, _vendor.ToRequest());
                 _lastCreatedVendorName = _vendor.DisplayName.Trim();
                 Snackbar.Add("Vendor created.", Severity.Success);
+                if (TryNavigateBackToOrigin("vendor", _lastCreatedVendorId))
+                {
+                    return;
+                }
             }
 
             ClearEditor(_vendor);
@@ -716,6 +756,37 @@
         vendorId.HasValue
             ? $"/documents/bill/draft-editor?origin=company-ready&vendorId={vendorId.Value:D}"
             : "/documents/bill/draft-editor?origin=company-ready";
+
+    private bool TryNavigateBackToOrigin(string entityType, Guid? entityId)
+    {
+        if (!entityId.HasValue || string.IsNullOrWhiteSpace(ReturnUrl) || !string.Equals(Create, entityType, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var normalizedReturnUrl = NormalizeReturnUrl(ReturnUrl);
+        if (string.IsNullOrWhiteSpace(normalizedReturnUrl))
+        {
+            return false;
+        }
+
+        var separator = normalizedReturnUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        var key = string.Equals(entityType, "customer", StringComparison.OrdinalIgnoreCase) ? "customerId" : "vendorId";
+        Navigation.NavigateTo($"{normalizedReturnUrl}{separator}{key}={entityId.Value:D}");
+        return true;
+    }
+
+    private static string? NormalizeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+        {
+            return null;
+        }
+
+        return returnUrl.StartsWith("/", StringComparison.Ordinal) && !returnUrl.StartsWith("//", StringComparison.Ordinal)
+            ? returnUrl
+            : null;
+    }
 
     private bool TryBlockWrites()
     {

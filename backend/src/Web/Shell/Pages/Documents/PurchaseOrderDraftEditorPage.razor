@@ -13,6 +13,7 @@
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ShellAccountingDocumentReviewClient ReviewClient
 @inject ISnackbar Snackbar
+@inject NavigationManager Navigation
 
 <PageTitle>Purchase Order Draft | Citus Web Shell</PageTitle>
 
@@ -51,9 +52,11 @@
                                Context="@SearchScopeContext.PurchaseOrderVendorPicker"
                                SelectedId="@SelectedVendorId"
                                SelectedDisplayText="@SelectedVendorDisplayText"
+                               CreateEntityLabel="vendor"
                                Placeholder="Search vendor"
                                Disabled="@DraftMutationBlocked"
                                OnOptionSelected="HandleVendorSelectedAsync"
+                               OnCreateRequested="HandleCreateVendorRequestedAsync"
                                OnCleared="HandleVendorClearedAsync" />
         </div>
         <MudDatePicker Label="Order Date" Variant="Variant.Outlined" Date="@_orderDatePicker" DateChanged="OnOrderDateChanged" Disabled="@DraftMutationBlocked" />
@@ -381,6 +384,12 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleCreateVendorRequestedAsync(string displayName)
+    {
+        Navigation.NavigateTo(BuildCounterpartyCreateHref("vendor", displayName));
+        return Task.CompletedTask;
+    }
+
     private Task HandleItemSelectedAsync(PurchaseOrderLineEditor line, UnitySearchPickerOption option)
     {
         ApplyItem(line, option.SourceId);
@@ -573,6 +582,12 @@
         }
 
         return query.Count == 0 ? href : $"{href}?{string.Join("&", query)}";
+    }
+
+    private string BuildCounterpartyCreateHref(string entityType, string displayName)
+    {
+        var returnUrl = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        return $"/company/customer-vendor-setup?create={Uri.EscapeDataString(entityType)}&name={Uri.EscapeDataString(displayName)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
 
     private static Guid? ParseOptionalGuid(string? value) =>

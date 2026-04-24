@@ -42,6 +42,33 @@
                     }
                 </button>
             }
+
+            @if (CanCreateFromSearch)
+            {
+                <button type="button"
+                        class="unity-picker__create"
+                        @onmousedown:preventDefault
+                        @onclick="HandleCreateRequestedAsync">
+                    <i class="ti ti-plus unity-picker__create-icon" aria-hidden="true"></i>
+                    <span>Create "@_searchText.Trim()" as a new @CreateEntityLabel</span>
+                </button>
+            }
+        </div>
+    }
+    else if (_showResults && _options.Count == 0)
+    {
+        <div class="unity-picker__panel" role="listbox">
+            <div class="unity-picker__empty">No results found</div>
+            @if (CanCreateFromSearch)
+            {
+                <button type="button"
+                        class="unity-picker__create"
+                        @onmousedown:preventDefault
+                        @onclick="HandleCreateRequestedAsync">
+                    <i class="ti ti-plus unity-picker__create-icon" aria-hidden="true"></i>
+                    <span>Create "@_searchText.Trim()" as a new @CreateEntityLabel</span>
+                </button>
+            }
         </div>
     }
 </div>
@@ -76,10 +103,16 @@
     public int Take { get; set; } = 8;
 
     [Parameter]
+    public string? CreateEntityLabel { get; set; }
+
+    [Parameter]
     public EventCallback<UnitySearchPickerOption> OnOptionSelected { get; set; }
 
     [Parameter]
     public EventCallback OnCleared { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnCreateRequested { get; set; }
 
     private string _searchText = string.Empty;
     private bool _showResults;
@@ -87,6 +120,11 @@
     private IReadOnlyList<UnitySearchPickerOption> _options = Array.Empty<UnitySearchPickerOption>();
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _blurCts;
+    private bool CanCreateFromSearch =>
+        !Disabled &&
+        OnCreateRequested.HasDelegate &&
+        !string.IsNullOrWhiteSpace(CreateEntityLabel) &&
+        !string.IsNullOrWhiteSpace(_searchText.Trim());
 
     protected override void OnParametersSet()
     {
@@ -115,6 +153,7 @@
         var query = _searchText.Trim();
         if (Disabled || CompanyId == Guid.Empty || query.Length < 2)
         {
+            _showResults = CanCreateFromSearch;
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -136,7 +175,7 @@
             if (!cts.IsCancellationRequested)
             {
                 _options = options;
-                _showResults = options.Count > 0;
+                _showResults = true;
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -185,6 +224,20 @@
         _options = Array.Empty<UnitySearchPickerOption>();
         _searchText = string.Empty;
         await OnCleared.InvokeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleCreateRequestedAsync()
+    {
+        var candidate = _searchText.Trim();
+        if (string.IsNullOrWhiteSpace(candidate) || !OnCreateRequested.HasDelegate)
+        {
+            return;
+        }
+
+        _showResults = false;
+        _options = Array.Empty<UnitySearchPickerOption>();
+        await OnCreateRequested.InvokeAsync(candidate);
         await InvokeAsync(StateHasChanged);
     }
 }

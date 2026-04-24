@@ -20,6 +20,7 @@
 @inject ShellInventoryReceiptClient InventoryReceipt
 @inject ShellBillReceiptMatchingClient BillReceiptMatching
 @inject ISnackbar Snackbar
+@inject NavigationManager Navigation
 
 <PageTitle>Bill Draft</PageTitle>
 
@@ -141,9 +142,11 @@
                                Context="@SearchScopeContext.BillVendorPicker"
                                SelectedId="@SelectedVendorId"
                                SelectedDisplayText="@SelectedVendorDisplayText"
+                               CreateEntityLabel="vendor"
                                Placeholder="Search vendor"
                                Disabled="@HeaderMutationBlocked"
                                OnOptionSelected="HandleVendorSelectedAsync"
+                               OnCreateRequested="HandleCreateVendorRequestedAsync"
                                OnCleared="HandleVendorClearedAsync" />
         </div>
         <MudDatePicker Label="Bill Date" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="@DraftMutationBlocked" />
@@ -1220,6 +1223,12 @@
             ? $"/documents/source-browser?sourceType=purchase_order&counterpartyRole=vendor&counterpartyId={vendorId:D}"
             : "/documents/source-browser?sourceType=purchase_order&counterpartyRole=vendor";
 
+    private string BuildCounterpartyCreateHref(string entityType, string displayName)
+    {
+        var returnUrl = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        return $"/company/customer-vendor-setup?create={Uri.EscapeDataString(entityType)}&name={Uri.EscapeDataString(displayName)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+    }
+
     private string BuildPostedDetailHref() =>
         _saved is null
             ? string.Empty
@@ -1248,6 +1257,12 @@
         }
 
         _vendorIdText = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleCreateVendorRequestedAsync(string displayName)
+    {
+        Navigation.NavigateTo(BuildCounterpartyCreateHref("vendor", displayName));
         return Task.CompletedTask;
     }
 
