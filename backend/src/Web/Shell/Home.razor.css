@@ -1,9 +1,11 @@
 .bz-home {
     display: grid;
     gap: 1.25rem;
-    width: min(100%, 1560px);
+    width: 100%;
+    max-width: 1560px;
     padding: 1.35rem clamp(1rem, 2vw, 2rem) 2.75rem;
-    margin-inline: auto;
+    margin-inline: 0;
+    justify-self: stretch;
     color: #d9e2ea;
 }
 

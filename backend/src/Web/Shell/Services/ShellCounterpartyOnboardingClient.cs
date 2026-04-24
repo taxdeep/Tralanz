@@ -336,7 +336,7 @@ public sealed class ShellCounterpartyOnboardingClient(PostgreSqlConnectionFactor
             join currency_catalog curr
               on curr.code = codes.code
             where curr.is_active = true
-            order by code asc;
+            order by codes.code asc;
             """;
         command.Parameters.AddWithValue("company_id", companyId);
 

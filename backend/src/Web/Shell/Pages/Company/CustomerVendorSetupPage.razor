@@ -14,9 +14,9 @@
     <MudPaper Elevation="0" Class="pa-5">
         <MudStack Spacing="2">
             <MudText Typo="Typo.overline" Class="text-secondary">Company Setup</MudText>
-            <MudText Typo="Typo.h4">Customer And Vendor Onboarding</MudText>
+            <MudText Typo="Typo.h4">@SetupPageTitle</MudText>
             <MudText Typo="Typo.body1" Class="text-secondary">
-                Create the minimum counterparty truth needed for the first invoice, bill, receipt, and vendor-payment flow. Company name is mandatory; currency is governed by the company currency policy.
+                @SetupPageSummary
             </MudText>
             <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
                 <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
@@ -33,6 +33,13 @@
     {
         <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true">
             Company-ready hand-off brought you here because the first invoice and bill flow should bind to real customer and vendor truth instead of placeholder counterparties.
+        </MudAlert>
+    }
+
+    @if (IsFocusedCreateMode)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+            Finish creating the new @(IsCustomerCreateIntent ? "customer" : "vendor"), then we will take you back to the document you came from and select it automatically.
         </MudAlert>
     }
 
@@ -101,148 +108,157 @@
         </MudAlert>
 
         <MudGrid>
-            <MudItem xs="12" lg="6">
-                <MudPaper Elevation="0" Class="pa-5">
-                    <MudStack Spacing="2">
-                        <MudText Typo="Typo.h6">@(_editingCustomerId.HasValue ? "Edit customer" : "Add customer")</MudText>
-                        @RenderCounterpartyForm(_customer, true)
-                    </MudStack>
-                </MudPaper>
-            </MudItem>
+            @if (!IsVendorCreateIntent)
+            {
+                <MudItem xs="12" lg="@(IsFocusedCreateMode ? 12 : 6)">
+                    <MudPaper Elevation="0" Class="pa-5">
+                        <MudStack Spacing="2">
+                            <MudText Typo="Typo.h6">@(_editingCustomerId.HasValue ? "Edit customer" : "Add customer")</MudText>
+                            @RenderCounterpartyForm(_customer, true)
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
 
-            <MudItem xs="12" lg="6">
-                <MudPaper Elevation="0" Class="pa-5">
-                    <MudStack Spacing="2">
-                        <MudText Typo="Typo.h6">@(_editingVendorId.HasValue ? "Edit vendor" : "Add vendor")</MudText>
-                        @RenderCounterpartyForm(_vendor, false)
-                    </MudStack>
-                </MudPaper>
-            </MudItem>
+            @if (!IsCustomerCreateIntent)
+            {
+                <MudItem xs="12" lg="@(IsFocusedCreateMode ? 12 : 6)">
+                    <MudPaper Elevation="0" Class="pa-5">
+                        <MudStack Spacing="2">
+                            <MudText Typo="Typo.h6">@(_editingVendorId.HasValue ? "Edit vendor" : "Add vendor")</MudText>
+                            @RenderCounterpartyForm(_vendor, false)
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
         </MudGrid>
 
-        <MudGrid>
-            <MudItem xs="12" lg="6">
-                <MudPaper Elevation="0" Class="pa-5">
-                    <MudText Typo="Typo.h6" Class="mb-3">Customer truth</MudText>
-                    @if (_summary.Customers.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Class="text-secondary">No customer truth exists yet.</MudText>
-                    }
-                    else
-                    {
-                        <MudTable Items="_summary.Customers" Dense="true" Hover="true" Bordered="true">
-                            <HeaderContent>
-                                <MudTh>Name</MudTh>
-                                <MudTh>Entity #</MudTh>
-                                <MudTh>Currency</MudTh>
-                                <MudTh>Status</MudTh>
-                                <MudTh>Contact</MudTh>
-                                <MudTh>Actions</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd>@context.DisplayName</MudTd>
-                                <MudTd>@context.EntityNumber</MudTd>
-                                <MudTd>@context.DefaultCurrencyCode</MudTd>
-                                <MudTd>@GetStatusLabel(context)</MudTd>
-                                <MudTd>@BuildContactSummary(context)</MudTd>
-                                <MudTd>
-                                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                                        <MudButton Variant="Variant.Text"
-                                                   Size="Size.Small"
-                                                   Color="Color.Primary"
-                                                   Disabled="@(_isSaving || WritesBlocked)"
-                                                   OnClick="@(() => EditCustomer(context))">
-                                            Edit
-                                        </MudButton>
-                                        @if (context.IsActive)
-                                        {
+        @if (!IsFocusedCreateMode)
+        {
+            <MudGrid>
+                <MudItem xs="12" lg="6">
+                    <MudPaper Elevation="0" Class="pa-5">
+                        <MudText Typo="Typo.h6" Class="mb-3">Customer truth</MudText>
+                        @if (_summary.Customers.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="text-secondary">No customer truth exists yet.</MudText>
+                        }
+                        else
+                        {
+                            <MudTable Items="_summary.Customers" Dense="true" Hover="true" Bordered="true">
+                                <HeaderContent>
+                                    <MudTh>Name</MudTh>
+                                    <MudTh>Entity #</MudTh>
+                                    <MudTh>Currency</MudTh>
+                                    <MudTh>Status</MudTh>
+                                    <MudTh>Contact</MudTh>
+                                    <MudTh>Actions</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@context.DisplayName</MudTd>
+                                    <MudTd>@context.EntityNumber</MudTd>
+                                    <MudTd>@context.DefaultCurrencyCode</MudTd>
+                                    <MudTd>@GetStatusLabel(context)</MudTd>
+                                    <MudTd>@BuildContactSummary(context)</MudTd>
+                                    <MudTd>
+                                        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
                                             <MudButton Variant="Variant.Text"
                                                        Size="Size.Small"
-                                                       Color="Color.Warning"
+                                                       Color="Color.Primary"
                                                        Disabled="@(_isSaving || WritesBlocked)"
-                                                       OnClick="@(() => SetCustomerActiveAsync(context, false))">
-                                                Deactivate
+                                                       OnClick="@(() => EditCustomer(context))">
+                                                Edit
                                             </MudButton>
-                                        }
-                                        else
-                                        {
-                                            <MudButton Variant="Variant.Text"
-                                                       Size="Size.Small"
-                                                       Color="Color.Success"
-                                                       Disabled="@(_isSaving || WritesBlocked)"
-                                                       OnClick="@(() => SetCustomerActiveAsync(context, true))">
-                                                Reactivate
-                                            </MudButton>
-                                        }
-                                    </div>
-                                </MudTd>
-                            </RowTemplate>
-                        </MudTable>
-                    }
-                </MudPaper>
-            </MudItem>
+                                            @if (context.IsActive)
+                                            {
+                                                <MudButton Variant="Variant.Text"
+                                                           Size="Size.Small"
+                                                           Color="Color.Warning"
+                                                           Disabled="@(_isSaving || WritesBlocked)"
+                                                           OnClick="@(() => SetCustomerActiveAsync(context, false))">
+                                                    Deactivate
+                                                </MudButton>
+                                            }
+                                            else
+                                            {
+                                                <MudButton Variant="Variant.Text"
+                                                           Size="Size.Small"
+                                                           Color="Color.Success"
+                                                           Disabled="@(_isSaving || WritesBlocked)"
+                                                           OnClick="@(() => SetCustomerActiveAsync(context, true))">
+                                                    Reactivate
+                                                </MudButton>
+                                            }
+                                        </div>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </MudPaper>
+                </MudItem>
 
-            <MudItem xs="12" lg="6">
-                <MudPaper Elevation="0" Class="pa-5">
-                    <MudText Typo="Typo.h6" Class="mb-3">Vendor truth</MudText>
-                    @if (_summary.Vendors.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Class="text-secondary">No vendor truth exists yet.</MudText>
-                    }
-                    else
-                    {
-                        <MudTable Items="_summary.Vendors" Dense="true" Hover="true" Bordered="true">
-                            <HeaderContent>
-                                <MudTh>Name</MudTh>
-                                <MudTh>Entity #</MudTh>
-                                <MudTh>Currency</MudTh>
-                                <MudTh>Status</MudTh>
-                                <MudTh>Contact</MudTh>
-                                <MudTh>Actions</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd>@context.DisplayName</MudTd>
-                                <MudTd>@context.EntityNumber</MudTd>
-                                <MudTd>@context.DefaultCurrencyCode</MudTd>
-                                <MudTd>@GetStatusLabel(context)</MudTd>
-                                <MudTd>@BuildContactSummary(context)</MudTd>
-                                <MudTd>
-                                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                                        <MudButton Variant="Variant.Text"
-                                                   Size="Size.Small"
-                                                   Color="Color.Primary"
-                                                   Disabled="@(_isSaving || WritesBlocked)"
-                                                   OnClick="@(() => EditVendor(context))">
-                                            Edit
-                                        </MudButton>
-                                        @if (context.IsActive)
-                                        {
+                <MudItem xs="12" lg="6">
+                    <MudPaper Elevation="0" Class="pa-5">
+                        <MudText Typo="Typo.h6" Class="mb-3">Vendor truth</MudText>
+                        @if (_summary.Vendors.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="text-secondary">No vendor truth exists yet.</MudText>
+                        }
+                        else
+                        {
+                            <MudTable Items="_summary.Vendors" Dense="true" Hover="true" Bordered="true">
+                                <HeaderContent>
+                                    <MudTh>Name</MudTh>
+                                    <MudTh>Entity #</MudTh>
+                                    <MudTh>Currency</MudTh>
+                                    <MudTh>Status</MudTh>
+                                    <MudTh>Contact</MudTh>
+                                    <MudTh>Actions</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@context.DisplayName</MudTd>
+                                    <MudTd>@context.EntityNumber</MudTd>
+                                    <MudTd>@context.DefaultCurrencyCode</MudTd>
+                                    <MudTd>@GetStatusLabel(context)</MudTd>
+                                    <MudTd>@BuildContactSummary(context)</MudTd>
+                                    <MudTd>
+                                        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
                                             <MudButton Variant="Variant.Text"
                                                        Size="Size.Small"
-                                                       Color="Color.Warning"
+                                                       Color="Color.Primary"
                                                        Disabled="@(_isSaving || WritesBlocked)"
-                                                       OnClick="@(() => SetVendorActiveAsync(context, false))">
-                                                Deactivate
+                                                       OnClick="@(() => EditVendor(context))">
+                                                Edit
                                             </MudButton>
-                                        }
-                                        else
-                                        {
-                                            <MudButton Variant="Variant.Text"
-                                                       Size="Size.Small"
-                                                       Color="Color.Success"
-                                                       Disabled="@(_isSaving || WritesBlocked)"
-                                                       OnClick="@(() => SetVendorActiveAsync(context, true))">
-                                                Reactivate
-                                            </MudButton>
-                                        }
-                                    </div>
-                                </MudTd>
-                            </RowTemplate>
-                        </MudTable>
-                    }
-                </MudPaper>
-            </MudItem>
-        </MudGrid>
+                                            @if (context.IsActive)
+                                            {
+                                                <MudButton Variant="Variant.Text"
+                                                           Size="Size.Small"
+                                                           Color="Color.Warning"
+                                                           Disabled="@(_isSaving || WritesBlocked)"
+                                                           OnClick="@(() => SetVendorActiveAsync(context, false))">
+                                                    Deactivate
+                                                </MudButton>
+                                            }
+                                            else
+                                            {
+                                                <MudButton Variant="Variant.Text"
+                                                           Size="Size.Small"
+                                                           Color="Color.Success"
+                                                           Disabled="@(_isSaving || WritesBlocked)"
+                                                           OnClick="@(() => SetVendorActiveAsync(context, true))">
+                                                    Reactivate
+                                                </MudButton>
+                                            }
+                                        </div>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
 
         <MudPaper Elevation="0" Class="pa-5">
             <MudText Typo="Typo.h6" Class="mb-3">Recommended next workspaces</MudText>
@@ -331,6 +347,17 @@
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
     private bool IsCustomerCreateIntent => string.Equals(Create, "customer", StringComparison.OrdinalIgnoreCase);
     private bool IsVendorCreateIntent => string.Equals(Create, "vendor", StringComparison.OrdinalIgnoreCase);
+    private bool IsFocusedCreateMode => IsCustomerCreateIntent || IsVendorCreateIntent;
+    private string SetupPageTitle => IsCustomerCreateIntent
+        ? "Create Customer"
+        : IsVendorCreateIntent
+            ? "Create Vendor"
+            : "Customer And Vendor Onboarding";
+    private string SetupPageSummary => IsCustomerCreateIntent
+        ? "Create the customer needed by the current workflow. Company name is mandatory; currency follows the company currency policy. When you save, we will return to the originating document and select the new customer automatically."
+        : IsVendorCreateIntent
+            ? "Create the vendor needed by the current workflow. Company name is mandatory; currency follows the company currency policy. When you save, we will return to the originating document and select the new vendor automatically."
+            : "Create the minimum counterparty truth needed for the first invoice, bill, receipt, and vendor-payment flow. Company name is mandatory; currency is governed by the company currency policy.";
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
 

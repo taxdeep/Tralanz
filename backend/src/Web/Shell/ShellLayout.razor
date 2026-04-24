@@ -46,10 +46,7 @@ else
                     <i class="ti ti-scale-outline" aria-hidden="true"></i>
                 </div>
                 <div class="bz-shell__brand-copy">
-                    <div class="bz-shell__brand-heading">
-                        <div class="bz-shell__brand-title">Balanciz</div>
-                        <span class="bz-shell__brand-version">v@AppVersion</span>
-                    </div>
+                    <div class="bz-shell__brand-title">Balanciz <span class="bz-shell__brand-version">@DisplayVersion</span></div>
                     <div class="bz-shell__brand-subtitle">Operator workspace</div>
                 </div>
             </div>
@@ -146,9 +143,10 @@ else
         typeof(ShellLayout).Assembly
             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
-            .FirstOrDefault()?.InformationalVersion
+            .FirstOrDefault()?.InformationalVersion?.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)[0]
         ?? typeof(ShellLayout).Assembly.GetName().Version?.ToString()
         ?? "0.0.0";
+    private static string DisplayVersion => $"v{AppVersion}";
 
     private bool IsLoginRoute =>
         NavigationManager.ToBaseRelativePath(NavigationManager.Uri)

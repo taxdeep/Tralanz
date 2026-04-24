@@ -44,18 +44,15 @@
     gap: 0.12rem;
 }
 
-.bz-shell__brand-heading {
-    display: flex;
+.bz-shell__brand-title {
+    display: inline-flex;
     align-items: center;
     gap: 0.55rem;
-    flex-wrap: wrap;
-}
-
-.bz-shell__brand-title {
     color: #f8fbff;
     font-size: 1.12rem;
     font-weight: 800;
     letter-spacing: 0;
+    line-height: 1;
 }
 
 .bz-shell__brand-version {
@@ -69,6 +66,7 @@
     font-size: 0.68rem;
     font-weight: 800;
     line-height: 1;
+    white-space: nowrap;
 }
 
 .bz-shell__brand-subtitle {
