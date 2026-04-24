@@ -4,6 +4,13 @@ public static class SearchScopeContext
 {
     public const string GlobalTopbar = "global.topbar";
     public const string GlobalTransactions = "global.transactions";
+    public const string InventoryShipmentCustomerPicker = "inventory.shipment_customer_picker";
+    public const string InventoryShipmentItemPicker = "inventory.shipment_item_picker";
+    public const string InventoryShipmentWarehousePicker = "inventory.shipment_warehouse_picker";
+    public const string InventoryTransferItemPicker = "inventory.transfer_item_picker";
+    public const string InventoryTransferWarehousePicker = "inventory.transfer_warehouse_picker";
+    public const string InventoryAdjustmentItemPicker = "inventory.adjustment_item_picker";
+    public const string InventoryAdjustmentWarehousePicker = "inventory.adjustment_warehouse_picker";
     public const string QuoteCustomerPicker = "quote.customer_picker";
     public const string QuoteProductServicePicker = "quote.product_service_picker";
     public const string QuoteInventoryItemPicker = "quote.inventory_item_picker";

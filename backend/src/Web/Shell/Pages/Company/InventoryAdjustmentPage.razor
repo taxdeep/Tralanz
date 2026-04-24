@@ -1,6 +1,8 @@
 @page "/company/inventory-adjustment"
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.Inventory.Domain.Shared
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using Web.Shell.Services
 @rendermode InteractiveServer
 @inject WebShellState ShellState
@@ -121,17 +123,16 @@
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="12" md="4">
-                        <MudSelect T="Guid?"
-                                   Label="Warehouse"
-                                   Variant="Variant.Outlined"
-                                   Margin="Margin.Dense"
-                                   Disabled="@(_isSaving || WritesBlocked)"
-                                   @bind-Value="_warehouseId">
-                            @foreach (var warehouse in _dashboard.ActiveWarehouses)
-                            {
-                                <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
-                            }
-                        </MudSelect>
+                        <MudText Typo="Typo.caption" Class="mb-1">Warehouse</MudText>
+                        <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                           UserId="@ShellState.CurrentUserId"
+                                           Context="@SearchScopeContext.InventoryAdjustmentWarehousePicker"
+                                           SelectedId="@_warehouseId"
+                                           SelectedDisplayText="@ResolveWarehouseLabel(_warehouseId)"
+                                           Placeholder="Search warehouse"
+                                           Disabled="@(_isSaving || WritesBlocked)"
+                                           OnOptionSelected="HandleWarehouseSelectedAsync"
+                                           OnCleared="HandleWarehouseClearedAsync" />
                     </MudItem>
                     <MudItem xs="12" md="4">
                         <MudDatePicker Label="Posting date"
@@ -172,18 +173,16 @@
                                 <MudTextField T="int" Label="Line" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" Value="@line.LineNo" />
                             </MudItem>
                             <MudItem xs="12" md="4">
-                                <MudSelect T="Guid?"
-                                           Label="Item"
-                                           Variant="Variant.Outlined"
-                                           Margin="Margin.Dense"
-                                           Disabled="@(_isSaving || WritesBlocked)"
-                                           Value="@line.ItemId"
-                                           ValueChanged="@((Guid? value) => OnItemChanged(line, value))">
-                                    @foreach (var item in OperationalItems)
-                                    {
-                                        <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
-                                    }
-                                </MudSelect>
+                                <MudText Typo="Typo.caption" Class="mb-1">Item</MudText>
+                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@ShellState.CurrentUserId"
+                                                   Context="@SearchScopeContext.InventoryAdjustmentItemPicker"
+                                                   SelectedId="@line.ItemId"
+                                                   SelectedDisplayText="@ResolveItemLabel(line.ItemId)"
+                                                   Placeholder="Search item"
+                                                   Disabled="@(_isSaving || WritesBlocked)"
+                                                   OnOptionSelected="@(option => HandleItemSelectedAsync(line, option))"
+                                                   OnCleared="@(async () => await HandleItemClearedAsync(line))" />
                             </MudItem>
                             <MudItem xs="12" md="2">
                                 <MudTextField T="string" Label="UOM" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.UomCode" />
@@ -419,6 +418,46 @@
 
         return InvokeAsync(StateHasChanged);
     }
+
+    private string? ResolveWarehouseLabel(Guid? warehouseId)
+    {
+        if (!warehouseId.HasValue || _dashboard is null)
+        {
+            return null;
+        }
+
+        var warehouse = _dashboard.ActiveWarehouses.FirstOrDefault(candidate => candidate.Id == warehouseId.Value);
+        return warehouse is null ? warehouseId.Value.ToString("D") : $"{warehouse.WarehouseCode} - {warehouse.Name}";
+    }
+
+    private string? ResolveItemLabel(Guid? itemId)
+    {
+        if (!itemId.HasValue)
+        {
+            return null;
+        }
+
+        var item = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId.Value);
+        return item is null ? itemId.Value.ToString("D") : $"{item.ItemCode} - {item.Name}";
+    }
+
+    private async Task HandleWarehouseSelectedAsync(UnitySearchPickerOption option)
+    {
+        _warehouseId = option.SourceId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleWarehouseClearedAsync()
+    {
+        _warehouseId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HandleItemSelectedAsync(AdjustmentLineEditorState line, UnitySearchPickerOption option) =>
+        OnItemChanged(line, option.SourceId);
+
+    private Task HandleItemClearedAsync(AdjustmentLineEditorState line) =>
+        OnItemChanged(line, null);
 
     private async Task PostAsync()
     {

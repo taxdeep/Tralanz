@@ -17,6 +17,7 @@ public sealed class UnitySearchPolicyRegistry
                     SearchDocumentType.Vendor,
                     SearchDocumentType.ProductService,
                     SearchDocumentType.InventoryItem,
+                    SearchDocumentType.Warehouse,
                     SearchDocumentType.Quote,
                     SearchDocumentType.SalesOrder,
                     SearchDocumentType.PurchaseOrder,
@@ -39,6 +40,7 @@ public sealed class UnitySearchPolicyRegistry
                     SearchDocumentType.Vendor,
                     SearchDocumentType.ProductService,
                     SearchDocumentType.InventoryItem,
+                    SearchDocumentType.Warehouse,
                     SearchDocumentType.Quote,
                     SearchDocumentType.SalesOrder,
                     SearchDocumentType.PurchaseOrder,
@@ -54,6 +56,41 @@ public sealed class UnitySearchPolicyRegistry
             [SearchScopeContext.QuoteCustomerPicker] = new(
                 SearchScopeContext.QuoteCustomerPicker,
                 new[] { SearchDocumentType.Customer },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryShipmentCustomerPicker] = new(
+                SearchScopeContext.InventoryShipmentCustomerPicker,
+                new[] { SearchDocumentType.Customer },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryShipmentItemPicker] = new(
+                SearchScopeContext.InventoryShipmentItemPicker,
+                new[] { SearchDocumentType.InventoryItem },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryShipmentWarehousePicker] = new(
+                SearchScopeContext.InventoryShipmentWarehousePicker,
+                new[] { SearchDocumentType.Warehouse },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryTransferItemPicker] = new(
+                SearchScopeContext.InventoryTransferItemPicker,
+                new[] { SearchDocumentType.InventoryItem },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryTransferWarehousePicker] = new(
+                SearchScopeContext.InventoryTransferWarehousePicker,
+                new[] { SearchDocumentType.Warehouse },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryAdjustmentItemPicker] = new(
+                SearchScopeContext.InventoryAdjustmentItemPicker,
+                new[] { SearchDocumentType.InventoryItem },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.InventoryAdjustmentWarehousePicker] = new(
+                SearchScopeContext.InventoryAdjustmentWarehousePicker,
+                new[] { SearchDocumentType.Warehouse },
                 EnforceActiveOnly: true,
                 EnforceBusinessEligibility: true),
             [SearchScopeContext.QuoteProductServicePicker] = new(

@@ -131,6 +131,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
             await SeedVendorDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedProductServiceDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedInventoryItemDocumentsAsync(connection, transaction, companyId, cancellationToken);
+            await SeedWarehouseDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedSalesCommercialDocumentsAsync(connection, transaction, companyId, "quote", cancellationToken);
             await SeedSalesCommercialDocumentsAsync(connection, transaction, companyId, "sales_order", cancellationToken);
             await SeedPurchaseOrderDocumentsAsync(connection, transaction, companyId, cancellationToken);
@@ -448,6 +449,46 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               1
             from inventory_items item
             where item.company_id = @company_id;
+            """,
+            cancellationToken);
+    }
+
+    private static async Task SeedWarehouseDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "public.inventory_warehouses", cancellationToken))
+        {
+            return;
+        }
+
+        await ExecuteCompanyProjectionStepAsync(
+            connection,
+            transaction,
+            companyId,
+            """
+            insert into search_documents (
+              company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+            )
+            select
+              warehouse.company_id,
+              'warehouse',
+              warehouse.id,
+              'products',
+              warehouse.name,
+              concat_ws(' | ', warehouse.warehouse_code, case when warehouse.is_active then 'active' else 'inactive' end),
+              concat_ws(' ', warehouse.name, warehouse.warehouse_code, coalesce(warehouse.description, '')),
+              to_tsvector('simple', concat_ws(' ', warehouse.name, warehouse.warehouse_code, coalesce(warehouse.description, ''))),
+              lower(coalesce(warehouse.warehouse_code, warehouse.name)),
+              '/company/inventory-foundation',
+              jsonb_build_object('warehouseCode', warehouse.warehouse_code, 'description', warehouse.description),
+              null,
+              null,
+              warehouse.is_active,
+              false,
+              22,
+              1
+            from inventory_warehouses warehouse
+            where warehouse.company_id = @company_id;
             """,
             cancellationToken);
     }

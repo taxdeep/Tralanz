@@ -203,55 +203,15 @@
 
 .bz-shell__body {
     display: grid;
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 96px minmax(0, 1fr);
     min-height: calc(100vh - 72px);
 }
 
 .bz-shell__sidebar {
+    position: relative;
+    overflow: visible;
     border-right: 1px solid rgba(148, 163, 184, 0.14);
-    background:
-        linear-gradient(180deg, rgba(8, 15, 29, 0.94), rgba(7, 13, 24, 0.98));
-}
-
-.bz-sidebar__summary {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    padding: 1.15rem 1.05rem 1rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.bz-sidebar__summary-badge {
-    display: grid;
-    width: 3rem;
-    height: 3rem;
-    place-items: center;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #1677ff, #36cfc9);
-    color: #f8fbff;
-    font-size: 1.15rem;
-    font-weight: 800;
-}
-
-.bz-sidebar__summary-label {
-    color: #60a5fa;
-    font-size: 0.72rem;
-    font-weight: 800;
-    text-transform: uppercase;
-}
-
-.bz-sidebar__summary-title {
-    margin-top: 0.18rem;
-    color: #f8fafc;
-    font-size: 1.06rem;
-    font-weight: 800;
-}
-
-.bz-sidebar__summary-text {
-    margin-top: 0.22rem;
-    color: #94a3b8;
-    font-size: 0.8rem;
-    line-height: 1.4;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
 .bz-main {

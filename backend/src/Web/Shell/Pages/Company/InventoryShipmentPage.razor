@@ -1,6 +1,8 @@
 @page "/company/inventory-shipment"
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.Inventory.Domain.Shared
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @using Web.Shell.Services
 @rendermode InteractiveServer
 @inject WebShellState ShellState
@@ -170,12 +172,16 @@
             <MudText Typo="Typo.h6">Shipment header</MudText>
             <MudGrid>
                 <MudItem xs="12" md="4">
-                    <MudSelect T="Guid?" Label="Customer" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" Value="_selectedCustomerId" ValueChanged="OnCustomerChangedAsync">
-                        @foreach (var customer in ActiveCustomers)
-                        {
-                            <MudSelectItem T="Guid?" Value="@customer.Id">@customer.DisplayName (@customer.DefaultCurrencyCode)</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <MudText Typo="Typo.caption" Class="mb-1">Customer</MudText>
+                    <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       UserId="@ShellState.CurrentUserId"
+                                       Context="@SearchScopeContext.InventoryShipmentCustomerPicker"
+                                       SelectedId="@_selectedCustomerId"
+                                       SelectedDisplayText="@ResolveCustomerLabel(_selectedCustomerId)"
+                                       Placeholder="Search customer"
+                                       Disabled="@(_isSaving || WritesBlocked)"
+                                       OnOptionSelected="HandleCustomerSelectedAsync"
+                                       OnCleared="HandleCustomerClearedAsync" />
                 </MudItem>
                 <MudItem xs="12" md="2">
                     <MudDatePicker Label="Ship date" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Date="_postingDate" />
@@ -208,20 +214,28 @@
                             <MudTextField T="int" Label="Line" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" Value="@line.LineNo" />
                         </MudItem>
                         <MudItem xs="12" md="3">
-                            <MudSelect T="Guid?" Label="Item" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" Value="line.ItemId" ValueChanged="@(value => OnItemChangedAsync(line, value))">
-                                @foreach (var item in OperationalItems)
-                                {
-                                    <MudSelectItem T="Guid?" Value="@item.Id">@item.ItemCode - @item.Name</MudSelectItem>
-                                }
-                            </MudSelect>
+                            <MudText Typo="Typo.caption" Class="mb-1">Item</MudText>
+                            <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@ShellState.CurrentUserId"
+                                               Context="@SearchScopeContext.InventoryShipmentItemPicker"
+                                               SelectedId="@line.ItemId"
+                                               SelectedDisplayText="@ResolveItemLabel(line.ItemId)"
+                                               Placeholder="Search item"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               OnOptionSelected="@(option => HandleItemSelectedAsync(line, option))"
+                                               OnCleared="@(async () => await HandleItemClearedAsync(line))" />
                         </MudItem>
                         <MudItem xs="12" md="3">
-                            <MudSelect T="Guid?" Label="Warehouse" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_isSaving || WritesBlocked)" @bind-Value="line.WarehouseId">
-                                @foreach (var warehouse in _dashboard.ActiveWarehouses)
-                                {
-                                    <MudSelectItem T="Guid?" Value="@warehouse.Id">@warehouse.WarehouseCode - @warehouse.Name</MudSelectItem>
-                                }
-                            </MudSelect>
+                            <MudText Typo="Typo.caption" Class="mb-1">Warehouse</MudText>
+                            <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@ShellState.CurrentUserId"
+                                               Context="@SearchScopeContext.InventoryShipmentWarehousePicker"
+                                               SelectedId="@line.WarehouseId"
+                                               SelectedDisplayText="@ResolveWarehouseLabel(line.WarehouseId)"
+                                               Placeholder="Search warehouse"
+                                               Disabled="@(_isSaving || WritesBlocked)"
+                                               OnOptionSelected="@(option => HandleWarehouseSelectedAsync(line, option))"
+                                               OnCleared="@(async () => await HandleWarehouseClearedAsync(line))" />
                         </MudItem>
                         <MudItem xs="12" md="1">
                             <MudTextField T="string" Label="UOM" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="true" @bind-Value="line.UomCode" />
@@ -339,12 +353,73 @@
         _lineEditors.Add(new ShipmentLineEditorState { LineNo = 1, ItemId = defaultItem?.Id, WarehouseId = _dashboard.ActiveWarehouses.FirstOrDefault()?.Id, UomCode = defaultItem?.StockUomCode ?? "EA", Quantity = 1m });
     }
 
-    private async Task OnCustomerChangedAsync(Guid? customerId) { _selectedCustomerId = customerId; await InvokeAsync(StateHasChanged); }
-
     private async Task OnItemChangedAsync(ShipmentLineEditorState line, Guid? itemId)
     {
         line.ItemId = itemId;
         line.UomCode = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId)?.StockUomCode ?? string.Empty;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string? ResolveCustomerLabel(Guid? customerId)
+    {
+        if (!customerId.HasValue)
+        {
+            return null;
+        }
+
+        var customer = ActiveCustomers.FirstOrDefault(candidate => candidate.Id == customerId.Value);
+        return customer is null ? customerId.Value.ToString("D") : $"{customer.DisplayName} ({customer.DefaultCurrencyCode})";
+    }
+
+    private string? ResolveItemLabel(Guid? itemId)
+    {
+        if (!itemId.HasValue)
+        {
+            return null;
+        }
+
+        var item = OperationalItems.FirstOrDefault(candidate => candidate.Id == itemId.Value);
+        return item is null ? itemId.Value.ToString("D") : $"{item.ItemCode} - {item.Name}";
+    }
+
+    private string? ResolveWarehouseLabel(Guid? warehouseId)
+    {
+        if (!warehouseId.HasValue || _dashboard is null)
+        {
+            return null;
+        }
+
+        var warehouse = _dashboard.ActiveWarehouses.FirstOrDefault(candidate => candidate.Id == warehouseId.Value);
+        return warehouse is null ? warehouseId.Value.ToString("D") : $"{warehouse.WarehouseCode} - {warehouse.Name}";
+    }
+
+    private async Task HandleCustomerSelectedAsync(UnitySearchPickerOption option)
+    {
+        _selectedCustomerId = option.SourceId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleCustomerClearedAsync()
+    {
+        _selectedCustomerId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HandleItemSelectedAsync(ShipmentLineEditorState line, UnitySearchPickerOption option) =>
+        OnItemChangedAsync(line, option.SourceId);
+
+    private Task HandleItemClearedAsync(ShipmentLineEditorState line) =>
+        OnItemChangedAsync(line, null);
+
+    private async Task HandleWarehouseSelectedAsync(ShipmentLineEditorState line, UnitySearchPickerOption option)
+    {
+        line.WarehouseId = option.SourceId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleWarehouseClearedAsync(ShipmentLineEditorState line)
+    {
+        line.WarehouseId = null;
         await InvokeAsync(StateHasChanged);
     }
 
