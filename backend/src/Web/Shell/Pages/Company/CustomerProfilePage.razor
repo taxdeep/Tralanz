@@ -1,5 +1,4 @@
 @page "/ar/customers/{CustomerId:guid}"
-@using AntDesign
 @using Web.Business.AR.Aging
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -61,31 +60,31 @@
                     </div>
                 </div>
                 <div class="customer-profile__hero-actions">
-                    <Button Type="@AntDesign.ButtonType.Default" Href="@BuildEditHref(SelectedCustomer.Id)">Edit</Button>
-                    <Button Type="@AntDesign.ButtonType.Primary" Href="@BuildInvoiceHref(SelectedCustomer.Id)">New transaction</Button>
+                    <a class="ant-btn" href="@BuildEditHref(SelectedCustomer.Id)">Edit</a>
+                    <a class="ant-btn ant-btn-primary" href="@BuildInvoiceHref(SelectedCustomer.Id)">New transaction</a>
                 </div>
             </section>
 
             <section class="customer-profile__contact-grid">
-                <Card Class="customer-profile__contact-card">
+                <article class="customer-profile__contact-card">
                     <div class="customer-profile__field-label">Email</div>
                     <a href="@BuildMailHref(SelectedCustomer.Email)">@DisplayAddable(SelectedCustomer.Email, "Add email")</a>
                     <div class="customer-profile__field-label">Billing address</div>
                     <span>@DisplayMultiline(SelectedCustomer.Address, "Add billing address")</span>
                     <div class="customer-profile__field-label">Notes</div>
                     <span>AR-only profile shell. Notes belong in the next profile project.</span>
-                </Card>
+                </article>
 
-                <Card Class="customer-profile__contact-card">
+                <article class="customer-profile__contact-card">
                     <div class="customer-profile__field-label">Phone</div>
                     <a href="@BuildPhoneHref(SelectedCustomer.Phone)">@DisplayAddable(SelectedCustomer.Phone, "Add phone number")</a>
                     <div class="customer-profile__field-label">Shipping address</div>
                     <span>@DisplayMultiline(SelectedCustomer.Address, "Add shipping address")</span>
                     <div class="customer-profile__field-label">Custom fields</div>
                     <span>Reserved for customer profile project</span>
-                </Card>
+                </article>
 
-                <Card Class="customer-profile__financial-card">
+                <article class="customer-profile__financial-card">
                     <h2>Financial summary</h2>
                     <div class="customer-profile__financial-row">
                         <span>Open balance</span>
@@ -99,7 +98,7 @@
                         <span>Open item(s)</span>
                         <strong>@(SelectedAging?.OpenItemCount ?? 0)</strong>
                     </div>
-                </Card>
+                </article>
             </section>
 
             <section class="customer-profile__tabs">
@@ -218,19 +217,20 @@
     private string FormatMoney(decimal value) =>
         $"{BaseCurrencyCode} {value:N2}";
 
-    private static string DisplayAddable(string value, string fallback) =>
+    private static string DisplayAddable(string? value, string fallback) =>
         string.IsNullOrWhiteSpace(value) ? fallback : value;
 
-    private static MarkupString DisplayMultiline(string value, string fallback)
+    private static MarkupString DisplayMultiline(string? value, string fallback)
     {
         var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Replace(Environment.NewLine, "<br />");
         return new MarkupString(text);
     }
 
-    private static string BuildInitials(string displayName)
+    private static string BuildInitials(string? displayName)
     {
-        var parts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return string.Concat(parts.Take(2).Select(static part => char.ToUpperInvariant(part[0])));
+        var parts = (displayName ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var initials = string.Concat(parts.Take(2).Select(static part => char.ToUpperInvariant(part[0])));
+        return string.IsNullOrWhiteSpace(initials) ? "C" : initials;
     }
 
     private static string BuildCustomerProfileHref(Guid customerId) =>
@@ -242,10 +242,10 @@
     private static string BuildEditHref(Guid customerId) =>
         $"/company/customer-vendor-setup?create=customer&returnUrl=/ar/customers/{customerId:D}";
 
-    private static string BuildMailHref(string email) =>
+    private static string BuildMailHref(string? email) =>
         string.IsNullOrWhiteSpace(email) ? "#" : $"mailto:{email}";
 
-    private static string BuildPhoneHref(string phone) =>
+    private static string BuildPhoneHref(string? phone) =>
         string.IsNullOrWhiteSpace(phone) ? "#" : $"tel:{phone}";
 
     private RenderFragment RenderTransactionsTab(ShellManagedCounterpartySummary customer) => @<text>
@@ -377,7 +377,7 @@
 
     private RenderFragment RenderDetailsTab(ShellManagedCounterpartySummary customer) => @<text>
         <div class="customer-profile__details-grid">
-            <Card Class="customer-profile__details-card">
+            <article class="customer-profile__details-card">
                 <h2>Customer identity</h2>
                 <dl>
                     <dt>Display name</dt>
@@ -389,8 +389,8 @@
                     <dt>Default currency</dt>
                     <dd>@customer.DefaultCurrencyCode</dd>
                 </dl>
-            </Card>
-            <Card Class="customer-profile__details-card">
+            </article>
+            <article class="customer-profile__details-card">
                 <h2>AR boundary</h2>
                 <p>This profile is customer-scoped AR truth. Vendor/AP records stay in a separate AP workspace.</p>
                 <dl>
@@ -401,7 +401,7 @@
                     <dt>Open item count</dt>
                     <dd>@SelectedOpenItemCount</dd>
                 </dl>
-            </Card>
+            </article>
         </div>
     </text>;
 

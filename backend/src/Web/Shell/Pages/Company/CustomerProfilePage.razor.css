@@ -140,9 +140,12 @@
     margin-top: 1rem;
 }
 
-.customer-profile ::deep .customer-profile__contact-card.ant-card,
-.customer-profile ::deep .customer-profile__financial-card.ant-card {
-    border-color: #d8dee6;
+.customer-profile__contact-card,
+.customer-profile__financial-card,
+.customer-profile__details-card {
+    padding: 1.35rem;
+    border: 1px solid #d8dee6;
+    background: #fff;
     box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
 }
 
@@ -358,11 +361,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
-}
-
-.customer-profile ::deep .customer-profile__details-card.ant-card {
-    border-color: #d8dee6;
-    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
 }
 
 .customer-profile__details-card h2 {

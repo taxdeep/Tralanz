@@ -140,10 +140,12 @@
     margin-top: 1rem;
 }
 
-.vendor-profile ::deep .vendor-profile__contact-card.ant-card,
-.vendor-profile ::deep .vendor-profile__financial-card.ant-card,
-.vendor-profile ::deep .vendor-profile__details-card.ant-card {
-    border-color: #d8dee6;
+.vendor-profile__contact-card,
+.vendor-profile__financial-card,
+.vendor-profile__details-card {
+    padding: 1.35rem;
+    border: 1px solid #d8dee6;
+    background: #fff;
     box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
 }
 

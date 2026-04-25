@@ -101,25 +101,23 @@
     border: 1px solid #efe4cf;
 }
 
-.vendor-dashboard ::deep .vendor-dashboard__summary-card.ant-card {
+.vendor-dashboard__summary-card {
+    min-height: 7.5rem;
+    padding: 1.4rem 1.7rem;
     border: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
 }
 
-.vendor-dashboard ::deep .vendor-dashboard__summary-card .ant-card-body {
-    min-height: 7.5rem;
-    padding: 1.4rem 1.7rem;
-}
-
-.vendor-dashboard ::deep .vendor-dashboard__summary-card .ant-statistic-title {
+.vendor-dashboard__stat-title {
     color: #5f5341;
     font-size: 0.76rem;
     font-weight: 700;
 }
 
-.vendor-dashboard ::deep .vendor-dashboard__summary-card .ant-statistic-content {
+.vendor-dashboard__stat-value {
+    margin-top: 0.1rem;
     color: #17202a;
     font-size: 1.2rem;
     font-weight: 800;

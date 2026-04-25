@@ -1,5 +1,4 @@
 @page "/ap/vendors/{VendorId:guid}"
-@using AntDesign
 @using Web.Business.AP.Aging
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -61,31 +60,31 @@
                     </div>
                 </div>
                 <div class="vendor-profile__hero-actions">
-                    <Button Type="@AntDesign.ButtonType.Default" Href="@BuildEditHref(SelectedVendor.Id)">Edit</Button>
-                    <Button Type="@AntDesign.ButtonType.Primary" Href="@BuildBillHref(SelectedVendor.Id)">New transaction</Button>
+                    <a class="ant-btn" href="@BuildEditHref(SelectedVendor.Id)">Edit</a>
+                    <a class="ant-btn ant-btn-primary" href="@BuildBillHref(SelectedVendor.Id)">New transaction</a>
                 </div>
             </section>
 
             <section class="vendor-profile__contact-grid">
-                <Card Class="vendor-profile__contact-card">
+                <article class="vendor-profile__contact-card">
                     <div class="vendor-profile__field-label">Email</div>
                     <a href="@BuildMailHref(SelectedVendor.Email)">@DisplayAddable(SelectedVendor.Email, "Add email")</a>
                     <div class="vendor-profile__field-label">Payment address</div>
                     <span>@DisplayMultiline(SelectedVendor.Address, "Add payment address")</span>
                     <div class="vendor-profile__field-label">Notes</div>
                     <span>AP-only profile shell. Vendor notes can land in the next profile project.</span>
-                </Card>
+                </article>
 
-                <Card Class="vendor-profile__contact-card">
+                <article class="vendor-profile__contact-card">
                     <div class="vendor-profile__field-label">Phone</div>
                     <a href="@BuildPhoneHref(SelectedVendor.Phone)">@DisplayAddable(SelectedVendor.Phone, "Add phone number")</a>
                     <div class="vendor-profile__field-label">Remittance address</div>
                     <span>@DisplayMultiline(SelectedVendor.Address, "Add remittance address")</span>
                     <div class="vendor-profile__field-label">Custom fields</div>
                     <span>Reserved for vendor profile project</span>
-                </Card>
+                </article>
 
-                <Card Class="vendor-profile__financial-card">
+                <article class="vendor-profile__financial-card">
                     <h2>Financial summary</h2>
                     <div class="vendor-profile__financial-row">
                         <span>Open balance</span>
@@ -99,7 +98,7 @@
                         <span>Open item(s)</span>
                         <strong>@(SelectedAging?.OpenItemCount ?? 0)</strong>
                     </div>
-                </Card>
+                </article>
             </section>
 
             <section class="vendor-profile__tabs">
@@ -218,19 +217,20 @@
     private string FormatMoney(decimal value) =>
         $"{BaseCurrencyCode} {value:N2}";
 
-    private static string DisplayAddable(string value, string fallback) =>
+    private static string DisplayAddable(string? value, string fallback) =>
         string.IsNullOrWhiteSpace(value) ? fallback : value;
 
-    private static MarkupString DisplayMultiline(string value, string fallback)
+    private static MarkupString DisplayMultiline(string? value, string fallback)
     {
         var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Replace(Environment.NewLine, "<br />");
         return new MarkupString(text);
     }
 
-    private static string BuildInitials(string displayName)
+    private static string BuildInitials(string? displayName)
     {
-        var parts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return string.Concat(parts.Take(2).Select(static part => char.ToUpperInvariant(part[0])));
+        var parts = (displayName ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var initials = string.Concat(parts.Take(2).Select(static part => char.ToUpperInvariant(part[0])));
+        return string.IsNullOrWhiteSpace(initials) ? "V" : initials;
     }
 
     private static string BuildVendorProfileHref(Guid vendorId) =>
@@ -245,10 +245,10 @@
     private static string BuildEditHref(Guid vendorId) =>
         $"/company/customer-vendor-setup?create=vendor&returnUrl=/ap/vendors/{vendorId:D}";
 
-    private static string BuildMailHref(string email) =>
+    private static string BuildMailHref(string? email) =>
         string.IsNullOrWhiteSpace(email) ? "#" : $"mailto:{email}";
 
-    private static string BuildPhoneHref(string phone) =>
+    private static string BuildPhoneHref(string? phone) =>
         string.IsNullOrWhiteSpace(phone) ? "#" : $"tel:{phone}";
 
     private RenderFragment RenderTransactionsTab(ShellManagedCounterpartySummary vendor) => @<text>
@@ -380,7 +380,7 @@
 
     private RenderFragment RenderDetailsTab(ShellManagedCounterpartySummary vendor) => @<text>
         <div class="vendor-profile__details-grid">
-            <Card Class="vendor-profile__details-card">
+            <article class="vendor-profile__details-card">
                 <h2>Vendor identity</h2>
                 <dl>
                     <dt>Display name</dt>
@@ -392,8 +392,8 @@
                     <dt>Default currency</dt>
                     <dd>@vendor.DefaultCurrencyCode</dd>
                 </dl>
-            </Card>
-            <Card Class="vendor-profile__details-card">
+            </article>
+            <article class="vendor-profile__details-card">
                 <h2>AP boundary</h2>
                 <p>This profile is vendor-scoped AP truth. Customer/AR records stay in a separate AR workspace.</p>
                 <dl>
@@ -404,7 +404,7 @@
                     <dt>Open item count</dt>
                     <dd>@SelectedOpenItemCount</dd>
                 </dl>
-            </Card>
+            </article>
         </div>
     </text>;
 

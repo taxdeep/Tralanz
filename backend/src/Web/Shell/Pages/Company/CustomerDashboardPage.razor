@@ -1,5 +1,4 @@
 @page "/ar/customers"
-@using AntDesign
 @using Web.Business.AR.Aging
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -17,8 +16,8 @@
             <p>AR customer command center. Customers live here; vendors stay in AP.</p>
         </div>
         <div class="customer-dashboard__actions">
-            <Button Type="@AntDesign.ButtonType.Default" Href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer">Sales transactions</Button>
-            <Button Type="@AntDesign.ButtonType.Primary" Href="/company/customer-vendor-setup?create=customer&returnUrl=/ar/customers">New customer</Button>
+            <a class="ant-btn" href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer">Sales transactions</a>
+            <a class="ant-btn ant-btn-primary" href="/company/customer-vendor-setup?create=customer&returnUrl=/ar/customers">New customer</a>
         </div>
     </section>
 
@@ -54,22 +53,26 @@
     else
     {
         <section class="customer-dashboard__summary-strip">
-            <Card Class="customer-dashboard__summary-card">
-                <Statistic T="int" Title="Active customers" Value="@ActiveCustomerCount" />
+            <article class="customer-dashboard__summary-card">
+                <div class="customer-dashboard__stat-title">Active customers</div>
+                <div class="customer-dashboard__stat-value">@ActiveCustomerCount.ToString("N0")</div>
                 <span>Receivable-ready customer truth</span>
-            </Card>
-            <Card Class="customer-dashboard__summary-card">
-                <Statistic T="int" Title="Open AR items" Value="@(_agingReport?.OpenItemCount ?? 0)" />
+            </article>
+            <article class="customer-dashboard__summary-card">
+                <div class="customer-dashboard__stat-title">Open AR items</div>
+                <div class="customer-dashboard__stat-value">@((_agingReport?.OpenItemCount ?? 0).ToString("N0"))</div>
                 <span>Posted invoices and credits still open</span>
-            </Card>
-            <Card Class="customer-dashboard__summary-card">
-                <Statistic T="decimal" Title="Outstanding" Value="@(_agingReport?.TotalOutstandingAmountBase ?? 0m)" Prefix="@CurrencyPrefix" Precision="2" />
+            </article>
+            <article class="customer-dashboard__summary-card">
+                <div class="customer-dashboard__stat-title">Outstanding</div>
+                <div class="customer-dashboard__stat-value">@FormatMoney(_agingReport?.TotalOutstandingAmountBase ?? 0m)</div>
                 <span>@BaseCurrencyCode base currency</span>
-            </Card>
-            <Card Class="customer-dashboard__summary-card customer-dashboard__summary-card--green">
-                <Statistic T="decimal" Title="Overdue" Value="@(_agingReport?.TotalOverdueAmountBase ?? 0m)" Prefix="@CurrencyPrefix" Precision="2" />
+            </article>
+            <article class="customer-dashboard__summary-card customer-dashboard__summary-card--green">
+                <div class="customer-dashboard__stat-title">Overdue</div>
+                <div class="customer-dashboard__stat-value">@FormatMoney(_agingReport?.TotalOverdueAmountBase ?? 0m)</div>
                 <span>AR collection attention</span>
-            </Card>
+            </article>
         </section>
 
         <section class="customer-dashboard__bar" aria-label="Customer receivable composition">
@@ -156,7 +159,6 @@
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private string BaseCurrencyCode => _agingReport?.BaseCurrencyCode ?? _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode;
-    private string CurrencyPrefix => $"{BaseCurrencyCode} ";
     private int TotalCustomerCount => _summary?.Customers.Count ?? 0;
     private int ActiveCustomerCount => _summary?.ActiveCustomers.Count ?? 0;
     private int InactiveCustomerCount => Math.Max(TotalCustomerCount - ActiveCustomerCount, 0);
@@ -235,13 +237,14 @@
             || Contains(row.Customer.DefaultCurrencyCode, text);
     }
 
-    private static bool Contains(string value, string searchText) =>
+    private static bool Contains(string? value, string searchText) =>
+        !string.IsNullOrWhiteSpace(value) &&
         value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
 
     private string FormatMoney(decimal value) =>
         $"{BaseCurrencyCode} {value:N2}";
 
-    private static string DisplayOptional(string value) =>
+    private static string DisplayOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private static string BuildCustomerProfileHref(Guid customerId) =>

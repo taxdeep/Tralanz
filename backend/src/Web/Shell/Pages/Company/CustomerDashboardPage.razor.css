@@ -101,25 +101,23 @@
     border: 1px solid #e5edf3;
 }
 
-.customer-dashboard ::deep .customer-dashboard__summary-card.ant-card {
+.customer-dashboard__summary-card {
+    min-height: 7.5rem;
+    padding: 1.4rem 1.7rem;
     border: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
 }
 
-.customer-dashboard ::deep .customer-dashboard__summary-card .ant-card-body {
-    min-height: 7.5rem;
-    padding: 1.4rem 1.7rem;
-}
-
-.customer-dashboard ::deep .customer-dashboard__summary-card .ant-statistic-title {
+.customer-dashboard__stat-title {
     color: #4f5f72;
     font-size: 0.76rem;
     font-weight: 700;
 }
 
-.customer-dashboard ::deep .customer-dashboard__summary-card .ant-statistic-content {
+.customer-dashboard__stat-value {
+    margin-top: 0.1rem;
     color: #17202a;
     font-size: 1.2rem;
     font-weight: 800;

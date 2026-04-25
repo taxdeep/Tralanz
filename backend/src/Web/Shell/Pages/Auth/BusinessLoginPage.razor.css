@@ -1,9 +1,13 @@
 .ws-login {
-    width: min(640px, calc(100vw - 2rem));
+    width: min(560px, calc(100vw - 2rem));
     margin-inline: auto;
     overflow: hidden;
-    border: 1px solid rgba(151, 168, 183, 0.18);
-    background: #121820;
+    border: 1px solid rgba(122, 182, 217, 0.28) !important;
+    border-radius: 28px !important;
+    background:
+        radial-gradient(circle at 50% -18%, rgba(122, 182, 217, 0.22), transparent 17rem),
+        linear-gradient(145deg, #121b2a 0%, #0a111d 100%) !important;
+    box-shadow: 0 30px 80px rgba(3, 8, 18, 0.5) !important;
 }
 
 .ws-login__bar {
@@ -12,8 +16,8 @@
     justify-content: space-between;
     gap: 1rem;
     padding: 0.72rem 1rem;
-    background: rgba(255, 255, 255, 0.035);
-    border-bottom: 1px solid rgba(151, 168, 183, 0.12);
+    background: rgba(255, 255, 255, 0.045);
+    border-bottom: 1px solid rgba(151, 168, 183, 0.16);
 }
 
 .ws-login__bar-title {
@@ -24,12 +28,12 @@
 }
 
 .ws-login__bar-meta {
-    color: #97a8b7;
-    text-transform: uppercase;
+    color: #c4d2de;
+    font-weight: 800;
 }
 
 .ws-login__body {
-    padding: 1.65rem 1rem 1.35rem;
+    padding: 1.7rem 1.35rem 1.45rem;
 }
 
 .ws-login__mascot {
@@ -72,7 +76,9 @@
 
 .ws-login__title {
     color: #f4f8fb;
+    font-size: clamp(1.9rem, 4vw, 2.45rem);
     font-weight: 700;
+    letter-spacing: -0.04em;
 }
 
 .ws-login__rule {
@@ -83,8 +89,10 @@
 
 .ws-login__primary-action {
     margin-top: 0.45rem;
-    min-height: 44px;
-    font-weight: 700;
+    min-height: 48px;
+    border-radius: 14px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
 }
 
 .ws-login__switcher {
@@ -94,14 +102,71 @@
     flex-wrap: wrap;
     gap: 0.45rem;
     padding: 1rem;
-    background: rgba(0, 0, 0, 0.18);
+    background: rgba(3, 8, 18, 0.58);
     border-top: 1px solid rgba(151, 168, 183, 0.12);
     text-align: center;
 }
 
 .ws-login__switch-link {
-    color: #7ab6d9;
+    color: #8ed4ff;
     font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.ws-login ::deep(.text-secondary),
+.ws-login ::deep(.mud-typography-body2),
+.ws-login ::deep(.mud-typography-caption) {
+    color: #b8c6d5 !important;
+}
+
+.ws-login ::deep(.mud-input-control) {
+    margin-top: 0 !important;
+}
+
+.ws-login ::deep(.mud-input-label) {
+    color: #d8e5f2 !important;
+    font-weight: 750;
+}
+
+.ws-login ::deep(.mud-input-root),
+.ws-login ::deep(.mud-input-outlined),
+.ws-login ::deep(.mud-input-slot) {
+    color: #eef6ff !important;
+}
+
+.ws-login ::deep(.mud-input-outlined .mud-input-outlined-border) {
+    border-color: rgba(142, 212, 255, 0.26) !important;
+}
+
+.ws-login ::deep(.mud-input-outlined:hover .mud-input-outlined-border),
+.ws-login ::deep(.mud-input-outlined.mud-input-focused .mud-input-outlined-border) {
+    border-color: #7ab6d9 !important;
+    box-shadow: 0 0 0 3px rgba(122, 182, 217, 0.15);
+}
+
+.ws-login ::deep(input) {
+    color: #eef6ff !important;
+    caret-color: #8ed4ff;
+}
+
+.ws-login ::deep(input::placeholder) {
+    color: rgba(216, 229, 242, 0.52) !important;
+}
+
+.ws-login ::deep(.mud-input-adornment),
+.ws-login ::deep(.mud-icon-root) {
+    color: #9eb4c8 !important;
+}
+
+::deep(.ws-login__primary-action.mud-button-root) {
+    background: linear-gradient(135deg, #2f80ed, #65c7d4) !important;
+    color: #ffffff !important;
+    box-shadow: 0 14px 28px rgba(47, 128, 237, 0.28) !important;
+}
+
+::deep(.ws-login__primary-action.mud-button-root:hover) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
 }
 
 @media (max-width: 520px) {

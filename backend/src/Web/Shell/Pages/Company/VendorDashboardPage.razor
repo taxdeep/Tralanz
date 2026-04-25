@@ -1,5 +1,4 @@
 @page "/ap/vendors"
-@using AntDesign
 @using Web.Business.AP.Aging
 @inject WebShellState ShellState
 @inject WebShellBusinessSessionClient SessionClient
@@ -17,8 +16,8 @@
             <p>AP vendor command center. Vendors live here; customers stay in AR.</p>
         </div>
         <div class="vendor-dashboard__actions">
-            <Button Type="@AntDesign.ButtonType.Default" Href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor">Bill transactions</Button>
-            <Button Type="@AntDesign.ButtonType.Primary" Href="/company/customer-vendor-setup?create=vendor&returnUrl=/ap/vendors">New vendor</Button>
+            <a class="ant-btn" href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor">Bill transactions</a>
+            <a class="ant-btn ant-btn-primary" href="/company/customer-vendor-setup?create=vendor&returnUrl=/ap/vendors">New vendor</a>
         </div>
     </section>
 
@@ -54,22 +53,26 @@
     else
     {
         <section class="vendor-dashboard__summary-strip">
-            <Card Class="vendor-dashboard__summary-card">
-                <Statistic T="int" Title="Active vendors" Value="@ActiveVendorCount" />
+            <article class="vendor-dashboard__summary-card">
+                <div class="vendor-dashboard__stat-title">Active vendors</div>
+                <div class="vendor-dashboard__stat-value">@ActiveVendorCount.ToString("N0")</div>
                 <span>Payable-ready vendor truth</span>
-            </Card>
-            <Card Class="vendor-dashboard__summary-card">
-                <Statistic T="int" Title="Open AP items" Value="@(_agingReport?.OpenItemCount ?? 0)" />
+            </article>
+            <article class="vendor-dashboard__summary-card">
+                <div class="vendor-dashboard__stat-title">Open AP items</div>
+                <div class="vendor-dashboard__stat-value">@((_agingReport?.OpenItemCount ?? 0).ToString("N0"))</div>
                 <span>Posted bills and credits still open</span>
-            </Card>
-            <Card Class="vendor-dashboard__summary-card">
-                <Statistic T="decimal" Title="Outstanding payable" Value="@(_agingReport?.TotalOutstandingAmountBase ?? 0m)" Prefix="@CurrencyPrefix" Precision="2" />
+            </article>
+            <article class="vendor-dashboard__summary-card">
+                <div class="vendor-dashboard__stat-title">Outstanding payable</div>
+                <div class="vendor-dashboard__stat-value">@FormatMoney(_agingReport?.TotalOutstandingAmountBase ?? 0m)</div>
                 <span>@BaseCurrencyCode base currency</span>
-            </Card>
-            <Card Class="vendor-dashboard__summary-card vendor-dashboard__summary-card--amber">
-                <Statistic T="decimal" Title="Overdue bills" Value="@(_agingReport?.TotalOverdueAmountBase ?? 0m)" Prefix="@CurrencyPrefix" Precision="2" />
+            </article>
+            <article class="vendor-dashboard__summary-card vendor-dashboard__summary-card--amber">
+                <div class="vendor-dashboard__stat-title">Overdue bills</div>
+                <div class="vendor-dashboard__stat-value">@FormatMoney(_agingReport?.TotalOverdueAmountBase ?? 0m)</div>
                 <span>AP payment attention</span>
-            </Card>
+            </article>
         </section>
 
         <section class="vendor-dashboard__bar" aria-label="Vendor payable composition">
@@ -158,7 +161,6 @@
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private string BaseCurrencyCode => _agingReport?.BaseCurrencyCode ?? _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode;
-    private string CurrencyPrefix => $"{BaseCurrencyCode} ";
     private int TotalVendorCount => _summary?.Vendors.Count ?? 0;
     private int ActiveVendorCount => _summary?.ActiveVendors.Count ?? 0;
     private int InactiveVendorCount => Math.Max(TotalVendorCount - ActiveVendorCount, 0);
@@ -237,13 +239,14 @@
             || Contains(row.Vendor.DefaultCurrencyCode, text);
     }
 
-    private static bool Contains(string value, string searchText) =>
+    private static bool Contains(string? value, string searchText) =>
+        !string.IsNullOrWhiteSpace(value) &&
         value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
 
     private string FormatMoney(decimal value) =>
         $"{BaseCurrencyCode} {value:N2}";
 
-    private static string DisplayOptional(string value) =>
+    private static string DisplayOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private static string BuildVendorProfileHref(Guid vendorId) =>

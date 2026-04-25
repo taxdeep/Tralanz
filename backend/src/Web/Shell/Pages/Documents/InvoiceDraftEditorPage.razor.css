@@ -27,7 +27,7 @@
 .source-entry__form-card,
 ::deep(.source-entry__section-card),
 ::deep(.source-entry__metric-card),
-::deep(.source-entry__balance-card) {
+.source-entry__balance-card {
     border: 1px solid var(--entry-border);
     border-radius: 22px;
     background: var(--entry-card);
@@ -84,19 +84,27 @@
     line-height: 1.65;
 }
 
-::deep(.source-entry__balance-card .ant-card-body) {
+.source-entry__balance-card {
     height: 100%;
     padding: 1.25rem;
-}
-
-::deep(.source-entry__balance-card) {
     background: linear-gradient(145deg, #09264d, #1677ff);
     color: #fff;
 }
 
-::deep(.source-entry__balance-card .ant-statistic-title),
-::deep(.source-entry__balance-card .ant-statistic-content) {
+.source-entry__stat-title {
     color: #fff;
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.source-entry__stat-value {
+    margin-top: .35rem;
+    color: #fff;
+    font-size: 2.15rem;
+    font-weight: 850;
+    line-height: 1;
 }
 
 .source-entry__doc-number {

@@ -1,5 +1,4 @@
 @page "/documents/bill/draft-editor"
-@using AntDesign
 @using Color = MudBlazor.Color
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.UnitySearch.Blazor
@@ -41,11 +40,12 @@
             <h1>@EntryTitle</h1>
             <p>@EntrySubtitle</p>
         </div>
-        <Card Class="source-entry__balance-card">
-            <Statistic T="decimal" Title="@EntryAmountTitle" Value="@GrandTotal" Precision="2" />
+        <aside class="source-entry__balance-card">
+            <div class="source-entry__stat-title">@EntryAmountTitle</div>
+            <div class="source-entry__stat-value">@GrandTotal.ToString("N2")</div>
             <span>@(_txCurrency.Length > 0 ? _txCurrency : "Currency pending")</span>
             <div class="source-entry__doc-number">@(_saved?.DisplayNumber ?? "Draft not saved")</div>
-        </Card>
+        </aside>
     </section>
 
     @if (IsCompanyReadyHandOff)
