@@ -1,0 +1,299 @@
+.vendor-dashboard {
+    min-height: calc(100vh - 72px);
+    padding: 1.75rem 2rem 2.5rem;
+    background: #f8faf7;
+    color: #1f2933;
+}
+
+.vendor-dashboard__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.vendor-dashboard__back-link {
+    display: inline-flex;
+    margin-bottom: 0.5rem;
+    color: #1677ff;
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.vendor-dashboard h1 {
+    margin: 0;
+    color: #17202a;
+    font-size: 1.85rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.vendor-dashboard p {
+    margin: 0.45rem 0 0;
+    color: #697586;
+}
+
+.vendor-dashboard__actions,
+.vendor-dashboard__tools {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.vendor-dashboard__tabs {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1.35rem;
+    border-bottom: 1px solid #d8dee6;
+}
+
+.vendor-dashboard__tab {
+    padding: 0.7rem 0;
+    font-size: 0.9rem;
+}
+
+.vendor-dashboard__tab--active {
+    border-bottom: 3px solid #19a52f;
+    color: #17202a;
+    font-weight: 750;
+}
+
+.vendor-dashboard__tab--muted {
+    color: #6b7280;
+}
+
+.vendor-dashboard__alert {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+}
+
+.vendor-dashboard__loading {
+    display: grid;
+    gap: 0.8rem;
+    margin-top: 2rem;
+    color: #5f6b7a;
+}
+
+.vendor-dashboard__loading-bar {
+    width: 100%;
+    height: 0.28rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1677ff, #d48806, #1677ff);
+    background-size: 200% 100%;
+    animation: vendor-dashboard-loading 1.2s linear infinite;
+}
+
+@keyframes vendor-dashboard-loading {
+    from { background-position: 0% 0; }
+    to { background-position: 200% 0; }
+}
+
+.vendor-dashboard__summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 2rem;
+    background: #fff8e8;
+    border: 1px solid #efe4cf;
+}
+
+.vendor-dashboard ::deep .vendor-dashboard__summary-card.ant-card {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.vendor-dashboard ::deep .vendor-dashboard__summary-card .ant-card-body {
+    min-height: 7.5rem;
+    padding: 1.4rem 1.7rem;
+}
+
+.vendor-dashboard ::deep .vendor-dashboard__summary-card .ant-statistic-title {
+    color: #5f5341;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.vendor-dashboard ::deep .vendor-dashboard__summary-card .ant-statistic-content {
+    color: #17202a;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.vendor-dashboard__summary-card span {
+    display: block;
+    margin-top: 0.25rem;
+    color: #697586;
+    font-size: 0.8rem;
+}
+
+.vendor-dashboard__summary-card--amber {
+    background: rgba(250, 173, 20, 0.12) !important;
+}
+
+.vendor-dashboard__bar {
+    display: flex;
+    gap: 1px;
+    height: 1.2rem;
+    margin: -2.35rem 1.7rem 2.4rem;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.vendor-dashboard__bar-segment {
+    min-width: 4rem;
+}
+
+.vendor-dashboard__bar-segment--blue { background: #69b1ff; }
+.vendor-dashboard__bar-segment--purple { background: #9254de; }
+.vendor-dashboard__bar-segment--orange { background: #fa8c16; }
+.vendor-dashboard__bar-segment--green { background: #2ea52e; }
+
+.vendor-dashboard__toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.vendor-dashboard__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: min(100%, 28rem);
+}
+
+.vendor-dashboard__search i {
+    position: absolute;
+    left: 0.75rem;
+    color: #4f5f72;
+    z-index: 1;
+}
+
+.vendor-dashboard__search input {
+    padding-left: 2.2rem;
+}
+
+.vendor-dashboard__tools {
+    color: #697586;
+    font-size: 0.84rem;
+}
+
+.vendor-dashboard__table-card {
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    overflow: auto;
+}
+
+.vendor-dashboard__table {
+    width: 100%;
+    min-width: 980px;
+    border-collapse: collapse;
+}
+
+.vendor-dashboard__table th {
+    padding: 0.75rem 0.9rem;
+    border-bottom: 1px solid #d8dee6;
+    background: #fff;
+    color: #253142;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.vendor-dashboard__table td {
+    padding: 0.75rem 0.9rem;
+    border-bottom: 1px solid #e6eaf0;
+    color: #374151;
+    font-size: 0.86rem;
+}
+
+.vendor-dashboard__table tr:hover td {
+    background: #f8f5ee;
+}
+
+.vendor-dashboard__vendor-link {
+    color: #1f2933;
+    font-weight: 800;
+}
+
+.vendor-dashboard__vendor-link:hover,
+.vendor-dashboard__row-action:hover {
+    color: #1677ff;
+}
+
+.vendor-dashboard__subtext {
+    margin-top: 0.18rem;
+    color: #8a95a5;
+    font-size: 0.75rem;
+}
+
+.vendor-dashboard__status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.45rem;
+    padding: 0 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 750;
+}
+
+.vendor-dashboard__status--active {
+    background: #edf9ee;
+    color: #178a2f;
+}
+
+.vendor-dashboard__status--inactive {
+    background: #f2f4f7;
+    color: #697586;
+}
+
+.vendor-dashboard__row-action {
+    color: #0070c9;
+    font-weight: 700;
+}
+
+.vendor-dashboard__action-separator {
+    margin: 0 0.35rem;
+    color: #a0a8b3;
+}
+
+.vendor-dashboard__empty {
+    padding: 2rem;
+    color: #697586;
+    text-align: center;
+}
+
+@media (max-width: 1100px) {
+    .vendor-dashboard__summary-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .vendor-dashboard {
+        padding: 1.25rem 1rem;
+    }
+
+    .vendor-dashboard__header,
+    .vendor-dashboard__toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .vendor-dashboard__summary-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .vendor-dashboard__bar {
+        margin-left: 1rem;
+        margin-right: 1rem;
+    }
+}
