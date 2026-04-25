@@ -23,6 +23,7 @@
 @inject ShellBillReceiptMatchingClient BillReceiptMatching
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
+@inject ILogger<BillDraftEditorPage> Logger
 
 <PageTitle>@EntryPageTitle</PageTitle>
 
@@ -770,22 +771,30 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!await EnsureLookupLoadedAsync())
+        try
         {
-            return;
-        }
+            if (!await EnsureLookupLoadedAsync())
+            {
+                return;
+            }
 
-        if (DraftId.HasValue && DraftId != _loadedDraftId)
-        {
-            await LoadDraftAsync(DraftId.Value);
-            return;
-        }
+            if (DraftId.HasValue && DraftId != _loadedDraftId)
+            {
+                await LoadDraftAsync(DraftId.Value);
+                return;
+            }
 
-        if (!DraftId.HasValue &&
-            PurchaseOrderId.HasValue &&
-            PurchaseOrderId != _loadedPurchaseOrderId)
+            if (!DraftId.HasValue &&
+                PurchaseOrderId.HasValue &&
+                PurchaseOrderId != _loadedPurchaseOrderId)
+            {
+                await LoadPurchaseOrderHandoffAsync(PurchaseOrderId.Value);
+            }
+        }
+        catch (Exception ex)
         {
-            await LoadPurchaseOrderHandoffAsync(PurchaseOrderId.Value);
+            Logger.LogError(ex, "Bill draft editor failed while loading startup context.");
+            _error = "Bill/expense workspace setup could not be loaded. Check vendor, account, tax, product/service, and inventory setup availability, then refresh.";
         }
     }
 

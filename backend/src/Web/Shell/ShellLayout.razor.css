@@ -430,6 +430,103 @@
     font-weight: 600;
 }
 
+.bz-shell--light {
+    background:
+        radial-gradient(circle at 0% 0%, rgba(22, 119, 255, 0.12), transparent 28rem),
+        radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.1), transparent 22rem),
+        linear-gradient(180deg, #f8fafc 0%, #edf3fb 100%);
+}
+
+.bz-shell--light .bz-shell__topbar {
+    border-bottom-color: rgba(15, 23, 42, 0.1);
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.bz-shell--light .bz-shell__brand-title {
+    color: #172033;
+}
+
+.bz-shell--light .bz-shell__brand-subtitle,
+.bz-shell--light .bz-shell__brand-version {
+    color: #667085;
+}
+
+.bz-shell--light .bz-shell__search-input {
+    border-color: rgba(15, 23, 42, 0.12);
+    background: rgba(255, 255, 255, 0.92);
+    color: #172033;
+}
+
+.bz-shell--light .bz-shell__search-input::placeholder {
+    color: #98a2b3;
+}
+
+.bz-shell--light .bz-shell__sidebar {
+    border-right-color: rgba(15, 23, 42, 0.1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 253, 0.98));
+}
+
+.bz-shell--light .bz-shell__sidebar ::deep .bz-sidebar-nav,
+.bz-shell--light .bz-shell__sidebar ::deep .bz-sidebar-nav__link {
+    color: #172033;
+}
+
+.bz-shell--light .bz-shell__sidebar ::deep .bz-sidebar-nav__section-toggle {
+    color: #667085;
+}
+
+.bz-shell--light .bz-shell__sidebar ::deep .bz-sidebar-nav__link:hover,
+.bz-shell--light .bz-shell__sidebar ::deep .bz-sidebar-nav__link.active {
+    color: #0f172a;
+    background: rgba(22, 119, 255, 0.09);
+    border-color: rgba(22, 119, 255, 0.16);
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__user-trigger {
+    border-color: rgba(15, 23, 42, 0.12);
+    background: rgba(255, 255, 255, 0.88);
+    color: #172033;
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__value {
+    color: #172033;
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__label,
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__user-caret {
+    color: #667085;
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__theme-toggle {
+    border-color: rgba(22, 119, 255, 0.22);
+    background: rgba(22, 119, 255, 0.08);
+    color: #0f5fc7;
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__menu {
+    border-color: rgba(15, 23, 42, 0.12);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__menu-context,
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__menu-item {
+    color: #172033;
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__menu-context strong {
+    color: #0f172a;
+}
+
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__menu-context span,
+.bz-shell--light .bz-shell__topbar-controls ::deep .bz-topbar__menu-context small {
+    color: #667085;
+}
+
+.bz-shell--light .bz-main {
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(239, 246, 255, 0.96));
+}
+
 @media (max-width: 1180px) {
     .bz-shell__topbar {
         grid-template-columns: 1fr;

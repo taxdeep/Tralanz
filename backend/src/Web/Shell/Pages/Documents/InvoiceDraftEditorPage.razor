@@ -22,6 +22,7 @@
 @inject ShellSourceDocumentDraftClient Drafts
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
+@inject ILogger<InvoiceDraftEditorPage> Logger
 
 <PageTitle>New Invoice</PageTitle>
 
@@ -682,14 +683,22 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!await EnsureLookupLoadedAsync())
+        try
         {
-            return;
-        }
+            if (!await EnsureLookupLoadedAsync())
+            {
+                return;
+            }
 
-        if (DraftId.HasValue && DraftId != _loadedDraftId)
+            if (DraftId.HasValue && DraftId != _loadedDraftId)
+            {
+                await LoadDraftAsync(DraftId.Value);
+            }
+        }
+        catch (Exception ex)
         {
-            await LoadDraftAsync(DraftId.Value);
+            Logger.LogError(ex, "Invoice draft editor failed while loading startup context.");
+            _error = "Invoice workspace setup could not be loaded. Check customer, account, tax, product/service, and inventory setup availability, then refresh.";
         }
     }
 

@@ -35,6 +35,29 @@
     color: #fde68a;
 }
 
+.bz-topbar__theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 2.45rem;
+    padding: 0.48rem 0.78rem;
+    border: 1px solid rgba(54, 207, 201, 0.28);
+    border-radius: 999px;
+    background: rgba(20, 184, 166, 0.14);
+    color: #a7f3d0;
+    font-size: 0.8rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.bz-topbar__theme-toggle:hover {
+    border-color: rgba(54, 207, 201, 0.44);
+    background: rgba(20, 184, 166, 0.22);
+    transform: translateY(-1px);
+}
+
 .bz-topbar__company,
 .bz-topbar__identity {
     display: grid;
@@ -114,8 +137,10 @@
     top: calc(100% + 0.45rem);
     right: 0;
     display: grid;
-    min-width: 12rem;
-    padding: 0.35rem;
+    min-width: 100%;
+    width: max-content;
+    max-width: 18rem;
+    padding: 0.45rem;
     border: 1px solid rgba(148, 163, 184, 0.14);
     border-radius: 14px;
     background: rgba(8, 15, 29, 0.98);
@@ -123,10 +148,43 @@
     z-index: 50;
 }
 
+.bz-topbar__menu-context {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 12.5rem;
+    padding: 0.65rem 0.78rem 0.75rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    color: #d9e2ea;
+}
+
+.bz-topbar__menu-context span {
+    color: #94a3b8;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.bz-topbar__menu-context strong {
+    overflow: hidden;
+    color: #f8fafc;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bz-topbar__menu-context small {
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
 .bz-topbar__menu-item {
     display: inline-flex;
     align-items: center;
     gap: 0.65rem;
+    width: 100%;
     min-height: 2.7rem;
     padding: 0.62rem 0.78rem;
     border: 0;

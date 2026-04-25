@@ -11,7 +11,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 
-<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudThemeProvider Theme="_theme" IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -39,7 +39,7 @@ else if (!ShellState.IsAuthenticated)
 }
 else
 {
-    <div class="bz-shell">
+    <div class="bz-shell @(_isDarkMode ? "bz-shell--dark" : "bz-shell--light")">
         <header class="bz-shell__topbar">
             <div class="bz-shell__brand">
                 <div class="bz-shell__brand-mark">
@@ -74,7 +74,7 @@ else
             </form>
 
             <div class="bz-shell__topbar-controls">
-                <WebShellTopBar />
+                <WebShellTopBar IsDarkMode="_isDarkMode" OnThemeToggle="ToggleThemeAsync" />
             </div>
         </header>
 
@@ -112,8 +112,25 @@ else
 
 @code
 {
+    private const string ThemeModeStorageKey = "balanciz.shell.theme-mode";
+
     private readonly MudTheme _theme = new()
     {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1677ff",
+            Secondary = "#0f766e",
+            Background = "#f6f8fb",
+            Surface = "#ffffff",
+            AppbarBackground = "#ffffff",
+            DrawerBackground = "#ffffff",
+            DrawerText = "#172033",
+            TextPrimary = "#172033",
+            TextSecondary = "#667085",
+            Info = "#0891b2",
+            Success = "#16a34a",
+            Warning = "#d48806"
+        },
         PaletteDark = new PaletteDark
         {
             Primary = "#7ab6d9",
@@ -132,6 +149,7 @@ else
     };
 
     private bool _isShellReady;
+    private bool _isDarkMode = true;
     private string _shellSearchTerm = string.Empty;
     private IReadOnlyList<UnitySearchGroupResult> _shellSearchGroups = Array.Empty<UnitySearchGroupResult>();
     private IReadOnlyList<UnitySearchRecentQueryRecord> _shellRecentQueries = Array.Empty<UnitySearchRecentQueryRecord>();
@@ -156,6 +174,8 @@ else
     {
         if (firstRender)
         {
+            await TryLoadThemePreferenceAsync();
+
             try
             {
                 await RestoreStoredSessionAsync();
@@ -217,6 +237,32 @@ else
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Web.Shell could not clear the stored browser business session token.");
+        }
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        _isDarkMode = !_isDarkMode;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", ThemeModeStorageKey, _isDarkMode ? "dark" : "light");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JSException)
+        {
+            Logger.LogDebug(ex, "Web.Shell could not persist theme preference.");
+        }
+    }
+
+    private async Task TryLoadThemePreferenceAsync()
+    {
+        try
+        {
+            var storedTheme = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeModeStorageKey);
+            _isDarkMode = !string.Equals(storedTheme, "light", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JSException)
+        {
+            Logger.LogDebug(ex, "Web.Shell could not read theme preference.");
         }
     }
 
