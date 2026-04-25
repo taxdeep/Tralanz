@@ -6,6 +6,7 @@ public static class ShellProductServiceCatalogRules
 {
     public const string CatalogTypeProduct = "product";
     public const string CatalogTypeService = "service";
+    public const string CatalogTypeNonInventoryProduct = "non_inventory_product";
 
     public static ShellProductServiceCatalogRuleResult Validate(
         ShellProductServiceUpsertRequest? request,
@@ -30,7 +31,7 @@ public static class ShellProductServiceCatalogRules
 
         if (!IsSupportedCatalogType(normalizedCatalogType))
         {
-            return Fail("invalid_catalog_type", "Catalog type must be Product or Service.");
+            return Fail("invalid_catalog_type", "Catalog type must be Services, Product, or Non-Inventory Product.");
         }
 
         if (existingItems.Any(
@@ -69,7 +70,19 @@ public static class ShellProductServiceCatalogRules
 
     public static bool IsSupportedCatalogType(string? value) =>
         string.Equals(value, CatalogTypeProduct, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(value, CatalogTypeService, StringComparison.OrdinalIgnoreCase);
+        string.Equals(value, CatalogTypeService, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, CatalogTypeNonInventoryProduct, StringComparison.OrdinalIgnoreCase);
+
+    public static bool EntersInventoryManagement(string? value) =>
+        string.Equals(value, CatalogTypeProduct, StringComparison.OrdinalIgnoreCase);
+
+    public static string GetCatalogTypeLabel(string? value) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            CatalogTypeProduct => "Product",
+            CatalogTypeNonInventoryProduct => "Non-Inventory Product",
+            _ => "Services"
+        };
 
     private static ShellProductServiceCatalogRuleResult Success() => new()
     {
