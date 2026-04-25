@@ -15,7 +15,7 @@
             <MudText Typo="Typo.overline" Class="text-secondary">Company Setup</MudText>
             <MudText Typo="Typo.h4">Product And Service Defaults</MudText>
             <MudText Typo="Typo.body1" Class="text-secondary">
-                Create a minimal company-scoped catalog for the first invoice and bill flow. Each item can carry default description, account, and tax-code truth so operators do not have to repeat the same choices line by line.
+                Create a minimal company-scoped catalog for the first invoice and bill flow. Services and Non-Inventory Product stay in the lighter catalog surface; only Product is promoted into the Inventory management system later.
             </MudText>
             <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
                 <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
@@ -83,17 +83,17 @@
             </MudItem>
             <MudItem xs="12" md="4">
                 <MudPaper Elevation="0" Class="pa-4" Style="height:100%;">
-                    <MudText Typo="Typo.caption" Class="text-secondary">Purchase-ready defaults</MudText>
-                    <MudText Typo="Typo.h5">@_summary.ActivePurchaseItems.Count</MudText>
+                    <MudText Typo="Typo.caption" Class="text-secondary">Inventory-managed products</MudText>
+                    <MudText Typo="Typo.h5">@_summary.ActiveInventoryManagedItems.Count</MudText>
                     <MudText Typo="Typo.body2" Class="text-secondary">
-                        Bill and vendor-credit editors can apply these items as line defaults.
+                        Only catalog rows with type <strong>Product</strong> should move into Inventory Foundation and later stock movement workflows.
                     </MudText>
                 </MudPaper>
             </MudItem>
         </MudGrid>
 
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-            This first slice keeps product/service truth intentionally small. The source-document line still persists description, account, and tax directly; this catalog only helps operators apply those defaults consistently.
+            This first slice keeps product/service truth intentionally small. Source-document lines still persist description, account, and tax directly; this catalog only helps operators apply those defaults consistently. Inventory management remains reserved for rows whose catalog type is <strong>Product</strong>.
         </MudAlert>
 
         <MudPaper Elevation="0" Class="pa-5">
@@ -107,9 +107,13 @@
                                    Margin="Margin.Dense"
                                    Disabled="@(_isSaving || WritesBlocked)"
                                    @bind-Value="_editor.CatalogType">
+                            <MudSelectItem T="string" Value="@ShellProductServiceCatalogRules.CatalogTypeService">Services</MudSelectItem>
                             <MudSelectItem T="string" Value="@ShellProductServiceCatalogRules.CatalogTypeProduct">Product</MudSelectItem>
-                            <MudSelectItem T="string" Value="@ShellProductServiceCatalogRules.CatalogTypeService">Service</MudSelectItem>
+                            <MudSelectItem T="string" Value="@ShellProductServiceCatalogRules.CatalogTypeNonInventoryProduct">Non-Inventory Product</MudSelectItem>
                         </MudSelect>
+                        <MudText Typo="Typo.caption" Class="text-secondary">
+                            @CatalogTypeHelpText
+                        </MudText>
                     </MudItem>
                     <MudItem xs="12" md="8">
                         <MudTextField T="string"
@@ -316,6 +320,12 @@
                             Continue to First Bill
                         </MudButton>
                     }
+                    @if (_lastCreatedEntersInventoryManagement)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/company/inventory-foundation">
+                            Continue to Inventory Foundation
+                        </MudButton>
+                    }
                 </MudStack>
             </MudPaper>
         }
@@ -334,11 +344,22 @@
     private string _lastCreatedName = string.Empty;
     private bool _lastCreatedSupportsSales;
     private bool _lastCreatedSupportsPurchase;
+    private bool _lastCreatedEntersInventoryManagement;
     private readonly ProductServiceEditorState _editor = new();
 
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
 
     private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private string CatalogTypeHelpText =>
+        _editor.CatalogType switch
+        {
+            var type when string.Equals(type, ShellProductServiceCatalogRules.CatalogTypeProduct, StringComparison.OrdinalIgnoreCase)
+                => "Product rows are the only catalog rows that should enter Inventory Foundation and later stock movement workflows.",
+            var type when string.Equals(type, ShellProductServiceCatalogRules.CatalogTypeNonInventoryProduct, StringComparison.OrdinalIgnoreCase)
+                => "Non-Inventory Product stays in the commercial catalog and never becomes an inventory-managed item.",
+            _ => "Services stay in the commercial catalog and do not enter inventory management."
+        };
 
     protected override async Task OnInitializedAsync()
     {
@@ -397,6 +418,7 @@
                 _lastCreatedName = savedItem.Name;
                 _lastCreatedSupportsSales = savedItem.SupportsSales;
                 _lastCreatedSupportsPurchase = savedItem.SupportsPurchase;
+                _lastCreatedEntersInventoryManagement = savedItem.EntersInventoryManagement;
                 Snackbar.Add("Product or service created.", Severity.Success);
             }
 

@@ -1,0 +1,227 @@
+/* Citus UI migration bridge.
+   Ant Design Blazor is the target component system. MudBlazor remains a legacy runtime
+   compatibility layer while pages are migrated in small, safe slices. */
+:root {
+    --citus-bg: #f6f8fb;
+    --citus-bg-strong: #eef3f9;
+    --citus-surface: rgba(255, 255, 255, .96);
+    --citus-surface-muted: #f8fafc;
+    --citus-surface-dark: #101827;
+    --citus-text: #172033;
+    --citus-text-muted: #667085;
+    --citus-border-subtle: rgba(31, 45, 61, .11);
+    --citus-shadow-card: 0 18px 42px rgba(15, 23, 42, .08);
+    --citus-primary: #1677ff;
+    --citus-success: #16a34a;
+    --citus-warning: #d48806;
+    --citus-danger: #dc2626;
+    --citus-info: #0891b2;
+    --citus-radius-sm: 10px;
+    --citus-radius-md: 14px;
+    --citus-radius-lg: 20px;
+    --citus-control-height: 40px;
+    --citus-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body {
+    font-family: var(--citus-font);
+}
+
+.bz-main {
+    color: var(--citus-text);
+}
+
+.bz-main a {
+    color: var(--citus-primary);
+}
+
+.bz-main .ant-btn,
+.bz-main .ant-input,
+.bz-main .ant-select-selector,
+.bz-main .ant-picker,
+.bz-main .ant-card,
+.bz-main .ant-table,
+.bz-main .ant-alert,
+.bz-main .mud-paper,
+.bz-main .mud-input-root,
+.bz-main .mud-table-container {
+    font-family: var(--citus-font);
+}
+
+.bz-main .ant-card {
+    border-color: var(--citus-border-subtle);
+    border-radius: var(--citus-radius-lg);
+    box-shadow: var(--citus-shadow-card);
+}
+
+.bz-main .ant-btn {
+    border-radius: 10px;
+    font-weight: 700;
+}
+
+.bz-main .ant-table,
+.bz-main table.ant-table {
+    border-radius: var(--citus-radius-md);
+}
+
+.bz-main .ant-table-thead > tr > th,
+.bz-main table.ant-table th {
+    color: #526173;
+    background: #f8fafc;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+/* Legacy Mud visual alignment. Keep behavior intact; only normalize density and surface. */
+.bz-main .mud-paper {
+    border: 1px solid var(--citus-border-subtle);
+    border-radius: var(--citus-radius-lg);
+    background-color: var(--citus-surface);
+    box-shadow: var(--citus-shadow-card);
+}
+
+.bz-main .mud-alert {
+    border-radius: var(--citus-radius-md);
+    font-weight: 600;
+}
+
+.bz-main .mud-button-root {
+    border-radius: 10px;
+    font-weight: 750;
+    text-transform: none;
+}
+
+.bz-main .mud-input-control {
+    margin-top: 0;
+    margin-bottom: .35rem;
+}
+
+.bz-main .mud-input-root {
+    border-radius: 10px;
+    font-size: .88rem;
+}
+
+.bz-main .mud-table-container {
+    border: 1px solid var(--citus-border-subtle);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-surface);
+}
+
+.bz-main .mud-table-root th {
+    color: #526173;
+    background: #f8fafc;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.bz-main .mud-table-root td {
+    color: #334155;
+}
+
+.bz-main .mud-chip {
+    border-radius: 999px;
+    font-weight: 750;
+}
+
+.bz-main .mud-typography-body2,
+.bz-main .mud-typography-caption {
+    color: var(--citus-text-muted);
+}
+
+/* Old dark pages remain readable while their inner controls adopt the Ant density. */
+.bz-main [style*="color:#d9e2ea"] .mud-paper,
+.bz-main [style*="color: #d9e2ea"] .mud-paper {
+    background: rgba(255, 255, 255, .94);
+    color: var(--citus-text);
+}
+
+.bz-main [style*="color:#d9e2ea"] .mud-table-root td,
+.bz-main [style*="color: #d9e2ea"] .mud-table-root td {
+    color: var(--citus-text);
+}
+
+.bz-main [style*="color:#d9e2ea"] h1,
+.bz-main [style*="color: #d9e2ea"] h1 {
+    color: #f8fbff;
+}
+
+/* Tabler icons: normalize vertical rhythm across Ant, custom HTML, and legacy controls. */
+.ti {
+    display: inline-block;
+    vertical-align: -0.125em;
+    line-height: 1;
+}
+
+.citus-page {
+    min-height: 100%;
+    padding: 1.25rem clamp(1rem, 2vw, 2rem) 2.5rem;
+    color: var(--citus-text);
+    background:
+        radial-gradient(circle at 8% -12%, rgba(22, 119, 255, .11), transparent 28rem),
+        linear-gradient(180deg, #fbfdff 0%, var(--citus-bg) 46%, var(--citus-bg-strong) 100%);
+}
+
+.citus-page__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.citus-page__eyebrow {
+    display: inline-flex;
+    gap: .45rem;
+    align-items: center;
+    color: var(--citus-primary);
+    font-size: .75rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.citus-page h1 {
+    margin: .25rem 0 0;
+    color: var(--citus-text);
+    font-size: clamp(1.8rem, 2.5vw, 2.7rem);
+    font-weight: 850;
+    letter-spacing: -.045em;
+}
+
+.citus-page__summary {
+    max-width: 62rem;
+    margin: .65rem 0 0;
+    color: var(--citus-text-muted);
+    line-height: 1.65;
+}
+
+.citus-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: .8rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+
+.citus-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+}
+
+@media (max-width: 760px) {
+    .citus-page__header {
+        display: block;
+    }
+
+    .bz-main .mud-table-container,
+    .bz-main .ant-table {
+        overflow-x: auto;
+    }
+}

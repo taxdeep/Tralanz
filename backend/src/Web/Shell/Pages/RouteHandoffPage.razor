@@ -1,0 +1,145 @@
+@page "/ar/aging"
+@page "/ar/receive-payment"
+@page "/ap/aging"
+@page "/ap/pay-bill"
+@page "/ap/vendor-credit-application"
+@page "/company/membership-permissions"
+@page "/gl/journal-entries"
+@page "/gl/journal-entry/editor"
+@page "/settings/user-preferences/system-setup"
+@page "/sysadmin/login"
+@using AntDesign
+@inject NavigationManager Navigation
+
+<PageTitle>@Workspace.Title</PageTitle>
+
+<main class="citus-page">
+    <section class="citus-page__header">
+        <div>
+            <div class="citus-page__eyebrow">
+                <i class="@Workspace.Icon" aria-hidden="true"></i>
+                Workspace hand-off
+            </div>
+            <h1>@Workspace.Title</h1>
+            <p class="citus-page__summary">@Workspace.Summary</p>
+        </div>
+        <div class="citus-toolbar">
+            <Button Type="@AntDesign.ButtonType.Default" Href="/">Back to shell</Button>
+            <Button Type="@AntDesign.ButtonType.Primary" Href="@Workspace.PrimaryHref">@Workspace.PrimaryAction</Button>
+        </div>
+    </section>
+
+    <section class="citus-card-grid">
+        <Card>
+            <div class="citus-page__eyebrow">
+                <i class="ti ti-route" aria-hidden="true"></i>
+                Current route
+            </div>
+            <h2 class="text-xl font-extrabold mt-2">@CurrentPath</h2>
+            <p class="leading-relaxed text-sm mt-2">
+                This route is intentionally kept alive so navigation remains stable while the dedicated workspace is migrated to the Ant Design Blazor surface.
+            </p>
+        </Card>
+        <Card>
+            <div class="citus-page__eyebrow">
+                <i class="ti ti-compass" aria-hidden="true"></i>
+                Safe next step
+            </div>
+            <h2 class="text-xl font-extrabold mt-2">@Workspace.PrimaryAction</h2>
+            <p class="leading-relaxed text-sm mt-2">@Workspace.NextStep</p>
+        </Card>
+    </section>
+</main>
+
+@code {
+    private string CurrentPath => "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', StringSplitOptions.TrimEntries)[0];
+
+    private HandoffWorkspace Workspace => CurrentPath.ToLowerInvariant() switch
+    {
+        "/ar/aging" => new(
+            "AR Aging",
+            "ti ti-chart-donut-2",
+            "Receivable aging will move into a dedicated Ant Design workspace. For now, customer profile and dashboard surfaces carry the open-balance review entry points.",
+            "/ar/customers",
+            "Open customers",
+            "Use the customer dashboard or profile to review AR exposure until the standalone aging page is migrated."),
+        "/ar/receive-payment" => new(
+            "Receive Payment",
+            "ti ti-cash-register",
+            "The settlement route is reserved for the AR payment workspace. Posted invoice truth remains accessible from customer profiles and source document detail.",
+            "/ar/customers",
+            "Open customers",
+            "Start from a customer profile, then continue from posted invoice or open-item context."),
+        "/ap/aging" => new(
+            "AP Aging",
+            "ti ti-chart-donut-2",
+            "Payable aging will move into a dedicated Ant Design workspace. The vendor dashboard already exposes AP balances and vendor-level entry points.",
+            "/ap/vendors",
+            "Open vendors",
+            "Use the vendor dashboard or profile to review AP exposure until the standalone aging page is migrated."),
+        "/ap/pay-bill" => new(
+            "Pay Bill",
+            "ti ti-credit-card-pay",
+            "The AP settlement route is reserved for the pay-bill workspace. Vendor profiles and posted bill detail remain the safe hand-off points.",
+            "/ap/vendors",
+            "Open vendors",
+            "Start from a vendor profile, then continue from posted bill or payable context."),
+        "/ap/vendor-credit-application" => new(
+            "Vendor Credit Application",
+            "ti ti-file-minus",
+            "Vendor credit application is held as an AP settlement sub-workspace while the UI surface is migrated.",
+            "/ap/vendors",
+            "Open vendors",
+            "Review vendor context first, then return to credit application once the dedicated surface is available."),
+        "/company/membership-permissions" => new(
+            "Membership Permissions",
+            "ti ti-users",
+            "Company membership and permission management is reserved for a governance workspace.",
+            "/company/book-governance",
+            "Open book governance",
+            "Use Book Governance as the current control surface for company-scoped governance review."),
+        "/gl/journal-entries" => new(
+            "Journal Entries",
+            "ti ti-writing-sign",
+            "General ledger journal entry browsing is reserved for the GL workspace migration.",
+            "/documents/source-browser",
+            "Open source documents",
+            "Use source document detail and journal review links from posted documents while the GL list surface is migrated."),
+        "/gl/journal-entry/editor" => new(
+            "Journal Entry Editor",
+            "ti ti-writing-sign",
+            "The manual journal editor route is reserved for a governed GL entry surface.",
+            "/company/book-governance",
+            "Open book governance",
+            "Confirm account and posting governance before returning to the dedicated journal editor."),
+        "/settings/user-preferences/system-setup" => new(
+            "System Setup",
+            "ti ti-adjustments-horizontal",
+            "User preferences and system setup are reserved for the settings workspace migration.",
+            "/profile",
+            "Open profile",
+            "Use the profile page for account-level controls until the settings workspace is promoted."),
+        "/sysadmin/login" => new(
+            "System Admin Login",
+            "ti ti-shield-lock",
+            "System admin login is outside the operator workspace boundary. This hand-off keeps the route explicit instead of failing silently.",
+            "/login",
+            "Open operator login",
+            "Use the operator login unless a separate sysadmin host is configured."),
+        _ => new(
+            "Workspace Hand-off",
+            "ti ti-route",
+            "This route is reserved for a workspace that has not yet been promoted in the Shell UI.",
+            "/",
+            "Back to shell",
+            "Return to the shell and use the nearest active workspace.")
+    };
+
+    private sealed record HandoffWorkspace(
+        string Title,
+        string Icon,
+        string Summary,
+        string PrimaryHref,
+        string PrimaryAction,
+        string NextStep);
+}

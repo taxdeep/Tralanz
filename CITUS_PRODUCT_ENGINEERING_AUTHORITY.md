@@ -63,11 +63,11 @@ Citus aims to provide a system that is:
   - 写操作（Commands）：统一使用 EF Core，负责事务、Change Tracking、迁移、领域验证。
   - 读操作（Queries）：默认使用 EF Core（AsNoTracking / Projection / Raw SQL）。
   - 只有在报表、大分页、复杂聚合、性能热点被确认后，再引入 Dapper。
-- 前端：Blazor Web App（C# 全栈基线）
+- 前端：Blazor Web App + Ant Design Blazor（C# 全栈基线）
   - 保持 C# 全栈，最大化模型共享、类型安全和维护性，降低学习与长期维护成本。
   - 优先服务内部 ERP / Back Office 场景
   - 首期不把 React/Vue + TypeScript 作为主路线。若未来需要独立客户门户、公开站点、移动端配套或前端团队独立演进，再评估 React/Vue + TypeScript。
-  - 现有仓库中 `MudBlazor` 仍可继续承载既有页面，但不应再被默认视为所有新业务面的唯一组件方向。
+
   - `AR` 正式采用 `Ant Design Blazor` 作为主组件体系，`Tailwind CSS` 作为辅助布局/间距/密度样式层，图标统一采用 `Tabler Icons`。
   - `AP` 在进入下一轮正式业务面交付时，应遵循与 `AR` 相同的 UI/UX 技术基线，避免 AR/AP 在 operator-facing surface 上出现两套长期并存的设计语言。
   - 该决定优先适用于 AR/AP 新交付面与重做面，不要求一次性重写 GL、Company Setup、Inventory、SysAdmin 或其他既有页面。

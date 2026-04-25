@@ -236,7 +236,7 @@ public sealed class ShellProductServiceCatalogClient(PostgreSqlConnectionFactory
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
               constraint ck_company_product_service_catalog_type
-                check (catalog_type in ('product', 'service'))
+                check (catalog_type in ('product', 'service', 'non_inventory_product'))
             );
 
             create unique index if not exists ux_company_product_service_catalog_company_name
@@ -244,6 +244,13 @@ public sealed class ShellProductServiceCatalogClient(PostgreSqlConnectionFactory
 
             create unique index if not exists ux_company_product_service_catalog_company_entity_number
               on {TableName} (company_id, entity_number);
+
+            alter table {TableName}
+              drop constraint if exists ck_company_product_service_catalog_type;
+
+            alter table {TableName}
+              add constraint ck_company_product_service_catalog_type
+              check (catalog_type in ('product', 'service', 'non_inventory_product'));
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -528,6 +535,9 @@ public sealed record class ShellProductServiceCatalogSummary
 
     public IReadOnlyList<ShellManagedProductServiceSummary> ActivePurchaseItems =>
         ActiveItems.Where(static item => item.SupportsPurchase).ToArray();
+
+    public IReadOnlyList<ShellManagedProductServiceSummary> ActiveInventoryManagedItems =>
+        ActiveItems.Where(static item => item.EntersInventoryManagement).ToArray();
 }
 
 public sealed record class ShellProductServiceUpsertRequest
@@ -580,9 +590,10 @@ public sealed record class ShellManagedProductServiceSummary
     public bool IsActive { get; init; }
 
     public string CatalogTypeLabel =>
-        string.Equals(CatalogType, ShellProductServiceCatalogRules.CatalogTypeProduct, StringComparison.OrdinalIgnoreCase)
-            ? "Product"
-            : "Service";
+        ShellProductServiceCatalogRules.GetCatalogTypeLabel(CatalogType);
+
+    public bool EntersInventoryManagement =>
+        ShellProductServiceCatalogRules.EntersInventoryManagement(CatalogType);
 
     public bool SupportsSales =>
         SalesRevenueAccountId.HasValue || DefaultSalesTaxCodeId.HasValue;
