@@ -1,4 +1,6 @@
 @page "/documents/invoice/draft-editor"
+@using AntDesign
+@using Color = MudBlazor.Color
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.UnitySearch.Blazor
 @using Citus.Modules.UnitySearch.Domain.Shared
@@ -21,17 +23,30 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
-<PageTitle>Invoice Draft</PageTitle>
+<PageTitle>New Invoice</PageTitle>
 
-<div style="padding:2rem 2.25rem;color:#d9e2ea;">
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-        <MudButton Variant="Variant.Text" Href="/documents/source-browser">Back</MudButton>
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Success">Invoice draft</MudChip>
-    </div>
-    <h1 style="margin:0 0 .75rem 0;">Invoice Draft Editor</h1>
-    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:56rem;">
-        Save or reopen a governed invoice draft in the active company context, then post it into the existing document-detail and journal-review flow.
-    </p>
+<div class="source-entry source-entry--invoice">
+    <section class="source-entry__hero">
+        <div class="source-entry__hero-copy">
+            <a class="source-entry__back-link" href="/documents/source-browser">
+                <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                Source documents
+            </a>
+            <div class="source-entry__eyebrow">
+                <span>AR workspace</span>
+                <span>Invoice draft</span>
+            </div>
+            <h1>New invoice</h1>
+            <p>
+                Build clean receivable truth from customer match, line defaults, tax, shipment hand-off, and posting review without mixing AR and AP intent.
+            </p>
+        </div>
+        <Card Class="source-entry__balance-card">
+            <Statistic T="decimal" Title="Balance due" Value="@GrandTotal" Precision="2" />
+            <span>@(_txCurrency.Length > 0 ? _txCurrency : "Currency pending")</span>
+            <div class="source-entry__doc-number">@(_saved?.DisplayNumber ?? "Draft not saved")</div>
+        </Card>
+    </section>
 
     @if (IsCompanyReadyHandOff)
     {
@@ -174,8 +189,16 @@
         </MudAlert>
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <div>
+    <section class="source-entry__form-card">
+        <div class="source-entry__section-heading">
+            <div>
+                <span>1</span>
+                <h2>Customer and terms</h2>
+            </div>
+            <p>UnitySearch accepts typed text, dropdown selection, recommendations, and Add new customer when no match exists.</p>
+        </div>
+        <div class="source-entry__form-grid">
+        <div class="source-entry__party-field">
             <MudText Typo="Typo.caption" Class="mb-1">Customer</MudText>
             <UnitySearchPicker CompanyId="@ShellSession.ActiveCompanyId"
                                UserId="@ShellState.CurrentUserId"
@@ -188,6 +211,10 @@
                                OnOptionSelected="HandleCustomerSelectedAsync"
                                OnCreateRequested="HandleCreateCustomerRequestedAsync"
                                OnCleared="HandleCustomerClearedAsync" />
+            <div class="source-entry__field-hint">
+                <i class="ti ti-sparkles" aria-hidden="true"></i>
+                Auto-match customer truth, or create a governed AR customer inline.
+            </div>
         </div>
         <MudDatePicker Label="Invoice Date" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="@DraftMutationBlocked" />
         <MudDatePicker Label="Due Date" Variant="Variant.Outlined" Date="@_dueDatePicker" DateChanged="OnDueDateChanged" Disabled="@DraftMutationBlocked" />
@@ -195,9 +222,10 @@
         <MudTextField T="string" Label="Base Currency" Variant="Variant.Outlined" Value="_baseCurrency" Disabled="true" />
         <MudNumericField T="decimal?" Label="FX Rate" Variant="Variant.Outlined" @bind-Value="_fxRate" Disabled="@((IsIdentityFx || DraftMutationBlocked))" />
         <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" Disabled="@DraftMutationBlocked" />
-    </div>
+        </div>
+    </section>
 
-    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+    <MudPaper Class="pa-4 source-entry__section-card source-entry__lines-card" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
             <MudText Typo="Typo.h6">Lines</MudText>
             <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
@@ -389,13 +417,13 @@
         </MudPaper>
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Subtotal</MudText><MudText Typo="Typo.h6">@Subtotal.ToString("N2")</MudText></MudPaper>
-        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Tax</MudText><MudText Typo="Typo.h6">@TaxTotal.ToString("N2")</MudText></MudPaper>
-        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Total</MudText><MudText Typo="Typo.h6">@GrandTotal.ToString("N2")</MudText></MudPaper>
+    <div class="source-entry__totals-grid">
+        <MudPaper Class="pa-4 source-entry__metric-card" Elevation="0"><MudText Typo="Typo.caption">Subtotal</MudText><MudText Typo="Typo.h6">@Subtotal.ToString("N2")</MudText></MudPaper>
+        <MudPaper Class="pa-4 source-entry__metric-card" Elevation="0"><MudText Typo="Typo.caption">Tax</MudText><MudText Typo="Typo.h6">@TaxTotal.ToString("N2")</MudText></MudPaper>
+        <MudPaper Class="pa-4 source-entry__metric-card source-entry__metric-card--total" Elevation="0"><MudText Typo="Typo.caption">Total</MudText><MudText Typo="Typo.h6">@GrandTotal.ToString("N2")</MudText></MudPaper>
     </div>
 
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+    <div class="source-entry__action-bar">
         <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_saving || _submitting || _posting || !CanEditDraft || WritesBlocked)" OnClick="SaveAsync">Save Draft</MudButton>
         @if (_saved is not null)
         {
@@ -613,13 +641,13 @@
                     ? "The invoice draft exists but AR truth has not started yet."
                     : "This lane converts demand truth into receivable truth once the invoice is posted.";
     private string InvoiceCommercialStageBadge => _postedResult?.Status ?? (_saved?.Status ?? "new");
-    private Color InvoiceCommercialStageColor => _postedResult is not null || IsPosted
-        ? Color.Success
+    private MudBlazor.Color InvoiceCommercialStageColor => _postedResult is not null || IsPosted
+        ? MudBlazor.Color.Success
         : IsSubmitted
-            ? Color.Warning
+            ? MudBlazor.Color.Warning
             : _saved is not null
-                ? Color.Info
-                : Color.Default;
+                ? MudBlazor.Color.Info
+                : MudBlazor.Color.Default;
     private string InvoiceSourceLinkLabel => !string.IsNullOrWhiteSpace(_sourceSalesOrderDisplayNumber)
         ? _sourceSalesOrderDisplayNumber
         : !string.IsNullOrWhiteSpace(_sourceShipmentDisplayNumber)

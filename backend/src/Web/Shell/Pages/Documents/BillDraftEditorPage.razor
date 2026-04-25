@@ -1,4 +1,6 @@
 @page "/documents/bill/draft-editor"
+@using AntDesign
+@using Color = MudBlazor.Color
 @using Citus.Modules.Inventory.Application.Contracts
 @using Citus.Modules.UnitySearch.Blazor
 @using Citus.Modules.UnitySearch.Domain.Shared
@@ -22,17 +24,28 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
-<PageTitle>Bill Draft</PageTitle>
+<PageTitle>@EntryPageTitle</PageTitle>
 
-<div style="padding:2rem 2.25rem;color:#d9e2ea;">
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-        <MudButton Variant="Variant.Text" Href="/documents/source-browser">Back</MudButton>
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Bill draft</MudChip>
-    </div>
-    <h1 style="margin:0 0 .75rem 0;">Bill Draft Editor</h1>
-    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:56rem;">
-        Save or reopen a governed bill draft in the active company context, then post it into the existing document-detail and journal-review flow.
-    </p>
+<div class="@EntryRootClass">
+    <section class="source-entry__hero">
+        <div class="source-entry__hero-copy">
+            <a class="source-entry__back-link" href="/documents/source-browser">
+                <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                Source documents
+            </a>
+            <div class="source-entry__eyebrow">
+                <span>AP workspace</span>
+                <span>@EntryBadge</span>
+            </div>
+            <h1>@EntryTitle</h1>
+            <p>@EntrySubtitle</p>
+        </div>
+        <Card Class="source-entry__balance-card">
+            <Statistic T="decimal" Title="@EntryAmountTitle" Value="@GrandTotal" Precision="2" />
+            <span>@(_txCurrency.Length > 0 ? _txCurrency : "Currency pending")</span>
+            <div class="source-entry__doc-number">@(_saved?.DisplayNumber ?? "Draft not saved")</div>
+        </Card>
+    </section>
 
     @if (IsCompanyReadyHandOff)
     {
@@ -134,30 +147,43 @@
         </MudPaper>
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <div>
-            <MudText Typo="Typo.caption" Class="mb-1">Vendor</MudText>
+    <section class="source-entry__form-card">
+        <div class="source-entry__section-heading">
+            <div>
+                <span>1</span>
+                <h2>@PartySectionTitle</h2>
+            </div>
+            <p>@PartySectionSummary</p>
+        </div>
+        <div class="source-entry__form-grid">
+        <div class="source-entry__party-field">
+            <MudText Typo="Typo.caption" Class="mb-1">@PartyLabel</MudText>
             <UnitySearchPicker CompanyId="@ShellSession.ActiveCompanyId"
                                UserId="@ShellState.CurrentUserId"
                                Context="@SearchScopeContext.BillVendorPicker"
                                SelectedId="@SelectedVendorId"
                                SelectedDisplayText="@SelectedVendorDisplayText"
-                               CreateEntityLabel="vendor"
-                               Placeholder="Search vendor"
+                               CreateEntityLabel="@PartyCreateEntityLabel"
+                               Placeholder="@PartySearchPlaceholder"
                                Disabled="@HeaderMutationBlocked"
                                OnOptionSelected="HandleVendorSelectedAsync"
                                OnCreateRequested="HandleCreateVendorRequestedAsync"
                                OnCleared="HandleVendorClearedAsync" />
+            <div class="source-entry__field-hint">
+                <i class="ti ti-sparkles" aria-hidden="true"></i>
+                @PartyHelperText
+            </div>
         </div>
-        <MudDatePicker Label="Bill Date" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="@DraftMutationBlocked" />
-        <MudDatePicker Label="Due Date" Variant="Variant.Outlined" Date="@_dueDatePicker" DateChanged="OnDueDateChanged" Disabled="@DraftMutationBlocked" />
+        <MudDatePicker Label="@DocumentDateLabel" Variant="Variant.Outlined" Date="@_documentDatePicker" DateChanged="OnDocumentDateChanged" Disabled="@DraftMutationBlocked" />
+        <MudDatePicker Label="@DueDateLabel" Variant="Variant.Outlined" Date="@_dueDatePicker" DateChanged="OnDueDateChanged" Disabled="@DraftMutationBlocked" />
         <MudTextField T="string" Label="Tx Currency" Variant="Variant.Outlined" Value="_txCurrency" ValueChanged="OnCurrencyChanged" Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || DraftMutationBlocked)" />
         <MudTextField T="string" Label="Base Currency" Variant="Variant.Outlined" Value="_baseCurrency" Disabled="true" />
         <MudNumericField T="decimal?" Label="FX Rate" Variant="Variant.Outlined" @bind-Value="_fxRate" Disabled="@(IsIdentityFx || DraftMutationBlocked)" />
-        <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" Disabled="@DraftMutationBlocked" />
-    </div>
+        <MudTextField T="string" Label="@MemoLabel" Variant="Variant.Outlined" @bind-Value="_memo" Disabled="@DraftMutationBlocked" />
+        </div>
+    </section>
 
-    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+    <MudPaper Class="pa-4 source-entry__section-card" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
             <div>
                 <MudText Typo="Typo.subtitle2">AP Settlement Chain</MudText>
@@ -196,9 +222,9 @@
         </div>
     </MudPaper>
 
-    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+    <MudPaper Class="pa-4 source-entry__section-card source-entry__lines-card" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
-            <MudText Typo="Typo.h6">Lines</MudText>
+            <MudText Typo="Typo.h6">@LineSectionTitle</MudText>
             <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
                 @if (DefaultPurchaseTaxCode is not null)
                 {
@@ -443,13 +469,13 @@
         </MudPaper>
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Subtotal</MudText><MudText Typo="Typo.h6">@Subtotal.ToString("N2")</MudText></MudPaper>
-        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Tax</MudText><MudText Typo="Typo.h6">@TaxTotal.ToString("N2")</MudText></MudPaper>
-        <MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.caption">Total</MudText><MudText Typo="Typo.h6">@GrandTotal.ToString("N2")</MudText></MudPaper>
+    <div class="source-entry__totals-grid">
+        <MudPaper Class="pa-4 source-entry__metric-card" Elevation="0"><MudText Typo="Typo.caption">Subtotal</MudText><MudText Typo="Typo.h6">@Subtotal.ToString("N2")</MudText></MudPaper>
+        <MudPaper Class="pa-4 source-entry__metric-card" Elevation="0"><MudText Typo="Typo.caption">Tax</MudText><MudText Typo="Typo.h6">@TaxTotal.ToString("N2")</MudText></MudPaper>
+        <MudPaper Class="pa-4 source-entry__metric-card source-entry__metric-card--total" Elevation="0"><MudText Typo="Typo.caption">Total</MudText><MudText Typo="Typo.h6">@GrandTotal.ToString("N2")</MudText></MudPaper>
     </div>
 
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+    <div class="source-entry__action-bar">
         <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_saving || _submitting || _posting || !CanEditDraft || WritesBlocked)" OnClick="SaveAsync">Save Draft</MudButton>
         @if (_saved is not null)
         {
@@ -581,6 +607,29 @@
     private bool DraftMutationBlocked => WritesBlocked || !CanEditDraft;
     private bool HeaderMutationBlocked => DraftMutationBlocked || _purchaseOrder is not null || _lines.Any(static line => line.IsPurchaseOrderAnchored);
     private bool IsCompanyReadyHandOff => string.Equals(Origin, "company-ready", StringComparison.OrdinalIgnoreCase);
+    private bool IsExpenseOrigin => string.Equals(Origin, "expense", StringComparison.OrdinalIgnoreCase);
+    private string EntryRootClass => IsExpenseOrigin ? "source-entry source-entry--ap source-entry--expense" : "source-entry source-entry--ap source-entry--bill";
+    private string EntryPageTitle => IsExpenseOrigin ? "New Expense" : "New Bill";
+    private string EntryBadge => IsExpenseOrigin ? "Expense draft" : "Bill draft";
+    private string EntryTitle => IsExpenseOrigin ? "New expense" : "New bill";
+    private string EntrySubtitle => IsExpenseOrigin
+        ? "Record direct spend with a clean AP boundary: payee match, payment account, category lines, tax, memo, and posting continuity stay in one disciplined surface."
+        : "Convert vendor obligations into governed AP truth with vendor match, purchase lines, tax recoverability, receipt hand-off, and posting review kept separate from AR.";
+    private string EntryAmountTitle => IsExpenseOrigin ? "Amount" : "Balance due";
+    private string PartySectionTitle => IsExpenseOrigin ? "Payee and payment context" : "Vendor and terms";
+    private string PartySectionSummary => IsExpenseOrigin
+        ? "UnitySearch accepts typed payee text, dropdown selection, recommendation matching, and Add new vendor/payee when no match exists."
+        : "UnitySearch accepts typed supplier text, dropdown selection, recommendation matching, and Add new vendor when no match exists.";
+    private string PartyLabel => IsExpenseOrigin ? "Payee" : "Vendor";
+    private string PartyCreateEntityLabel => IsExpenseOrigin ? "payee" : "vendor";
+    private string PartySearchPlaceholder => IsExpenseOrigin ? "Search or type payee" : "Search vendor";
+    private string PartyHelperText => IsExpenseOrigin
+        ? "Auto-match payee truth, or create a governed AP payee inline."
+        : "Auto-match vendor truth, or create a governed AP vendor inline.";
+    private string DocumentDateLabel => IsExpenseOrigin ? "Payment Date" : "Bill Date";
+    private string DueDateLabel => IsExpenseOrigin ? "Clearing Date" : "Due Date";
+    private string MemoLabel => IsExpenseOrigin ? "Expense memo" : "Memo";
+    private string LineSectionTitle => IsExpenseOrigin ? "Expense lines" : "Bill lines";
     private bool WritesBlocked => ShellState.AreWritesBlocked;
     private bool SupportsInventoryReceiptHandoff => _onboardingSummary?.SupportsInventoryFoundation == true && _inventoryReceiptDashboard is not null;
     private IReadOnlyList<InventoryManagedItemSummary> InventoryOperationalItems =>
@@ -666,7 +715,7 @@
     };
     private string ApSettlementLaneTitle => "Bill pipeline";
     private string ApSettlementLaneSummary => "Bills convert procurement demand into governed AP truth. After posting, the operator should move into Pay Bill or vendor-credit application rather than return to procurement editing.";
-    private Color ApSettlementLaneColor => _postedResult is not null ? Color.Success : IsSubmitted ? Color.Warning : Color.Info;
+    private MudBlazor.Color ApSettlementLaneColor => _postedResult is not null ? MudBlazor.Color.Success : IsSubmitted ? MudBlazor.Color.Warning : MudBlazor.Color.Info;
     private string ApSettlementLaneBadge => _postedResult is not null ? "Payable truth" : IsSubmitted ? "Awaiting post" : "Draft AP lane";
     private string ApSettlementLaneCurrentStepTitle => _postedResult is not null ? "Review posted payable anchor" : IsSubmitted ? "Review submitted bill" : "Shape payable truth";
     private string ApSettlementLaneCurrentStepSummary => _postedResult is not null

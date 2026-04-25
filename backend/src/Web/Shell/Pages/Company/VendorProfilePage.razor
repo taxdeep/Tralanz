@@ -1,0 +1,481 @@
+@page "/ap/vendors/{VendorId:guid}"
+@using AntDesign
+@using Web.Business.AP.Aging
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellCounterpartyOnboardingClient CounterpartyOnboarding
+@inject ApAgingReportClient AgingClient
+
+<PageTitle>@ProfileTitle</PageTitle>
+
+<div class="vendor-profile">
+    <aside class="vendor-profile__rail">
+        <a class="vendor-profile__back" href="/ap/vendors">Vendors</a>
+        <label class="vendor-profile__rail-search">
+            <i class="ti ti-search" aria-hidden="true"></i>
+            <input class="ant-input" placeholder="Search vendor list" @bind="_searchText" @bind:event="oninput" />
+        </label>
+        <div class="vendor-profile__rail-list">
+            @foreach (var vendor in FilteredVendors)
+            {
+                <a class="vendor-profile__rail-item @(vendor.Id == VendorId ? "vendor-profile__rail-item--active" : string.Empty)"
+                   href="@BuildVendorProfileHref(vendor.Id)">
+                    <strong>@vendor.DisplayName</strong>
+                    <span>@FormatVendorBalance(vendor.Id)</span>
+                </a>
+            }
+        </div>
+    </aside>
+
+    <main class="vendor-profile__main">
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="ant-alert ant-alert-warning vendor-profile__alert">
+                <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+                <span>@_error</span>
+            </div>
+        }
+
+        @if (_isLoading)
+        {
+            <div class="vendor-profile__loading">Loading vendor profile...</div>
+        }
+        else if (SelectedVendor is null)
+        {
+            <div class="vendor-profile__missing">
+                <h1>Vendor profile not found</h1>
+                <p>The selected vendor does not belong to the active company or is no longer available.</p>
+                <a class="ant-btn ant-btn-primary" href="/ap/vendors">Back to vendors</a>
+            </div>
+        }
+        else
+        {
+            <section class="vendor-profile__hero">
+                <div class="vendor-profile__identity">
+                    <div class="vendor-profile__avatar">@BuildInitials(SelectedVendor.DisplayName)</div>
+                    <div>
+                        <a class="vendor-profile__crumb" href="/ap/vendors">Vendors</a>
+                        <h1>@SelectedVendor.DisplayName</h1>
+                        <p>@SelectedVendor.EntityNumber | @SelectedVendor.DefaultCurrencyCode | @(SelectedVendor.IsActive ? "Active vendor" : "Inactive vendor")</p>
+                    </div>
+                </div>
+                <div class="vendor-profile__hero-actions">
+                    <Button Type="@AntDesign.ButtonType.Default" Href="@BuildEditHref(SelectedVendor.Id)">Edit</Button>
+                    <Button Type="@AntDesign.ButtonType.Primary" Href="@BuildBillHref(SelectedVendor.Id)">New transaction</Button>
+                </div>
+            </section>
+
+            <section class="vendor-profile__contact-grid">
+                <Card Class="vendor-profile__contact-card">
+                    <div class="vendor-profile__field-label">Email</div>
+                    <a href="@BuildMailHref(SelectedVendor.Email)">@DisplayAddable(SelectedVendor.Email, "Add email")</a>
+                    <div class="vendor-profile__field-label">Payment address</div>
+                    <span>@DisplayMultiline(SelectedVendor.Address, "Add payment address")</span>
+                    <div class="vendor-profile__field-label">Notes</div>
+                    <span>AP-only profile shell. Vendor notes can land in the next profile project.</span>
+                </Card>
+
+                <Card Class="vendor-profile__contact-card">
+                    <div class="vendor-profile__field-label">Phone</div>
+                    <a href="@BuildPhoneHref(SelectedVendor.Phone)">@DisplayAddable(SelectedVendor.Phone, "Add phone number")</a>
+                    <div class="vendor-profile__field-label">Remittance address</div>
+                    <span>@DisplayMultiline(SelectedVendor.Address, "Add remittance address")</span>
+                    <div class="vendor-profile__field-label">Custom fields</div>
+                    <span>Reserved for vendor profile project</span>
+                </Card>
+
+                <Card Class="vendor-profile__financial-card">
+                    <h2>Financial summary</h2>
+                    <div class="vendor-profile__financial-row">
+                        <span>Open balance</span>
+                        <strong>@FormatMoney(SelectedAging?.TotalOutstandingAmountBase ?? 0m)</strong>
+                    </div>
+                    <div class="vendor-profile__financial-row">
+                        <span>Overdue bills</span>
+                        <strong>@FormatMoney(SelectedAging?.TotalOverdueAmountBase ?? 0m)</strong>
+                    </div>
+                    <div class="vendor-profile__financial-row">
+                        <span>Open item(s)</span>
+                        <strong>@(SelectedAging?.OpenItemCount ?? 0)</strong>
+                    </div>
+                </Card>
+            </section>
+
+            <section class="vendor-profile__tabs">
+                <a class="@BuildTabClass(ProfileTab.Transactions)" href="@BuildTabHref(ProfileTab.Transactions)">Transaction List</a>
+                <span class="vendor-profile__tab-disabled">Activity Feed</span>
+                <a class="@BuildTabClass(ProfileTab.Statements)" href="@BuildTabHref(ProfileTab.Statements)">Statements</a>
+                <span class="vendor-profile__tab-disabled">Recurring Payments</span>
+                <a class="@BuildTabClass(ProfileTab.Details)" href="@BuildTabHref(ProfileTab.Details)">Vendor Details</a>
+                <a class="@BuildTabClass(ProfileTab.Credits)" href="@BuildTabHref(ProfileTab.Credits)">Credits</a>
+                <span class="vendor-profile__tab-disabled">Notes</span>
+                <span class="vendor-profile__tab-disabled">Tasks <em>New</em></span>
+            </section>
+
+            <section class="vendor-profile__workspace">
+                @switch (ActiveTab)
+                {
+                    case ProfileTab.Statements:
+                        @RenderStatementsTab(SelectedVendor)
+                        break;
+                    case ProfileTab.Details:
+                        @RenderDetailsTab(SelectedVendor)
+                        break;
+                    case ProfileTab.Credits:
+                        @RenderCreditsTab(SelectedVendor)
+                        break;
+                    default:
+                        @RenderTransactionsTab(SelectedVendor)
+                        break;
+                }
+            </section>
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter]
+    public Guid VendorId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    private ShellCounterpartyOnboardingSummary? _summary;
+    private ApAgingReportViewModel? _agingReport;
+    private string _searchText = string.Empty;
+    private string? _error;
+    private bool _isLoading = true;
+
+    private string ProfileTitle => SelectedVendor is null ? "Vendor Profile" : $"{SelectedVendor.DisplayName} Profile";
+    private ShellManagedCounterpartySummary? SelectedVendor => _summary?.Vendors.FirstOrDefault(vendor => vendor.Id == VendorId);
+    private ApAgingVendorRowViewModel? SelectedAging => _agingReport?.VendorRows.FirstOrDefault(vendor => vendor.VendorId == VendorId);
+    private string BaseCurrencyCode => _agingReport?.BaseCurrencyCode ?? _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode;
+    private ProfileTab ActiveTab => ParseTab(Tab);
+    private decimal SelectedOpenBalanceBase => SelectedAging?.TotalOutstandingAmountBase ?? 0m;
+    private decimal SelectedOverdueBalanceBase => SelectedAging?.TotalOverdueAmountBase ?? 0m;
+    private int SelectedOpenItemCount => SelectedAging?.OpenItemCount ?? 0;
+
+    private IReadOnlyList<ApAgingOpenItemRowViewModel> SelectedTransactions =>
+        (_agingReport?.DetailRows ?? Array.Empty<ApAgingOpenItemRowViewModel>())
+        .Where(row => row.VendorId == VendorId)
+        .OrderByDescending(static row => row.DocumentDate)
+        .ThenBy(static row => row.DisplayNumber, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private IReadOnlyList<ShellManagedCounterpartySummary> FilteredVendors =>
+        (_summary?.Vendors ?? Array.Empty<ShellManagedCounterpartySummary>())
+        .Where(vendor => string.IsNullOrWhiteSpace(_searchText) || vendor.DisplayName.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(static vendor => vendor.IsActive)
+        .ThenBy(static vendor => vendor.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _summary = await CounterpartyOnboarding.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            var agingResult = await AgingClient.GetAsync(ShellState.ActiveCompany.Id, DateOnly.FromDateTime(DateTime.UtcNow));
+            _agingReport = agingResult.Value;
+            _error = agingResult.Value is null ? agingResult.ErrorMessage : null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private string FormatVendorBalance(Guid vendorId)
+    {
+        var aging = _agingReport?.VendorRows.FirstOrDefault(row => row.VendorId == vendorId);
+        return FormatMoney(aging?.TotalOutstandingAmountBase ?? 0m);
+    }
+
+    private string FormatMoney(decimal value) =>
+        $"{BaseCurrencyCode} {value:N2}";
+
+    private static string DisplayAddable(string value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value;
+
+    private static MarkupString DisplayMultiline(string value, string fallback)
+    {
+        var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Replace(Environment.NewLine, "<br />");
+        return new MarkupString(text);
+    }
+
+    private static string BuildInitials(string displayName)
+    {
+        var parts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Concat(parts.Take(2).Select(static part => char.ToUpperInvariant(part[0])));
+    }
+
+    private static string BuildVendorProfileHref(Guid vendorId) =>
+        $"/ap/vendors/{vendorId:D}";
+
+    private static string BuildBillHref(Guid vendorId) =>
+        $"/documents/bill/draft-editor?vendorId={vendorId:D}&origin=vendor-profile";
+
+    private static string BuildPayBillHref(Guid vendorId) =>
+        $"/ap/pay-bill?vendorId={vendorId:D}";
+
+    private static string BuildEditHref(Guid vendorId) =>
+        $"/company/customer-vendor-setup?create=vendor&returnUrl=/ap/vendors/{vendorId:D}";
+
+    private static string BuildMailHref(string email) =>
+        string.IsNullOrWhiteSpace(email) ? "#" : $"mailto:{email}";
+
+    private static string BuildPhoneHref(string phone) =>
+        string.IsNullOrWhiteSpace(phone) ? "#" : $"tel:{phone}";
+
+    private RenderFragment RenderTransactionsTab(ShellManagedCounterpartySummary vendor) => @<text>
+        <div class="vendor-profile__workspace-toolbar">
+            <div class="vendor-profile__filters">
+                <button class="ant-btn ant-btn-default vendor-profile__batch-button" type="button" disabled>Batch actions</button>
+                <label>
+                    <span>Type</span>
+                    <select class="ant-input" disabled>
+                        <option>All open AP documents</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Status</span>
+                    <select class="ant-input" disabled>
+                        <option>Open</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Date</span>
+                    <select class="ant-input" disabled>
+                        <option>All</option>
+                    </select>
+                </label>
+            </div>
+            <div class="vendor-profile__toolbar-links">
+                <a href="@BuildPayBillHref(vendor.Id)">Pay bill</a>
+                <a href="@BuildBillHref(vendor.Id)">Create bill</a>
+            </div>
+        </div>
+
+        <div class="vendor-profile__table-wrap">
+            <table class="ant-table vendor-profile__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>No.</th>
+                        <th>Vendor</th>
+                        <th>Memo</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    @if (SelectedTransactions.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8">
+                                <div class="vendor-profile__empty-inline">No open AP transactions matched this vendor.</div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in SelectedTransactions)
+                        {
+                            <tr>
+                                <td>@row.DocumentDate.ToString("M/d/yy")</td>
+                                <td>@FormatSourceType(row.SourceType)</td>
+                                <td>@row.DisplayNumber</td>
+                                <td>@row.VendorDisplayName</td>
+                                <td>@BuildTransactionMemo(row)</td>
+                                <td>@FormatMoney(row.SignedOpenAmountBase)</td>
+                                <td>
+                                    <span class="@BuildTransactionStatusClass(row)">
+                                        @BuildTransactionStatus(row)
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="@BuildSourceBrowserHref(row)">View</a>
+                                    <span class="vendor-profile__action-separator">|</span>
+                                    <a href="@BuildPayBillHref(row.VendorId)">Pay bill</a>
+                                </td>
+                            </tr>
+                        }
+                        <tr class="vendor-profile__total-row">
+                            <td></td>
+                            <td>Total (@BaseCurrencyCode)</td>
+                            <td colspan="3"></td>
+                            <td>@FormatMoney(SelectedTransactions.Sum(static row => row.SignedOpenAmountBase))</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </text>;
+
+    private RenderFragment RenderStatementsTab(ShellManagedCounterpartySummary vendor) => @<text>
+        <div class="vendor-profile__workspace-toolbar">
+            <div class="vendor-profile__filters">
+                <button class="ant-btn ant-btn-default vendor-profile__batch-button" type="button" disabled>Batch actions</button>
+                <label>
+                    <span>Date</span>
+                    <select class="ant-input" disabled>
+                        <option>Last 12 months</option>
+                    </select>
+                </label>
+            </div>
+            <div class="vendor-profile__toolbar-links">
+                <a href="@BuildTabHref(ProfileTab.Transactions)">View transactions</a>
+            </div>
+        </div>
+        <div class="vendor-profile__table-wrap">
+            <table class="ant-table vendor-profile__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Date</th>
+                        <th>No.</th>
+                        <th>Vendor</th>
+                        <th>Start date</th>
+                        <th>End date</th>
+                        <th>Statement type</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    <tr>
+                        <td colspan="7">
+                            <div class="vendor-profile__empty-inline">No matching vendor statements found for @vendor.DisplayName.</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </text>;
+
+    private RenderFragment RenderDetailsTab(ShellManagedCounterpartySummary vendor) => @<text>
+        <div class="vendor-profile__details-grid">
+            <Card Class="vendor-profile__details-card">
+                <h2>Vendor identity</h2>
+                <dl>
+                    <dt>Display name</dt>
+                    <dd>@vendor.DisplayName</dd>
+                    <dt>Entity number</dt>
+                    <dd>@vendor.EntityNumber</dd>
+                    <dt>Status</dt>
+                    <dd>@(vendor.IsActive ? "Active" : "Inactive")</dd>
+                    <dt>Default currency</dt>
+                    <dd>@vendor.DefaultCurrencyCode</dd>
+                </dl>
+            </Card>
+            <Card Class="vendor-profile__details-card">
+                <h2>AP boundary</h2>
+                <p>This profile is vendor-scoped AP truth. Customer/AR records stay in a separate AR workspace.</p>
+                <dl>
+                    <dt>Open balance</dt>
+                    <dd>@FormatMoney(SelectedOpenBalanceBase)</dd>
+                    <dt>Overdue bills</dt>
+                    <dd>@FormatMoney(SelectedOverdueBalanceBase)</dd>
+                    <dt>Open item count</dt>
+                    <dd>@SelectedOpenItemCount</dd>
+                </dl>
+            </Card>
+        </div>
+    </text>;
+
+    private RenderFragment RenderCreditsTab(ShellManagedCounterpartySummary vendor) => @<text>
+        <div class="vendor-profile__workspace-toolbar">
+            <h2>Vendor credits</h2>
+            <a href="/ap/vendor-credit-application">+ Apply vendor credit</a>
+        </div>
+        <div class="vendor-profile__empty-state">
+            <i class="ti ti-credit-card-refund" aria-hidden="true"></i>
+            <h3>No vendor credit workspace yet</h3>
+            <p>Vendor credit review can land here without crossing into AR customer credit notes.</p>
+        </div>
+    </text>;
+
+    private string BuildTabClass(ProfileTab tab) =>
+        ActiveTab == tab ? "vendor-profile__tab-active" : string.Empty;
+
+    private string BuildTabHref(ProfileTab tab) =>
+        tab == ProfileTab.Transactions
+            ? BuildVendorProfileHref(VendorId)
+            : $"{BuildVendorProfileHref(VendorId)}?tab={GetTabValue(tab)}";
+
+    private static ProfileTab ParseTab(string? tab) =>
+        tab?.Trim().ToLowerInvariant() switch
+        {
+            "statements" => ProfileTab.Statements,
+            "details" => ProfileTab.Details,
+            "credits" => ProfileTab.Credits,
+            _ => ProfileTab.Transactions
+        };
+
+    private static string GetTabValue(ProfileTab tab) =>
+        tab switch
+        {
+            ProfileTab.Statements => "statements",
+            ProfileTab.Details => "details",
+            ProfileTab.Credits => "credits",
+            _ => "transactions"
+        };
+
+    private static string FormatSourceType(string sourceType) =>
+        sourceType.Replace('_', ' ').Trim() switch
+        {
+            "" => "Source document",
+            var value => char.ToUpperInvariant(value[0]) + value[1..]
+        };
+
+    private static string BuildTransactionMemo(ApAgingOpenItemRowViewModel row) =>
+        row.DueDate.HasValue
+            ? $"Due {row.DueDate.Value:yyyy-MM-dd}"
+            : row.AgingBucket;
+
+    private static string BuildTransactionStatus(ApAgingOpenItemRowViewModel row) =>
+        row.DaysPastDue > 0
+            ? $"Overdue {row.DaysPastDue} days"
+            : row.Status;
+
+    private static string BuildTransactionStatusClass(ApAgingOpenItemRowViewModel row) =>
+        row.DaysPastDue > 0
+            ? "vendor-profile__transaction-status vendor-profile__transaction-status--overdue"
+            : "vendor-profile__transaction-status vendor-profile__transaction-status--open";
+
+    private static string BuildSourceBrowserHref(ApAgingOpenItemRowViewModel row) =>
+        $"/documents/source-browser?sourceType={Uri.EscapeDataString(row.SourceType)}&counterpartyRole=vendor&counterpartyId={row.VendorId:D}";
+
+    private enum ProfileTab
+    {
+        Transactions,
+        Statements,
+        Details,
+        Credits
+    }
+}
