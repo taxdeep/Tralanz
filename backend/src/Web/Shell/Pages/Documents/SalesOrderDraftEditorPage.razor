@@ -215,7 +215,7 @@
                 <div style="border:1px solid rgba(148,163,184,.2);border-radius:6px;padding:.75rem;">
                     <MudText Typo="Typo.caption">Invoice</MudText>
                     <MudText Typo="Typo.h6">@GetInvoiceCoverageLabel(_outboundControl.InvoiceCoverageStatus)</MudText>
-                    <MudText Typo="Typo.body2" Class="text-secondary">@_outboundControl.InvoicedQuantity.ToString("N2") / @_outboundControl.OrderQuantity.ToString("N2") posted</MudText>
+                    <MudText Typo="Typo.body2" Class="text-secondary">@FormatInvoiceRatio(_outboundControl.InvoicedQuantity, _outboundControl.OrderQuantity) posted</MudText>
                 </div>
                 <div style="border:1px solid rgba(148,163,184,.2);border-radius:6px;padding:.75rem;">
                     <MudText Typo="Typo.caption">Remaining</MudText>
@@ -242,7 +242,7 @@
                     <MudTd>@context.OrderQuantity.ToString("N2")</MudTd>
                     <MudTd>@context.ShippedQuantity.ToString("N2")</MudTd>
                     <MudTd>@context.RemainingToShipQuantity.ToString("N2")</MudTd>
-                    <MudTd>@context.InvoicedQuantity.ToString("N2")</MudTd>
+                    <MudTd>@FormatInvoiceRatio(context.InvoicedQuantity, context.OrderQuantity)</MudTd>
                     <MudTd>@context.RemainingToInvoiceQuantity.ToString("N2")</MudTd>
                 </RowTemplate>
             </MudTable>
@@ -307,7 +307,7 @@
                         <MudTd>@context.LineNumber</MudTd>
                         <MudTd>@context.Description</MudTd>
                         <MudTd>@context.OrderQuantity.ToString("N2")</MudTd>
-                        <MudTd>@context.InvoicedQuantity.ToString("N2")</MudTd>
+                            <MudTd>@FormatInvoiceRatio(context.InvoicedQuantity, context.OrderQuantity)</MudTd>
                         <MudTd>@context.RemainingToInvoiceQuantity.ToString("N2")</MudTd>
                         <MudTd>@GetInvoiceCoverageLabel(context.InvoiceCoverageStatus)</MudTd>
                     </RowTemplate>
@@ -733,6 +733,12 @@
             "no_order_quantity" => "This sales order has no positive quantity to invoice.",
             _ => "Invoice coverage has not been evaluated yet."
         };
+
+    private static string FormatInvoiceRatio(decimal invoicedQuantity, decimal orderQuantity) =>
+        $"{FormatQuantity(invoicedQuantity)}/{FormatQuantity(orderQuantity)}";
+
+    private static string FormatQuantity(decimal value) =>
+        value == decimal.Truncate(value) ? value.ToString("N0") : value.ToString("N2");
 
     private string? ResolveProductServiceLabel(string? productServiceIdText)
     {

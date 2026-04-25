@@ -270,7 +270,22 @@
                     </MudSelect>
                 </MudTd>
                 <MudTd><MudTextField T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.Description" Disabled="@DraftMutationBlocked" /></MudTd>
-                <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Immediate="true" @bind-Value="context.Quantity" Disabled="@DraftMutationBlocked" /></MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal"
+                                     Variant="Variant.Outlined"
+                                     Margin="Margin.Dense"
+                                     Min="0.01m"
+                                     Max="@GetSalesOrderQuantityMax(context)"
+                                     Immediate="true"
+                                     @bind-Value="context.Quantity"
+                                     Disabled="@DraftMutationBlocked" />
+                    @if (context.SourceSalesOrderLineNumber.HasValue)
+                    {
+                        <MudText Typo="Typo.caption" Style="display:block;margin-top:.25rem;color:#97a8b7;">
+                            Invoiced @FormatQuantity(context.SalesOrderInvoicedQuantity)/@FormatQuantity(context.SalesOrderOrderQuantity) · max @FormatQuantity(context.SalesOrderRemainingQuantity)
+                        </MudText>
+                    }
+                </MudTd>
                 <MudTd><MudNumericField T="decimal" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.01m" Immediate="true" @bind-Value="context.UnitPrice" Disabled="@DraftMutationBlocked" /></MudTd>
                 <MudTd>
                     <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="context.TaxCodeIdText" Disabled="@DraftMutationBlocked">
@@ -754,6 +769,7 @@
         _error = null;
         if (!Guid.TryParse(_customerIdText, out var customerId)) { _error = "Customer must be selected."; return; }
         if (!TryBuildLines(out var lines)) return;
+        if (!await TryValidateSalesOrderInvoiceCapacityAsync()) return;
 
         try
         {
@@ -824,6 +840,11 @@
 
         try
         {
+            if (!await TryValidateSalesOrderInvoiceCapacityAsync())
+            {
+                return;
+            }
+
             _submitting = true;
             var submitResult = await Drafts.SubmitInvoiceDraftAsync(
                 ShellSession.ActiveCompanyId,
@@ -879,6 +900,11 @@
 
         try
         {
+            if (!await TryValidateSalesOrderInvoiceCapacityAsync())
+            {
+                return;
+            }
+
             _posting = true;
             var postResult = await Drafts.PostInvoiceAsync(
                 ShellSession.ActiveCompanyId,
@@ -928,6 +954,13 @@
             if (!Guid.TryParse(line.AccountIdText, out var accountId)) { _error = $"Revenue account missing on line {line.LineNumber}."; lines = []; return false; }
             if (string.IsNullOrWhiteSpace(line.Description)) { _error = $"Description missing on line {line.LineNumber}."; lines = []; return false; }
             if (line.Quantity <= 0m || line.UnitPrice <= 0m) { _error = $"Quantity and unit price must be positive on line {line.LineNumber}."; lines = []; return false; }
+            if (line.SourceSalesOrderLineNumber.HasValue &&
+                decimal.Round(line.Quantity, 6, MidpointRounding.AwayFromZero) > decimal.Round(line.SalesOrderRemainingQuantity, 6, MidpointRounding.AwayFromZero))
+            {
+                _error = $"Line {line.LineNumber} exceeds source SO remaining quantity. Invoiced {FormatQuantity(line.SalesOrderInvoicedQuantity)}/{FormatQuantity(line.SalesOrderOrderQuantity)}, max {FormatQuantity(line.SalesOrderRemainingQuantity)}.";
+                lines = [];
+                return false;
+            }
             if (line.TaxAmount > 0m && !Guid.TryParse(line.TaxCodeIdText, out _)) { _error = $"Tax code missing on line {line.LineNumber}."; lines = []; return false; }
             if (line.ItemId.HasValue && !IsInventorySalesIssueHandoffReady(line)) { _error = $"Shipment-first hand-off is incomplete on line {line.LineNumber}. Item, warehouse, and stock UOM must all be present once the line joins outbound inventory truth."; lines = []; return false; }
             built.Add(new ShellSalesSourceDocumentDraftLineSaveRequest
@@ -1233,8 +1266,9 @@
         foreach (var sourceLine in salesOrder.Lines.OrderBy(static line => line.LineNumber))
         {
             var quantity = sourceLine.Quantity;
+            ShellSalesOrderInvoiceCoverageLineSummary? lineCoverage = null;
             if (remainingByLine is not null &&
-                remainingByLine.TryGetValue(sourceLine.LineNumber, out var lineCoverage))
+                remainingByLine.TryGetValue(sourceLine.LineNumber, out lineCoverage))
             {
                 quantity = lineCoverage.RemainingToInvoiceQuantity;
             }
@@ -1253,7 +1287,11 @@
                 UnitPrice = sourceLine.UnitPrice,
                 ItemId = sourceLine.ItemId,
                 WarehouseId = sourceLine.WarehouseId,
-                UomCode = sourceLine.UomCode ?? string.Empty
+                UomCode = sourceLine.UomCode ?? string.Empty,
+                SourceSalesOrderLineNumber = sourceLine.LineNumber,
+                SalesOrderOrderQuantity = sourceLine.Quantity,
+                SalesOrderInvoicedQuantity = lineCoverage?.InvoicedQuantity ?? 0m,
+                SalesOrderRemainingQuantity = quantity
             });
         }
 
@@ -1275,7 +1313,7 @@
             .Where(static line => line.Quantity > 0m)
             .Select(static line => new ShellSalesCommercialInvoiceAnchorLineRequest
             {
-                LineNumber = line.LineNumber,
+                LineNumber = line.SourceSalesOrderLineNumber ?? line.LineNumber,
                 Description = line.Description,
                 Quantity = line.Quantity,
                 UnitPrice = line.UnitPrice,
@@ -1309,6 +1347,46 @@
         {
             Snackbar.Add($"Sales order invoice coverage was not updated: {ex.Message}", Severity.Warning);
         }
+    }
+
+    private async Task<bool> TryValidateSalesOrderInvoiceCapacityAsync()
+    {
+        if (!_loadedSourceSalesOrderId.HasValue)
+        {
+            return true;
+        }
+
+        var coverage = await CommercialDocuments.GetSalesOrderInvoiceCoverageAsync(
+            ShellSession.ActiveCompanyId,
+            _loadedSourceSalesOrderId.Value,
+            CancellationToken.None);
+        if (coverage is null)
+        {
+            _error = "The source sales order coverage could not be loaded.";
+            return false;
+        }
+
+        var coverageByLine = coverage.Lines.ToDictionary(static line => line.LineNumber);
+        foreach (var line in _lines.Where(static line => line.Quantity > 0m))
+        {
+            if (!line.SourceSalesOrderLineNumber.HasValue ||
+                !coverageByLine.TryGetValue(line.SourceSalesOrderLineNumber.Value, out var sourceLine))
+            {
+                _error = $"Line {line.LineNumber} is not anchored to the source sales order. Create a separate direct invoice for non-SO lines.";
+                return false;
+            }
+
+            line.SalesOrderOrderQuantity = sourceLine.OrderQuantity;
+            line.SalesOrderInvoicedQuantity = sourceLine.InvoicedQuantity;
+            line.SalesOrderRemainingQuantity = sourceLine.RemainingToInvoiceQuantity;
+            if (decimal.Round(line.Quantity, 6, MidpointRounding.AwayFromZero) > decimal.Round(sourceLine.RemainingToInvoiceQuantity, 6, MidpointRounding.AwayFromZero))
+            {
+                _error = $"Line {line.LineNumber} exceeds source SO remaining quantity. Invoiced {FormatQuantity(sourceLine.InvoicedQuantity)}/{FormatQuantity(sourceLine.OrderQuantity)}, max {FormatQuantity(sourceLine.RemainingToInvoiceQuantity)}.";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool AllowsInvoicePost(string? matchStatus) =>
@@ -1545,6 +1623,12 @@
         line.WarehouseId.HasValue &&
         !string.IsNullOrWhiteSpace(line.UomCode);
 
+    private static decimal GetSalesOrderQuantityMax(SalesLine line) =>
+        line.SourceSalesOrderLineNumber.HasValue ? line.SalesOrderRemainingQuantity : decimal.MaxValue;
+
+    private static string FormatQuantity(decimal value) =>
+        value == decimal.Truncate(value) ? value.ToString("N0") : value.ToString("N2");
+
     private static Guid? ParseOptionalGuid(string? value) =>
         Guid.TryParse(value, out var parsed) ? parsed : null;
 
@@ -1568,6 +1652,10 @@
         public Guid? ItemId { get; set; }
         public Guid? WarehouseId { get; set; }
         public string UomCode { get; set; } = string.Empty;
+        public int? SourceSalesOrderLineNumber { get; set; }
+        public decimal SalesOrderOrderQuantity { get; set; }
+        public decimal SalesOrderInvoicedQuantity { get; set; }
+        public decimal SalesOrderRemainingQuantity { get; set; }
         public decimal LineAmount => Quantity * UnitPrice;
         public decimal TotalAmount => LineAmount + TaxAmount;
         public static SalesLine Blank(int lineNumber) => new() { LineNumber = lineNumber };

@@ -250,10 +250,21 @@ public sealed class ShellSalesCommercialDocumentClient(PostgreSqlConnectionFacto
         CancellationToken cancellationToken = default)
     {
         ValidateInvoiceAnchor(companyId, salesOrderId, request);
+        var normalizedLines = NormalizeInvoiceAnchorLines(request.Lines);
         await using var connection = await connections.OpenAsync(cancellationToken);
         await EnsureTablesAsync(connection, cancellationToken);
 
-        var linePayload = JsonSerializer.Serialize(NormalizeInvoiceAnchorLines(request.Lines), JsonOptions);
+        var salesOrder = await GetAsync(companyId, salesOrderId, cancellationToken)
+            ?? throw new InvalidOperationException("The sales order could not be found in the active company context.");
+        if (salesOrder.DocumentType != "sales_order")
+        {
+            throw new InvalidOperationException("Invoice coverage can only be anchored to a sales order.");
+        }
+
+        var existingAnchors = await LoadSalesOrderInvoiceAnchorsAsync(connection, companyId, salesOrderId, cancellationToken);
+        ValidateInvoiceAnchorQuantities(salesOrder, normalizedLines, existingAnchors, request.InvoiceDocumentId);
+
+        var linePayload = JsonSerializer.Serialize(normalizedLines, JsonOptions);
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"""
@@ -302,25 +313,7 @@ public sealed class ShellSalesCommercialDocumentClient(PostgreSqlConnectionFacto
         await using var connection = await connections.OpenAsync(cancellationToken);
         await EnsureTablesAsync(connection, cancellationToken);
 
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"""
-            select invoice_document_id, invoice_display_number, invoice_status, invoice_document_date,
-                   invoice_total_amount, invoice_quantity, lines_json, updated_at
-            from {SalesOrderInvoiceAnchorsTableName}
-            where company_id = @company_id
-              and sales_order_id = @sales_order_id
-            order by updated_at desc;
-            """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("sales_order_id", salesOrderId);
-
-        var anchors = new List<InvoiceAnchorRow>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            anchors.Add(ReadInvoiceAnchor(reader));
-        }
+        var anchors = await LoadSalesOrderInvoiceAnchorsAsync(connection, companyId, salesOrderId, cancellationToken);
 
         var postedAnchors = anchors.Where(static anchor => IsPostedInvoiceStatus(anchor.InvoiceStatus)).ToArray();
         var orderQuantity = salesOrder.Lines.Sum(static line => line.Quantity);
@@ -729,11 +722,77 @@ public sealed class ShellSalesCommercialDocumentClient(PostgreSqlConnectionFacto
             .OrderBy(static line => line.LineNumber)
             .Select((line, index) => line with
             {
-                LineNumber = index + 1,
+                LineNumber = line.LineNumber <= 0 ? index + 1 : line.LineNumber,
                 Description = line.Description.Trim(),
                 UomCode = string.IsNullOrWhiteSpace(line.UomCode) ? null : line.UomCode.Trim().ToUpperInvariant()
             })
             .ToArray();
+
+    private static void ValidateInvoiceAnchorQuantities(
+        ShellSalesCommercialDocumentReadModel salesOrder,
+        IReadOnlyList<ShellSalesCommercialInvoiceAnchorLineRequest> requestedLines,
+        IReadOnlyList<InvoiceAnchorRow> existingAnchors,
+        Guid currentInvoiceDocumentId)
+    {
+        var orderedByKey = salesOrder.Lines
+            .GroupBy(static line => BuildInvoiceCoverageLineKey(line.LineNumber, line.ItemId, line.WarehouseId, line.UomCode, line.Description))
+            .ToDictionary(static group => group.Key, static group => group.Sum(line => line.Quantity));
+        var postedByKey = existingAnchors
+            .Where(anchor =>
+                anchor.InvoiceDocumentId != currentInvoiceDocumentId &&
+                IsPostedInvoiceStatus(anchor.InvoiceStatus))
+            .SelectMany(static anchor => anchor.Lines)
+            .GroupBy(static line => BuildInvoiceCoverageLineKey(line.LineNumber, line.ItemId, line.WarehouseId, line.UomCode, line.Description))
+            .ToDictionary(static group => group.Key, static group => group.Sum(line => line.Quantity));
+        var requestedByKey = requestedLines
+            .GroupBy(static line => BuildInvoiceCoverageLineKey(line.LineNumber, line.ItemId, line.WarehouseId, line.UomCode, line.Description))
+            .ToDictionary(static group => group.Key, static group => group.Sum(line => line.Quantity));
+
+        foreach (var (key, requestedQuantity) in requestedByKey)
+        {
+            if (!orderedByKey.TryGetValue(key, out var orderedQuantity))
+            {
+                throw new InvalidOperationException("Invoice coverage contains a line that no longer matches the source sales order.");
+            }
+
+            var alreadyPostedQuantity = postedByKey.GetValueOrDefault(key);
+            var maxAllowedQuantity = Math.Max(0m, orderedQuantity - alreadyPostedQuantity);
+            if (decimal.Round(requestedQuantity, 6, MidpointRounding.AwayFromZero) > decimal.Round(maxAllowedQuantity, 6, MidpointRounding.AwayFromZero))
+            {
+                throw new InvalidOperationException(
+                    $"Invoice quantity {requestedQuantity:0.######} exceeds remaining sales-order coverage {maxAllowedQuantity:0.######} for one source line.");
+            }
+        }
+    }
+
+    private static async Task<IReadOnlyList<InvoiceAnchorRow>> LoadSalesOrderInvoiceAnchorsAsync(
+        NpgsqlConnection connection,
+        Guid companyId,
+        Guid salesOrderId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"""
+            select invoice_document_id, invoice_display_number, invoice_status, invoice_document_date,
+                   invoice_total_amount, invoice_quantity, lines_json, updated_at
+            from {SalesOrderInvoiceAnchorsTableName}
+            where company_id = @company_id
+              and sales_order_id = @sales_order_id
+            order by updated_at desc;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("sales_order_id", salesOrderId);
+
+        var anchors = new List<InvoiceAnchorRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            anchors.Add(ReadInvoiceAnchor(reader));
+        }
+
+        return anchors;
+    }
 
     private static InvoiceAnchorRow ReadInvoiceAnchor(NpgsqlDataReader reader)
     {
@@ -884,7 +943,9 @@ public sealed class ShellSalesCommercialDocumentClient(PostgreSqlConnectionFacto
             return new InvoiceCoverageLineKey(null, itemId, warehouseId, NormalizeOptionalText(uomCode), null);
         }
 
-        return new InvoiceCoverageLineKey(lineNumber, null, null, null, NormalizeOptionalText(description));
+        return lineNumber > 0
+            ? new InvoiceCoverageLineKey(lineNumber, null, null, null, null)
+            : new InvoiceCoverageLineKey(null, null, null, null, NormalizeOptionalText(description));
     }
 
     private static string BuildQuantityCoverageStatus(decimal expectedQuantity, decimal coveredQuantity)
