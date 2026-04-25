@@ -215,6 +215,57 @@ body {
     gap: 1rem;
 }
 
+.citus-safe-card {
+    min-height: 10rem;
+    padding: 1.35rem;
+    border: 1px solid var(--citus-border-subtle);
+    border-radius: var(--citus-radius-lg);
+    background: var(--citus-surface);
+    box-shadow: var(--citus-shadow-card);
+}
+
+.citus-btn {
+    display: inline-flex;
+    min-height: var(--citus-control-height);
+    align-items: center;
+    justify-content: center;
+    padding: .45rem 1rem;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-size: .88rem;
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, color .16s ease;
+}
+
+.citus-btn:hover {
+    text-decoration: none;
+}
+
+.citus-btn--primary {
+    color: #fff;
+    background: var(--citus-primary);
+    box-shadow: 0 12px 24px rgba(22, 119, 255, .2);
+}
+
+.citus-btn--primary:hover {
+    color: #fff;
+    background: #0958d9;
+}
+
+.citus-btn--secondary {
+    color: var(--citus-text);
+    border-color: var(--citus-border-subtle);
+    background: rgba(255, 255, 255, .84);
+}
+
+.citus-btn--secondary:hover {
+    color: var(--citus-primary);
+    border-color: rgba(22, 119, 255, .38);
+    background: #fff;
+}
+
 @media (max-width: 760px) {
     .citus-page__header {
         display: block;

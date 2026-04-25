@@ -1,14 +1,4 @@
-@page "/ar/aging"
-@page "/ar/receive-payment"
-@page "/ap/aging"
-@page "/ap/pay-bill"
-@page "/ap/vendor-credit-application"
-@page "/company/membership-permissions"
-@page "/gl/journal-entries"
-@page "/gl/journal-entry/editor"
-@page "/settings/user-preferences/system-setup"
 @page "/sysadmin/login"
-@using AntDesign
 @inject NavigationManager Navigation
 
 <PageTitle>@Workspace.Title</PageTitle>
@@ -24,13 +14,13 @@
             <p class="citus-page__summary">@Workspace.Summary</p>
         </div>
         <div class="citus-toolbar">
-            <Button Type="@AntDesign.ButtonType.Default" Href="/">Back to shell</Button>
-            <Button Type="@AntDesign.ButtonType.Primary" Href="@Workspace.PrimaryHref">@Workspace.PrimaryAction</Button>
+            <a class="citus-btn citus-btn--secondary" href="/">Back to shell</a>
+            <a class="citus-btn citus-btn--primary" href="@Workspace.PrimaryHref">@Workspace.PrimaryAction</a>
         </div>
     </section>
 
     <section class="citus-card-grid">
-        <Card>
+        <article class="citus-safe-card">
             <div class="citus-page__eyebrow">
                 <i class="ti ti-route" aria-hidden="true"></i>
                 Current route
@@ -39,15 +29,15 @@
             <p class="leading-relaxed text-sm mt-2">
                 This route is intentionally kept alive so navigation remains stable while the dedicated workspace is migrated to the Ant Design Blazor surface.
             </p>
-        </Card>
-        <Card>
+        </article>
+        <article class="citus-safe-card">
             <div class="citus-page__eyebrow">
                 <i class="ti ti-compass" aria-hidden="true"></i>
                 Safe next step
             </div>
             <h2 class="text-xl font-extrabold mt-2">@Workspace.PrimaryAction</h2>
             <p class="leading-relaxed text-sm mt-2">@Workspace.NextStep</p>
-        </Card>
+        </article>
     </section>
 </main>
 
