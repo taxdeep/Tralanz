@@ -1,0 +1,264 @@
+@page "/ar/customers"
+@using AntDesign
+@using Web.Business.AR.Aging
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellCounterpartyOnboardingClient CounterpartyOnboarding
+@inject ArAgingReportClient AgingClient
+
+<PageTitle>Customers</PageTitle>
+
+<div class="customer-dashboard">
+    <section class="customer-dashboard__header">
+        <div>
+            <a class="customer-dashboard__back-link" href="/">Back to shell</a>
+            <h1>Customers</h1>
+            <p>AR customer command center. Customers live here; vendors stay in AP.</p>
+        </div>
+        <div class="customer-dashboard__actions">
+            <Button Type="@AntDesign.ButtonType.Default" Href="/documents/source-browser?sourceType=invoice&counterpartyRole=customer">Sales transactions</Button>
+            <Button Type="@AntDesign.ButtonType.Primary" Href="/company/customer-vendor-setup?create=customer&returnUrl=/ar/customers">New customer</Button>
+        </div>
+    </section>
+
+    <div class="customer-dashboard__tabs" aria-label="Customer dashboard sections">
+        <span class="customer-dashboard__tab customer-dashboard__tab--active">Customers</span>
+        <span class="customer-dashboard__tab customer-dashboard__tab--muted">Leads</span>
+        <span class="customer-dashboard__tab customer-dashboard__tab--muted">AR Profile</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="ant-alert ant-alert-warning customer-dashboard__alert">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+            <span>@_error</span>
+        </div>
+    }
+
+    @if (WritesBlocked)
+    {
+        <div class="ant-alert ant-alert-warning customer-dashboard__alert">
+            <i class="ti ti-lock" aria-hidden="true"></i>
+            <span>@ShellState.WriteBlockMessage</span>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="customer-dashboard__loading">
+            <div class="customer-dashboard__loading-bar"></div>
+            <span>Loading customer AR surface...</span>
+        </div>
+    }
+    else
+    {
+        <section class="customer-dashboard__summary-strip">
+            <Card Class="customer-dashboard__summary-card">
+                <Statistic T="int" Title="Active customers" Value="@ActiveCustomerCount" />
+                <span>Receivable-ready customer truth</span>
+            </Card>
+            <Card Class="customer-dashboard__summary-card">
+                <Statistic T="int" Title="Open AR items" Value="@(_agingReport?.OpenItemCount ?? 0)" />
+                <span>Posted invoices and credits still open</span>
+            </Card>
+            <Card Class="customer-dashboard__summary-card">
+                <Statistic T="decimal" Title="Outstanding" Value="@(_agingReport?.TotalOutstandingAmountBase ?? 0m)" Prefix="@CurrencyPrefix" Precision="2" />
+                <span>@BaseCurrencyCode base currency</span>
+            </Card>
+            <Card Class="customer-dashboard__summary-card customer-dashboard__summary-card--green">
+                <Statistic T="decimal" Title="Overdue" Value="@(_agingReport?.TotalOverdueAmountBase ?? 0m)" Prefix="@CurrencyPrefix" Precision="2" />
+                <span>AR collection attention</span>
+            </Card>
+        </section>
+
+        <section class="customer-dashboard__bar" aria-label="Customer receivable composition">
+            <div class="customer-dashboard__bar-segment customer-dashboard__bar-segment--blue" style="@BuildBarWidth(ActiveCustomerCount, Math.Max(TotalCustomerCount, 1))"></div>
+            <div class="customer-dashboard__bar-segment customer-dashboard__bar-segment--purple" style="@BuildBarWidth(InactiveCustomerCount, Math.Max(TotalCustomerCount, 1))"></div>
+            <div class="customer-dashboard__bar-segment customer-dashboard__bar-segment--orange" style="@BuildBarWidth(_agingReport?.OpenItemCount ?? 0, Math.Max((_agingReport?.OpenItemCount ?? 0) + 1, 1))"></div>
+            <div class="customer-dashboard__bar-segment customer-dashboard__bar-segment--green" style="@BuildBarWidth(_agingReport?.CustomerRows.Count ?? 0, Math.Max(ActiveCustomerCount, 1))"></div>
+        </section>
+
+        <section class="customer-dashboard__toolbar">
+            <label class="customer-dashboard__search">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input class="ant-input" placeholder="Search customers by name, entity, email, phone, or currency" @bind="_searchText" @bind:event="oninput" />
+            </label>
+            <div class="customer-dashboard__tools">
+                <span>@FilteredRows.Count customer(s)</span>
+                <a class="ant-btn" href="/ar/aging">AR aging</a>
+                <a class="ant-btn" href="/ar/receive-payment">Receive payment</a>
+            </div>
+        </section>
+
+        <section class="customer-dashboard__table-card">
+            <table class="ant-table customer-dashboard__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Name</th>
+                        <th>Company name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Currency</th>
+                        <th>Open balance</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    @if (FilteredRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8">
+                                <div class="customer-dashboard__empty">No customer matched the current search.</div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="customer-dashboard__customer-link" href="@BuildCustomerProfileHref(row.Customer.Id)">
+                                        @row.Customer.DisplayName
+                                    </a>
+                                    <div class="customer-dashboard__subtext">@row.Customer.EntityNumber</div>
+                                </td>
+                                <td>@row.Customer.DisplayName</td>
+                                <td>@DisplayOptional(row.Customer.Phone)</td>
+                                <td>@DisplayOptional(row.Customer.Email)</td>
+                                <td>@row.Customer.DefaultCurrencyCode</td>
+                                <td>@FormatMoney(row.OpenBalanceBase)</td>
+                                <td>
+                                    <span class="customer-dashboard__status @(row.Customer.IsActive ? "customer-dashboard__status--active" : "customer-dashboard__status--inactive")">
+                                        @(row.Customer.IsActive ? "Active" : "Inactive")
+                                    </span>
+                                </td>
+                                <td>
+                                    <a class="customer-dashboard__row-action" href="@BuildInvoiceHref(row.Customer.Id)">Create invoice</a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private ShellCounterpartyOnboardingSummary? _summary;
+    private ArAgingReportViewModel? _agingReport;
+    private string _searchText = string.Empty;
+    private string? _error;
+    private bool _isLoading = true;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private string BaseCurrencyCode => _agingReport?.BaseCurrencyCode ?? _summary?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode;
+    private string CurrencyPrefix => $"{BaseCurrencyCode} ";
+    private int TotalCustomerCount => _summary?.Customers.Count ?? 0;
+    private int ActiveCustomerCount => _summary?.ActiveCustomers.Count ?? 0;
+    private int InactiveCustomerCount => Math.Max(TotalCustomerCount - ActiveCustomerCount, 0);
+
+    private IReadOnlyList<CustomerDashboardRow> Rows =>
+        (_summary?.Customers ?? Array.Empty<ShellManagedCounterpartySummary>())
+        .Select(customer =>
+        {
+            var aging = _agingReport?.CustomerRows.FirstOrDefault(item => item.CustomerId == customer.Id);
+            return new CustomerDashboardRow(customer, aging?.OpenItemCount ?? 0, aging?.TotalOutstandingAmountBase ?? 0m, aging?.TotalOverdueAmountBase ?? 0m);
+        })
+        .OrderByDescending(static row => row.Customer.IsActive)
+        .ThenBy(static row => row.Customer.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private IReadOnlyList<CustomerDashboardRow> FilteredRows =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? Rows
+            : Rows.Where(MatchesSearch).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _summary = await CounterpartyOnboarding.GetSummaryAsync(ShellState.ActiveCompany.Id);
+
+            var agingResult = await AgingClient.GetAsync(ShellState.ActiveCompany.Id, DateOnly.FromDateTime(DateTime.UtcNow));
+            if (agingResult.Value is not null)
+            {
+                _agingReport = agingResult.Value;
+            }
+            else if (!string.IsNullOrWhiteSpace(agingResult.ErrorMessage))
+            {
+                _error = agingResult.ErrorMessage;
+            }
+
+            _error = _summary is null ? _error : null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private bool MatchesSearch(CustomerDashboardRow row)
+    {
+        var text = _searchText.Trim();
+        return Contains(row.Customer.DisplayName, text)
+            || Contains(row.Customer.EntityNumber, text)
+            || Contains(row.Customer.Email, text)
+            || Contains(row.Customer.Phone, text)
+            || Contains(row.Customer.DefaultCurrencyCode, text);
+    }
+
+    private static bool Contains(string value, string searchText) =>
+        value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+    private string FormatMoney(decimal value) =>
+        $"{BaseCurrencyCode} {value:N2}";
+
+    private static string DisplayOptional(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string BuildCustomerProfileHref(Guid customerId) =>
+        $"/ar/customers/{customerId:D}";
+
+    private static string BuildInvoiceHref(Guid customerId) =>
+        $"/documents/invoice/draft-editor?customerId={customerId:D}&origin=customer-dashboard";
+
+    private static string BuildBarWidth(int value, int total)
+    {
+        var percent = total <= 0 ? 0 : Math.Clamp((decimal)value / total * 100m, 5m, 100m);
+        return $"width:{percent:0.##}%";
+    }
+
+    private sealed record CustomerDashboardRow(
+        ShellManagedCounterpartySummary Customer,
+        int OpenItemCount,
+        decimal OpenBalanceBase,
+        decimal OverdueBalanceBase);
+}
