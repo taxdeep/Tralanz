@@ -23,6 +23,7 @@ Related subordinate design documents currently include:
 - [CSHARP_DOMAIN_AND_APPLICATION_SKELETON.md](./CSHARP_DOMAIN_AND_APPLICATION_SKELETON.md)
 - [PRODUCT_PLAN.md](./PRODUCT_PLAN.md)
 - [ACCOUNTING_MVP_PLANNING.md](./ACCOUNTING_MVP_PLANNING.md)
+- [AI_PRODUCT_ARCHITECTURE.md](./AI_PRODUCT_ARCHITECTURE.md)
 
 ## Lightweight Working Rules
 
@@ -30,6 +31,7 @@ Related subordinate design documents currently include:
 - Do not bypass company isolation, posting rules, or backend-owned accounting truth.
 - Treat cache, provider data, and AI as subordinate layers only.
 - Preserve auditability and historical honesty when data is uncertain.
+- All AI / unityAI surfaces must comply with [AI_PRODUCT_ARCHITECTURE.md](./AI_PRODUCT_ARCHITECTURE.md): provider-agnostic gateway, company-scoped learning, pending-by-default suggestions, and full decision traceability.
 
 ## Communication Rules For Major Changes
 
