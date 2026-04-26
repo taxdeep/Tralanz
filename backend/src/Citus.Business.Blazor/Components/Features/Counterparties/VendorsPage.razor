@@ -1,0 +1,117 @@
+@page "/vendors"
+
+@inject BusinessShellState ShellState
+@inject BusinessWriteFlowClient WriteFlow
+@inject AntDesign.IMessageService Message
+
+<PageTitle>Vendors | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="StartCreate">New vendor</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_lastResult is not null)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>@_lastResult.Operation</strong>
+            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
+        </MessageTemplate>
+    </AntDesign.Alert>
+}
+
+@if (_isCreating)
+{
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+    <CounterpartyForm Draft="_draft"
+                      DraftChanged="@(v => _draft = v)"
+                      EntityNumberPlaceholder="VEN-000001" />
+    <div class="flex gap-2 mt-4">
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
+            @(_isSubmitting ? "Saving..." : "Save vendor")
+        </CitusButton>
+        <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
+    </div>
+}
+else
+{
+    <section class="citus-panel">
+        <CitusAsyncBoundary IsLoading="false"
+                            IsEmpty="@(_vendors.Count == 0)"
+                            EmptyIcon="IconName.BuildingStore"
+                            EmptyTitle="No vendors yet"
+                            EmptyMessage="Create one with the New vendor button. Vendor master data unblocks bills, expenses, and AP aging.">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Vendor</th>
+                        <th>Entity number</th>
+                        <th>Email</th>
+                        <th>Country</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in _vendors)
+                    {
+                        <tr>
+                            <td>@v.DisplayName</td>
+                            <td><span class="citus-inline-code">@v.EntityNumber</span></td>
+                            <td>@v.Email</td>
+                            <td>@v.Country</td>
+                            <td>@v.PreferredCurrencyCode</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </CitusAsyncBoundary>
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "Vendors",
+        Subtitle = "Vendor master records that anchor bills, pay-bill settlement, and AP aging."
+    };
+
+    private readonly IReadOnlyList<CounterpartyDraft> _vendors = Array.Empty<CounterpartyDraft>();
+    private CounterpartyDraft _draft = new();
+    private bool _isCreating;
+    private bool _isSubmitting;
+    private string? _validation;
+    private WriteFlowResult? _lastResult;
+
+    private void StartCreate()
+    {
+        _isCreating = true;
+        _draft = new CounterpartyDraft { PreferredCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode, Country = "Canada" };
+        _validation = null;
+    }
+
+    private void CancelCreate() { _isCreating = false; _validation = null; }
+
+    private async Task SaveAsync()
+    {
+        _validation = null;
+        _lastResult = null;
+        if (string.IsNullOrWhiteSpace(_draft.DisplayName)) { _validation = "Display name is required."; return; }
+
+        _isSubmitting = true;
+        try
+        {
+            _lastResult = await WriteFlow.SaveVendorAsync(_draft);
+            if (_lastResult.Succeeded) { await Message.SuccessAsync("Vendor saved."); _isCreating = false; }
+            else { await Message.InfoAsync(_lastResult.Message); }
+        }
+        finally { _isSubmitting = false; }
+    }
+}

@@ -1,0 +1,117 @@
+@page "/customers"
+
+@inject BusinessShellState ShellState
+@inject BusinessWriteFlowClient WriteFlow
+@inject AntDesign.IMessageService Message
+
+<PageTitle>Customers | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="StartCreate">New customer</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_lastResult is not null)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>@_lastResult.Operation</strong>
+            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
+        </MessageTemplate>
+    </AntDesign.Alert>
+}
+
+@if (_isCreating)
+{
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+    <CounterpartyForm Draft="_draft"
+                      DraftChanged="@(v => _draft = v)"
+                      EntityNumberPlaceholder="CUS-000001" />
+    <div class="flex gap-2 mt-4">
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
+            @(_isSubmitting ? "Saving..." : "Save customer")
+        </CitusButton>
+        <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
+    </div>
+}
+else
+{
+    <section class="citus-panel">
+        <CitusAsyncBoundary IsLoading="false"
+                            IsEmpty="@(_customers.Count == 0)"
+                            EmptyIcon="IconName.Users"
+                            EmptyTitle="No customers yet"
+                            EmptyMessage="Create one with the New customer button. Customer master data unblocks invoicing and AR open-item tracking.">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Entity number</th>
+                        <th>Email</th>
+                        <th>Country</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _customers)
+                    {
+                        <tr>
+                            <td>@c.DisplayName</td>
+                            <td><span class="citus-inline-code">@c.EntityNumber</span></td>
+                            <td>@c.Email</td>
+                            <td>@c.Country</td>
+                            <td>@c.PreferredCurrencyCode</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </CitusAsyncBoundary>
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Sales & Get Paid",
+        Title = "Customers",
+        Subtitle = "Customer master records that anchor invoices, receive-payment settlement, and AR aging."
+    };
+
+    private readonly IReadOnlyList<CounterpartyDraft> _customers = Array.Empty<CounterpartyDraft>();
+    private CounterpartyDraft _draft = new();
+    private bool _isCreating;
+    private bool _isSubmitting;
+    private string? _validation;
+    private WriteFlowResult? _lastResult;
+
+    private void StartCreate()
+    {
+        _isCreating = true;
+        _draft = new CounterpartyDraft { PreferredCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode, Country = "Canada" };
+        _validation = null;
+    }
+
+    private void CancelCreate() { _isCreating = false; _validation = null; }
+
+    private async Task SaveAsync()
+    {
+        _validation = null;
+        _lastResult = null;
+        if (string.IsNullOrWhiteSpace(_draft.DisplayName)) { _validation = "Display name is required."; return; }
+
+        _isSubmitting = true;
+        try
+        {
+            _lastResult = await WriteFlow.SaveCustomerAsync(_draft);
+            if (_lastResult.Succeeded) { await Message.SuccessAsync("Customer saved."); _isCreating = false; }
+            else { await Message.InfoAsync(_lastResult.Message); }
+        }
+        finally { _isSubmitting = false; }
+    }
+}

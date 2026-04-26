@@ -1,0 +1,69 @@
+@*
+    Shared form for customer / vendor master data. The Customer and
+    Vendor pages render this with the right title and submit handler.
+*@
+
+<section class="citus-panel">
+    <h2 class="citus-panel__title">Identity</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+            <label class="text-sm font-medium block mb-1">Display name</label>
+            <CitusInput TValue="string" Value="@Draft.DisplayName" ValueChanged="@(v => Mutate(d => d with { DisplayName = v ?? string.Empty }))" Placeholder="Name shown on invoices and bills" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Entity number</label>
+            <CitusInput TValue="string" Value="@Draft.EntityNumber" ValueChanged="@(v => Mutate(d => d with { EntityNumber = v ?? string.Empty }))" Placeholder="@(EntityNumberPlaceholder)" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Email</label>
+            <CitusInput TValue="string" Value="@Draft.Email" ValueChanged="@(v => Mutate(d => d with { Email = v ?? string.Empty }))" Placeholder="contact@example.com" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Phone</label>
+            <CitusInput TValue="string" Value="@Draft.Phone" ValueChanged="@(v => Mutate(d => d with { Phone = v ?? string.Empty }))" Placeholder="+1 555 0100" />
+        </div>
+        <div class="md:col-span-2">
+            <label class="text-sm font-medium block mb-1">Address line</label>
+            <CitusInput TValue="string" Value="@Draft.AddressLine" ValueChanged="@(v => Mutate(d => d with { AddressLine = v ?? string.Empty }))" Placeholder="Street + suite" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">City</label>
+            <CitusInput TValue="string" Value="@Draft.City" ValueChanged="@(v => Mutate(d => d with { City = v ?? string.Empty }))" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Province / State</label>
+            <CitusInput TValue="string" Value="@Draft.ProvinceState" ValueChanged="@(v => Mutate(d => d with { ProvinceState = v ?? string.Empty }))" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Postal code</label>
+            <CitusInput TValue="string" Value="@Draft.PostalCode" ValueChanged="@(v => Mutate(d => d with { PostalCode = v ?? string.Empty }))" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Country</label>
+            <CitusInput TValue="string" Value="@Draft.Country" ValueChanged="@(v => Mutate(d => d with { Country = v ?? string.Empty }))" Placeholder="Canada" />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Tax id</label>
+            <CitusInput TValue="string" Value="@Draft.TaxId" ValueChanged="@(v => Mutate(d => d with { TaxId = v ?? string.Empty }))" Placeholder="GST/HST number, EIN, ..." />
+        </div>
+        <div>
+            <label class="text-sm font-medium block mb-1">Preferred currency</label>
+            <CitusInput TValue="string" Value="@Draft.PreferredCurrencyCode" ValueChanged="@(v => Mutate(d => d with { PreferredCurrencyCode = v ?? string.Empty }))" Placeholder="USD" />
+        </div>
+        <div class="md:col-span-2">
+            <label class="text-sm font-medium block mb-1">Notes</label>
+            <CitusInput TValue="string" Value="@Draft.Notes" ValueChanged="@(v => Mutate(d => d with { Notes = v ?? string.Empty }))" Placeholder="Internal notes" />
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CounterpartyDraft Draft { get; set; } = new();
+
+    [Parameter] public EventCallback<CounterpartyDraft> DraftChanged { get; set; }
+
+    [Parameter] public string EntityNumberPlaceholder { get; set; } = "CUS-000001";
+
+    private Task Mutate(Func<CounterpartyDraft, CounterpartyDraft> mutate) =>
+        DraftChanged.InvokeAsync(mutate(Draft));
+}
