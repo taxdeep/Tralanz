@@ -1,0 +1,76 @@
+@page "/settings/tax-rates"
+
+@inject BusinessShellState ShellState
+
+<PageTitle>Tax Rates | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <AntDesign.Tag Color="@("default")">Read-only</AntDesign.Tag>
+    </Actions>
+</CitusPageHeader>
+
+<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                 ShowIcon="true"
+                 Message="Tax codes are governed by the backend Posting Engine. The list shown below is an advisory snapshot derived from the company profile; the canonical truth lives in the tax engine and will be wired through an HTTP endpoint in a follow-up."
+                 Class="mb-6" />
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Configured tax codes</h2>
+        <AntDesign.Tag Color="@("blue")">Snapshot</AntDesign.Tag>
+    </header>
+
+    <table class="citus-data-table">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th class="text-right">Rate</th>
+                <th>Applies to</th>
+                <th>Recoverable</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rate in _rates)
+            {
+                <tr>
+                    <td><span class="citus-inline-code">@rate.Code</span></td>
+                    <td>@rate.Description</td>
+                    <td class="text-right">@rate.Rate.ToString("P2")</td>
+                    <td>@rate.AppliesTo</td>
+                    <td>@(rate.Recoverable ? "Yes" : "No")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+<section class="citus-panel mt-6">
+    <h2 class="citus-panel__title">Why this is advisory</h2>
+    <ul class="citus-bullet-list">
+        <li>The backend Posting Engine is the single source of truth for tax math; a UI override would silently desync.</li>
+        <li>Posted documents already carry a frozen tax snapshot — changes to the rate table do not retro-edit posted invoices or bills.</li>
+        <li>Tax setup and recoverability flags are governed via the `Citus.Accounting.Application` tax-setup commands; an HTTP endpoint plus a real editor lands later in the rewrite.</li>
+    </ul>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Tax rates",
+        Subtitle = "Advisory snapshot of tax codes that apply to the active company. Backend-owned; not editable from this page."
+    };
+
+    private readonly IReadOnlyList<TaxRateRow> _rates =
+    [
+        new("HST_ON", "Ontario HST", 0.13m, "Sales / Purchases", true),
+        new("GST",    "Federal GST", 0.05m, "Sales / Purchases", true),
+        new("PST_BC", "British Columbia PST", 0.07m, "Sales", false),
+        new("ZERO",   "Zero-rated", 0.00m, "Sales / Purchases", true),
+        new("EXEMPT", "Tax exempt", 0.00m, "Sales / Purchases", false)
+    ];
+
+    private sealed record class TaxRateRow(string Code, string Description, decimal Rate, string AppliesTo, bool Recoverable);
+}

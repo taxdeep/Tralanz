@@ -278,6 +278,14 @@
     {
         _error = string.Empty;
         _success = string.Empty;
+
+        var validationError = Validate();
+        if (validationError is not null)
+        {
+            _error = validationError;
+            return;
+        }
+
         _submitting = true;
 
         try
@@ -286,32 +294,32 @@
                 ShellState.SessionToken,
                 new SysAdminAuthenticationClient.FirstCompanyProvisioningRequest
                 {
-                    OwnerDisplayName = _ownerDisplayName,
-                    OwnerEmail = _ownerEmail,
+                    OwnerDisplayName = _ownerDisplayName.Trim(),
+                    OwnerEmail = _ownerEmail.Trim(),
                     OwnerPassword = _ownerPassword,
-                    CompanyName = _companyName,
+                    CompanyName = _companyName.Trim(),
                     EntityType = _entityType,
                     Industry = _industry,
                     IncorporatedOn = _incorporatedOn,
-                    FiscalYearEnd = _fiscalYearEnd,
-                    BusinessNumber = _businessNumber,
+                    FiscalYearEnd = _fiscalYearEnd.Trim(),
+                    BusinessNumber = _businessNumber.Trim(),
                     AccountCodeLength = _accountCodeLength,
-                    Phone = _phone,
-                    CompanyEmail = _companyEmail,
-                    AddressLine = _addressLine,
-                    City = _city,
-                    ProvinceState = _province,
-                    PostalCode = _postalCode,
-                    Country = _country,
+                    Phone = _phone.Trim(),
+                    CompanyEmail = _companyEmail.Trim(),
+                    AddressLine = _addressLine.Trim(),
+                    City = _city.Trim(),
+                    ProvinceState = _province.Trim(),
+                    PostalCode = _postalCode.Trim(),
+                    Country = _country.Trim(),
                     TemplateKey = _templateKey,
-                    BaseCurrencyCode = _baseCurrencyCode
+                    BaseCurrencyCode = _baseCurrencyCode.Trim().ToUpperInvariant()
                 });
 
             if (!result.Succeeded)
             {
                 _error = string.IsNullOrWhiteSpace(result.FailureMessage)
-                    ? "Unable to provision the first company."
-                    : result.FailureMessage;
+                    ? "Unable to provision the first company. Confirm the SysAdmin API is reachable and the database is ready."
+                    : $"Backend rejected the request: {result.FailureMessage}";
                 return;
             }
 
@@ -326,10 +334,61 @@
             ShellState.SetFirstCompanyCompletion(result);
             NavigationManager.NavigateTo("setup/completed");
         }
+        catch (Exception ex)
+        {
+            _error = $"Provisioning failed before the backend acknowledged: {ex.Message}";
+        }
         finally
         {
             _submitting = false;
         }
+    }
+
+    private string? Validate()
+    {
+        if (string.IsNullOrWhiteSpace(_ownerDisplayName))
+        {
+            return "Business owner display name is required.";
+        }
+        if (string.IsNullOrWhiteSpace(_ownerEmail) || !_ownerEmail.Contains('@', StringComparison.Ordinal))
+        {
+            return "Business owner email looks invalid.";
+        }
+        if (string.IsNullOrWhiteSpace(_ownerPassword) || _ownerPassword.Length < 8)
+        {
+            return "Owner password must be at least 8 characters.";
+        }
+        if (!string.Equals(_ownerPassword, _ownerPasswordConfirm, StringComparison.Ordinal))
+        {
+            return "Owner password confirmation does not match.";
+        }
+        if (string.IsNullOrWhiteSpace(_companyName))
+        {
+            return "Company name is required.";
+        }
+        if (!IsValidFiscalYearEnd(_fiscalYearEnd))
+        {
+            return "Fiscal year end must be MM-DD (for example 12-31).";
+        }
+        if (string.IsNullOrWhiteSpace(_baseCurrencyCode) || _baseCurrencyCode.Trim().Length != 3)
+        {
+            return "Base currency must be a 3-letter ISO code.";
+        }
+        if (string.IsNullOrWhiteSpace(_country))
+        {
+            return "Country is required to bind the chart-of-accounts template.";
+        }
+        return null;
+    }
+
+    private static bool IsValidFiscalYearEnd(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var parts = value.Trim().Split('-');
+        if (parts.Length != 2) return false;
+        if (!int.TryParse(parts[0], out var month) || month is < 1 or > 12) return false;
+        if (!int.TryParse(parts[1], out var day) || day is < 1 or > 31) return false;
+        return true;
     }
 
     private static string FormatReview(string primary, string secondary) =>

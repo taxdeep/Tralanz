@@ -6,22 +6,14 @@
 
 <CitusPageHeader Model="_header" />
 
-@if (_isLoading)
-{
-    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
-}
-
-@if (_entities.Count == 0 && !_isLoading)
-{
-    <CitusEmptyState
-        Icon="IconName.Database"
-        Title="No entities available"
-        Message="Entity metadata will appear here after the platform core is bootstrapped."
-        ActionLabel="Open overview"
-        ActionHref="overview" />
-}
-else if (_entities.Count > 0)
-{
+<CitusAsyncBoundary IsLoading="_isLoading"
+                    IsEmpty="@(_entities.Count == 0)"
+                    EmptyIcon="IconName.Database"
+                    EmptyTitle="No entities available"
+                    EmptyMessage="Entity metadata will appear here after the platform core is bootstrapped."
+                    EmptyActionLabel="Open overview"
+                    EmptyActionHref="overview"
+                    RetryAction="LoadAsync">
     <section class="citus-panel">
         <table class="citus-data-table">
             <thead>
@@ -53,7 +45,7 @@ else if (_entities.Count > 0)
             Phase 1 exposes metadata only. Business document authoring will be added later on top of engine-safe workflows.
         </p>
     </section>
-}
+</CitusAsyncBoundary>
 
 @code {
     private readonly PageHeaderModel _header = new()
@@ -66,8 +58,11 @@ else if (_entities.Count > 0)
     private bool _isLoading = true;
     private IReadOnlyList<PlatformEntitySummary> _entities = Array.Empty<PlatformEntitySummary>();
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
+        _isLoading = true;
         _entities = await PlatformCoreClient.ListEntitiesAsync();
         _isLoading = false;
     }

@@ -1,0 +1,50 @@
+@page "/settings/profile"
+
+@inject BusinessShellState ShellState
+
+<PageTitle>Company Profile | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <AntDesign.Tag Color="@("default")">Read-only</AntDesign.Tag>
+    </Actions>
+</CitusPageHeader>
+
+<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                 ShowIcon="true"
+                 Message="Company identity is captured during first-time setup and is currently shown read-only here. Direct editing will be added once the underlying API endpoint is in place."
+                 Class="mb-6" />
+
+<section class="citus-panel max-w-3xl">
+    <h2 class="citus-panel__title">Identity</h2>
+    <table class="citus-keyvalue">
+        <tbody>
+            <tr><th>Company name</th><td>@ShellState.ActiveCompany.CompanyName</td></tr>
+            <tr><th>Company code</th><td><span class="citus-inline-code">@ShellState.ActiveCompany.CompanyCode</span></td></tr>
+            <tr><th>Status</th><td>@FormatStatus(ShellState.ActiveCompany.Status)</td></tr>
+            <tr><th>Read-only</th><td>@(ShellState.ActiveCompany.IsReadOnly ? "Yes" : "No")</td></tr>
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Company profile",
+        Subtitle = "Read-only view of the active company's identity captured at first-company setup."
+    };
+
+    private static string FormatStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return "Active";
+        }
+
+        return string.Join(' ',
+            status.Trim()
+                .Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(static part => char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant()));
+    }
+}

@@ -107,6 +107,10 @@ public sealed class BusinessShellState
             Items =
             [
                 new NavMenuItem { Title = "Company Settings", Href = "settings", Icon = IconName.Settings },
+                new NavMenuItem { Title = "Profile", Href = "settings/profile", Icon = IconName.BuildingSkyscraper },
+                new NavMenuItem { Title = "Currencies", Href = "settings/currencies", Icon = IconName.Coin },
+                new NavMenuItem { Title = "Fiscal Year", Href = "settings/fiscal-year", Icon = IconName.Calendar },
+                new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Numbering", Href = "settings/numbering", Icon = IconName.FileInvoice },
                 new NavMenuItem { Title = "Session", Href = "session", Icon = IconName.User }
             ]
