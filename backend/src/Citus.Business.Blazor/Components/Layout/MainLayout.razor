@@ -5,6 +5,7 @@
 @inject IThemeService ThemeService
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
+@inject ILogger<MainLayout> Logger
 
 @inherits LayoutComponentBase
 
@@ -111,25 +112,36 @@ else
             return;
         }
 
-        await ThemeService.InitializeInteractiveAsync();
+        try
+        {
+            await BootstrapShellAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Business shell bootstrap failed; rendering login as fallback.");
+            ShellState.ClearAuthenticatedSession();
+        }
+        finally
+        {
+            _isShellReady = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task BootstrapShellAsync()
+    {
+        try
+        {
+            await ThemeService.InitializeInteractiveAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Theme initialization failed; continuing with default theme.");
+        }
 
         if (!ShellState.IsAuthenticated)
         {
-            var storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
-            if (!string.IsNullOrWhiteSpace(storedToken))
-            {
-                var session = await BusinessAuthenticationClient.ResumeSessionAsync(storedToken);
-                if (session is not null)
-                {
-                    var isBootstrap = storedToken.StartsWith("bootstrap:", StringComparison.Ordinal);
-                    ShellState.ApplyAuthenticatedSession(storedToken, session, isBootstrap);
-                }
-                else
-                {
-                    await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
-                    ShellState.ClearAuthenticatedSession();
-                }
-            }
+            await TryResumeStoredSessionAsync();
         }
 
         if (ShellState.IsAuthenticated)
@@ -138,17 +150,50 @@ else
             if (IsHomeRoute || IsLoginRoute)
             {
                 NavigationManager.NavigateTo("dashboard");
-                return;
             }
         }
         else if (!IsLoginRoute)
         {
             NavigationManager.NavigateTo(string.Empty);
+        }
+    }
+
+    private async Task TryResumeStoredSessionAsync()
+    {
+        string? storedToken;
+        try
+        {
+            storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "citusBusinessAuth interop unavailable; treating user as signed out.");
             return;
         }
 
-        _isShellReady = true;
-        StateHasChanged();
+        if (string.IsNullOrWhiteSpace(storedToken))
+        {
+            return;
+        }
+
+        var session = await BusinessAuthenticationClient.ResumeSessionAsync(storedToken);
+        if (session is not null)
+        {
+            var isBootstrap = storedToken.StartsWith("bootstrap:", StringComparison.Ordinal);
+            ShellState.ApplyAuthenticatedSession(storedToken, session, isBootstrap);
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to clear stored business session token.");
+        }
+
+        ShellState.ClearAuthenticatedSession();
     }
 
     private async Task LoadSessionContextAsync()

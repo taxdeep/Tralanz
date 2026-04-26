@@ -662,6 +662,42 @@
     background: var(--citus-color-bg-muted);
 }
 
+/* Plain HTML form field (used where AntDesign.Input<T> can't render). */
+.citus-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+
+.citus-form-field__label {
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-form-field__input {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    font: inherit;
+    color: var(--citus-color-fg);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.citus-form-field__input:focus {
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-primary-bg);
+}
+
+.citus-form-field__input:disabled {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+    cursor: not-allowed;
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);

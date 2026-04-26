@@ -7,6 +7,15 @@
 @inject AntDesign.IMessageService Message
 @inject BusinessAuthenticationClient BusinessAuthenticationClient
 
+@*
+    Plain HTML inputs are used here on purpose: AntDesign 1.6.1's
+    Input<T> binds against a type that .NET 11 preview removed
+    (WebEventCallbackFactoryEventArgsExtensions), which throws a
+    TypeLoadException the moment the component is rendered. The
+    login surface must boot even when the rest of the form layer
+    is awaiting an AntDesign upgrade.
+*@
+
 <PageTitle>Sign in | Citus Business</PageTitle>
 
 <div class="sys-login">
@@ -32,20 +41,38 @@
 
         <div class="sys-login__rule"></div>
 
-        <div class="flex flex-col gap-3 mt-4">
-            <CitusInput TValue="string" @bind-Value="_email"
-                        Placeholder="Email"
-                        LeadingIcon="IconName.User"
-                        Size="CitusButtonSize.Large" />
-            <AntDesign.InputPassword @bind-Value="_password" Placeholder="@("Password")" Size="@AntDesign.InputSize.Large" />
+        <form class="flex flex-col gap-3 mt-4" @onsubmit="SignInAsync" @onsubmit:preventDefault>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Email</span>
+                <input type="email"
+                       class="citus-form-field__input"
+                       placeholder="you@company.com"
+                       autocomplete="username"
+                       value="@_email"
+                       @oninput="OnEmailChanged"
+                       disabled="@_isSubmitting" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Password</span>
+                <input type="password"
+                       class="citus-form-field__input"
+                       placeholder="••••••••"
+                       autocomplete="current-password"
+                       value="@_password"
+                       @oninput="OnPasswordChanged"
+                       disabled="@_isSubmitting" />
+            </label>
+
             <CitusButton Variant="CitusButtonVariant.Primary"
                          Size="CitusButtonSize.Large"
                          Block="true"
+                         HtmlType="@("submit")"
                          Disabled="_isSubmitting"
                          OnClick="SignInAsync">
                 @(_isSubmitting ? "Signing in..." : "Sign in")
             </CitusButton>
-        </div>
+        </form>
     </div>
 
     <footer class="sys-login__switcher">
@@ -59,8 +86,19 @@
     private string _password = string.Empty;
     private bool _isSubmitting;
 
+    private void OnEmailChanged(ChangeEventArgs args) =>
+        _email = args.Value?.ToString() ?? string.Empty;
+
+    private void OnPasswordChanged(ChangeEventArgs args) =>
+        _password = args.Value?.ToString() ?? string.Empty;
+
     private async Task SignInAsync()
     {
+        if (_isSubmitting)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
         {
             await Message.WarningAsync("Email and password are required.");
