@@ -754,6 +754,28 @@ ensure_certbot() {
   ln -sfn /snap/bin/certbot /usr/local/bin/certbot
 }
 
+ensure_node() {
+  local required_major="${CITUS_NODE_MAJOR:-20}"
+  local current_major=""
+
+  if command -v node >/dev/null 2>&1; then
+    current_major="$(node --version 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/')"
+  fi
+
+  if [[ -z "${current_major}" || "${current_major}" -lt "${required_major}" ]]; then
+    log "Installing Node.js ${required_major} (current: ${current_major:-none})."
+    curl -fsSL "https://deb.nodesource.com/setup_${required_major}.x" | bash -
+    apt_install nodejs
+  fi
+
+  if ! command -v pnpm >/dev/null 2>&1; then
+    log "Installing pnpm via npm."
+    npm install -g pnpm@9.12.0
+  fi
+
+  log "Node $(node --version), pnpm $(pnpm --version) ready."
+}
+
 ensure_app_user() {
   if ! getent group "${APP_GROUP}" >/dev/null 2>&1; then
     groupadd --system "${APP_GROUP}"
@@ -855,8 +877,18 @@ apply_backend_baseline_if_needed() {
 publish_backends() {
   load_env_file
 
-  log "Publishing .NET services and Web.Shell."
+  log "Building Tailwind CSS bundles for the Blazor shells."
+  (
+    cd "${SOURCE_DIR}/backend/frontend"
+    PNPM_HOME="${HOME}/.local/share/pnpm" PATH="${PNPM_HOME}:${PATH}" pnpm install --frozen-lockfile
+    PNPM_HOME="${HOME}/.local/share/pnpm" PATH="${PNPM_HOME}:${PATH}" pnpm run css:build
+  )
+
+  log "Publishing .NET services and the Blazor shells."
+  # web-shell directory remains for backwards-compat with operators upgrading
+  # from the old Web.Shell layout — it now hosts Citus.Business.Blazor.
   rm -rf \
+    "${PUBLISH_DIR}/business-web" \
     "${PUBLISH_DIR}/web-shell" \
     "${PUBLISH_DIR}/accounting-api" \
     "${PUBLISH_DIR}/sysadmin-api" \
@@ -864,16 +896,16 @@ publish_backends() {
     "${PUBLISH_DIR}/consoleapp"
 
   mkdir -p \
-    "${PUBLISH_DIR}/web-shell" \
+    "${PUBLISH_DIR}/business-web" \
     "${PUBLISH_DIR}/accounting-api" \
     "${PUBLISH_DIR}/sysadmin-api" \
     "${PUBLISH_DIR}/sysadmin-web" \
     "${PUBLISH_DIR}/consoleapp"
 
-  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Web/Shell/Web.Shell.csproj" -c Release -o "${PUBLISH_DIR}/web-shell"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.Business.Blazor/Citus.Business.Blazor.csproj" -c Release -o "${PUBLISH_DIR}/business-web" -p:SkipCssBuild=true
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.Accounting.Api/Citus.Accounting.Api.csproj" -c Release -o "${PUBLISH_DIR}/accounting-api"
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Api/Citus.SysAdmin.Api.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-api"
-  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Blazor/Citus.SysAdmin.Blazor.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-web"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.SysAdmin.Blazor/Citus.SysAdmin.Blazor.csproj" -c Release -o "${PUBLISH_DIR}/sysadmin-web" -p:SkipCssBuild=true
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet publish "${SOURCE_DIR}/backend/src/Citus.ConsoleApp/Citus.ConsoleApp.csproj" -c Release -o "${PUBLISH_DIR}/consoleapp"
 
   chown -R "${APP_USER}:${APP_GROUP}" "${PUBLISH_DIR}"
@@ -895,7 +927,7 @@ write_systemd_units() {
 
   cat > "${SYSTEMD_DIR}/citus-web.service" <<EOF
 [Unit]
-Description=Citus Web.Shell Blazor frontend
+Description=Citus Business Blazor frontend
 After=network.target citus-accounting-api.service
 Wants=network.target
 Wants=citus-accounting-api.service
@@ -904,13 +936,13 @@ Wants=citus-accounting-api.service
 Type=simple
 User=${APP_USER}
 Group=${APP_GROUP}
-WorkingDirectory=${PUBLISH_DIR}/web-shell
+WorkingDirectory=${PUBLISH_DIR}/business-web
 EnvironmentFile=${ENV_FILE}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
 Environment=AppHost__PublicBaseUrl=http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/
 Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
-ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/web-shell/Web.Shell.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
+ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/business-web/Citus.Business.Blazor.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
 Restart=always
 RestartSec=5
 SyslogIdentifier=citus-web
@@ -1219,7 +1251,7 @@ verify_runtime_health() {
   wait_for_http "citus-accounting-api" "http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/health"
   wait_for_http "citus-sysadmin-api" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/health"
   wait_for_http "citus-sysadmin-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_SYSADMIN_WEB_PORT}/sysadmin/system/health"
-  wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/health"
+  wait_for_http "citus-web" "http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/system/health"
 }
 
 obtain_or_renew_tls_certificate() {
@@ -1277,7 +1309,7 @@ print_install_summary() {
 
 Deployment complete.
 
-Web.Shell:
+Citus.Business.Blazor:
   ${frontend_url}
 
 SysAdmin:
@@ -1306,7 +1338,7 @@ Runtime files:
 
 Important note:
   The backend PostgreSQL draft baseline is only applied automatically to an empty database.
-  Web.Shell currently uses CompanyAccess/bootstrap shell context; production identity hardening is still pending.
+  Citus.Business.Blazor currently uses CompanyAccess/bootstrap shell context; production identity hardening is still pending.
   Citus services auto-start: ${CITUS_AUTO_START}
   HTTPS enabled:             ${CITUS_ENABLE_HTTPS}
   Deployed version:          ${CITUS_APP_VERSION:-unknown}
@@ -1328,6 +1360,7 @@ install_main() {
   require_ubuntu_24_04
   ensure_base_packages
   ensure_dotnet
+  ensure_node
   ensure_app_user
   ensure_layout
   ensure_env_file
@@ -1362,6 +1395,7 @@ upgrade_main() {
   [[ -f "${ENV_FILE}" ]] || fail "Missing ${ENV_FILE}. Run install.sh before upgrade.sh."
   ensure_base_packages
   ensure_dotnet
+  ensure_node
   ensure_app_user
   ensure_layout
   ensure_env_defaults

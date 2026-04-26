@@ -40,13 +40,14 @@ services:
     ports:
       - "${CITUS_ACCOUNTING_API_PORT:-5088}:8080"
 
-  web-shell:
+  business-web:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
       args:
-        PROJECT_PATH: backend/src/Web/Shell/Web.Shell.csproj
-        PROJECT_DLL: Web.Shell.dll
+        PROJECT_PATH: backend/src/Citus.Business.Blazor/Citus.Business.Blazor.csproj
+        PROJECT_DLL: Citus.Business.Blazor.dll
+        FRONTEND_BUILD: "true"
     restart: unless-stopped
     depends_on:
       postgres:
@@ -100,6 +101,7 @@ services:
       args:
         PROJECT_PATH: backend/src/Citus.SysAdmin.Blazor/Citus.SysAdmin.Blazor.csproj
         PROJECT_DLL: Citus.SysAdmin.Blazor.dll
+        FRONTEND_BUILD: "true"
     restart: unless-stopped
     depends_on:
       accounting-api:
