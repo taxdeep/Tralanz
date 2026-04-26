@@ -399,3 +399,169 @@
 .citus-status-badge {
     text-transform: capitalize;
 }
+
+/* ---------- Page panel surfaces ---------- */
+
+.citus-panel {
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-lg);
+    padding: var(--citus-space-5);
+    box-shadow: var(--citus-shadow-1);
+}
+
+.citus-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-4);
+}
+
+.citus-panel__title {
+    margin: 0 0 var(--citus-space-3);
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-lg);
+    font-weight: 600;
+}
+
+.citus-keyvalue {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--citus-text-sm);
+}
+
+.citus-keyvalue th,
+.citus-keyvalue td {
+    padding: var(--citus-space-2) 0;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-keyvalue tr:last-child th,
+.citus-keyvalue tr:last-child td {
+    border-bottom: 0;
+}
+
+.citus-keyvalue th {
+    width: 40%;
+    color: var(--citus-color-fg-muted);
+    font-weight: 500;
+}
+
+.citus-keyvalue td {
+    color: var(--citus-color-fg);
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-bullet-list {
+    margin: 0;
+    padding-left: var(--citus-space-4);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    list-style: disc;
+}
+
+.citus-bullet-list li + li {
+    margin-top: var(--citus-space-1);
+}
+
+.citus-domain-card {
+    background: var(--citus-color-bg);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    padding: var(--citus-space-3) var(--citus-space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-2);
+}
+
+.citus-domain-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-2);
+}
+
+.citus-domain-card__title {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-base);
+    font-weight: 600;
+}
+
+.citus-domain-card__description {
+    margin: 0;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-definition-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-2);
+}
+
+.citus-definition-list > div {
+    display: grid;
+    grid-template-columns: 8.5rem 1fr;
+    align-items: baseline;
+    gap: var(--citus-space-3);
+}
+
+.citus-definition-list dt {
+    margin: 0;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-definition-list dd {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-sm);
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--citus-text-sm);
+}
+
+.citus-data-table th {
+    text-align: left;
+    color: var(--citus-color-fg-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: var(--citus-text-xs);
+    padding: var(--citus-space-2) var(--citus-space-3);
+    border-bottom: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-data-table td {
+    padding: var(--citus-space-2) var(--citus-space-3);
+    border-bottom: 1px solid var(--citus-color-border);
+    color: var(--citus-color-fg);
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-data-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.citus-data-table tbody tr:hover td {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-inline-code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.95em;
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+    padding: 0 var(--citus-space-1);
+    border-radius: var(--citus-radius-sm);
+}

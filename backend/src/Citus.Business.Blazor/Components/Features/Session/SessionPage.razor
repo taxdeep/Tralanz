@@ -6,56 +6,70 @@
 
 <CitusPageHeader Model="_header" />
 
-<MudGrid>
-    <MudItem xs="12" lg="6">
-        <MudPaper Class="pa-4 mb-6">
-            <MudText Typo="Typo.h6" Class="mb-4">Business identity</MudText>
-            <MudTable Items="_userFacts" Dense="true">
-                <RowTemplate>
-                    <MudTd DataLabel="Label">@context.Label</MudTd>
-                    <MudTd DataLabel="Value">@context.Value</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Business identity</h2>
+        <table class="citus-keyvalue">
+            <tbody>
+                @foreach (var fact in _userFacts)
+                {
+                    <tr>
+                        <th>@fact.Label</th>
+                        <td>@fact.Value</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
 
-    <MudItem xs="12" lg="6">
-        <MudPaper Class="pa-4 mb-6">
-            <MudText Typo="Typo.h6" Class="mb-4">Company context</MudText>
-            <MudTable Items="_companyFacts" Dense="true">
-                <RowTemplate>
-                    <MudTd DataLabel="Label">@context.Label</MudTd>
-                    <MudTd DataLabel="Value">@context.Value</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Company context</h2>
+        <table class="citus-keyvalue">
+            <tbody>
+                @foreach (var fact in _companyFacts)
+                {
+                    <tr>
+                        <th>@fact.Label</th>
+                        <td>@fact.Value</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+</div>
 
-<MudPaper Class="pa-4">
-    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-        <MudText Typo="Typo.h6">Accessible companies</MudText>
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Accessible companies</h2>
+        <AntDesign.Tag Color="@AntDesign.PresetColor.Blue.ToString().ToLowerInvariant()">
             @ShellState.AvailableCompanies.Count memberships
-        </MudChip>
-    </MudStack>
+        </AntDesign.Tag>
+    </header>
 
-    <MudTable Items="ShellState.AvailableCompanies" Dense="true" Hover="true">
-        <HeaderContent>
-            <MudTh>Company</MudTh>
-            <MudTh>Base currency</MudTh>
-            <MudTh>Multi-currency</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Company">@context.CompanyName (@context.CompanyCode)</MudTd>
-            <MudTd DataLabel="Base currency">@context.BaseCurrencyCode</MudTd>
-            <MudTd DataLabel="Multi-currency">@(context.MultiCurrencyEnabled ? "Enabled" : "Disabled")</MudTd>
-        </RowTemplate>
-    </MudTable>
-</MudPaper>
+    <table class="citus-data-table">
+        <thead>
+            <tr>
+                <th>Company</th>
+                <th>Base currency</th>
+                <th>Multi-currency</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var company in ShellState.AvailableCompanies)
+            {
+                <tr>
+                    <td>
+                        @company.CompanyName <span class="text-fg-muted">(@company.CompanyCode)</span>
+                    </td>
+                    <td>@company.BaseCurrencyCode</td>
+                    <td>@(company.MultiCurrencyEnabled ? "Enabled" : "Disabled")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Session",

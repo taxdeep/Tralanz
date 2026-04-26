@@ -6,105 +6,89 @@
 
 <CitusPageHeader Model="_header" />
 
-<MudGrid Class="mb-6">
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Company"
-            Value="@ShellState.ActiveCompany.CompanyCode"
-            Description="@ShellState.ActiveCompany.CompanyName"
-            Icon="IconName.BuildingSkyscraper"
-            Tone="StatTone.Primary" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Base currency"
-            Value="@ShellState.ActiveCompany.BaseCurrencyCode"
-            Description="Company-level accounting default."
-            Icon="IconName.Coin"
-            Tone="StatTone.Info" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Multi-currency"
-            Value="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled")"
-            Description="Future FX controls should stay here, not spread across forms."
-            Icon="IconName.Coin"
-            Tone="StatTone.Success" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Company status"
-            Value="@FormatCompanyStatus(ShellState.ActiveCompany.Status)"
-            Description="Active company lifecycle gates whether business writes remain available."
-            Icon="IconName.ShieldLock"
-            Color="@(ShellState.ActiveCompany.IsReadOnly ? Color.Warning : Color.Success)" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Maintenance"
-            Value="@(ShellState.MaintenanceState.Enabled ? "Active" : "Normal")"
-            Description="Business write behavior must reflect platform maintenance state."
-            Icon="IconName.Tool"
-            Tone="StatTone.Neutral" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Write mode"
-            Value="@(ShellState.AreWritesBlocked ? "Blocked" : "Writable")"
-            Description="@ShellState.WriteBlockMessage"
-            Icon="IconName.Eye"
-            Color="@(ShellState.AreWritesBlocked ? Color.Warning : Color.Info)" />
-    </MudItem>
-</MudGrid>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+    <CitusStatCard
+        Label="Company"
+        Value="@ShellState.ActiveCompany.CompanyCode"
+        Description="@ShellState.ActiveCompany.CompanyName"
+        Icon="IconName.BuildingSkyscraper"
+        Tone="StatTone.Primary" />
+    <CitusStatCard
+        Label="Base currency"
+        Value="@ShellState.ActiveCompany.BaseCurrencyCode"
+        Description="Company-level accounting default."
+        Icon="IconName.Coin"
+        Tone="StatTone.Info" />
+    <CitusStatCard
+        Label="Multi-currency"
+        Value="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled")"
+        Description="Future FX controls should stay here, not spread across forms."
+        Icon="IconName.Coin"
+        Tone="StatTone.Success" />
+    <CitusStatCard
+        Label="Company status"
+        Value="@FormatCompanyStatus(ShellState.ActiveCompany.Status)"
+        Description="Active company lifecycle gates whether business writes remain available."
+        Icon="IconName.ShieldLock"
+        Tone="@(ShellState.ActiveCompany.IsReadOnly ? StatTone.Warning : StatTone.Success)" />
+    <CitusStatCard
+        Label="Maintenance"
+        Value="@(ShellState.MaintenanceState.Enabled ? "Active" : "Normal")"
+        Description="Business write behavior must reflect platform maintenance state."
+        Icon="IconName.Tool"
+        Tone="StatTone.Neutral" />
+    <CitusStatCard
+        Label="Write mode"
+        Value="@(ShellState.AreWritesBlocked ? "Blocked" : "Writable")"
+        Description="@ShellState.WriteBlockMessage"
+        Icon="IconName.Eye"
+        Tone="@(ShellState.AreWritesBlocked ? StatTone.Warning : StatTone.Info)" />
+</div>
 
-<MudPaper Class="pa-4 mb-6">
-    <MudText Typo="Typo.h6" Class="mb-4">Company settings domains</MudText>
-    <MudGrid>
+<section class="citus-panel mb-6">
+    <h2 class="citus-panel__title">Company settings domains</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
         @foreach (var domain in _domains)
         {
-            <MudItem xs="12" md="6" lg="4">
-                <MudPaper Outlined="true" Class="pa-4 mb-4">
-                    <MudStack Spacing="2">
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                            <MudText Typo="Typo.subtitle1">@domain.Title</MudText>
-                            <MudChip T="string" Variant="Variant.Outlined" Color="@domain.Color">@domain.Stage</MudChip>
-                        </MudStack>
-                        <MudText Typo="Typo.body2" Class="text-secondary">@domain.Description</MudText>
-                    </MudStack>
-                </MudPaper>
-            </MudItem>
+            <article class="citus-domain-card">
+                <header class="citus-domain-card__header">
+                    <h3 class="citus-domain-card__title">@domain.Title</h3>
+                    <AntDesign.Tag Color="@TagColor(domain.Tone)">@domain.Stage</AntDesign.Tag>
+                </header>
+                <p class="citus-domain-card__description">@domain.Description</p>
+            </article>
         }
-    </MudGrid>
-</MudPaper>
+    </div>
+</section>
 
-<MudGrid>
-    <MudItem xs="12" lg="6">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-4">Current company snapshot</MudText>
-            <MudTable Items="_snapshotRows" Dense="true">
-                <RowTemplate>
-                    <MudTd DataLabel="Field">@context.Field</MudTd>
-                    <MudTd DataLabel="Value">@context.Value</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Current company snapshot</h2>
+        <table class="citus-keyvalue">
+            <tbody>
+                @foreach (var row in _snapshotRows)
+                {
+                    <tr>
+                        <th>@row.Field</th>
+                        <td>@row.Value</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
 
-    <MudItem xs="12" lg="6">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-4">Guardrails for settings</MudText>
-            <MudList T="string" Dense="true">
-                <MudListItem>Settings remain structured domains, not a miscellaneous dumping ground.</MudListItem>
-                <MudListItem>Currency and numbering behavior stay company-scoped.</MudListItem>
-                <MudListItem>Sensitive changes should remain audit-visible and backend-authoritative.</MudListItem>
-                <MudListItem>Security and notification readiness should not be inferred only from the UI.</MudListItem>
-            </MudList>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Guardrails for settings</h2>
+        <ul class="citus-bullet-list">
+            <li>Settings remain structured domains, not a miscellaneous dumping ground.</li>
+            <li>Currency and numbering behavior stay company-scoped.</li>
+            <li>Sensitive changes should remain audit-visible and backend-authoritative.</li>
+            <li>Security and notification readiness should not be inferred only from the UI.</li>
+        </ul>
+    </section>
+</div>
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
@@ -114,13 +98,13 @@
 
     private readonly IReadOnlyList<DomainRow> _domains =
     [
-        new("Profile", "Next", "Company identity, address, and fiscal profile should live together.", Color.Success),
-        new("Templates", "Planned", "Document template controls belong under company-owned settings.", Color.Info),
-        new("Sales Tax", "Planned", "Tax controls should connect back to the backend tax engine, not ad hoc form logic.", Color.Info),
-        new("Numbering", "Planned", "Entity numbering rules are company-scoped and backend-generated.", Color.Info),
-        new("Notifications", "Later", "Readiness and verification state need infrastructure support.", Color.Warning),
-        new("Security", "Later", "Verification-driven security settings should follow auth/session foundations.", Color.Warning),
-        new("Currencies", "Core", "Base currency and multi-currency state must remain visible and governed.", Color.Secondary)
+        new("Profile", "Next", "Company identity, address, and fiscal profile should live together.", StatTone.Success),
+        new("Templates", "Planned", "Document template controls belong under company-owned settings.", StatTone.Info),
+        new("Sales Tax", "Planned", "Tax controls should connect back to the backend tax engine, not ad hoc form logic.", StatTone.Info),
+        new("Numbering", "Planned", "Entity numbering rules are company-scoped and backend-generated.", StatTone.Info),
+        new("Notifications", "Later", "Readiness and verification state need infrastructure support.", StatTone.Warning),
+        new("Security", "Later", "Verification-driven security settings should follow auth/session foundations.", StatTone.Warning),
+        new("Currencies", "Core", "Base currency and multi-currency state must remain visible and governed.", StatTone.Neutral)
     ];
 
     private IReadOnlyList<SnapshotRow> _snapshotRows =>
@@ -135,9 +119,19 @@
         new("Effective write gate", ShellState.WriteBlockMessage)
     ];
 
-    private sealed record class DomainRow(string Title, string Stage, string Description, Color Color);
+    private sealed record class DomainRow(string Title, string Stage, string Description, StatTone Tone);
 
     private sealed record class SnapshotRow(string Field, string Value);
+
+    private static string TagColor(StatTone tone) => tone switch
+    {
+        StatTone.Success => "green",
+        StatTone.Warning => "orange",
+        StatTone.Danger => "red",
+        StatTone.Info => "blue",
+        StatTone.Primary => "geekblue",
+        _ => "default"
+    };
 
     private static string FormatCompanyStatus(string? status)
     {

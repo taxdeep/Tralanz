@@ -8,95 +8,93 @@
 
 <CitusPageHeader Model="_header" />
 
-<MudGrid Class="mb-6">
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Active company"
-            Value="@ShellState.ActiveCompany.CompanyCode"
-            Description="@ShellState.ActiveCompany.CompanyName"
-            Icon="IconName.BuildingSkyscraper"
-            Tone="StatTone.Primary" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Operator"
-            Value="@ShellState.User.DisplayName"
-            Description="Backend-authoritative business session."
-            Icon="IconName.User"
-            Tone="StatTone.Success" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Accessible companies"
-            Value="@ShellState.AvailableCompanies.Count.ToString()"
-            Description="Membership-scoped company contexts."
-            Icon="IconName.World"
-            Tone="StatTone.Info" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Accounting API"
-            Value="@(_health?.Status ?? "Unavailable")"
-            Description="Business shell read path into the accounting backend."
-            Icon="IconName.Activity"
-            Tone="StatTone.Neutral" />
-    </MudItem>
-</MudGrid>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCard
+        Label="Active company"
+        Value="@ShellState.ActiveCompany.CompanyCode"
+        Description="@ShellState.ActiveCompany.CompanyName"
+        Icon="IconName.BuildingSkyscraper"
+        Tone="StatTone.Primary" />
+    <CitusStatCard
+        Label="Operator"
+        Value="@ShellState.User.DisplayName"
+        Description="Backend-authoritative business session."
+        Icon="IconName.User"
+        Tone="StatTone.Success" />
+    <CitusStatCard
+        Label="Accessible companies"
+        Value="@ShellState.AvailableCompanies.Count.ToString()"
+        Description="Membership-scoped company contexts."
+        Icon="IconName.World"
+        Tone="StatTone.Info" />
+    <CitusStatCard
+        Label="Accounting API"
+        Value="@(_health?.Status ?? "Unavailable")"
+        Description="Business shell read path into the accounting backend."
+        Icon="IconName.Activity"
+        Tone="StatTone.Neutral" />
+</div>
 
-<MudGrid>
-    <MudItem xs="12" lg="7">
-        <MudPaper Class="pa-4 mb-6">
-            <MudText Typo="Typo.h6" Class="mb-4">Business shell direction</MudText>
-            <MudText Typo="Typo.body2" Class="text-secondary mb-2">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-7 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Business shell direction</h2>
+            <p class="text-fg-muted text-sm mb-3">
                 This host is the first business-facing Blazor shell. It intentionally stops short of generic posting CRUD
                 and keeps accounting truth behind the Posting Engine.
-            </MudText>
-            <MudList T="string" Dense="true">
-                <MudListItem>Company context is always visible.</MudListItem>
-                <MudListItem>Maintenance mode stays visible and blocks backend writes.</MudListItem>
-                <MudListItem>Session headers are emitted server-side, not from browser-local truth.</MudListItem>
-            </MudList>
-        </MudPaper>
+            </p>
+            <ul class="citus-bullet-list">
+                <li>Company context is always visible.</li>
+                <li>Maintenance mode stays visible and blocks backend writes.</li>
+                <li>Session headers are emitted server-side, not from browser-local truth.</li>
+            </ul>
+        </section>
 
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-4">Next business surfaces</MudText>
-            <MudTable Items="_nextSurfaces" Dense="true" Hover="true">
-                <HeaderContent>
-                    <MudTh>Surface</MudTh>
-                    <MudTh>Why next</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Surface">@context.Surface</MudTd>
-                    <MudTd DataLabel="Why next">@context.Rationale</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Next business surfaces</h2>
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Surface</th>
+                        <th>Why next</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _nextSurfaces)
+                    {
+                        <tr>
+                            <td>@row.Surface</td>
+                            <td>@row.Rationale</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
 
-    <MudItem xs="12" lg="5">
-        <MudPaper Class="pa-4 mb-6">
-            <MudText Typo="Typo.h6" Class="mb-4">Session snapshot</MudText>
-            <MudStack Spacing="2">
-                <MudText Typo="Typo.body2"><strong>User:</strong> @ShellState.User.Username</MudText>
-                <MudText Typo="Typo.body2"><strong>Email:</strong> @ShellState.User.Email</MudText>
-                <MudText Typo="Typo.body2"><strong>Base currency:</strong> @ShellState.ActiveCompany.BaseCurrencyCode</MudText>
-                <MudText Typo="Typo.body2"><strong>Multi-currency:</strong> @(ShellState.ActiveCompany.MultiCurrencyEnabled ? "enabled" : "disabled")</MudText>
-            </MudStack>
-        </MudPaper>
+    <div class="lg:col-span-5 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Session snapshot</h2>
+            <dl class="citus-definition-list">
+                <div><dt>User</dt><dd>@ShellState.User.Username</dd></div>
+                <div><dt>Email</dt><dd>@ShellState.User.Email</dd></div>
+                <div><dt>Base currency</dt><dd>@ShellState.ActiveCompany.BaseCurrencyCode</dd></div>
+                <div><dt>Multi-currency</dt><dd>@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "enabled" : "disabled")</dd></div>
+            </dl>
+        </section>
 
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-4">Maintenance state</MudText>
-            <MudText Typo="Typo.body2" Class="text-secondary">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Maintenance state</h2>
+            <p class="text-fg-muted text-sm">
                 @(ShellState.MaintenanceState.Enabled
                     ? ShellState.MaintenanceState.Message
                     : "Interactive business reads are available. Formal writes remain guarded by the backend.")
-            </MudText>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+            </p>
+        </section>
+    </div>
+</div>
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Business App",
