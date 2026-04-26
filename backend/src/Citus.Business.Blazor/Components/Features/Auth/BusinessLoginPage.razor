@@ -1,0 +1,102 @@
+@page "/"
+@page "/login"
+
+@inject BusinessShellState ShellState
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject AntDesign.IMessageService Message
+@inject BusinessAuthenticationClient BusinessAuthenticationClient
+
+<PageTitle>Sign in | Citus Business</PageTitle>
+
+<div class="sys-login">
+    <header class="sys-login__bar">
+        <span class="sys-login__bar-title">
+            <CitusIcon Name="IconName.BuildingBank" Size="IconSize.Inline" />
+            Citus Business
+        </span>
+        <span class="sys-login__bar-meta">Multi-tenant ERP</span>
+    </header>
+
+    <div class="sys-login__body">
+        <div class="sys-login__crest" aria-hidden="true">
+            <CitusIcon Name="IconName.BuildingBank" Size="IconSize.Display" />
+        </div>
+
+        <div class="sys-login__heading">
+            <h1 class="sys-login__title">Sign in to your company</h1>
+            <p class="text-fg-muted text-sm">
+                Company-scoped accounting workspace. Use the credentials issued to your business membership.
+            </p>
+        </div>
+
+        <div class="sys-login__rule"></div>
+
+        <div class="flex flex-col gap-3 mt-4">
+            <CitusInput TValue="string" @bind-Value="_email"
+                        Placeholder="Email"
+                        LeadingIcon="IconName.User"
+                        Size="CitusButtonSize.Large" />
+            <AntDesign.InputPassword @bind-Value="_password" Placeholder="@("Password")" Size="@AntDesign.InputSize.Large" />
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Size="CitusButtonSize.Large"
+                         Block="true"
+                         Disabled="_isSubmitting"
+                         OnClick="SignInAsync">
+                @(_isSubmitting ? "Signing in..." : "Sign in")
+            </CitusButton>
+        </div>
+    </div>
+
+    <footer class="sys-login__switcher">
+        <span class="text-fg-muted text-xs">Platform administrator?</span>
+        <a href="/sysadmin/login" class="citus-link">SysAdmin sign in</a>
+    </footer>
+</div>
+
+@code {
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private bool _isSubmitting;
+
+    private async Task SignInAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
+        {
+            await Message.WarningAsync("Email and password are required.");
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var response = await BusinessAuthenticationClient.SignInAsync(_email, _password);
+            if (!response.Succeeded || string.IsNullOrWhiteSpace(response.SessionToken))
+            {
+                await Message.WarningAsync(string.IsNullOrWhiteSpace(response.Message)
+                    ? "Unable to sign in. Check your credentials."
+                    : response.Message);
+                return;
+            }
+
+            ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session, response.IsBootstrap);
+            await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", response.SessionToken);
+
+            if (response.IsBootstrap)
+            {
+                await Message.InfoAsync("Signed in with the local bootstrap user.");
+            }
+            else
+            {
+                await Message.SuccessAsync($"Welcome back, {response.Session.User.DisplayName}.");
+            }
+
+            NavigationManager.NavigateTo("dashboard");
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

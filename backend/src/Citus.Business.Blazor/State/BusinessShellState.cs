@@ -1,40 +1,17 @@
-using Citus.Business.Blazor.Configuration;
 using Citus.Ui.Shared.Business;
 using Citus.Ui.Shared.Icons;
 using Citus.Ui.Shared.Navigation;
 using Citus.Ui.Shared.Shell;
-using Microsoft.Extensions.Options;
 
 namespace Citus.Business.Blazor.State;
 
 public sealed class BusinessShellState
 {
-    public BusinessShellState(IOptions<AppHostOptions> options)
+    public BusinessShellState()
     {
-        var bootstrap = options.Value;
-
-        User = new BusinessUserSummary
-        {
-            Id = bootstrap.BootstrapUserId,
-            DisplayName = bootstrap.BootstrapUserDisplayName,
-            Email = bootstrap.BootstrapUserEmail,
-            Username = bootstrap.BootstrapUsername,
-            Roles = bootstrap.BootstrapRoles
-        };
-
-        ActiveCompany = new BusinessCompanySummary
-        {
-            Id = bootstrap.BootstrapCompanyId,
-            CompanyCode = bootstrap.BootstrapCompanyCode,
-            CompanyName = bootstrap.BootstrapCompanyName,
-            BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
-            MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
-        };
-
-        AvailableCompanies =
-        [
-            ActiveCompany
-        ];
+        User = BuildSignedOutUser();
+        ActiveCompany = BuildSignedOutCompany();
+        AvailableCompanies = Array.Empty<BusinessCompanySummary>();
     }
 
     public BusinessUserSummary User { get; private set; }
@@ -42,6 +19,12 @@ public sealed class BusinessShellState
     public BusinessCompanySummary ActiveCompany { get; private set; }
 
     public IReadOnlyList<BusinessCompanySummary> AvailableCompanies { get; private set; }
+
+    public string SessionToken { get; private set; } = string.Empty;
+
+    public bool IsBootstrapSession { get; private set; }
+
+    public bool IsAuthenticated => !string.IsNullOrWhiteSpace(SessionToken);
 
     public MaintenanceStateSummary MaintenanceState { get; private set; } = new()
     {
@@ -138,6 +121,52 @@ public sealed class BusinessShellState
         AvailableCompanies = context.AvailableCompanies;
         MaintenanceState = context.MaintenanceState;
     }
+
+    public void ApplyAuthenticatedSession(
+        string sessionToken,
+        BusinessAuthSessionSummary session,
+        bool isBootstrap)
+    {
+        SessionToken = sessionToken.Trim();
+        IsBootstrapSession = isBootstrap;
+        User = session.User;
+        ActiveCompany = session.ActiveCompany;
+        AvailableCompanies = session.AvailableCompanies.Count > 0
+            ? session.AvailableCompanies
+            : new[] { session.ActiveCompany };
+    }
+
+    public void ClearAuthenticatedSession()
+    {
+        SessionToken = string.Empty;
+        IsBootstrapSession = false;
+        User = BuildSignedOutUser();
+        ActiveCompany = BuildSignedOutCompany();
+        AvailableCompanies = Array.Empty<BusinessCompanySummary>();
+        MaintenanceState = new MaintenanceStateSummary
+        {
+            Enabled = false,
+            Message = "Platform runtime is accepting interactive changes."
+        };
+    }
+
+    private BusinessUserSummary BuildSignedOutUser() => new()
+    {
+        Id = Guid.Empty,
+        DisplayName = "Guest",
+        Email = string.Empty,
+        Username = string.Empty,
+        Roles = Array.Empty<string>()
+    };
+
+    private BusinessCompanySummary BuildSignedOutCompany() => new()
+    {
+        Id = Guid.Empty,
+        CompanyCode = string.Empty,
+        CompanyName = string.Empty,
+        BaseCurrencyCode = string.Empty,
+        MultiCurrencyEnabled = false
+    };
 
     private static string NormalizeStatus(string? status) =>
         string.IsNullOrWhiteSpace(status)

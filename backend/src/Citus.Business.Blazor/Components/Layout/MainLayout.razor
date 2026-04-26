@@ -1,57 +1,82 @@
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 @inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
+@inject Citus.Business.Blazor.Services.BusinessAuthenticationClient BusinessAuthenticationClient
 @inject AntDesign.IMessageService Message
 @inject IThemeService ThemeService
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
 
 @inherits LayoutComponentBase
 
 @*
-    MainLayout — AntDesign Layout shell. The sider hosts the navigation
-    menu, the header carries the company switcher and theme toggle,
-    and the content area is where every page renders.
+    MainLayout — AntDesign Layout shell. The unauthenticated branch hosts
+    the login page; the authenticated branch wraps the app in the standard
+    Sider/Header/Content shell.
 *@
 
 <IconSpriteHost />
 <AntDesign.AntContainer />
 
-<AntDesign.Layout Class="citus-shell">
-    <AntDesign.Sider Collapsible="true"
-                     Collapsed="@_collapsed"
-                     CollapsedChanged="OnCollapsedChanged"
-                     Breakpoint="@AntDesign.BreakpointType.Lg"
-                     Width="240"
-                     CollapsedWidth="64"
-                     Class="citus-shell__sider"
-                     Theme="@AntDesign.SiderTheme.Light">
-        <div class="citus-shell__brand">
-            <CitusIcon Name="IconName.BuildingBank" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
-            @if (!_collapsed)
-            {
-                <span class="citus-shell__brand-text">Citus Business</span>
-            }
-        </div>
-        <BusinessNavMenu Collapsed="@_collapsed" />
-    </AntDesign.Sider>
-
-    <AntDesign.Layout>
-        <AntDesign.Header Class="citus-shell__header">
-            <BusinessTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
-        </AntDesign.Header>
-
-        <AntDesign.Content Class="citus-shell__content">
-            @if (_isContextLoading)
-            {
-                <div class="citus-shell__loading">
-                    <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
-                </div>
-            }
-
-            <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
-            <CitusCompanyAccessBanner Company="ShellState.ActiveCompany" />
+@if (!_isShellReady)
+{
+    <div class="citus-shell__bootstrap">
+        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+    </div>
+}
+else if (!ShellState.IsAuthenticated)
+{
+    <div class="citus-shell__auth-frame">
+        @if (IsLoginRoute)
+        {
             @Body
-        </AntDesign.Content>
+        }
+        else
+        {
+            <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+        }
+    </div>
+}
+else
+{
+    <AntDesign.Layout Class="citus-shell">
+        <AntDesign.Sider Collapsible="true"
+                         Collapsed="@_collapsed"
+                         CollapsedChanged="OnCollapsedChanged"
+                         Breakpoint="@AntDesign.BreakpointType.Lg"
+                         Width="240"
+                         CollapsedWidth="64"
+                         Class="citus-shell__sider"
+                         Theme="@AntDesign.SiderTheme.Light">
+            <div class="citus-shell__brand">
+                <CitusIcon Name="IconName.BuildingBank" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
+                @if (!_collapsed)
+                {
+                    <span class="citus-shell__brand-text">Citus Business</span>
+                }
+            </div>
+            <BusinessNavMenu Collapsed="@_collapsed" />
+        </AntDesign.Sider>
+
+        <AntDesign.Layout>
+            <AntDesign.Header Class="citus-shell__header">
+                <BusinessTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
+            </AntDesign.Header>
+
+            <AntDesign.Content Class="citus-shell__content">
+                @if (_isContextLoading)
+                {
+                    <div class="citus-shell__loading">
+                        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+                    </div>
+                }
+
+                <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
+                <CitusCompanyAccessBanner Company="ShellState.ActiveCompany" />
+                @Body
+            </AntDesign.Content>
+        </AntDesign.Layout>
     </AntDesign.Layout>
-</AntDesign.Layout>
+}
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -60,31 +85,96 @@
 </div>
 
 @code {
-    private bool _isContextLoading = true;
+    private bool _isContextLoading;
+    private bool _isShellReady;
     private bool _collapsed;
 
-    protected override async Task OnInitializedAsync()
+    private bool IsLoginRoute
     {
-        var context = await BusinessSessionClient.GetContextAsync();
-
-        if (context is null)
+        get
         {
-            await Message.WarningAsync(
-                "Business session context is unavailable. The shell is showing bootstrap values until Accounting API responds.");
+            var relative = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/');
+            return string.IsNullOrEmpty(relative) ||
+                   string.Equals(relative, "login", StringComparison.OrdinalIgnoreCase);
         }
-        else
-        {
-            ShellState.ApplySessionContext(context);
-        }
-
-        _isContextLoading = false;
     }
+
+    private bool IsHomeRoute =>
+        string.IsNullOrEmpty(NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/'));
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (!firstRender)
         {
-            await ThemeService.InitializeInteractiveAsync();
+            return;
+        }
+
+        await ThemeService.InitializeInteractiveAsync();
+
+        if (!ShellState.IsAuthenticated)
+        {
+            var storedToken = await JS.InvokeAsync<string?>("citusBusinessAuth.getSessionToken");
+            if (!string.IsNullOrWhiteSpace(storedToken))
+            {
+                var session = await BusinessAuthenticationClient.ResumeSessionAsync(storedToken);
+                if (session is not null)
+                {
+                    var isBootstrap = storedToken.StartsWith("bootstrap:", StringComparison.Ordinal);
+                    ShellState.ApplyAuthenticatedSession(storedToken, session, isBootstrap);
+                }
+                else
+                {
+                    await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+                    ShellState.ClearAuthenticatedSession();
+                }
+            }
+        }
+
+        if (ShellState.IsAuthenticated)
+        {
+            await LoadSessionContextAsync();
+            if (IsHomeRoute || IsLoginRoute)
+            {
+                NavigationManager.NavigateTo("dashboard");
+                return;
+            }
+        }
+        else if (!IsLoginRoute)
+        {
+            NavigationManager.NavigateTo(string.Empty);
+            return;
+        }
+
+        _isShellReady = true;
+        StateHasChanged();
+    }
+
+    private async Task LoadSessionContextAsync()
+    {
+        if (ShellState.IsBootstrapSession)
+        {
+            return;
+        }
+
+        _isContextLoading = true;
+
+        try
+        {
+            var context = await BusinessSessionClient.GetContextAsync();
+            if (context is null)
+            {
+                await Message.WarningAsync(
+                    "Business session context is unavailable. The shell is showing the cached login session.");
+                return;
+            }
+
+            ShellState.ApplySessionContext(context);
+        }
+        finally
+        {
+            _isContextLoading = false;
         }
     }
 

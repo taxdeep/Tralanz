@@ -190,11 +190,10 @@ load_env_file() {
   AppHost__AccountingApiBaseUrl="${AppHost__AccountingApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/}"
   AppHost__SysAdminApiBaseUrl="${AppHost__SysAdminApiBaseUrl:-http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/}"
   AppHost__BusinessAppBaseUrl="${AppHost__BusinessAppBaseUrl:-http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/}"
-  AppHost__PathBase="${AppHost__PathBase:-/sysadmin}"
   DOTNET_ROOT="${DOTNET_ROOT:-${DOTNET_INSTALL_DIR}}"
   DOTNET_CLI_TELEMETRY_OPTOUT="${DOTNET_CLI_TELEMETRY_OPTOUT:-1}"
   DOTNET_PRINT_TELEMETRY_MESSAGE="${DOTNET_PRINT_TELEMETRY_MESSAGE:-false}"
-  export AppHost__PublicBaseUrl AppHost__AccountingApiBaseUrl AppHost__SysAdminApiBaseUrl AppHost__BusinessAppBaseUrl AppHost__PathBase DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
+  export AppHost__PublicBaseUrl AppHost__AccountingApiBaseUrl AppHost__SysAdminApiBaseUrl AppHost__BusinessAppBaseUrl DOTNET_ROOT DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_PRINT_TELEMETRY_MESSAGE
 
   validate_identifier "${CITUS_DB_NAME}" "CITUS_DB_NAME"
   validate_identifier "${CITUS_DB_USER}" "CITUS_DB_USER"
@@ -217,6 +216,17 @@ set_env_value() {
   fi
 
   printf '%s=%s\n' "${key}" "${value}" >> "${temp_file}"
+  install -m 640 "${temp_file}" "${ENV_FILE}"
+  rm -f "${temp_file}"
+}
+
+remove_env_key() {
+  local key="$1"
+  [[ -f "${ENV_FILE}" ]] || return 0
+  grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null || return 0
+  local temp_file
+  temp_file="$(mktemp)"
+  grep -v "^${key}=" "${ENV_FILE}" > "${temp_file}" || true
   install -m 640 "${temp_file}" "${ENV_FILE}"
   rm -f "${temp_file}"
 }
@@ -247,10 +257,12 @@ ensure_env_defaults() {
   append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "3010"
   append_env_if_missing "AppHost__SysAdminApiBaseUrl" "http://127.0.0.1:5089/"
   append_env_if_missing "AppHost__BusinessAppBaseUrl" "http://127.0.0.1:3000/"
-  append_env_if_missing "AppHost__PathBase" "/sysadmin"
   append_env_if_missing "ASPNETCORE_FORWARDEDHEADERS_ENABLED" "true"
   append_env_if_missing "DOTNET_CLI_TELEMETRY_OPTOUT" "1"
   append_env_if_missing "DOTNET_PRINT_TELEMETRY_MESSAGE" "false"
+  # PathBase is set explicitly per-service (sysadmin → /sysadmin, business → empty).
+  # Strip any legacy shared value so it cannot leak into the Business app.
+  remove_env_key "AppHost__PathBase"
   chmod 640 "${ENV_FILE}"
 }
 
@@ -300,7 +312,6 @@ AppHost__PublicBaseUrl=http://${frontend_host}:${frontend_port}/
 AppHost__AccountingApiBaseUrl=http://${api_host}:${accounting_port}/
 AppHost__SysAdminApiBaseUrl=http://${api_host}:${sysadmin_port}/
 AppHost__BusinessAppBaseUrl=http://${frontend_host}:${frontend_port}/
-AppHost__PathBase=/sysadmin
 EOF
 
   chmod 640 "${ENV_FILE}"
@@ -505,7 +516,6 @@ configure_runtime_preferences() {
   append_env_if_missing "CITUS_SYSADMIN_WEB_PORT" "${CITUS_SYSADMIN_WEB_PORT:-3010}"
   set_env_value "AppHost__SysAdminApiBaseUrl" "http://${CITUS_API_HOST}:${CITUS_SYSADMIN_API_PORT}/"
   set_env_value "AppHost__BusinessAppBaseUrl" "$(get_public_frontend_url)"
-  set_env_value "AppHost__PathBase" "/sysadmin"
   validate_https_configuration
 }
 
@@ -947,6 +957,7 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=DOTNET_ROOT=${DOTNET_INSTALL_DIR}
 Environment=AppHost__PublicBaseUrl=http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}/
 Environment=AppHost__AccountingApiBaseUrl=http://${CITUS_API_HOST}:${CITUS_ACCOUNTING_API_PORT}/
+Environment=AppHost__PathBase=
 ExecStart=/usr/local/bin/dotnet ${PUBLISH_DIR}/business-web/Citus.Business.Blazor.dll --urls http://${CITUS_FRONTEND_HOST}:${CITUS_FRONTEND_PORT}
 Restart=always
 RestartSec=5

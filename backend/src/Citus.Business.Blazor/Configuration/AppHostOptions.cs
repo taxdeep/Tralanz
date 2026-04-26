@@ -4,7 +4,7 @@ public sealed class AppHostOptions
 {
     public const string SectionName = "AppHost";
 
-    public string PathBase { get; set; } = "/app";
+    public string PathBase { get; set; } = string.Empty;
 
     public string AccountingApiBaseUrl { get; set; } = "http://127.0.0.1:5088/";
 

@@ -4,7 +4,6 @@ using Citus.Business.Blazor.Services;
 using Citus.Business.Blazor.State;
 using Citus.Ui.Shared.Business;
 using Citus.Ui.Shared.Shell;
-using Microsoft.Extensions.Options;
 
 namespace Citus.Business.Blazor.Tests;
 
@@ -69,8 +68,45 @@ public sealed class BusinessSessionHeaderHandlerTests
             capture.Request!.Headers.GetValues(BusinessSessionHeaderNames.ActiveCompanyId).Single());
     }
 
-    private static BusinessShellState CreateState() =>
-        new(Options.Create(new AppHostOptions()));
+    private static BusinessShellState CreateState()
+    {
+        var bootstrap = new AppHostOptions();
+        var state = new BusinessShellState();
+        state.ApplyAuthenticatedSession(
+            "bootstrap:test",
+            new BusinessAuthSessionSummary
+            {
+                User = new BusinessUserSummary
+                {
+                    Id = bootstrap.BootstrapUserId,
+                    DisplayName = bootstrap.BootstrapUserDisplayName,
+                    Email = bootstrap.BootstrapUserEmail,
+                    Username = bootstrap.BootstrapUsername,
+                    Roles = bootstrap.BootstrapRoles
+                },
+                ActiveCompany = new BusinessCompanySummary
+                {
+                    Id = bootstrap.BootstrapCompanyId,
+                    CompanyCode = bootstrap.BootstrapCompanyCode,
+                    CompanyName = bootstrap.BootstrapCompanyName,
+                    BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
+                    MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
+                },
+                AvailableCompanies = new List<BusinessCompanySummary>
+                {
+                    new()
+                    {
+                        Id = bootstrap.BootstrapCompanyId,
+                        CompanyCode = bootstrap.BootstrapCompanyCode,
+                        CompanyName = bootstrap.BootstrapCompanyName,
+                        BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
+                        MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
+                    }
+                }
+            },
+            isBootstrap: true);
+        return state;
+    }
 
     private sealed class CapturingHandler : HttpMessageHandler
     {

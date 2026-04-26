@@ -27,6 +27,12 @@ if (!string.IsNullOrWhiteSpace(businessDbConnectionString))
 }
 
 builder.Services.AddScoped<BusinessWriteFlowClient>();
+builder.Services.AddHttpClient<BusinessAuthenticationClient>(
+    (serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+    });
 builder.Services.AddHttpClient<BusinessSessionClient>(
         (serviceProvider, client) =>
         {
