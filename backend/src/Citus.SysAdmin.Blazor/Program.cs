@@ -2,6 +2,7 @@ using Citus.SysAdmin.Blazor.Components;
 using Citus.SysAdmin.Blazor.Configuration;
 using Citus.SysAdmin.Blazor.Services;
 using Citus.SysAdmin.Blazor.State;
+using Citus.Ui.Shared.Localization;
 using Citus.Ui.Shared.Theme;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +12,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddAntDesign();
 builder.Services.AddCitusTheme();
+builder.Services.AddCitusLocalization();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<AppShellState>();
 builder.Services.AddHttpClient<SysAdminAuthenticationClient>(
@@ -58,6 +60,7 @@ if (AppHostOptions.HasPathBase(hostOptions.PathBase))
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseCitusLocalization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();

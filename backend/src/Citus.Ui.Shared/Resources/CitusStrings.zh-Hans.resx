@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute name="xml:space" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+
+  <data name="Nav.Section.Core"><value>核心</value></data>
+  <data name="Nav.Section.SalesAndGetPaid"><value>销售与收款</value></data>
+  <data name="Nav.Section.ExpenseAndBills"><value>支出与账单</value></data>
+  <data name="Nav.Section.Accounting"><value>会计</value></data>
+  <data name="Nav.Section.Settings"><value>设置</value></data>
+
+  <data name="Nav.Item.Dashboard"><value>仪表板</value></data>
+  <data name="Nav.Item.JournalEntry"><value>凭证</value></data>
+  <data name="Nav.Item.Invoices"><value>销售发票</value></data>
+  <data name="Nav.Item.Bills"><value>采购账单</value></data>
+  <data name="Nav.Item.Customers"><value>客户</value></data>
+  <data name="Nav.Item.ReceivePayment"><value>收款</value></data>
+  <data name="Nav.Item.Vendors"><value>供应商</value></data>
+  <data name="Nav.Item.PayBills"><value>付款</value></data>
+  <data name="Nav.Item.ChartOfAccounts"><value>会计科目</value></data>
+  <data name="Nav.Item.Reconciliation"><value>对账</value></data>
+  <data name="Nav.Item.Reports"><value>报表</value></data>
+  <data name="Nav.Item.CompanySettings"><value>公司设置</value></data>
+  <data name="Nav.Item.Profile"><value>公司资料</value></data>
+  <data name="Nav.Item.Currencies"><value>币种</value></data>
+  <data name="Nav.Item.FiscalYear"><value>会计年度</value></data>
+  <data name="Nav.Item.TaxRates"><value>税率</value></data>
+  <data name="Nav.Item.Numbering"><value>编号规则</value></data>
+  <data name="Nav.Item.Session"><value>会话</value></data>
+
+  <data name="Common.Refresh"><value>刷新</value></data>
+  <data name="Common.Save"><value>保存</value></data>
+  <data name="Common.Cancel"><value>取消</value></data>
+  <data name="Common.Back"><value>返回</value></data>
+  <data name="Common.New"><value>新建</value></data>
+  <data name="Common.Post"><value>过账</value></data>
+  <data name="Common.Loading"><value>加载中...</value></data>
+  <data name="Common.NoData"><value>暂无数据</value></data>
+
+  <data name="Theme.Toggle.Light"><value>浅色主题</value></data>
+  <data name="Theme.Toggle.Dark"><value>深色主题</value></data>
+  <data name="Theme.Toggle.System"><value>跟随系统</value></data>
+</root>

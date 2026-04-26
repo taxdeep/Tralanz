@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute name="xml:space" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+
+  <data name="Nav.Section.Core"><value>Core</value></data>
+  <data name="Nav.Section.SalesAndGetPaid"><value>Sales &amp; Get Paid</value></data>
+  <data name="Nav.Section.ExpenseAndBills"><value>Expense &amp; Bills</value></data>
+  <data name="Nav.Section.Accounting"><value>Accounting</value></data>
+  <data name="Nav.Section.Settings"><value>Settings</value></data>
+
+  <data name="Nav.Item.Dashboard"><value>Dashboard</value></data>
+  <data name="Nav.Item.JournalEntry"><value>Journal Entry</value></data>
+  <data name="Nav.Item.Invoices"><value>Invoices</value></data>
+  <data name="Nav.Item.Bills"><value>Bills</value></data>
+  <data name="Nav.Item.Customers"><value>Customers</value></data>
+  <data name="Nav.Item.ReceivePayment"><value>Receive Payment</value></data>
+  <data name="Nav.Item.Vendors"><value>Vendors</value></data>
+  <data name="Nav.Item.PayBills"><value>Pay Bills</value></data>
+  <data name="Nav.Item.ChartOfAccounts"><value>Chart of Accounts</value></data>
+  <data name="Nav.Item.Reconciliation"><value>Reconciliation</value></data>
+  <data name="Nav.Item.Reports"><value>Reports</value></data>
+  <data name="Nav.Item.CompanySettings"><value>Company Settings</value></data>
+  <data name="Nav.Item.Profile"><value>Profile</value></data>
+  <data name="Nav.Item.Currencies"><value>Currencies</value></data>
+  <data name="Nav.Item.FiscalYear"><value>Fiscal Year</value></data>
+  <data name="Nav.Item.TaxRates"><value>Tax Rates</value></data>
+  <data name="Nav.Item.Numbering"><value>Numbering</value></data>
+  <data name="Nav.Item.Session"><value>Session</value></data>
+
+  <data name="Common.Refresh"><value>Refresh</value></data>
+  <data name="Common.Save"><value>Save</value></data>
+  <data name="Common.Cancel"><value>Cancel</value></data>
+  <data name="Common.Back"><value>Back</value></data>
+  <data name="Common.New"><value>New</value></data>
+  <data name="Common.Post"><value>Post</value></data>
+  <data name="Common.Loading"><value>Loading...</value></data>
+  <data name="Common.NoData"><value>No data</value></data>
+
+  <data name="Theme.Toggle.Light"><value>Light theme</value></data>
+  <data name="Theme.Toggle.Dark"><value>Dark theme</value></data>
+  <data name="Theme.Toggle.System"><value>System theme</value></data>
+</root>
