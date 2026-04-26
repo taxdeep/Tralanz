@@ -131,7 +131,7 @@ const mapSource =
   "// </auto-generated>\n" +
   "using System.Collections.Generic;\n\n" +
   "namespace Citus.Ui.Shared.Icons;\n\n" +
-  "internal static class IconNameMap\n" +
+  "public static class IconNameMap\n" +
   "{\n" +
   "    public static readonly IReadOnlyDictionary<IconName, string> SpriteIds = new Dictionary<IconName, string>\n" +
   "    {\n" +

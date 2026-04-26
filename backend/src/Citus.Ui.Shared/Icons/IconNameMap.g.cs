@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace Citus.Ui.Shared.Icons;
 
-internal static class IconNameMap
+public static class IconNameMap
 {
     public static readonly IReadOnlyDictionary<IconName, string> SpriteIds = new Dictionary<IconName, string>
     {
