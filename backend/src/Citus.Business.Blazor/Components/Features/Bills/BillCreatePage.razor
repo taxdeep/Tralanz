@@ -1,0 +1,201 @@
+@page "/bills/new"
+
+@inject BusinessShellState ShellState
+@inject BusinessWriteFlowClient WriteFlow
+@inject NavigationManager NavigationManager
+@inject AntDesign.IMessageService Message
+
+<PageTitle>New Bill | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="bills">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to bills</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (ShellState.AreWritesBlocked)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_lastResult is not null)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>@_lastResult.Operation</strong>
+            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
+        </MessageTemplate>
+    </AntDesign.Alert>
+}
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-8 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Header</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Document date</label>
+                    <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_documentDate" Style="width: 100%;" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Due date</label>
+                    <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_dueDate" Style="width: 100%;" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Vendor (id)</label>
+                    <CitusInput TValue="string" @bind-Value="_vendorIdInput" Placeholder="@("00000000-0000-0000-0000-000000000000")" />
+                    <p class="text-fg-subtle text-xs mt-1">Lookup goes here once /accounting/vendors HTTP endpoint exists.</p>
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Transaction currency</label>
+                    <CitusInput TValue="string" @bind-Value="_currency" Placeholder="USD" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Memo</label>
+                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
+                </div>
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Lines</h2>
+                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
+            </header>
+
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th class="text-right" style="width: 6rem">Qty</th>
+                        <th class="text-right" style="width: 9rem">Unit price</th>
+                        <th style="width: 7rem">Account</th>
+                        <th style="width: 6rem">Tax</th>
+                        <th class="text-right" style="width: 9rem">Line total</th>
+                        <th style="width: 3rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var index = 0; index < _lines.Count; index++)
+                    {
+                        var i = index;
+                        var line = _lines[i];
+                        <tr>
+                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="What's being purchased?" /></td>
+                            <td><AntDesign.InputNumber TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><AntDesign.InputNumber TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => Update(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="6000" /></td>
+                            <td><CitusInput TValue="string" Value="@line.TaxCode" ValueChanged="@(v => Update(i, l => l with { TaxCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="HST" /></td>
+                            <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                            <td>
+                                <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
+                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="citus-data-table__total">
+                        <td colspan="5" class="text-right font-medium">Total</td>
+                        <td class="text-right font-semibold">@FormatAmount(_total)</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="lg:col-span-4 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Summary</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
+                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
+                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Post bill</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Posting reserves the bill number, opens the AP control row, and creates the journal entry. Settlement happens in Pay Bills.
+            </p>
+            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
+                         Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
+                         OnClick="PostAsync">
+                @(_isSubmitting ? "Posting..." : "Post bill")
+            </CitusButton>
+        </section>
+    </div>
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "New bill",
+        Subtitle = "Vendor-facing payable. Posting opens the AP open item; settlement happens in Pay Bills."
+    };
+
+    private DateTime? _documentDate = DateTime.Today;
+    private DateTime? _dueDate = DateTime.Today.AddDays(30);
+    private string _vendorIdInput = string.Empty;
+    private string _currency = string.Empty;
+    private string _memo = string.Empty;
+    private readonly List<DocumentLineDraft> _lines = new() { new DocumentLineDraft { Quantity = 1m } };
+    private bool _isSubmitting;
+    private string? _validation;
+    private WriteFlowResult? _lastResult;
+
+    private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+
+    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+
+    private void AddLine() => _lines.Add(new DocumentLineDraft { Quantity = 1m });
+    private void RemoveLine(int i) { if (i >= 0 && i < _lines.Count) _lines.RemoveAt(i); }
+    private void Update(int i, Func<DocumentLineDraft, DocumentLineDraft> mutate) { if (i >= 0 && i < _lines.Count) _lines[i] = mutate(_lines[i]); }
+
+    private async Task PostAsync()
+    {
+        _validation = null;
+        _lastResult = null;
+
+        if (_lines.Count == 0) { _validation = "Add at least one bill line."; return; }
+        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
+        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs an expense account code."; return; }
+        if (_total <= 0) { _validation = "Bill total must be greater than zero."; return; }
+
+        Guid? vendorId = null;
+        if (!string.IsNullOrWhiteSpace(_vendorIdInput) && Guid.TryParse(_vendorIdInput, out var parsed)) vendorId = parsed;
+
+        _isSubmitting = true;
+        try
+        {
+            var draft = new BillDraft
+            {
+                DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
+                DueDate = _dueDate.HasValue ? DateOnly.FromDateTime(_dueDate.Value.Date) : null,
+                VendorId = vendorId,
+                TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+                Memo = _memo.Trim(),
+                Lines = _lines.ToArray()
+            };
+            _lastResult = await WriteFlow.PostBillAsync(draft);
+            if (_lastResult.Succeeded) { await Message.SuccessAsync("Bill posted."); NavigationManager.NavigateTo("bills"); }
+            else { await Message.InfoAsync(_lastResult.Message); }
+        }
+        finally { _isSubmitting = false; }
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+}
