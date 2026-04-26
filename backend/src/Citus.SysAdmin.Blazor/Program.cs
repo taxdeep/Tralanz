@@ -2,6 +2,7 @@ using Citus.SysAdmin.Blazor.Components;
 using Citus.SysAdmin.Blazor.Configuration;
 using Citus.SysAdmin.Blazor.Services;
 using Citus.SysAdmin.Blazor.State;
+using Citus.Ui.Shared.Theme;
 using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 
@@ -10,6 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMudServices();
+builder.Services.AddAntDesign();
+builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<AppShellState>();
 builder.Services.AddHttpClient<SysAdminAuthenticationClient>(

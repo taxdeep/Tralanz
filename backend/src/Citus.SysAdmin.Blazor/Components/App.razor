@@ -1,15 +1,17 @@
 @inject IOptions<AppHostOptions> HostOptions
+@inject ThemeCookieReader Theme
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN" class="@Theme.HtmlClass" data-theme="@(Theme.IsDark ? "dark" : "light")">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="@AppHostOptions.NormalizeBaseHref(HostOptions.Value.PathBase)" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="_content/AntDesign/css/ant-design-blazor.css" />
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Citus.SysAdmin.Blazor.styles.css"]" />
     <ImportMap />
     <HeadOutlet @rendermode="InteractiveServer" />

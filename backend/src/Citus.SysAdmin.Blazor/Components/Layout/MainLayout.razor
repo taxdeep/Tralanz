@@ -4,8 +4,12 @@
 @inject IJSRuntime JS
 @inject SysAdminAuthenticationClient SysAdminAuthenticationClient
 @inject SysAdminControlClient SysAdminControlClient
+@inject IThemeService ThemeService
 
 @inherits LayoutComponentBase
+
+<IconSpriteHost />
+<AntDesign.AntContainer />
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -104,6 +108,8 @@ else
         {
             return;
         }
+
+        await ThemeService.InitializeInteractiveAsync();
 
         if (ShellState.IsAuthenticated)
         {

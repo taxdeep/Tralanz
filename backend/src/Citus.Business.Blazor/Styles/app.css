@@ -1,0 +1,92 @@
+/*
+ * Tailwind v4 input — Citus.Business.Blazor.
+ *
+ * We only pull theme + utilities, not preflight, because preflight resets
+ * <h*>, <button>, and <ul> in ways that collide with AntDesign Blazor's
+ * baseline. AntDesign provides the equivalent reset for its own components.
+ */
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@import "../../Citus.Ui.Shared/Styles/tokens.css";
+
+@source "../Components/**/*.razor";
+@source "../Components/**/*.cs";
+@source "../../Citus.Ui.Shared/**/*.razor";
+
+/* Toggle-class strategy so we own when dark applies (cookie + JS). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+    --color-bg: var(--citus-color-bg);
+    --color-bg-elevated: var(--citus-color-bg-elevated);
+    --color-bg-muted: var(--citus-color-bg-muted);
+    --color-bg-subtle: var(--citus-color-bg-subtle);
+    --color-fg: var(--citus-color-fg);
+    --color-fg-muted: var(--citus-color-fg-muted);
+    --color-fg-subtle: var(--citus-color-fg-subtle);
+    --color-border: var(--citus-color-border);
+    --color-border-strong: var(--citus-color-border-strong);
+    --color-primary: var(--citus-color-primary);
+    --color-primary-hover: var(--citus-color-primary-hover);
+    --color-success: var(--citus-color-success);
+    --color-warning: var(--citus-color-warning);
+    --color-danger: var(--citus-color-danger);
+    --color-info: var(--citus-color-info);
+    --font-sans: var(--citus-font-sans);
+}
+
+.citus-icon {
+    flex-shrink: 0;
+    color: currentColor;
+}
+
+.citus-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+}
+
+.citus-button__icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.citus-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--citus-space-2);
+    padding: var(--citus-space-12) var(--citus-space-6);
+    color: var(--citus-color-fg-muted);
+    text-align: center;
+}
+
+.citus-empty__icon {
+    color: var(--citus-color-fg-subtle);
+}
+
+.citus-empty__title {
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-lg);
+    margin: 0;
+}
+
+.citus-empty__description {
+    margin: 0;
+    max-width: 32rem;
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-table--compact :where(.ant-table-tbody) > tr > td {
+    height: var(--citus-row-h-compact);
+    padding-top: var(--citus-space-1);
+    padding-bottom: var(--citus-space-1);
+}
+
+.citus-table :where(.ant-table-tbody) td {
+    font-variant-numeric: var(--citus-tabular-nums);
+    font-feature-settings: "tnum";
+}

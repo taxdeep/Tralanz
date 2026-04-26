@@ -1,8 +1,12 @@
 @inject BusinessShellState ShellState
 @inject BusinessSessionClient BusinessSessionClient
 @inject ISnackbar Snackbar
+@inject IThemeService ThemeService
 
 @inherits LayoutComponentBase
+
+<IconSpriteHost />
+<AntDesign.AntContainer />
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -60,5 +64,13 @@
         }
 
         _isContextLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ThemeService.InitializeInteractiveAsync();
+        }
     }
 }

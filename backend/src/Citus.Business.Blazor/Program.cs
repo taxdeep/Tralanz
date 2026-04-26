@@ -2,6 +2,7 @@ using Citus.Business.Blazor.Components;
 using Citus.Business.Blazor.Configuration;
 using Citus.Business.Blazor.Services;
 using Citus.Business.Blazor.State;
+using Citus.Ui.Shared.Theme;
 using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 
@@ -10,6 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMudServices();
+builder.Services.AddAntDesign();
+builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<BusinessShellState>();
 builder.Services.AddTransient<BusinessSessionHeaderHandler>();

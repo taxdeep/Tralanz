@@ -15,4 +15,10 @@
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
   </ItemGroup>
 
+  <Target Name="BuildCss" BeforeTargets="BeforeBuild" Condition="'$(SkipCssBuild)' != 'true'">
+    <Exec Command="pnpm --silent run css:build:sysadmin"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\..\frontend"
+          IgnoreExitCode="false" />
+  </Target>
+
 </Project>
