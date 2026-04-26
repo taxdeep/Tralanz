@@ -1,0 +1,438 @@
+@page "/ap/purchase-orders"
+@using Web.Business.AP.SettlementLookup
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellAccountingDocumentBrowserClient BrowserClient
+@inject IApSettlementLookupService Vendors
+
+<PageTitle>Purchase Orders</PageTitle>
+
+<div class="po-dashboard">
+    <section class="po-dashboard__hero">
+        <div>
+            <a class="po-dashboard__back-link" href="/">Back to shell</a>
+            <div class="po-dashboard__eyebrow">
+                <span>AP workspace</span>
+                <span>Procurement lane</span>
+            </div>
+            <h1>Purchase Orders</h1>
+            <p>
+                Govern ordered vendor demand before receipt and bill truth begin. PO owns approval, release, quantity coverage, and the procurement anchor for downstream AP.
+            </p>
+        </div>
+        <div class="po-dashboard__hero-actions">
+            <a class="ant-btn" href="/documents/purchase-orders/approval-requests">Approval requests</a>
+            <a class="ant-btn" href="/documents/source-browser?sourceType=purchase_order">Source browser</a>
+            <a class="ant-btn ant-btn-primary @(WritesBlocked ? "ant-btn-disabled" : string.Empty)"
+               href="@(WritesBlocked ? null : "/documents/purchase-order/draft-editor")"
+               aria-disabled="@WritesBlocked">
+                New purchase order
+            </a>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="ant-alert ant-alert-warning po-dashboard__alert">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+            <span>@_error</span>
+        </div>
+    }
+
+    @if (WritesBlocked)
+    {
+        <div class="ant-alert ant-alert-warning po-dashboard__alert">
+            <i class="ti ti-lock" aria-hidden="true"></i>
+            <span>@ShellState.WriteBlockMessage</span>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="po-dashboard__loading">
+            <div class="po-dashboard__loading-bar"></div>
+            <span>Loading purchase order lane...</span>
+        </div>
+    }
+    else
+    {
+        <section class="po-dashboard__stage-strip" aria-label="Purchase order lane summary">
+            <article class="po-dashboard__stage-card">
+                <span>Total POs</span>
+                <strong>@Rows.Count.ToString("N0")</strong>
+                <small>Procurement anchors</small>
+            </article>
+            <article class="po-dashboard__stage-card">
+                <span>Draft</span>
+                <strong>@StatusCount("draft").ToString("N0")</strong>
+                <small>Still editable</small>
+            </article>
+            <article class="po-dashboard__stage-card po-dashboard__stage-card--blue">
+                <span>Approved / issued</span>
+                <strong>@ApprovedOrIssuedCount.ToString("N0")</strong>
+                <small>Ready for receipt/bill</small>
+            </article>
+            <article class="po-dashboard__stage-card po-dashboard__stage-card--green">
+                <span>Receipt ready</span>
+                <strong>@ReceiptReadyCount.ToString("N0")</strong>
+                <small>Released vendor demand</small>
+            </article>
+            <article class="po-dashboard__stage-card po-dashboard__stage-card--amber">
+                <span>Expected soon</span>
+                <strong>@ExpectedSoonCount.ToString("N0")</strong>
+                <small>Due inside 7 days</small>
+            </article>
+        </section>
+
+        <section class="po-dashboard__lane">
+            <div class="po-dashboard__lane-copy">
+                <div class="po-dashboard__lane-icon">
+                    <i class="ti ti-clipboard-list" aria-hidden="true"></i>
+                </div>
+                <div>
+                    <h2>PO to receipt and bill boundary</h2>
+                    <p>Purchase order is ordered truth. Receipt proves inbound inventory/service delivery. Bill creates AP truth. Keeping this lane separate avoids AP documents inventing procurement context later.</p>
+                </div>
+            </div>
+            <div class="po-dashboard__lane-steps" aria-label="Purchase order workflow">
+                <span class="po-dashboard__lane-step po-dashboard__lane-step--active">Draft</span>
+                <span class="po-dashboard__lane-step">Approve</span>
+                <span class="po-dashboard__lane-step">Release</span>
+                <span class="po-dashboard__lane-step">Receipt</span>
+                <span class="po-dashboard__lane-step">Bill</span>
+            </div>
+        </section>
+
+        <section class="po-dashboard__toolbar">
+            <label class="po-dashboard__search">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input class="ant-input" placeholder="Search PO, vendor, reference, status..." @bind="_searchText" @bind:event="oninput" />
+            </label>
+            <div class="po-dashboard__filters">
+                <select class="ant-input" @bind="_statusFilter">
+                    <option value="all">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="approved">Approved</option>
+                    <option value="issued">Issued</option>
+                    <option value="closed">Closed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+                <select class="ant-input" @bind="_vendorFilter">
+                    <option value="all">All vendors</option>
+                    @foreach (var vendor in _vendorOptions)
+                    {
+                        <option value="@vendor.Id.ToString("D")">@vendor.DisplayLabel</option>
+                    }
+                </select>
+                <span>@FilteredRows.Count PO(s)</span>
+            </div>
+        </section>
+
+        <section class="po-dashboard__table-card">
+            <table class="ant-table po-dashboard__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Purchase order</th>
+                        <th>Vendor</th>
+                        <th>Status</th>
+                        <th>Order date</th>
+                        <th>Expected</th>
+                        <th>Lines</th>
+                        <th>Ordered qty</th>
+                        <th>Reference</th>
+                        <th>Next move</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    @if (FilteredRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="10">
+                                <div class="po-dashboard__empty">
+                                    <i class="ti ti-clipboard-off" aria-hidden="true"></i>
+                                    <strong>No purchase orders matched this view.</strong>
+                                    <span>Create a PO from the draft workbench, or adjust the filters.</span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="po-dashboard__po-link" href="@BuildPurchaseOrderHref(row.Item.Id, row.Item.Status)">
+                                        @row.Item.DisplayNumber
+                                    </a>
+                                    <div class="po-dashboard__subtext">@row.Item.EntityNumber</div>
+                                </td>
+                                <td>@row.VendorName</td>
+                                <td>
+                                    <span class="@BuildStatusClass(row.Item.Status)">
+                                        @FormatStatus(row.Item.Status)
+                                    </span>
+                                </td>
+                                <td>@row.Item.DocumentDate.ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    <span class="@BuildExpectedClass(row.Item.DueDate)">
+                                        @FormatExpected(row.Item.DueDate)
+                                    </span>
+                                </td>
+                                <td>@(row.Item.LineCount?.ToString("N0") ?? "-")</td>
+                                <td>@FormatQuantity(row.Item.TotalOrderedQuantity)</td>
+                                <td>@DisplayOptional(row.Item.VendorReference)</td>
+                                <td>@BuildNextMove(row.Item)</td>
+                                <td>
+                                    <a class="po-dashboard__row-action" href="@BuildPurchaseOrderHref(row.Item.Id, row.Item.Status)">Open</a>
+                                    @if (CanStartReceipt(row.Item))
+                                    {
+                                        <span class="po-dashboard__action-separator">|</span>
+                                        <a class="po-dashboard__row-action" href="@BuildReceiptHref(row.Item.Id)">Receipt</a>
+                                    }
+                                    @if (CanStartBill(row.Item))
+                                    {
+                                        <span class="po-dashboard__action-separator">|</span>
+                                        <a class="po-dashboard__row-action" href="@BuildBillHref(row.Item.Id)">Bill</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ShellAccountingSourceDocumentBrowserItem> _purchaseOrders = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+    private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _vendorOptions = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
+    private string _searchText = string.Empty;
+    private string _statusFilter = "all";
+    private string _vendorFilter = "all";
+    private string? _error;
+    private bool _isLoading = true;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private IReadOnlyList<PurchaseOrderRow> Rows => _purchaseOrders
+        .Select(item => new PurchaseOrderRow(item, ResolveVendorName(item.CounterpartyId)))
+        .OrderByDescending(static row => row.Item.DocumentDate)
+        .ThenBy(static row => row.Item.DisplayNumber, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private IReadOnlyList<PurchaseOrderRow> FilteredRows => Rows
+        .Where(MatchesStatus)
+        .Where(MatchesVendor)
+        .Where(MatchesSearch)
+        .ToArray();
+
+    private int ApprovedOrIssuedCount => Rows.Count(static row =>
+        IsStatus(row.Item, "approved") || IsStatus(row.Item, "issued"));
+
+    private int ReceiptReadyCount => Rows.Count(static row => CanStartReceipt(row.Item));
+
+    private int ExpectedSoonCount => Rows.Count(static row => IsExpectedSoon(row.Item.DueDate));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _error = null;
+            _vendorOptions = await Vendors.ListVendorsAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            var result = await BrowserClient.GetDocumentsAsync(
+                ShellState.ActiveCompany.Id,
+                "purchase_order",
+                "vendor",
+                null,
+                200,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(result, CancellationToken.None))
+            {
+                return;
+            }
+
+            _purchaseOrders = result.Value ?? Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                _error = result.ErrorMessage;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private int StatusCount(string status) => Rows.Count(row => IsStatus(row.Item, status));
+
+    private bool MatchesStatus(PurchaseOrderRow row) =>
+        string.Equals(_statusFilter, "all", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(row.Item.Status, _statusFilter, StringComparison.OrdinalIgnoreCase);
+
+    private bool MatchesVendor(PurchaseOrderRow row) =>
+        string.Equals(_vendorFilter, "all", StringComparison.OrdinalIgnoreCase) ||
+        (row.Item.CounterpartyId.HasValue &&
+         string.Equals(row.Item.CounterpartyId.Value.ToString("D"), _vendorFilter, StringComparison.OrdinalIgnoreCase));
+
+    private bool MatchesSearch(PurchaseOrderRow row)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            return true;
+        }
+
+        var text = _searchText.Trim();
+        return Contains(row.Item.DisplayNumber, text) ||
+            Contains(row.Item.EntityNumber, text) ||
+            Contains(row.Item.Status, text) ||
+            Contains(row.Item.VendorReference, text) ||
+            Contains(row.VendorName, text) ||
+            Contains(row.Item.AnchorGovernanceSummary, text);
+    }
+
+    private string ResolveVendorName(Guid? vendorId)
+    {
+        if (!vendorId.HasValue)
+        {
+            return "Vendor pending";
+        }
+
+        var vendor = _vendorOptions.FirstOrDefault(item => item.Id == vendorId.Value);
+        return string.IsNullOrWhiteSpace(vendor.DisplayLabel) ? vendorId.Value.ToString("D") : vendor.DisplayLabel;
+    }
+
+    private static bool IsStatus(ShellAccountingSourceDocumentBrowserItem item, string status) =>
+        string.Equals(item.Status, status, StringComparison.OrdinalIgnoreCase);
+
+    private static bool CanStartReceipt(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsStatus(item, "issued");
+
+    private static bool CanStartBill(ShellAccountingSourceDocumentBrowserItem item) =>
+        IsStatus(item, "issued") || IsStatus(item, "closed");
+
+    private static bool IsExpectedSoon(DateOnly? expectedDate)
+    {
+        if (!expectedDate.HasValue)
+        {
+            return false;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return expectedDate.Value >= today && expectedDate.Value <= today.AddDays(7);
+    }
+
+    private static bool Contains(string? value, string searchText) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+    private static string DisplayOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string FormatQuantity(decimal? quantity) =>
+        quantity.HasValue
+            ? (quantity.Value == decimal.Truncate(quantity.Value) ? quantity.Value.ToString("N0") : quantity.Value.ToString("N2"))
+            : "-";
+
+    private static string FormatStatus(string status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "Unknown"
+            : string.Join(' ', status.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(static part => char.ToUpperInvariant(part[0]) + part[1..]));
+
+    private static string FormatExpected(DateOnly? expectedDate)
+    {
+        if (!expectedDate.HasValue)
+        {
+            return "No expected date";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (expectedDate.Value < today)
+        {
+            return $"Past due {expectedDate.Value:yyyy-MM-dd}";
+        }
+
+        return expectedDate.Value == today
+            ? "Expected today"
+            : expectedDate.Value.ToString("yyyy-MM-dd");
+    }
+
+    private static string BuildNextMove(ShellAccountingSourceDocumentBrowserItem item) =>
+        item.Status.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Submit for approval / save ordered truth",
+            "approved" => "Release purchase order",
+            "issued" => "Receive inventory or create bill",
+            "closed" => "Review closed procurement lane",
+            "cancelled" => "Read-only cancellation record",
+            _ => "Open purchase order review"
+        };
+
+    private static string BuildStatusClass(string status) =>
+        status.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "po-dashboard__status po-dashboard__status--draft",
+            "approved" => "po-dashboard__status po-dashboard__status--approved",
+            "issued" => "po-dashboard__status po-dashboard__status--issued",
+            "closed" => "po-dashboard__status po-dashboard__status--closed",
+            "cancelled" => "po-dashboard__status po-dashboard__status--cancelled",
+            _ => "po-dashboard__status"
+        };
+
+    private static string BuildExpectedClass(DateOnly? expectedDate)
+    {
+        if (!expectedDate.HasValue)
+        {
+            return "po-dashboard__expected";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return expectedDate.Value < today
+            ? "po-dashboard__expected po-dashboard__expected--past"
+            : expectedDate.Value <= today.AddDays(7)
+                ? "po-dashboard__expected po-dashboard__expected--soon"
+                : "po-dashboard__expected";
+    }
+
+    private static string BuildPurchaseOrderHref(Guid purchaseOrderId, string status) =>
+        string.Equals(status, "draft", StringComparison.OrdinalIgnoreCase)
+            ? $"/documents/purchase-order/draft-editor?draftId={purchaseOrderId:D}"
+            : $"/documents/purchase_order/{purchaseOrderId:D}";
+
+    private static string BuildReceiptHref(Guid purchaseOrderId) =>
+        $"/documents/receipt/draft-editor?purchaseOrderId={purchaseOrderId:D}&origin=purchase-order-dashboard";
+
+    private static string BuildBillHref(Guid purchaseOrderId) =>
+        $"/documents/bill/draft-editor?purchaseOrderId={purchaseOrderId:D}&origin=purchase-order-dashboard";
+
+    private sealed record PurchaseOrderRow(ShellAccountingSourceDocumentBrowserItem Item, string VendorName);
+}

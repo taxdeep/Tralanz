@@ -258,6 +258,7 @@ builder.Services.AddSingleton<InventoryTransferWorkflow>();
 builder.Services.AddSingleton<InventoryAdjustmentWorkflow>();
 builder.Services.AddSingleton<InventoryManufacturingWorkflow>();
 builder.Services.AddSingleton<ShellTaxCodeLookupService>();
+builder.Services.AddSingleton<ShellCompanyNumberingClient>();
 builder.Services.AddSingleton<ShellCompanyTaxSetupClient>();
 builder.Services.AddSingleton<ShellCompanyAccountCatalogClient>();
 builder.Services.AddSingleton<ShellInventoryFoundationClient>();

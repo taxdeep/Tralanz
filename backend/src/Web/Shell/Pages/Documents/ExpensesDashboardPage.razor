@@ -1,0 +1,382 @@
+@page "/ap/expenses"
+@using Web.Business.AP.SettlementLookup
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellAccountingDocumentBrowserClient BrowserClient
+@inject IApSettlementLookupService Vendors
+
+<PageTitle>Expenses</PageTitle>
+
+<div class="expense-dashboard">
+    <section class="expense-dashboard__hero">
+        <div>
+            <a class="expense-dashboard__back-link" href="/">Back to shell</a>
+            <div class="expense-dashboard__eyebrow">
+                <span>AP workspace</span>
+                <span>Direct spend lane</span>
+            </div>
+            <h1>Expenses</h1>
+            <p>
+                Keep direct spend separate from vendor bills and procurement. Expenses start from payee/payment context, while purchase orders and bills stay in their own AP lanes.
+            </p>
+        </div>
+        <div class="expense-dashboard__hero-actions">
+            <a class="ant-btn" href="/documents/source-browser?sourceType=bill&counterpartyRole=vendor">Bill source browser</a>
+            <a class="ant-btn" href="/company/bank-and-cash-setup">Bank & cash</a>
+            <a class="ant-btn ant-btn-primary @(WritesBlocked ? "ant-btn-disabled" : string.Empty)"
+               href="@(WritesBlocked ? null : "/documents/bill/draft-editor?origin=expense")"
+               aria-disabled="@WritesBlocked">
+                New expense
+            </a>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="ant-alert ant-alert-warning expense-dashboard__alert">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+            <span>@_error</span>
+        </div>
+    }
+
+    @if (WritesBlocked)
+    {
+        <div class="ant-alert ant-alert-warning expense-dashboard__alert">
+            <i class="ti ti-lock" aria-hidden="true"></i>
+            <span>@ShellState.WriteBlockMessage</span>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="expense-dashboard__loading">
+            <div class="expense-dashboard__loading-bar"></div>
+            <span>Loading AP expense lane...</span>
+        </div>
+    }
+    else
+    {
+        <section class="expense-dashboard__stage-strip" aria-label="Expense lane summary">
+            <article class="expense-dashboard__stage-card">
+                <span>Recent AP entries</span>
+                <strong>@Rows.Count.ToString("N0")</strong>
+                <small>Expense and bill source surface</small>
+            </article>
+            <article class="expense-dashboard__stage-card expense-dashboard__stage-card--green">
+                <span>Posted</span>
+                <strong>@StatusCount("posted").ToString("N0")</strong>
+                <small>Formal payable truth</small>
+            </article>
+            <article class="expense-dashboard__stage-card expense-dashboard__stage-card--amber">
+                <span>Submitted</span>
+                <strong>@StatusCount("submitted").ToString("N0")</strong>
+                <small>Awaiting post/review</small>
+            </article>
+            <article class="expense-dashboard__stage-card expense-dashboard__stage-card--blue">
+                <span>Open amount</span>
+                <strong>@FormatCurrency(TotalAmount)</strong>
+                <small>Current filtered total</small>
+            </article>
+        </section>
+
+        <section class="expense-dashboard__lane">
+            <div class="expense-dashboard__lane-copy">
+                <div class="expense-dashboard__lane-icon">
+                    <i class="ti ti-receipt-2" aria-hidden="true"></i>
+                </div>
+                <div>
+                    <h2>Expense to AP boundary</h2>
+                    <p>Use expense for direct operating spend. Use bill when vendor obligations need payable review. Use PO when procurement demand must govern quantity, receipt, and bill anchors.</p>
+                </div>
+            </div>
+            <div class="expense-dashboard__lane-steps" aria-label="Expense workflow">
+                <span class="expense-dashboard__lane-step expense-dashboard__lane-step--active">Payee</span>
+                <span class="expense-dashboard__lane-step">Payment</span>
+                <span class="expense-dashboard__lane-step">Category</span>
+                <span class="expense-dashboard__lane-step">Tax</span>
+                <span class="expense-dashboard__lane-step">Post</span>
+            </div>
+        </section>
+
+        <section class="expense-dashboard__toolbar">
+            <label class="expense-dashboard__search">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input class="ant-input" placeholder="Search payee, reference, status, currency..." @bind="_searchText" @bind:event="oninput" />
+            </label>
+            <div class="expense-dashboard__filters">
+                <select class="ant-input" @bind="_statusFilter">
+                    <option value="all">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="posted">Posted</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+                <select class="ant-input" @bind="_vendorFilter">
+                    <option value="all">All payees/vendors</option>
+                    @foreach (var vendor in _vendorOptions)
+                    {
+                        <option value="@vendor.Id.ToString("D")">@vendor.DisplayLabel</option>
+                    }
+                </select>
+                <span>@FilteredRows.Count entry(s)</span>
+            </div>
+        </section>
+
+        <section class="expense-dashboard__table-card">
+            <table class="ant-table expense-dashboard__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Expense / AP entry</th>
+                        <th>Payee</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Due / clear</th>
+                        <th>Currency</th>
+                        <th>Amount</th>
+                        <th>Reference</th>
+                        <th>Next move</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    @if (FilteredRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="10">
+                                <div class="expense-dashboard__empty">
+                                    <i class="ti ti-receipt-off" aria-hidden="true"></i>
+                                    <strong>No expense entries matched this view.</strong>
+                                    <span>Create a new expense, or adjust the filters.</span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="expense-dashboard__entry-link" href="@BuildEntryHref(row.Item)">
+                                        @DisplayDocumentNumber(row.Item)
+                                    </a>
+                                    <div class="expense-dashboard__subtext">@row.Item.EntityNumber</div>
+                                </td>
+                                <td>@row.PayeeName</td>
+                                <td>
+                                    <span class="@BuildStatusClass(row.Item.Status)">
+                                        @FormatStatus(row.Item.Status)
+                                    </span>
+                                </td>
+                                <td>@row.Item.DocumentDate.ToString("yyyy-MM-dd")</td>
+                                <td>@FormatOptionalDate(row.Item.DueDate)</td>
+                                <td>@DisplayCurrency(row.Item)</td>
+                                <td>@FormatCurrency(row.Item.TotalAmount)</td>
+                                <td>@DisplayOptional(row.Item.VendorReference)</td>
+                                <td>@BuildNextMove(row.Item)</td>
+                                <td>
+                                    <a class="expense-dashboard__row-action" href="@BuildEntryHref(row.Item)">Open</a>
+                                    @if (CanPay(row.Item))
+                                    {
+                                        <span class="expense-dashboard__action-separator">|</span>
+                                        <a class="expense-dashboard__row-action" href="/ap/pay-bill">Pay</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ShellAccountingSourceDocumentBrowserItem> _entries = Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+    private IReadOnlyList<(Guid Id, string DisplayLabel, string CurrencyCode)> _vendorOptions = Array.Empty<(Guid Id, string DisplayLabel, string CurrencyCode)>();
+    private string _searchText = string.Empty;
+    private string _statusFilter = "all";
+    private string _vendorFilter = "all";
+    private string? _error;
+    private bool _isLoading = true;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private IReadOnlyList<ExpenseRow> Rows =>
+        _entries
+            .OrderByDescending(static item => item.DocumentDate)
+            .ThenBy(static item => item.DisplayNumber)
+            .Select(item => new ExpenseRow(item, ResolvePayeeName(item.CounterpartyId, item.CounterpartyDisplayName)))
+            .ToArray();
+
+    private IReadOnlyList<ExpenseRow> FilteredRows =>
+        Rows.Where(MatchesFilters).ToArray();
+
+    private decimal TotalAmount => FilteredRows.Sum(static row => row.Item.TotalAmount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _error = null;
+            var companyId = ShellState.ActiveCompany.Id;
+            _vendorOptions = await Vendors.ListVendorsAsync(companyId, CancellationToken.None);
+
+            var documentsResult = await BrowserClient.GetDocumentsAsync(
+                companyId,
+                "bill",
+                "vendor",
+                null,
+                200,
+                CancellationToken.None);
+
+            if (await SessionExpirationCoordinator.HandleAuthenticatedApiResultAsync(documentsResult, CancellationToken.None))
+            {
+                return;
+            }
+
+            _entries = documentsResult.Value ?? Array.Empty<ShellAccountingSourceDocumentBrowserItem>();
+            if (!string.IsNullOrWhiteSpace(documentsResult.ErrorMessage))
+            {
+                _error = documentsResult.ErrorMessage;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private bool MatchesFilters(ExpenseRow row)
+    {
+        if (!string.Equals(_statusFilter, "all", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(row.Item.Status, _statusFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(_vendorFilter, "all", StringComparison.OrdinalIgnoreCase) &&
+            (!row.Item.CounterpartyId.HasValue ||
+             !string.Equals(row.Item.CounterpartyId.Value.ToString("D"), _vendorFilter, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var query = _searchText.Trim();
+        if (query.Length == 0)
+        {
+            return true;
+        }
+
+        return Contains(row.Item.DisplayNumber, query) ||
+               Contains(row.Item.EntityNumber, query) ||
+               Contains(row.PayeeName, query) ||
+               Contains(row.Item.Status, query) ||
+               Contains(row.Item.TransactionCurrencyCode, query) ||
+               Contains(row.Item.BaseCurrencyCode, query) ||
+               Contains(row.Item.VendorReference, query);
+    }
+
+    private int StatusCount(string status) =>
+        Rows.Count(row => string.Equals(row.Item.Status, status, StringComparison.OrdinalIgnoreCase));
+
+    private string ResolvePayeeName(Guid? counterpartyId, string? fallback)
+    {
+        if (counterpartyId.HasValue)
+        {
+            var vendor = _vendorOptions.FirstOrDefault(item => item.Id == counterpartyId.Value);
+            if (!string.IsNullOrWhiteSpace(vendor.DisplayLabel))
+            {
+                return vendor.DisplayLabel;
+            }
+        }
+
+        return DisplayOptional(fallback, "Unmatched payee");
+    }
+
+    private static bool Contains(string? value, string query) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private static string DisplayDocumentNumber(ShellAccountingSourceDocumentBrowserItem item) =>
+        !string.IsNullOrWhiteSpace(item.DisplayNumber) ? item.DisplayNumber : item.Id.ToString("N")[..8].ToUpperInvariant();
+
+    private static string DisplayCurrency(ShellAccountingSourceDocumentBrowserItem item) =>
+        !string.IsNullOrWhiteSpace(item.TransactionCurrencyCode)
+            ? item.TransactionCurrencyCode
+            : !string.IsNullOrWhiteSpace(item.BaseCurrencyCode)
+                ? item.BaseCurrencyCode
+                : "-";
+
+    private static string DisplayOptional(string? value, string fallback = "-") =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value;
+
+    private static string FormatOptionalDate(DateOnly? value) =>
+        value.HasValue ? value.Value.ToString("yyyy-MM-dd") : "-";
+
+    private static string FormatCurrency(decimal value) =>
+        value == 0m ? "0.00" : value.ToString("N2");
+
+    private static string FormatStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "submitted" => "Submitted",
+        "posted" => "Posted",
+        "cancelled" => "Cancelled",
+        _ => string.IsNullOrWhiteSpace(status) ? "Review" : status
+    };
+
+    private static string BuildStatusClass(string status) => status switch
+    {
+        "posted" => "expense-dashboard__status expense-dashboard__status--green",
+        "submitted" => "expense-dashboard__status expense-dashboard__status--amber",
+        "draft" => "expense-dashboard__status expense-dashboard__status--blue",
+        "cancelled" => "expense-dashboard__status expense-dashboard__status--muted",
+        _ => "expense-dashboard__status"
+    };
+
+    private static string BuildNextMove(ShellAccountingSourceDocumentBrowserItem item) => item.Status switch
+    {
+        "draft" => "Complete payee/category and submit",
+        "submitted" => item.BillReceiptAllowsPost == false ? "Resolve receipt/posting gate" : "Post AP truth",
+        "posted" => "Pay or reconcile cash",
+        "cancelled" => "Read-only review",
+        _ => "Review AP lane"
+    };
+
+    private static string BuildEntryHref(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.Status, "draft", StringComparison.OrdinalIgnoreCase)
+            ? $"/documents/bill/draft-editor?draftId={item.Id:D}&origin=expense"
+            : $"/documents/bill/{item.Id:D}";
+
+    private static bool CanPay(ShellAccountingSourceDocumentBrowserItem item) =>
+        string.Equals(item.Status, "posted", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record ExpenseRow(ShellAccountingSourceDocumentBrowserItem Item, string PayeeName);
+}

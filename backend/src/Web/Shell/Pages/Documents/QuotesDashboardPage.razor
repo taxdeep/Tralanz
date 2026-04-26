@@ -1,0 +1,370 @@
+@page "/ar/quotes"
+@using Web.Business.AR.SettlementLookup
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellSalesCommercialDocumentClient CommercialDocuments
+@inject IArSettlementLookupService Customers
+
+<PageTitle>Quotes</PageTitle>
+
+<div class="quotes-dashboard">
+    <section class="quotes-dashboard__hero">
+        <div>
+            <a class="quotes-dashboard__back-link" href="/">Back to shell</a>
+            <div class="quotes-dashboard__eyebrow">
+                <span>AR workspace</span>
+                <span>Offer lane</span>
+            </div>
+            <h1>Quotes</h1>
+            <p>
+                Shape customer-facing offer truth before it becomes committed demand. Quotes stay outside JE, shipment, and invoice truth until they are accepted and converted.
+            </p>
+        </div>
+        <div class="quotes-dashboard__hero-actions">
+            <a class="ant-btn" href="/documents/source-browser?sourceType=quote">Source browser</a>
+            <a class="ant-btn" href="/documents/source-browser?sourceType=sales_order">Sales orders</a>
+            <a class="ant-btn ant-btn-primary @(WritesBlocked ? "ant-btn-disabled" : string.Empty)"
+               href="@(WritesBlocked ? null : "/documents/quote/draft-editor")"
+               aria-disabled="@WritesBlocked">
+                New quote
+            </a>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="ant-alert ant-alert-warning quotes-dashboard__alert">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+            <span>@_error</span>
+        </div>
+    }
+
+    @if (WritesBlocked)
+    {
+        <div class="ant-alert ant-alert-warning quotes-dashboard__alert">
+            <i class="ti ti-lock" aria-hidden="true"></i>
+            <span>@ShellState.WriteBlockMessage</span>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="quotes-dashboard__loading">
+            <div class="quotes-dashboard__loading-bar"></div>
+            <span>Loading quote lane...</span>
+        </div>
+    }
+    else
+    {
+        <section class="quotes-dashboard__stage-strip" aria-label="Quote lane summary">
+            <article class="quotes-dashboard__stage-card">
+                <span>Total quotes</span>
+                <strong>@Rows.Count.ToString("N0")</strong>
+                <small>@BaseCurrencyCode base company</small>
+            </article>
+            <article class="quotes-dashboard__stage-card">
+                <span>Draft</span>
+                <strong>@DraftCount.ToString("N0")</strong>
+                <small>Offer still being shaped</small>
+            </article>
+            <article class="quotes-dashboard__stage-card quotes-dashboard__stage-card--blue">
+                <span>Accepted</span>
+                <strong>@AcceptedCount.ToString("N0")</strong>
+                <small>Ready to become SO demand</small>
+            </article>
+            <article class="quotes-dashboard__stage-card quotes-dashboard__stage-card--green">
+                <span>Converted</span>
+                <strong>@ConvertedCount.ToString("N0")</strong>
+                <small>Demand hand-off created</small>
+            </article>
+            <article class="quotes-dashboard__stage-card quotes-dashboard__stage-card--amber">
+                <span>Expiring soon</span>
+                <strong>@ExpiringSoonCount.ToString("N0")</strong>
+                <small>Due inside 7 days</small>
+            </article>
+        </section>
+
+        <section class="quotes-dashboard__lane">
+            <div class="quotes-dashboard__lane-copy">
+                <div class="quotes-dashboard__lane-icon">
+                    <i class="ti ti-file-text-ai" aria-hidden="true"></i>
+                </div>
+                <div>
+                    <h2>Quote to sales order boundary</h2>
+                    <p>Quote is commercial intent. Sales order is operational demand. Invoice remains AR truth, so the quote page should never blend directly into posting.</p>
+                </div>
+            </div>
+            <div class="quotes-dashboard__lane-steps" aria-label="Quote workflow">
+                <span class="quotes-dashboard__lane-step quotes-dashboard__lane-step--active">Draft</span>
+                <span class="quotes-dashboard__lane-step">Accepted</span>
+                <span class="quotes-dashboard__lane-step">Converted to SO</span>
+                <span class="quotes-dashboard__lane-step">Shipment / Invoice later</span>
+            </div>
+        </section>
+
+        <section class="quotes-dashboard__toolbar">
+            <label class="quotes-dashboard__search">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input class="ant-input" placeholder="Search quote, customer, status, currency..." @bind="_searchText" @bind:event="oninput" />
+            </label>
+            <div class="quotes-dashboard__filters">
+                <select class="ant-input" @bind="_statusFilter">
+                    <option value="all">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="converted">Converted</option>
+                </select>
+                <span>@FilteredRows.Count quote(s)</span>
+            </div>
+        </section>
+
+        <section class="quotes-dashboard__table-card">
+            <table class="ant-table quotes-dashboard__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Quote</th>
+                        <th>Customer</th>
+                        <th>Status</th>
+                        <th>Quote date</th>
+                        <th>Expires</th>
+                        <th>Lines</th>
+                        <th>Total</th>
+                        <th>Next move</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    @if (FilteredRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9">
+                                <div class="quotes-dashboard__empty">
+                                    <i class="ti ti-file-search" aria-hidden="true"></i>
+                                    <strong>No quotes matched this view.</strong>
+                                    <span>Create a quote from the offer workbench, or adjust the filters.</span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="quotes-dashboard__quote-link" href="@BuildQuoteHref(row.Quote.Id)">
+                                        @row.Quote.DisplayNumber
+                                    </a>
+                                    <div class="quotes-dashboard__subtext">@row.Quote.EntityNumber</div>
+                                </td>
+                                <td>
+                                    <a class="quotes-dashboard__customer-link" href="@BuildCustomerHref(row.Quote.CustomerId)">
+                                        @row.CustomerName
+                                    </a>
+                                </td>
+                                <td>
+                                    <span class="@BuildStatusClass(row.Quote.Status)">
+                                        @FormatStatus(row.Quote.Status)
+                                    </span>
+                                </td>
+                                <td>@row.Quote.DocumentDate.ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    <span class="@BuildExpiryClass(row.Quote.ExpiresOn)">
+                                        @FormatExpiry(row.Quote.ExpiresOn)
+                                    </span>
+                                </td>
+                                <td>@row.Quote.LineCount.ToString("N0")</td>
+                                <td>@FormatMoney(row.Quote.TotalAmount, row.Quote.TransactionCurrencyCode)</td>
+                                <td>@BuildNextMove(row.Quote)</td>
+                                <td>
+                                    <a class="quotes-dashboard__row-action" href="@BuildQuoteHref(row.Quote.Id)">Open</a>
+                                    @if (string.Equals(row.Quote.Status, "accepted", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="quotes-dashboard__action-separator">|</span>
+                                        <a class="quotes-dashboard__row-action" href="@BuildQuoteHref(row.Quote.Id)">Convert</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ShellSalesCommercialDocumentSummary> _quotes = Array.Empty<ShellSalesCommercialDocumentSummary>();
+    private IReadOnlyDictionary<Guid, string> _customerNames = new Dictionary<Guid, string>();
+    private string _searchText = string.Empty;
+    private string _statusFilter = "all";
+    private string? _error;
+    private bool _isLoading = true;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+    private string BaseCurrencyCode => ShellState.ActiveCompany.BaseCurrencyCode;
+    private IReadOnlyList<QuoteRow> Rows => _quotes
+        .Select(quote => new QuoteRow(quote, ResolveCustomerName(quote.CustomerId)))
+        .OrderByDescending(static row => row.Quote.UpdatedAt)
+        .ThenByDescending(static row => row.Quote.DocumentDate)
+        .ToArray();
+
+    private IReadOnlyList<QuoteRow> FilteredRows => Rows
+        .Where(MatchesStatus)
+        .Where(MatchesSearch)
+        .ToArray();
+
+    private int DraftCount => Rows.Count(static row => IsStatus(row.Quote, "draft"));
+    private int AcceptedCount => Rows.Count(static row => IsStatus(row.Quote, "accepted"));
+    private int ConvertedCount => Rows.Count(static row => IsStatus(row.Quote, "converted"));
+    private int ExpiringSoonCount => Rows.Count(static row => IsExpiringSoon(row.Quote.ExpiresOn));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync(CancellationToken.None);
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe, CancellationToken.None))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _error = null;
+            _quotes = await CommercialDocuments.ListAsync(ShellState.ActiveCompany.Id, "quote", take: 200, cancellationToken: CancellationToken.None);
+            var customers = await Customers.ListCustomersAsync(ShellState.ActiveCompany.Id, CancellationToken.None);
+            _customerNames = customers.ToDictionary(static customer => customer.Id, static customer => customer.DisplayLabel);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private bool MatchesStatus(QuoteRow row) =>
+        string.Equals(_statusFilter, "all", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(row.Quote.Status, _statusFilter, StringComparison.OrdinalIgnoreCase);
+
+    private bool MatchesSearch(QuoteRow row)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            return true;
+        }
+
+        var text = _searchText.Trim();
+        return Contains(row.Quote.DisplayNumber, text) ||
+            Contains(row.Quote.EntityNumber, text) ||
+            Contains(row.CustomerName, text) ||
+            Contains(row.Quote.Status, text) ||
+            Contains(row.Quote.TransactionCurrencyCode, text);
+    }
+
+    private string ResolveCustomerName(Guid customerId) =>
+        _customerNames.TryGetValue(customerId, out var name) ? name : customerId.ToString("D");
+
+    private static bool IsStatus(ShellSalesCommercialDocumentSummary quote, string status) =>
+        string.Equals(quote.Status, status, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsExpiringSoon(DateOnly? expiresOn)
+    {
+        if (!expiresOn.HasValue)
+        {
+            return false;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return expiresOn.Value >= today && expiresOn.Value <= today.AddDays(7);
+    }
+
+    private static bool Contains(string? value, string searchText) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatMoney(decimal amount, string currencyCode) =>
+        $"{currencyCode} {amount:N2}";
+
+    private static string FormatStatus(string status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "Unknown"
+            : string.Join(' ', status.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(static part => char.ToUpperInvariant(part[0]) + part[1..]));
+
+    private static string FormatExpiry(DateOnly? expiresOn)
+    {
+        if (!expiresOn.HasValue)
+        {
+            return "No expiry";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (expiresOn.Value < today)
+        {
+            return $"Expired {expiresOn.Value:yyyy-MM-dd}";
+        }
+
+        return expiresOn.Value == today
+            ? "Expires today"
+            : expiresOn.Value.ToString("yyyy-MM-dd");
+    }
+
+    private static string BuildNextMove(ShellSalesCommercialDocumentSummary quote) =>
+        quote.Status.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Review and accept quote",
+            "accepted" => "Convert to sales order",
+            "converted" => "Continue from sales order lane",
+            _ => "Open quote workbench"
+        };
+
+    private static string BuildStatusClass(string status) =>
+        status.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "quotes-dashboard__status quotes-dashboard__status--draft",
+            "accepted" => "quotes-dashboard__status quotes-dashboard__status--accepted",
+            "converted" => "quotes-dashboard__status quotes-dashboard__status--converted",
+            _ => "quotes-dashboard__status"
+        };
+
+    private static string BuildExpiryClass(DateOnly? expiresOn)
+    {
+        if (!expiresOn.HasValue)
+        {
+            return "quotes-dashboard__expiry";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return expiresOn.Value < today
+            ? "quotes-dashboard__expiry quotes-dashboard__expiry--expired"
+            : expiresOn.Value <= today.AddDays(7)
+                ? "quotes-dashboard__expiry quotes-dashboard__expiry--soon"
+                : "quotes-dashboard__expiry";
+    }
+
+    private static string BuildQuoteHref(Guid quoteId) =>
+        $"/documents/quote/draft-editor?draftId={quoteId:D}";
+
+    private static string BuildCustomerHref(Guid customerId) =>
+        $"/ar/customers/{customerId:D}";
+
+    private sealed record QuoteRow(ShellSalesCommercialDocumentSummary Quote, string CustomerName);
+}

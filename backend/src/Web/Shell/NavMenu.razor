@@ -23,10 +23,12 @@
                         <h3 class="bz-create-menu__column-title">Customer</h3>
                         @if (WritesBlocked)
                         {
+                            <span class="bz-create-menu__item bz-create-menu__item--disabled" title="@ShellState.WriteBlockMessage">New Quote</span>
                             <span class="bz-create-menu__item bz-create-menu__item--disabled" title="@ShellState.WriteBlockMessage">New Invoice</span>
                         }
                         else
                         {
+                            <a class="bz-create-menu__item" href="/documents/quote/draft-editor" @onclick="CloseCreateMenu">New Quote</a>
                             <a class="bz-create-menu__item" href="/documents/invoice/draft-editor" @onclick="CloseCreateMenu">New Invoice</a>
                         }
                         <a class="bz-create-menu__item" href="/ar/receive-payment" @onclick="CloseCreateMenu">Receive Payment</a>
@@ -100,7 +102,7 @@
                         <i class="ti ti-receipt-2 bz-sidebar-nav__icon" aria-hidden="true"></i>
                         <span>Sales Transactions</span>
                     </NavLink>
-                    <NavLink href="/documents/source-browser?sourceType=quote" class="bz-sidebar-nav__link">
+                    <NavLink href="/ar/quotes" class="bz-sidebar-nav__link">
                         <i class="ti ti-file-text-ai bz-sidebar-nav__icon" aria-hidden="true"></i>
                         <span>Quotes</span>
                     </NavLink>
@@ -128,15 +130,15 @@
             @if (_expenseExpanded)
             {
                 <div class="bz-sidebar-nav__items">
-                    <NavLink href="/documents/bill/draft-editor?origin=expense" class="bz-sidebar-nav__link">
+                    <NavLink href="/ap/expenses" class="bz-sidebar-nav__link">
                         <i class="ti ti-file-description bz-sidebar-nav__icon" aria-hidden="true"></i>
-                        <span>New Expense</span>
+                        <span>Expenses</span>
                     </NavLink>
                     <NavLink href="/ap/vendors" class="bz-sidebar-nav__link">
                         <i class="ti ti-building-store bz-sidebar-nav__icon" aria-hidden="true"></i>
                         <span>Vendors</span>
                     </NavLink>
-                    <NavLink href="/documents/source-browser?sourceType=purchase_order" class="bz-sidebar-nav__link">
+                    <NavLink href="/ap/purchase-orders" class="bz-sidebar-nav__link">
                         <i class="ti ti-clipboard-list bz-sidebar-nav__icon" aria-hidden="true"></i>
                         <span>Purchase Orders</span>
                     </NavLink>
@@ -202,6 +204,10 @@
                     <NavLink href="/company/tax-setup" class="bz-sidebar-nav__link">
                         <i class="ti ti-percentage bz-sidebar-nav__icon" aria-hidden="true"></i>
                         <span>Tax Setup</span>
+                    </NavLink>
+                    <NavLink href="/company/numbering" class="bz-sidebar-nav__link">
+                        <i class="ti ti-file-barcode bz-sidebar-nav__icon" aria-hidden="true"></i>
+                        <span>Numbering</span>
                     </NavLink>
                     <NavLink href="/company/membership-permissions" class="bz-sidebar-nav__link">
                         <i class="ti ti-users bz-sidebar-nav__icon" aria-hidden="true"></i>

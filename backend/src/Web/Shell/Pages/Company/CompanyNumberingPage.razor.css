@@ -1,0 +1,358 @@
+.company-numbering {
+    min-height: calc(100vh - 72px);
+    padding: 1.75rem 2rem 2.5rem;
+    background:
+        radial-gradient(circle at 18% 0%, rgba(22, 119, 255, 0.12), transparent 32rem),
+        linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+    color: #17202a;
+}
+
+.company-numbering__hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.company-numbering__back-link,
+.company-numbering__eyebrow {
+    color: #1677ff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.company-numbering__back-link {
+    display: inline-flex;
+    margin-bottom: 0.6rem;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.company-numbering h1 {
+    margin: 0.15rem 0 0;
+    color: #111827;
+    font-size: 2rem;
+    font-weight: 850;
+    letter-spacing: -0.03em;
+}
+
+.company-numbering p {
+    max-width: 52rem;
+    margin: 0.5rem 0 0;
+    color: #64748b;
+}
+
+.company-numbering__identity-card {
+    min-width: 18rem;
+    padding: 1rem 1.2rem;
+    border: 1px solid #dce6f0;
+    border-radius: 1.1rem;
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.company-numbering__identity-card span,
+.company-numbering__identity-card em {
+    display: block;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-style: normal;
+}
+
+.company-numbering__identity-card strong {
+    display: block;
+    margin: 0.18rem 0;
+    color: #111827;
+    font-size: 1rem;
+}
+
+.company-numbering__principles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.company-numbering__principles article {
+    display: flex;
+    gap: 0.9rem;
+    min-height: 7rem;
+    padding: 1rem;
+    border: 1px solid #dbe7f1;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.76);
+}
+
+.company-numbering__principles i {
+    display: inline-grid;
+    place-items: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 0.8rem;
+    background: #e6f4ff;
+    color: #1677ff;
+    font-size: 1.25rem;
+}
+
+.company-numbering__principles span {
+    color: #64748b;
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.company-numbering__principles strong {
+    display: block;
+    margin-top: 0.15rem;
+    color: #111827;
+}
+
+.company-numbering__principles p {
+    margin-top: 0.25rem;
+    font-size: 0.84rem;
+}
+
+.company-numbering__alert {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    margin: 0.9rem 0;
+    padding: 0.75rem 1rem;
+}
+
+.company-numbering__loading {
+    display: grid;
+    gap: 0.8rem;
+    margin-top: 1.5rem;
+    color: #64748b;
+}
+
+.company-numbering__loading-bar {
+    width: 100%;
+    height: 0.28rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1677ff, #52c41a, #1677ff);
+    background-size: 200% 100%;
+    animation: company-numbering-loading 1.2s linear infinite;
+}
+
+@keyframes company-numbering-loading {
+    from { background-position: 0% 0; }
+    to { background-position: 200% 0; }
+}
+
+.company-numbering__toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin: 1.2rem 0 0.75rem;
+}
+
+.company-numbering__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: min(100%, 34rem);
+}
+
+.company-numbering__search i {
+    position: absolute;
+    left: 0.75rem;
+    color: #64748b;
+}
+
+.company-numbering__search input {
+    padding-left: 2.2rem;
+}
+
+.company-numbering__toolbar-meta {
+    display: flex;
+    gap: 0.7rem;
+    align-items: center;
+    color: #64748b;
+}
+
+.company-numbering__table-card {
+    border: 1px solid #dbe3ec;
+    border-radius: 1rem;
+    background: #fff;
+    overflow: auto;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+}
+
+.company-numbering__table {
+    width: 100%;
+    min-width: 1120px;
+    border-collapse: collapse;
+}
+
+.company-numbering__table th {
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid #dbe3ec;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.company-numbering__table td {
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid #edf2f7;
+    color: #334155;
+    vertical-align: middle;
+}
+
+.company-numbering__table tr:hover td {
+    background: #f8fbff;
+}
+
+.company-numbering__module strong,
+.company-numbering__module span {
+    display: block;
+}
+
+.company-numbering__module span {
+    margin-top: 0.12rem;
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.company-numbering code {
+    padding: 0.18rem 0.38rem;
+    border-radius: 0.45rem;
+    background: #eef4fb;
+    color: #475569;
+    font-size: 0.78rem;
+}
+
+.company-numbering__prefix {
+    width: 8rem;
+}
+
+.company-numbering__number {
+    width: 5.5rem;
+}
+
+.company-numbering__next {
+    width: 8rem;
+}
+
+.company-numbering__preview {
+    display: inline-flex;
+    min-width: 8.5rem;
+    padding: 0.38rem 0.65rem;
+    border: 1px solid #b7d6ff;
+    border-radius: 999px;
+    background: #edf6ff;
+    color: #0958d9;
+    font-weight: 800;
+}
+
+.company-numbering__toggle {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    color: #334155;
+}
+
+.company-numbering__runtime {
+    width: fit-content;
+    margin-top: 0.32rem;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.company-numbering__runtime--live {
+    background: #e8f9ef;
+    color: #16803a;
+}
+
+.company-numbering__runtime--planned {
+    background: #fff7e6;
+    color: #ad6800;
+}
+
+.company-numbering__empty {
+    padding: 2rem;
+    text-align: center;
+    color: #64748b;
+}
+
+.bz-shell--dark .company-numbering {
+    background:
+        radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.14), transparent 34rem),
+        linear-gradient(180deg, #0b1220 0%, #101827 100%);
+    color: #e5edf7;
+}
+
+.bz-shell--dark .company-numbering h1,
+.bz-shell--dark .company-numbering__identity-card strong,
+.bz-shell--dark .company-numbering__principles strong {
+    color: #f8fafc;
+}
+
+.bz-shell--dark .company-numbering p,
+.bz-shell--dark .company-numbering__identity-card span,
+.bz-shell--dark .company-numbering__identity-card em,
+.bz-shell--dark .company-numbering__principles p,
+.bz-shell--dark .company-numbering__toolbar-meta,
+.bz-shell--dark .company-numbering__module span {
+    color: #9fb1c7;
+}
+
+.bz-shell--dark .company-numbering__identity-card,
+.bz-shell--dark .company-numbering__principles article,
+.bz-shell--dark .company-numbering__table-card {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(15, 23, 42, 0.78);
+    box-shadow: none;
+}
+
+.bz-shell--dark .company-numbering__table th {
+    border-color: rgba(148, 163, 184, 0.2);
+    background: #111827;
+    color: #cbd5e1;
+}
+
+.bz-shell--dark .company-numbering__table td {
+    border-color: rgba(148, 163, 184, 0.14);
+    color: #dbe7f4;
+}
+
+.bz-shell--dark .company-numbering__table tr:hover td {
+    background: rgba(30, 41, 59, 0.65);
+}
+
+.bz-shell--dark .company-numbering code {
+    background: rgba(30, 41, 59, 0.9);
+    color: #bfdbfe;
+}
+
+.bz-shell--dark .company-numbering__preview {
+    border-color: rgba(96, 165, 250, 0.45);
+    background: rgba(30, 64, 175, 0.24);
+    color: #bfdbfe;
+}
+
+@media (max-width: 980px) {
+    .company-numbering {
+        padding: 1.25rem;
+    }
+
+    .company-numbering__hero,
+    .company-numbering__toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .company-numbering__principles {
+        grid-template-columns: 1fr;
+    }
+}

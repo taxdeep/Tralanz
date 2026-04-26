@@ -17,16 +17,29 @@
 
 <PageTitle>Purchase Order Draft | Citus Web Shell</PageTitle>
 
-<div style="padding:2rem 2.25rem;color:#d9e2ea;">
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-        <MudButton Variant="Variant.Text" Href="/documents/source-browser?sourceType=purchase_order">Back</MudButton>
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">Purchase order draft</MudChip>
-    </div>
-
-    <h1 style="margin:0 0 .75rem 0;">Purchase Order Draft Editor</h1>
-    <p style="margin:0 0 1rem 0;color:#97a8b7;max-width:58rem;">
-        Create or amend ordered truth before approval, release, receipt, and bill anchors depend on the purchase order.
-    </p>
+<div class="po-entry">
+    <section class="po-entry__hero">
+        <div class="po-entry__hero-copy">
+            <a class="po-entry__back-link" href="/ap/purchase-orders">
+                <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                Purchase orders
+            </a>
+            <div class="po-entry__eyebrow">
+                <span>AP workspace</span>
+                <span>Purchase order draft</span>
+            </div>
+            <h1>Purchase order</h1>
+            <p>
+                Shape ordered vendor truth before approval, release, receipt, and bill anchors depend on the purchase order.
+            </p>
+        </div>
+        <aside class="po-entry__balance-card">
+            <div class="po-entry__stat-title">Estimated amount</div>
+            <div class="po-entry__stat-value">@EstimatedAmount.ToString("N2")</div>
+            <span>@(_saved?.Status ?? "New draft")</span>
+            <div class="po-entry__doc-number">@(_saved?.DisplayNumber ?? "Draft not saved")</div>
+        </aside>
+    </section>
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -44,7 +57,15 @@
         </MudAlert>
     }
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
+    <section class="po-entry__form-card">
+        <div class="po-entry__section-heading">
+            <div>
+                <span>1</span>
+                <h2>Vendor and ordered context</h2>
+            </div>
+            <p>UnitySearch keeps supplier matching, dropdown selection, and Add new vendor in the same clean procurement lane.</p>
+        </div>
+        <div class="po-entry__form-grid">
         <div>
             <MudText Typo="Typo.caption" Class="mb-1">Vendor</MudText>
             <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
@@ -63,32 +84,33 @@
         <MudDatePicker Label="Expected Date" Variant="Variant.Outlined" Date="@_expectedDatePicker" DateChanged="OnExpectedDateChanged" Disabled="@DraftMutationBlocked" />
         <MudTextField T="string" Label="Vendor Reference" Variant="Variant.Outlined" @bind-Value="_vendorReference" Disabled="@DraftMutationBlocked" />
         <MudTextField T="string" Label="Memo" Variant="Variant.Outlined" @bind-Value="_memo" Disabled="@DraftMutationBlocked" />
-    </div>
+        </div>
+    </section>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin-bottom:1rem;">
-        <MudPaper Class="pa-4" Elevation="0">
+    <section class="po-entry__metrics-grid">
+        <MudPaper Class="pa-4 po-entry__metric-card" Elevation="0">
             <MudText Typo="Typo.caption">Vendor Truth</MudText>
             <MudText Typo="Typo.h6">@(_vendorOptions.Count > 0 ? $"{_vendorOptions.Count} vendor option(s)" : "Missing")</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">PO drafts require a real vendor in the active company.</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 po-entry__metric-card" Elevation="0">
             <MudText Typo="Typo.caption">Item Truth</MudText>
             <MudText Typo="Typo.h6">@OperationalItems.Count</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">Active inventory-managed items available for PO lines.</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 po-entry__metric-card" Elevation="0">
             <MudText Typo="Typo.caption">Draft Status</MudText>
             <MudText Typo="Typo.h6">@(_saved?.Status ?? "New draft")</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@(_saved?.DisplayNumber ?? "Not saved yet")</MudText>
         </MudPaper>
-        <MudPaper Class="pa-4" Elevation="0">
+        <MudPaper Class="pa-4 po-entry__metric-card" Elevation="0">
             <MudText Typo="Typo.caption">Estimated Amount</MudText>
             <MudText Typo="Typo.h6">@EstimatedAmount.ToString("N2")</MudText>
             <MudText Typo="Typo.body2" Class="text-secondary">@($"{_lines.Count} line(s)")</MudText>
         </MudPaper>
-    </div>
+    </section>
 
-    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+    <MudPaper Class="pa-4 po-entry__section-card" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
             <div>
                 <MudText Typo="Typo.subtitle2">AP Procurement Chain</MudText>
@@ -98,24 +120,24 @@
             <MudChip T="string" Variant="Variant.Filled" Color="@PurchaseOrderLaneColor">@PurchaseOrderLaneBadge</MudChip>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;margin-top:1rem;">
-            <MudPaper Class="pa-3" Elevation="0">
+            <MudPaper Class="pa-3 po-entry__mini-card" Elevation="0">
                 <MudText Typo="Typo.caption">Current lane</MudText>
                 <MudText Typo="Typo.h6">@PurchaseOrderLaneCurrentStepTitle</MudText>
                 <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLaneCurrentStepSummary</MudText>
             </MudPaper>
-            <MudPaper Class="pa-3" Elevation="0">
+            <MudPaper Class="pa-3 po-entry__mini-card" Elevation="0">
                 <MudText Typo="Typo.caption">Next operator move</MudText>
                 <MudText Typo="Typo.h6">@PurchaseOrderLaneNextStepTitle</MudText>
                 <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLaneNextStepSummary</MudText>
             </MudPaper>
-            <MudPaper Class="pa-3" Elevation="0">
+            <MudPaper Class="pa-3 po-entry__mini-card" Elevation="0">
                 <MudText Typo="Typo.caption">Payables hand-off</MudText>
                 <MudText Typo="Typo.h6">@PurchaseOrderLanePayablesTitle</MudText>
                 <MudText Typo="Typo.body2" Class="text-secondary">@PurchaseOrderLanePayablesSummary</MudText>
             </MudPaper>
         </div>
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
-            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/documents/source-browser?sourceType=purchase_order">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/ap/purchase-orders">
                 Review Purchase Order Pipeline
             </MudButton>
             <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/documents/purchase-orders/approval-requests">
@@ -134,7 +156,7 @@
         </MudAlert>
     }
 
-    <MudPaper Class="pa-4" Elevation="0" Style="margin-bottom:1rem;">
+    <MudPaper Class="pa-4 po-entry__section-card po-entry__lines-card" Elevation="0" Style="margin-bottom:1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
             <MudText Typo="Typo.h6">Lines</MudText>
             <MudButton Variant="Variant.Outlined" Color="Color.Info" Disabled="@DraftMutationBlocked" OnClick="AddLine">Add line</MudButton>
@@ -176,7 +198,7 @@
         </MudTable>
     </MudPaper>
 
-    <MudPaper Class="pa-4" Elevation="0">
+    <MudPaper Class="pa-4 po-entry__action-card" Elevation="0">
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_saving || DraftMutationBlocked)" OnClick="SaveAsync">
                 @(_saving ? "Saving..." : "Save Purchase Order")
@@ -187,7 +209,7 @@
                     Open Detail
                 </MudButton>
             }
-            <MudButton Variant="Variant.Text" Color="Color.Default" Href="/documents/source-browser?sourceType=purchase_order">
+            <MudButton Variant="Variant.Text" Color="Color.Default" Href="/ap/purchase-orders">
                 Browse Purchase Orders
             </MudButton>
         </div>

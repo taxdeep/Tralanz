@@ -23,6 +23,38 @@
     --citus-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.bz-shell--dark {
+    --citus-bg: #0d1524;
+    --citus-bg-strong: #09111f;
+    --citus-surface: rgba(14, 25, 43, .94);
+    --citus-surface-muted: rgba(8, 17, 31, .82);
+    --citus-text: #dbe8f7;
+    --citus-text-muted: #94a8bf;
+    --citus-border-subtle: rgba(125, 184, 255, .16);
+    --citus-shadow-card: 0 18px 48px rgba(0, 0, 0, .28);
+    --citus-primary: #7cc4ff;
+    --citus-success: #6ee7b7;
+    --citus-warning: #f8c76d;
+    --citus-danger: #fca5a5;
+    --citus-info: #67e8f9;
+}
+
+.bz-shell--light {
+    --citus-bg: #f6f8fb;
+    --citus-bg-strong: #eef3f9;
+    --citus-surface: rgba(255, 255, 255, .96);
+    --citus-surface-muted: #f8fafc;
+    --citus-text: #172033;
+    --citus-text-muted: #667085;
+    --citus-border-subtle: rgba(31, 45, 61, .11);
+    --citus-shadow-card: 0 18px 42px rgba(15, 23, 42, .08);
+    --citus-primary: #1677ff;
+    --citus-success: #16a34a;
+    --citus-warning: #d48806;
+    --citus-danger: #dc2626;
+    --citus-info: #0891b2;
+}
+
 html,
 body {
     font-family: var(--citus-font);
@@ -133,6 +165,17 @@ body {
     color: var(--citus-text-muted);
 }
 
+.bz-shell--dark .bz-main .ant-table-thead > tr > th,
+.bz-shell--dark .bz-main table.ant-table th,
+.bz-shell--dark .bz-main .mud-table-root th {
+    color: #9fb2c8;
+    background: rgba(8, 17, 31, .92);
+}
+
+.bz-shell--dark .bz-main .mud-table-root td {
+    color: #dbe8f7;
+}
+
 /* Old dark pages remain readable while their inner controls adopt the Ant density. */
 .bz-main [style*="color:#d9e2ea"] .mud-paper,
 .bz-main [style*="color: #d9e2ea"] .mud-paper {
@@ -148,6 +191,274 @@ body {
 .bz-main [style*="color:#d9e2ea"] h1,
 .bz-main [style*="color: #d9e2ea"] h1 {
     color: #f8fbff;
+}
+
+/* Theme bridge for migrated page shells. Scoped page CSS intentionally owns layout;
+   this bridge only flips palette so light/dark mode does not look stitched together. */
+.bz-shell--dark .customer-dashboard,
+.bz-shell--dark .vendor-dashboard,
+.bz-shell--dark .customer-profile,
+.bz-shell--dark .vendor-profile,
+.bz-shell--dark .quotes-dashboard,
+.bz-shell--dark .po-dashboard {
+    background:
+        radial-gradient(circle at 12% -10%, rgba(37, 99, 235, .16), transparent 34rem),
+        linear-gradient(180deg, var(--citus-bg) 0%, var(--citus-bg-strong) 100%);
+    color: var(--citus-text);
+}
+
+.bz-shell--dark .customer-dashboard h1,
+.bz-shell--dark .vendor-dashboard h1,
+.bz-shell--dark .customer-profile h1,
+.bz-shell--dark .vendor-profile h1,
+.bz-shell--dark .quotes-dashboard h1,
+.bz-shell--dark .po-dashboard h1,
+.bz-shell--dark .quotes-dashboard h2,
+.bz-shell--dark .po-dashboard h2,
+.bz-shell--dark .customer-dashboard__stat-value,
+.bz-shell--dark .vendor-dashboard__stat-value,
+.bz-shell--dark .quotes-dashboard__stage-card strong,
+.bz-shell--dark .po-dashboard__stage-card strong {
+    color: #f8fbff;
+}
+
+.bz-shell--dark .customer-dashboard p,
+.bz-shell--dark .vendor-dashboard p,
+.bz-shell--dark .customer-profile p,
+.bz-shell--dark .vendor-profile p,
+.bz-shell--dark .quotes-dashboard p,
+.bz-shell--dark .po-dashboard p,
+.bz-shell--dark .customer-dashboard__stat-title,
+.bz-shell--dark .vendor-dashboard__stat-title,
+.bz-shell--dark .customer-dashboard__summary-card span,
+.bz-shell--dark .vendor-dashboard__summary-card span,
+.bz-shell--dark .quotes-dashboard__stage-card span,
+.bz-shell--dark .quotes-dashboard__stage-card small,
+.bz-shell--dark .po-dashboard__stage-card span,
+.bz-shell--dark .po-dashboard__stage-card small,
+.bz-shell--dark .customer-profile__rail-item span,
+.bz-shell--dark .vendor-profile__rail-item span,
+.bz-shell--dark .customer-profile__loading,
+.bz-shell--dark .vendor-profile__loading,
+.bz-shell--dark .customer-profile__missing,
+.bz-shell--dark .vendor-profile__missing {
+    color: var(--citus-text-muted);
+}
+
+.bz-shell--dark .customer-dashboard__summary-strip,
+.bz-shell--dark .vendor-dashboard__summary-strip,
+.bz-shell--dark .quotes-dashboard__stage-strip,
+.bz-shell--dark .po-dashboard__stage-strip,
+.bz-shell--dark .customer-dashboard__table-card,
+.bz-shell--dark .vendor-dashboard__table-card,
+.bz-shell--dark .quotes-dashboard__table-card,
+.bz-shell--dark .po-dashboard__table-card,
+.bz-shell--dark .customer-profile__hero,
+.bz-shell--dark .vendor-profile__hero,
+.bz-shell--dark .customer-profile__rail,
+.bz-shell--dark .vendor-profile__rail,
+.bz-shell--dark .customer-profile__table-card,
+.bz-shell--dark .vendor-profile__table-card {
+    border-color: var(--citus-border-subtle);
+    background: var(--citus-surface);
+    box-shadow: var(--citus-shadow-card);
+}
+
+.bz-shell--dark .customer-dashboard__summary-card,
+.bz-shell--dark .vendor-dashboard__summary-card,
+.bz-shell--dark .quotes-dashboard__stage-card,
+.bz-shell--dark .po-dashboard__stage-card,
+.bz-shell--dark .quotes-dashboard__lane,
+.bz-shell--dark .po-dashboard__lane {
+    border-color: var(--citus-border-subtle);
+    background: var(--citus-surface);
+}
+
+.bz-shell--dark .customer-profile__rail-item,
+.bz-shell--dark .vendor-profile__rail-item {
+    border-bottom-color: var(--citus-border-subtle);
+    color: var(--citus-text);
+}
+
+.bz-shell--dark .customer-profile__rail-item:hover,
+.bz-shell--dark .customer-profile__rail-item--active,
+.bz-shell--dark .vendor-profile__rail-item:hover,
+.bz-shell--dark .vendor-profile__rail-item--active {
+    background: rgba(125, 184, 255, .1);
+}
+
+.bz-shell--dark .customer-profile__avatar,
+.bz-shell--dark .vendor-profile__avatar {
+    color: #dbe8f7;
+    background: rgba(125, 184, 255, .14);
+}
+
+.bz-shell--dark .quotes-dashboard__lane-step,
+.bz-shell--dark .po-dashboard__lane-step {
+    border-color: var(--citus-border-subtle);
+    color: var(--citus-text-muted);
+    background: rgba(8, 17, 31, .72);
+}
+
+.bz-shell--dark .quotes-dashboard__table th,
+.bz-shell--dark .po-dashboard__table th,
+.bz-shell--dark .customer-dashboard__table th,
+.bz-shell--dark .vendor-dashboard__table th,
+.bz-shell--dark .customer-profile__table th,
+.bz-shell--dark .vendor-profile__table th {
+    color: #9fb2c8;
+    background: rgba(8, 17, 31, .92);
+}
+
+.bz-shell--dark .quotes-dashboard__table td,
+.bz-shell--dark .po-dashboard__table td,
+.bz-shell--dark .customer-dashboard__table td,
+.bz-shell--dark .vendor-dashboard__table td,
+.bz-shell--dark .customer-profile__table td,
+.bz-shell--dark .vendor-profile__table td {
+    border-bottom-color: var(--citus-border-subtle);
+    color: var(--citus-text);
+}
+
+.bz-shell--dark .source-entry {
+    --entry-bg: #0d1524;
+    --entry-card: rgba(14, 25, 43, .94);
+    --entry-border: rgba(125, 184, 255, .16);
+    --entry-text: #dbe8f7;
+    --entry-muted: #94a8bf;
+    --entry-accent-soft: rgba(124, 196, 255, .12);
+    background:
+        radial-gradient(circle at 12% -10%, rgba(37, 99, 235, .16), transparent 32rem),
+        linear-gradient(180deg, #0d1524 0%, #09111f 100%);
+}
+
+.bz-shell--dark .source-entry--expense {
+    --entry-accent-soft: rgba(20, 184, 166, .14);
+    background:
+        radial-gradient(circle at 12% -10%, rgba(20, 184, 166, .16), transparent 32rem),
+        linear-gradient(180deg, #0d1524 0%, #09111f 100%);
+}
+
+.bz-shell--dark .source-entry__action-bar {
+    background: rgba(8, 17, 31, .9);
+}
+
+.bz-shell--dark .source-entry__party-field {
+    background: linear-gradient(180deg, var(--entry-accent-soft), rgba(8, 17, 31, .5));
+}
+
+.bz-shell--light .expense-dashboard,
+.bz-shell--light .po-entry {
+    color: var(--citus-text);
+    background:
+        radial-gradient(circle at 12% -10%, rgba(22, 119, 255, .11), transparent 32rem),
+        linear-gradient(180deg, #fbfdff 0%, var(--citus-bg) 48%, var(--citus-bg-strong) 100%);
+}
+
+.bz-shell--light .expense-dashboard__hero,
+.bz-shell--light .po-entry__hero,
+.bz-shell--light .expense-dashboard__stage-card,
+.bz-shell--light .expense-dashboard__lane,
+.bz-shell--light .expense-dashboard__toolbar,
+.bz-shell--light .expense-dashboard__table-card,
+.bz-shell--light .po-entry__form-card,
+.bz-shell--light .po-entry__section-card,
+.bz-shell--light .po-entry__action-card,
+.bz-shell--light .po-entry__metric-card,
+.bz-shell--light .po-entry__mini-card {
+    border-color: var(--citus-border-subtle) !important;
+    color: var(--citus-text) !important;
+    background: var(--citus-surface) !important;
+    box-shadow: var(--citus-shadow-card) !important;
+}
+
+.bz-shell--light .expense-dashboard h1,
+.bz-shell--light .expense-dashboard h2,
+.bz-shell--light .expense-dashboard__stage-card strong,
+.bz-shell--light .po-entry h1,
+.bz-shell--light .po-entry h2 {
+    color: var(--citus-text);
+}
+
+.bz-shell--light .expense-dashboard p,
+.bz-shell--light .expense-dashboard__stage-card span,
+.bz-shell--light .expense-dashboard__stage-card small,
+.bz-shell--light .expense-dashboard__subtext,
+.bz-shell--light .expense-dashboard__lane-step,
+.bz-shell--light .po-entry__hero p,
+.bz-shell--light .po-entry__section-heading p,
+.bz-shell--light .po-entry__balance-card span,
+.bz-shell--light .po-entry__doc-number {
+    color: var(--citus-text-muted);
+}
+
+.bz-shell--light .expense-dashboard .ant-btn {
+    border-color: rgba(31, 45, 61, .14);
+    color: var(--citus-text);
+    background: #fff;
+}
+
+.bz-shell--light .expense-dashboard .ant-btn-primary {
+    border-color: #0f766e;
+    color: #fff;
+    background: linear-gradient(135deg, #0f766e, #22c55e);
+}
+
+.bz-shell--light .expense-dashboard .ant-input {
+    border-color: rgba(31, 45, 61, .14);
+    color: var(--citus-text);
+    background: #fff;
+}
+
+.bz-shell--light .expense-dashboard__lane-step {
+    border-color: rgba(31, 45, 61, .12);
+    background: #fff;
+}
+
+.bz-shell--light .expense-dashboard__lane-step--active {
+    color: #0f766e;
+    background: rgba(20, 184, 166, .1);
+}
+
+.bz-shell--light .expense-dashboard__table th {
+    color: #526173;
+    background: #f8fafc;
+}
+
+.bz-shell--light .expense-dashboard__table td {
+    border-bottom-color: rgba(31, 45, 61, .09);
+    color: var(--citus-text);
+}
+
+.bz-shell--light .po-entry__balance-card {
+    background: linear-gradient(145deg, #fff7ed, #ffffff) !important;
+}
+
+.bz-shell--light .po-entry__stat-title {
+    color: #b45309;
+}
+
+.bz-shell--light .po-entry__stat-value {
+    color: var(--citus-text);
+}
+
+.bz-shell--light .po-entry__eyebrow span {
+    color: #b45309;
+    background: rgba(245, 158, 11, .12);
+}
+
+.bz-shell--light .po-entry__section-heading span {
+    color: #92400e;
+    background: rgba(245, 158, 11, .16);
+}
+
+.bz-shell--light .po-entry .mud-table-root th {
+    color: #526173;
+    background: #f8fafc;
+}
+
+.bz-shell--light .po-entry .mud-table-root td {
+    color: var(--citus-text);
 }
 
 /* Tabler icons: normalize vertical rhythm across Ant, custom HTML, and legacy controls. */

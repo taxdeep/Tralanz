@@ -29,9 +29,9 @@
 <div class="@EntryRootClass">
     <section class="source-entry__hero">
         <div class="source-entry__hero-copy">
-            <a class="source-entry__back-link" href="/documents/source-browser">
+            <a class="source-entry__back-link" href="@EntryBackHref">
                 <i class="ti ti-arrow-left" aria-hidden="true"></i>
-                Source documents
+                @EntryBackLabel
             </a>
             <div class="source-entry__eyebrow">
                 <span>AP workspace</span>
@@ -611,6 +611,8 @@
     private bool IsExpenseOrigin => string.Equals(Origin, "expense", StringComparison.OrdinalIgnoreCase);
     private string EntryRootClass => IsExpenseOrigin ? "source-entry source-entry--ap source-entry--expense" : "source-entry source-entry--ap source-entry--bill";
     private string EntryPageTitle => IsExpenseOrigin ? "New Expense" : "New Bill";
+    private string EntryBackHref => IsExpenseOrigin ? "/ap/expenses" : "/documents/source-browser?sourceType=bill&counterpartyRole=vendor";
+    private string EntryBackLabel => IsExpenseOrigin ? "Expenses" : "Bill source documents";
     private string EntryBadge => IsExpenseOrigin ? "Expense draft" : "Bill draft";
     private string EntryTitle => IsExpenseOrigin ? "New expense" : "New bill";
     private string EntrySubtitle => IsExpenseOrigin

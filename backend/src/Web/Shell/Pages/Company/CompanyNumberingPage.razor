@@ -1,0 +1,320 @@
+@page "/company/numbering"
+@using Web.Shell.Services
+@inject WebShellState ShellState
+@inject WebShellBusinessSessionClient SessionClient
+@inject WebShellSessionExpirationCoordinator SessionExpirationCoordinator
+@inject ShellCompanyNumberingClient NumberingClient
+
+<PageTitle>Company Numbering</PageTitle>
+
+<div class="company-numbering">
+    <section class="company-numbering__hero">
+        <div>
+            <a class="company-numbering__back-link" href="/">Back to shell</a>
+            <p class="company-numbering__eyebrow">Settings / Company</p>
+            <h1>Numbering</h1>
+            <p>
+                Configure business display numbers per company and module. Internal entity numbers stay global,
+                immutable, and backend-owned.
+            </p>
+        </div>
+        <div class="company-numbering__identity-card">
+            <span>Active company</span>
+            <strong>@ShellState.ActiveCompany.CompanyName</strong>
+            <em>@ShellState.ActiveCompany.CompanyCode</em>
+        </div>
+    </section>
+
+    <section class="company-numbering__principles">
+        <article>
+            <i class="ti ti-fingerprint" aria-hidden="true"></i>
+            <div>
+                <span>Internal Entity Number</span>
+                <strong>ENYYYY########</strong>
+                <p>Global, immutable, audit-only. Users do not edit it.</p>
+            </div>
+        </article>
+        <article>
+            <i class="ti ti-file-barcode" aria-hidden="true"></i>
+            <div>
+                <span>Business Display Number</span>
+                <strong>Company + module scoped</strong>
+                <p>Shown on invoices, bills, payments, purchase orders, and journals.</p>
+            </div>
+        </article>
+        <article>
+            <i class="ti ti-server-bolt" aria-hidden="true"></i>
+            <div>
+                <span>Backend authority</span>
+                <strong>Final number on save</strong>
+                <p>Preview is advisory; the backend reserves the final number inside the save flow.</p>
+            </div>
+        </article>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="ant-alert ant-alert-error company-numbering__alert">
+            <i class="ti ti-alert-circle" aria-hidden="true"></i>
+            <span>@_error</span>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_notice))
+    {
+        <div class="ant-alert ant-alert-success company-numbering__alert">
+            <i class="ti ti-circle-check" aria-hidden="true"></i>
+            <span>@_notice</span>
+        </div>
+    }
+
+    @if (WritesBlocked)
+    {
+        <div class="ant-alert ant-alert-warning company-numbering__alert">
+            <i class="ti ti-lock" aria-hidden="true"></i>
+            <span>@ShellState.WriteBlockMessage</span>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="company-numbering__loading">
+            <div class="company-numbering__loading-bar"></div>
+            <span>Loading numbering rules...</span>
+        </div>
+    }
+    else
+    {
+        <section class="company-numbering__toolbar">
+            <label class="company-numbering__search">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input class="ant-input" placeholder="Search module, scope, prefix..." @bind="_searchText" @bind:event="oninput" />
+            </label>
+            <div class="company-numbering__toolbar-meta">
+                <span>@FilteredRows.Count rule(s)</span>
+                <button type="button" class="ant-btn" @onclick="LoadAsync" disabled="@_isSaving">Refresh</button>
+            </div>
+        </section>
+
+        <section class="company-numbering__table-card">
+            <table class="ant-table company-numbering__table">
+                <thead class="ant-table-thead">
+                    <tr>
+                        <th>Module</th>
+                        <th>Scope</th>
+                        <th>Prefix</th>
+                        <th>Padding</th>
+                        <th>Next number</th>
+                        <th>Preview</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody class="ant-table-tbody">
+                    @if (FilteredRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8">
+                                <div class="company-numbering__empty">No numbering rule matched the current search.</div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="company-numbering__module">
+                                        <strong>@row.Label</strong>
+                                        <span>@row.Family</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <code>@row.ScopeKey</code>
+                                </td>
+                                <td>
+                                    <input class="ant-input company-numbering__prefix"
+                                           @bind="row.Prefix"
+                                           @bind:event="oninput"
+                                           disabled="@(_isSaving || WritesBlocked)" />
+                                </td>
+                                <td>
+                                    <input class="ant-input company-numbering__number"
+                                           type="number"
+                                           min="1"
+                                           max="12"
+                                           @bind="row.Padding"
+                                           @bind:event="oninput"
+                                           disabled="@(_isSaving || WritesBlocked)" />
+                                </td>
+                                <td>
+                                    <input class="ant-input company-numbering__next"
+                                           type="number"
+                                           min="1"
+                                           @bind="row.NextNumber"
+                                           @bind:event="oninput"
+                                           disabled="@(_isSaving || WritesBlocked)" />
+                                </td>
+                                <td>
+                                    <span class="company-numbering__preview">@BuildPreview(row)</span>
+                                </td>
+                                <td>
+                                    <label class="company-numbering__toggle">
+                                        <input type="checkbox" @bind="row.Enabled" disabled="@(_isSaving || WritesBlocked)" />
+                                        <span>@(row.Enabled ? "Enabled" : "Disabled")</span>
+                                    </label>
+                                    <div class="company-numbering__runtime @(row.IsRuntimeConnected ? "company-numbering__runtime--live" : "company-numbering__runtime--planned")">
+                                        @row.RuntimeStatus
+                                    </div>
+                                </td>
+                                <td>
+                                    <button type="button"
+                                            class="ant-btn ant-btn-primary"
+                                            disabled="@(_isSaving || WritesBlocked)"
+                                            @onclick="() => SaveAsync(row)">
+                                        Save
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private readonly List<NumberingRuleEditRow> _rows = [];
+    private string _searchText = string.Empty;
+    private string? _error;
+    private string? _notice;
+    private bool _isLoading = true;
+    private bool _isSaving;
+
+    private bool WritesBlocked => ShellState.AreWritesBlocked;
+
+    private IReadOnlyList<NumberingRuleEditRow> FilteredRows =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _rows
+            : _rows.Where(row => MatchesSearch(row, _searchText)).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ShellState.EnsureHydratedAsync();
+        var probe = await SessionClient.ProbeContextAsync();
+        if (await SessionExpirationCoordinator.HandleProbeAsync(probe))
+        {
+            return;
+        }
+
+        if (probe.Context is null)
+        {
+            _error = probe.ErrorMessage ?? WebShellBusinessSessionClient.AuthenticationRequiredError;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _error = null;
+            _notice = null;
+
+            var summary = await NumberingClient.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            _rows.Clear();
+            _rows.AddRange(summary.Rules.Select(NumberingRuleEditRow.From));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync(NumberingRuleEditRow row)
+    {
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            _notice = null;
+
+            var saved = await NumberingClient.SaveAsync(
+                ShellState.ActiveCompany.Id,
+                new ShellCompanyNumberingRuleUpdateRequest(
+                    row.ScopeKey,
+                    row.Prefix,
+                    row.Padding,
+                    row.NextNumber,
+                    row.Enabled));
+
+            row.Apply(saved);
+            _notice = $"{row.Label} numbering saved. Preview: {row.Preview}";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private static bool MatchesSearch(NumberingRuleEditRow row, string searchText) =>
+        row.SearchNeedle.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildPreview(NumberingRuleEditRow row) =>
+        $"{row.Prefix.Trim().ToUpperInvariant()}{Math.Max(row.NextNumber, 1).ToString().PadLeft(Math.Clamp((int)row.Padding, 1, 12), '0')}";
+
+    private sealed class NumberingRuleEditRow
+    {
+        public required string Module { get; init; }
+        public required string Label { get; init; }
+        public required string ScopeKey { get; init; }
+        public required string Family { get; init; }
+        public string Prefix { get; set; } = string.Empty;
+        public short Padding { get; set; }
+        public long NextNumber { get; set; }
+        public bool Enabled { get; set; }
+        public string Preview { get; private set; } = string.Empty;
+        public bool IsRuntimeConnected { get; init; }
+        public required string RuntimeStatus { get; init; }
+        public string SearchNeedle => $"{Module} {Label} {ScopeKey} {Family} {Prefix} {RuntimeStatus}";
+
+        public static NumberingRuleEditRow From(ShellCompanyNumberingRuleSummary rule) =>
+            new()
+            {
+                Module = rule.Module,
+                Label = rule.Label,
+                ScopeKey = rule.ScopeKey,
+                Family = rule.Family,
+                Prefix = rule.Prefix,
+                Padding = rule.Padding,
+                NextNumber = rule.NextNumber,
+                Enabled = rule.Enabled,
+                Preview = rule.Preview,
+                IsRuntimeConnected = rule.IsRuntimeConnected,
+                RuntimeStatus = rule.RuntimeStatus
+            };
+
+        public void Apply(ShellCompanyNumberingRuleSummary rule)
+        {
+            Prefix = rule.Prefix;
+            Padding = rule.Padding;
+            NextNumber = rule.NextNumber;
+            Enabled = rule.Enabled;
+            Preview = rule.Preview;
+        }
+    }
+}

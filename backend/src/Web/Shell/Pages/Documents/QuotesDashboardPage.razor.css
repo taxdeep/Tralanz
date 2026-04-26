@@ -1,0 +1,400 @@
+.quotes-dashboard {
+    min-height: calc(100vh - 72px);
+    padding: 1.75rem 2rem 2.5rem;
+    background:
+        radial-gradient(circle at 18% -10%, rgba(22, 119, 255, 0.15), transparent 34rem),
+        linear-gradient(180deg, #f8fbff 0%, #f4f7fb 48%, #eef3f8 100%);
+    color: #17202a;
+}
+
+.quotes-dashboard__hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.25rem;
+    align-items: flex-start;
+}
+
+.quotes-dashboard__back-link {
+    display: inline-flex;
+    margin-bottom: 0.75rem;
+    color: #1677ff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.quotes-dashboard__eyebrow {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.7rem;
+}
+
+.quotes-dashboard__eyebrow span {
+    border: 1px solid rgba(22, 119, 255, 0.22);
+    border-radius: 999px;
+    padding: 0.22rem 0.65rem;
+    color: #1457a6;
+    background: rgba(22, 119, 255, 0.08);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.quotes-dashboard h1 {
+    margin: 0;
+    color: #111827;
+    font-size: clamp(2rem, 3vw, 3.1rem);
+    font-weight: 850;
+    line-height: 0.96;
+    letter-spacing: -0.05em;
+}
+
+.quotes-dashboard p {
+    max-width: 62rem;
+    margin: 0.85rem 0 0;
+    color: #697586;
+    font-size: 0.96rem;
+    line-height: 1.65;
+}
+
+.quotes-dashboard__hero-actions,
+.quotes-dashboard__filters {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.quotes-dashboard__alert {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+}
+
+.quotes-dashboard__loading {
+    display: grid;
+    gap: 0.8rem;
+    margin-top: 2rem;
+    color: #5f6b7a;
+}
+
+.quotes-dashboard__loading-bar {
+    width: 100%;
+    height: 0.28rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1677ff, #19a52f, #1677ff);
+    background-size: 200% 100%;
+    animation: quotes-dashboard-loading 1.2s linear infinite;
+}
+
+@keyframes quotes-dashboard-loading {
+    from { background-position: 0% 0; }
+    to { background-position: 200% 0; }
+}
+
+.quotes-dashboard__stage-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 1px;
+    margin-top: 1.5rem;
+    border: 1px solid #e1e8f0;
+    background: #dbe5ee;
+    overflow: hidden;
+}
+
+.quotes-dashboard__stage-card {
+    min-height: 8.2rem;
+    padding: 1.2rem 1.35rem;
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.quotes-dashboard__stage-card span,
+.quotes-dashboard__stage-card small {
+    display: block;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.quotes-dashboard__stage-card strong {
+    display: block;
+    margin-top: 0.35rem;
+    color: #111827;
+    font-size: 1.55rem;
+    font-weight: 850;
+    letter-spacing: -0.03em;
+}
+
+.quotes-dashboard__stage-card small {
+    margin-top: 0.3rem;
+    font-weight: 600;
+}
+
+.quotes-dashboard__stage-card--blue {
+    background: #edf6ff;
+}
+
+.quotes-dashboard__stage-card--green {
+    background: #edf9ee;
+}
+
+.quotes-dashboard__stage-card--amber {
+    background: #fff7e6;
+}
+
+.quotes-dashboard__lane {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin-top: 1rem;
+    padding: 1.1rem 1.2rem;
+    border: 1px solid rgba(22, 119, 255, 0.15);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(238, 246, 255, 0.92));
+    box-shadow: 0 18px 44px rgba(19, 38, 64, 0.07);
+}
+
+.quotes-dashboard__lane-copy {
+    display: flex;
+    gap: 0.9rem;
+    align-items: center;
+}
+
+.quotes-dashboard__lane-icon {
+    display: grid;
+    width: 3.2rem;
+    height: 3.2rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #1677ff, #65c7d4);
+    color: #fff;
+    font-size: 1.45rem;
+}
+
+.quotes-dashboard__lane h2 {
+    margin: 0;
+    color: #17202a;
+    font-size: 1rem;
+    font-weight: 850;
+}
+
+.quotes-dashboard__lane p {
+    max-width: 48rem;
+    margin-top: 0.3rem;
+    font-size: 0.84rem;
+}
+
+.quotes-dashboard__lane-steps {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.quotes-dashboard__lane-step {
+    border: 1px solid #d5dee8;
+    border-radius: 999px;
+    padding: 0.32rem 0.72rem;
+    color: #64748b;
+    background: #fff;
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.quotes-dashboard__lane-step--active {
+    border-color: rgba(22, 119, 255, 0.35);
+    color: #1457a6;
+    background: rgba(22, 119, 255, 0.08);
+}
+
+.quotes-dashboard__toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin: 1.2rem 0 0.75rem;
+}
+
+.quotes-dashboard__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: min(100%, 32rem);
+}
+
+.quotes-dashboard__search i {
+    position: absolute;
+    left: 0.75rem;
+    color: #4f5f72;
+    z-index: 1;
+}
+
+.quotes-dashboard__search input {
+    padding-left: 2.2rem;
+}
+
+.quotes-dashboard__filters {
+    color: #697586;
+    font-size: 0.84rem;
+}
+
+.quotes-dashboard__filters select {
+    width: 11rem;
+}
+
+.quotes-dashboard__table-card {
+    border: 1px solid #e1e8f0;
+    background: #fff;
+    overflow: auto;
+}
+
+.quotes-dashboard__table {
+    width: 100%;
+    min-width: 1120px;
+    border-collapse: collapse;
+}
+
+.quotes-dashboard__table th {
+    padding: 0.78rem 0.9rem;
+    border-bottom: 1px solid #d8dee6;
+    background: #fbfdff;
+    color: #253142;
+    font-size: 0.72rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.quotes-dashboard__table td {
+    padding: 0.78rem 0.9rem;
+    border-bottom: 1px solid #e6eaf0;
+    color: #344054;
+    font-size: 0.86rem;
+}
+
+.quotes-dashboard__table tr:hover td {
+    background: #f6f9fc;
+}
+
+.quotes-dashboard__quote-link {
+    color: #17202a;
+    font-weight: 850;
+}
+
+.quotes-dashboard__quote-link:hover,
+.quotes-dashboard__customer-link:hover,
+.quotes-dashboard__row-action:hover {
+    color: #1677ff;
+}
+
+.quotes-dashboard__customer-link,
+.quotes-dashboard__row-action {
+    color: #0070c9;
+    font-weight: 750;
+}
+
+.quotes-dashboard__subtext {
+    margin-top: 0.18rem;
+    color: #8a95a5;
+    font-size: 0.75rem;
+}
+
+.quotes-dashboard__status,
+.quotes-dashboard__expiry {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.45rem;
+    padding: 0 0.55rem;
+    border-radius: 999px;
+    background: #f2f4f7;
+    color: #697586;
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.quotes-dashboard__status--draft {
+    background: #f2f4f7;
+    color: #4b5563;
+}
+
+.quotes-dashboard__status--accepted {
+    background: #edf6ff;
+    color: #1457a6;
+}
+
+.quotes-dashboard__status--converted {
+    background: #edf9ee;
+    color: #178a2f;
+}
+
+.quotes-dashboard__expiry--soon {
+    background: #fff7e6;
+    color: #b76e00;
+}
+
+.quotes-dashboard__expiry--expired {
+    background: #fff1f0;
+    color: #cf1322;
+}
+
+.quotes-dashboard__action-separator {
+    margin: 0 0.35rem;
+    color: #a0a8b3;
+}
+
+.quotes-dashboard__empty {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    padding: 3rem 1rem;
+    color: #697586;
+    text-align: center;
+}
+
+.quotes-dashboard__empty i {
+    color: #1677ff;
+    font-size: 2rem;
+}
+
+.quotes-dashboard__empty strong {
+    color: #253142;
+}
+
+@media (max-width: 1200px) {
+    .quotes-dashboard__stage-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 860px) {
+    .quotes-dashboard {
+        padding: 1.25rem 1rem;
+    }
+
+    .quotes-dashboard__hero,
+    .quotes-dashboard__lane,
+    .quotes-dashboard__toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .quotes-dashboard__lane-copy {
+        align-items: flex-start;
+    }
+
+    .quotes-dashboard__lane-steps {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 620px) {
+    .quotes-dashboard__stage-strip {
+        grid-template-columns: 1fr;
+    }
+}
