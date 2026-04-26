@@ -21,7 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Citus.Business.Blazor\Citus.Business.Blazor.csproj" />
-    <ProjectReference Include="..\..\src\Web\Shell\Web.Shell.csproj" />
   </ItemGroup>
 
 </Project>
