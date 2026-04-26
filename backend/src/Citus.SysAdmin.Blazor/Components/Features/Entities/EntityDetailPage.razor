@@ -6,143 +6,125 @@
 
 @if (_isLoading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
-@if (_entity is null)
+@if (_entity is null && !_isLoading)
 {
     <CitusPageHeader Model="_missingHeader" />
     <CitusEmptyState
+        Icon="IconName.Database"
         Title="Entity metadata not found"
         Message="The requested entity is not registered in the platform core or the SysAdmin API is unavailable."
         ActionLabel="Return to entities"
         ActionHref="entities" />
 }
-else
+else if (_entity is not null)
 {
-    <CitusPageHeader Model="@GetHeader(_entity)" />
+    <CitusPageHeader Model="@GetHeader(_entity)">
+        <Actions>
+            <a class="citus-button citus-button--ghost" href="entities">
+                <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+                <span>Back to entities</span>
+            </a>
+        </Actions>
+    </CitusPageHeader>
 
-    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-6">
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@_entity.ModuleKey</MudChip>
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">@GetScope(_entity)</MudChip>
-        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@($"{_entity.Fields.Count} fields")</MudChip>
-        <MudSpacer />
-        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="entities">Back to entities</MudButton>
-    </MudStack>
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+        <AntDesign.Tag Color="@("blue")">@_entity.ModuleKey</AntDesign.Tag>
+        <AntDesign.Tag Color="@("geekblue")">@GetScope(_entity)</AntDesign.Tag>
+        <AntDesign.Tag Color="@("default")">@($"{_entity.Fields.Count} fields")</AntDesign.Tag>
+    </div>
 
-    <MudGrid>
-        <MudItem xs="12" lg="8">
-            <MudPaper Class="pa-4 mb-6">
-                <MudText Typo="Typo.h6" Class="mb-3">Definition</MudText>
-                <MudTable Items="_entity.Fields" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
-                    <HeaderContent>
-                        <MudTh>Field</MudTh>
-                        <MudTh>Type</MudTh>
-                        <MudTh>Column</MudTh>
-                        <MudTh>Flags</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Field">
-                            <MudText Typo="Typo.body1">@context.Label</MudText>
-                            <MudText Typo="Typo.caption" Class="text-secondary">@context.Name</MudText>
-                        </MudTd>
-                        <MudTd DataLabel="Type">@context.FieldType</MudTd>
-                        <MudTd DataLabel="Column"><span class="citus-inline-code">@context.SourceColumn</span></MudTd>
-                        <MudTd DataLabel="Flags">
-                            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                                @if (context.Required)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Required</MudChip>
-                                }
-                                @if (context.Searchable)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Searchable</MudChip>
-                                }
-                                @if (context.Auditable)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Auditable</MudChip>
-                                }
-                                @if (context.System)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">System</MudChip>
-                                }
-                                @if (context.MaxLength.HasValue)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Max @context.MaxLength.Value</MudChip>
-                                }
-                            </MudStack>
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        </MudItem>
-
-        <MudItem xs="12" lg="4">
-            <MudPaper Class="pa-4 mb-6">
-                <MudText Typo="Typo.h6" Class="mb-3">Storage and scope</MudText>
-                <MudStack Spacing="2">
-                    <MudText Typo="Typo.body2">
-                        Storage table: <span class="citus-inline-code">@_entity.StorageTable</span>
-                    </MudText>
-                    <MudText Typo="Typo.body2">
-                        Scope: @GetScope(_entity)
-                    </MudText>
-                    @if (!string.IsNullOrWhiteSpace(_entity.Description))
-                    {
-                        <MudText Typo="Typo.body2" Class="text-secondary">@_entity.Description</MudText>
-                    }
-                </MudStack>
-            </MudPaper>
-
-            <MudPaper Class="pa-4">
-                <MudText Typo="Typo.h6" Class="mb-3">Permissions</MudText>
-
-                <div class="mb-4">
-                    <MudText Typo="Typo.body2" Class="mb-1">Create</MudText>
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                        @foreach (var principal in GetPrincipals(_entity.Permissions.Create))
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Definition</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Column</th>
+                            <th>Flags</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var field in _entity.Fields)
                         {
-                            <MudChip T="string" Variant="Variant.Outlined">@principal</MudChip>
+                            <tr>
+                                <td>
+                                    <div>@field.Label</div>
+                                    <div class="text-fg-subtle text-xs">@field.Name</div>
+                                </td>
+                                <td>@field.FieldType</td>
+                                <td><span class="citus-inline-code">@field.SourceColumn</span></td>
+                                <td>
+                                    <div class="flex flex-wrap gap-1">
+                                        @if (field.Required)
+                                        {
+                                            <AntDesign.Tag Color="@("default")">Required</AntDesign.Tag>
+                                        }
+                                        @if (field.Searchable)
+                                        {
+                                            <AntDesign.Tag Color="@("default")">Searchable</AntDesign.Tag>
+                                        }
+                                        @if (field.Auditable)
+                                        {
+                                            <AntDesign.Tag Color="@("default")">Auditable</AntDesign.Tag>
+                                        }
+                                        @if (field.System)
+                                        {
+                                            <AntDesign.Tag Color="@("default")">System</AntDesign.Tag>
+                                        }
+                                        @if (field.MaxLength.HasValue)
+                                        {
+                                            <AntDesign.Tag Color="@("default")">Max @field.MaxLength.Value</AntDesign.Tag>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
                         }
-                    </MudStack>
-                </div>
+                    </tbody>
+                </table>
+            </section>
+        </div>
 
-                <div class="mb-4">
-                    <MudText Typo="Typo.body2" Class="mb-1">Read</MudText>
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                        @foreach (var principal in GetPrincipals(_entity.Permissions.Read))
+        <div class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Storage and scope</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Storage table</th><td><span class="citus-inline-code">@_entity.StorageTable</span></td></tr>
+                        <tr><th>Scope</th><td>@GetScope(_entity)</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_entity.Description))
                         {
-                            <MudChip T="string" Variant="Variant.Outlined">@principal</MudChip>
+                            <tr><th>Description</th><td>@_entity.Description</td></tr>
                         }
-                    </MudStack>
-                </div>
+                    </tbody>
+                </table>
+            </section>
 
-                <div class="mb-4">
-                    <MudText Typo="Typo.body2" Class="mb-1">Update</MudText>
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                        @foreach (var principal in GetPrincipals(_entity.Permissions.Update))
-                        {
-                            <MudChip T="string" Variant="Variant.Outlined">@principal</MudChip>
-                        }
-                    </MudStack>
-                </div>
-
-                <div>
-                    <MudText Typo="Typo.body2" Class="mb-1">Delete</MudText>
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                        @foreach (var principal in GetPrincipals(_entity.Permissions.Delete))
-                        {
-                            <MudChip T="string" Variant="Variant.Outlined">@principal</MudChip>
-                        }
-                    </MudStack>
-                </div>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Permissions</h2>
+                @foreach (var (label, principals) in BuildPermissionGroups())
+                {
+                    <div class="mb-3">
+                        <div class="text-sm font-medium mb-1">@label</div>
+                        <div class="flex flex-wrap gap-1">
+                            @foreach (var principal in principals)
+                            {
+                                <AntDesign.Tag Color="@("default")">@principal</AntDesign.Tag>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        </div>
+    </div>
 }
 
-@code
-{
+@code {
     [Parameter]
     public string EntityName { get; set; } = string.Empty;
 
@@ -172,6 +154,15 @@ else
                 ? $"Entity key: {entity.Name}"
                 : entity.Description
         };
+
+    private IEnumerable<(string Label, IReadOnlyList<string> Principals)> BuildPermissionGroups()
+    {
+        if (_entity is null) yield break;
+        yield return ("Create", GetPrincipals(_entity.Permissions.Create));
+        yield return ("Read", GetPrincipals(_entity.Permissions.Read));
+        yield return ("Update", GetPrincipals(_entity.Permissions.Update));
+        yield return ("Delete", GetPrincipals(_entity.Permissions.Delete));
+    }
 
     private static IReadOnlyList<string> GetPrincipals(IReadOnlyList<string> principals) =>
         principals.Count == 0 ? ["No explicit principals"] : principals;

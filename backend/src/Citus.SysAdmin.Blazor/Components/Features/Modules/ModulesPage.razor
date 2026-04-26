@@ -8,44 +8,51 @@
 
 @if (_isLoading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
-@if (_modules.Count == 0)
+@if (_modules.Count == 0 && !_isLoading)
 {
     <CitusEmptyState
+        Icon="IconName.Puzzle"
         Title="No modules available"
         Message="Bootstrap the platform core to register modules in the metadata catalog."
         ActionLabel="Return to overview"
         ActionHref="overview" />
 }
-else
+else if (_modules.Count > 0)
 {
-    <MudPaper Class="pa-4">
-        <MudTable Items="_modules" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
-            <HeaderContent>
-                <MudTh>Key</MudTh>
-                <MudTh>Name</MudTh>
-                <MudTh>Route</MudTh>
-                <MudTh>Capabilities</MudTh>
-                <MudTh>Entity Count</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Key"><span class="citus-inline-code">@context.Key</span></MudTd>
-                <MudTd DataLabel="Name">
-                    <MudText Typo="Typo.body1">@context.Name</MudText>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Description</MudText>
-                </MudTd>
-                <MudTd DataLabel="Route"><span class="citus-inline-code">@context.RoutePrefix</span></MudTd>
-                <MudTd DataLabel="Capabilities">@string.Join(", ", context.Capabilities)</MudTd>
-                <MudTd DataLabel="Entity Count">@context.EntityNames.Count</MudTd>
-            </RowTemplate>
-        </MudTable>
-    </MudPaper>
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Name</th>
+                    <th>Route</th>
+                    <th>Capabilities</th>
+                    <th class="text-right">Entity Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var module in _modules)
+                {
+                    <tr>
+                        <td><span class="citus-inline-code">@module.Key</span></td>
+                        <td>
+                            <div>@module.Name</div>
+                            <div class="text-fg-subtle text-xs">@module.Description</div>
+                        </td>
+                        <td><span class="citus-inline-code">@module.RoutePrefix</span></td>
+                        <td>@string.Join(", ", module.Capabilities)</td>
+                        <td class="text-right">@module.EntityNames.Count</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
 }
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Metadata",

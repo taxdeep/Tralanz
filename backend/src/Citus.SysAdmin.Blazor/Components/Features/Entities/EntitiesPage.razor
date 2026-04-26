@@ -8,47 +8,54 @@
 
 @if (_isLoading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
-@if (_entities.Count == 0)
+@if (_entities.Count == 0 && !_isLoading)
 {
     <CitusEmptyState
+        Icon="IconName.Database"
         Title="No entities available"
         Message="Entity metadata will appear here after the platform core is bootstrapped."
         ActionLabel="Open overview"
         ActionHref="overview" />
 }
-else
+else if (_entities.Count > 0)
 {
-    <MudPaper Class="pa-4">
-        <MudTable Items="_entities" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
-            <HeaderContent>
-                <MudTh>Name</MudTh>
-                <MudTh>Module</MudTh>
-                <MudTh>Storage</MudTh>
-                <MudTh>Scope</MudTh>
-                <MudTh>Fields</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Name">
-                    <MudLink Href="@GetDetailHref(context.Name)">@context.Label</MudLink>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.Name</MudText>
-                </MudTd>
-                <MudTd DataLabel="Module"><span class="citus-inline-code">@context.ModuleKey</span></MudTd>
-                <MudTd DataLabel="Storage"><span class="citus-inline-code">@context.StorageTable</span></MudTd>
-                <MudTd DataLabel="Scope">@GetScope(context)</MudTd>
-                <MudTd DataLabel="Fields">@context.FieldCount</MudTd>
-            </RowTemplate>
-        </MudTable>
-        <MudText Typo="Typo.caption" Class="citus-table-note mt-3">
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Module</th>
+                    <th>Storage</th>
+                    <th>Scope</th>
+                    <th class="text-right">Fields</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entity in _entities)
+                {
+                    <tr>
+                        <td>
+                            <a class="citus-link" href="@GetDetailHref(entity.Name)">@entity.Label</a>
+                            <div class="text-fg-subtle text-xs">@entity.Name</div>
+                        </td>
+                        <td><span class="citus-inline-code">@entity.ModuleKey</span></td>
+                        <td><span class="citus-inline-code">@entity.StorageTable</span></td>
+                        <td>@GetScope(entity)</td>
+                        <td class="text-right">@entity.FieldCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="text-fg-subtle text-xs mt-3">
             Phase 1 exposes metadata only. Business document authoring will be added later on top of engine-safe workflows.
-        </MudText>
-    </MudPaper>
+        </p>
+    </section>
 }
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Metadata",
