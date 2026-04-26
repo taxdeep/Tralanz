@@ -14,18 +14,19 @@
 <CitusPageHeader Model="_header" />
 
 <CitusEmptyState
+    Icon="IconName.Receipt"
     Title="@($"{CurrentTitle} is staged next")"
     Message="This route exists to lock in the official business navigation while we continue migrating read-first, engine-safe screens into Blazor."
     ActionLabel="Return to dashboard"
     ActionHref="dashboard" />
 
-<MudPaper Class="pa-4 mt-6">
-    <MudText Typo="Typo.h6" Class="mb-2">Why this page is still a placeholder</MudText>
-    <MudText Typo="Typo.body2" Class="text-secondary">
+<section class="citus-panel mt-6">
+    <h2 class="citus-panel__title">Why this page is still a placeholder</h2>
+    <p class="text-fg-muted text-sm">
         The authority requires that formal accounting keeps flowing through backend engines. This shell will add review and command
         surfaces incrementally instead of shipping a generic CRUD form that could blur posting truth.
-    </MudText>
-</MudPaper>
+    </p>
+</section>
 
 @code
 {

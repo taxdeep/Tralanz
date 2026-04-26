@@ -8,18 +8,11 @@
 @*
     MainLayout — AntDesign Layout shell. The sider hosts the navigation
     menu, the header carries the company switcher and theme toggle,
-    and the content area is where every page renders. MudBlazor providers
-    are still mounted because the un-migrated pages use them; P2 strips
-    them out one page at a time.
+    and the content area is where every page renders.
 *@
 
 <IconSpriteHost />
 <AntDesign.AntContainer />
-
-<MudThemeProvider />
-<MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
 
 <AntDesign.Layout Class="citus-shell">
     <AntDesign.Sider Collapsible="true"

@@ -6,171 +6,148 @@
 
 <PageTitle>First Company Wizard | Citus SysAdmin</PageTitle>
 
-<MudStack Spacing="2">
-    <MudText Typo="Typo.overline" Class="text-secondary">First-time setup</MudText>
-    <MudText Typo="Typo.h4">First Company Wizard</MudText>
-    <MudText Typo="Typo.body1" Class="text-secondary">
+<header class="mb-6">
+    <span class="text-fg-subtle text-xs uppercase tracking-wider">First-time setup</span>
+    <h1 class="text-2xl font-semibold text-fg mt-1">First Company Wizard</h1>
+    <p class="text-fg-muted mt-1">
         Provision the first business owner, company profile, default primary book, and starter chart-of-accounts binding. This is the hand-off from platform-ready to business-ready.
-    </MudText>
-</MudStack>
+    </p>
+</header>
 
 @if (!string.IsNullOrWhiteSpace(_error))
 {
-    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-4">
-        @_error
-    </MudAlert>
+    <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
 }
 
 @if (!string.IsNullOrWhiteSpace(_success))
 {
-    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-4">
-        @_success
-    </MudAlert>
+    <AntDesign.Alert Type="@AntDesign.AlertType.Success" Message="@_success" ShowIcon="true" Class="mb-4" />
 }
 
-<MudGrid Class="mt-4">
-    <MudItem xs="12" xl="7">
-        <MudPaper Class="pa-4 mb-4">
-            <MudText Typo="Typo.h6" Class="mb-4">1. First business owner</MudText>
-            <MudGrid>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_ownerDisplayName" Label="Display name" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_ownerEmail" Label="Email" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_ownerPassword" Label="Password" Variant="Variant.Outlined" InputType="InputType.Password" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_ownerPasswordConfirm" Label="Confirm password" Variant="Variant.Outlined" InputType="InputType.Password" />
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+    <div class="xl:col-span-7 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">1. First business owner</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <CitusInput TValue="string" @bind-Value="_ownerDisplayName" Placeholder="Display name" />
+                <CitusInput TValue="string" @bind-Value="_ownerEmail" Placeholder="Email" />
+                <AntDesign.InputPassword @bind-Value="_ownerPassword" Placeholder="@("Password")" />
+                <AntDesign.InputPassword @bind-Value="_ownerPasswordConfirm" Placeholder="@("Confirm password")" />
+            </div>
+        </section>
 
-        <MudPaper Class="pa-4 mb-4">
-            <MudText Typo="Typo.h6" Class="mb-4">2. Company profile</MudText>
-            <MudGrid>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_companyName" Label="Company name" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudSelect T="string" Value="@EntityType" ValueChanged="OnEntityTypeChanged" Label="Entity type" Variant="Variant.Outlined">
-                        <MudSelectItem T="string" Value="@("corporation")">Corporation</MudSelectItem>
-                        <MudSelectItem T="string" Value="@("partnership")">Partnership</MudSelectItem>
-                        <MudSelectItem T="string" Value="@("sole_proprietorship")">Sole proprietorship</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudSelect T="string" Value="@Industry" ValueChanged="OnIndustryChanged" Label="Industry" Variant="Variant.Outlined">
-                        <MudSelectItem T="string" Value="@("general_services")">General services</MudSelectItem>
-                        <MudSelectItem T="string" Value="@("trading")">Trading</MudSelectItem>
-                        <MudSelectItem T="string" Value="@("property_rental")">Property rental</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudDatePicker @bind-Date="_incorporatedOn" Label="Incorporated date" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_fiscalYearEnd" Label="Fiscal year end (MM-DD)" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_businessNumber" Label="Business number" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudSelect T="int" @bind-Value="_accountCodeLength" Label="Account code length" Variant="Variant.Outlined">
-                        <MudSelectItem T="int" Value="4">4</MudSelectItem>
-                        <MudSelectItem T="int" Value="5">5</MudSelectItem>
-                        <MudSelectItem T="int" Value="6">6</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_phone" Label="Phone (optional)" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_companyEmail" Label="Company email" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_addressLine" Label="Address line" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_city" Label="City" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_province" Label="Province / State" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_postalCode" Label="Postal code" Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField T="string" Value="@Country" ValueChanged="OnCountryChanged" Label="Country" Variant="Variant.Outlined" />
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">2. Company profile</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <CitusInput TValue="string" @bind-Value="_companyName" Placeholder="Company name" />
+                <AntDesign.Select TItem="string" TItemValue="string"
+                                  DataSource="@_entityTypes"
+                                  Value="@EntityType"
+                                  ValueChanged="OnEntityTypeChanged"
+                                  ItemValue="@(s => s)"
+                                  ItemLabel="@(s => EntityTypeLabel(s))"
+                                  Placeholder="@("Entity type")" />
+                <AntDesign.Select TItem="string" TItemValue="string"
+                                  DataSource="@_industries"
+                                  Value="@Industry"
+                                  ValueChanged="OnIndustryChanged"
+                                  ItemValue="@(s => s)"
+                                  ItemLabel="@(s => IndustryLabel(s))"
+                                  Placeholder="@("Industry")" />
+                <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_incorporatedOn" Placeholder="@("Incorporated date")" />
+                <CitusInput TValue="string" @bind-Value="_fiscalYearEnd" Placeholder="Fiscal year end (MM-DD)" />
+                <CitusInput TValue="string" @bind-Value="_businessNumber" Placeholder="Business number" />
+                <AntDesign.Select TItem="int" TItemValue="int"
+                                  DataSource="@_codeLengths"
+                                  Value="@_accountCodeLength"
+                                  ValueChanged="@(v => _accountCodeLength = v)"
+                                  ItemValue="@(i => i)"
+                                  ItemLabel="@(i => i.ToString())"
+                                  Placeholder="@("Account code length")" />
+                <CitusInput TValue="string" @bind-Value="_phone" Placeholder="Phone (optional)" />
+                <CitusInput TValue="string" @bind-Value="_companyEmail" Placeholder="Company email" />
+                <div class="md:col-span-2"><CitusInput TValue="string" @bind-Value="_addressLine" Placeholder="Address line" /></div>
+                <CitusInput TValue="string" @bind-Value="_city" Placeholder="City" />
+                <CitusInput TValue="string" @bind-Value="_province" Placeholder="Province / State" />
+                <CitusInput TValue="string" @bind-Value="_postalCode" Placeholder="Postal code" />
+                <CitusInput TValue="string" Value="@Country" ValueChanged="OnCountryChanged" Placeholder="Country" />
+            </div>
+        </section>
 
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-4">3. Chart template and multi-currency reserve preview</MudText>
-            <MudGrid>
-                <MudItem xs="12" md="6">
-                    <MudSelect T="string" Value="@TemplateKey" ValueChanged="OnTemplateChanged" Label="Template" Variant="Variant.Outlined">
-                        <MudSelectItem T="string" Value="@("ca_general_small_business")">Canada general small business</MudSelectItem>
-                        <MudSelectItem T="string" Value="@("ca_property_rental")">Canada property rental</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudTextField @bind-Value="_baseCurrencyCode" Label="Base currency" Variant="Variant.Outlined" />
-                </MudItem>
-            </MudGrid>
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">3. Chart template and multi-currency reserve preview</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <AntDesign.Select TItem="string" TItemValue="string"
+                                  DataSource="@_templates"
+                                  Value="@TemplateKey"
+                                  ValueChanged="OnTemplateChanged"
+                                  ItemValue="@(s => s)"
+                                  ItemLabel="@(s => GetTemplateLabel(s))"
+                                  Placeholder="@("Template")" />
+                <CitusInput TValue="string" @bind-Value="_baseCurrencyCode" Placeholder="Base currency" />
+            </div>
 
-            <MudAlert Severity="Severity.Info" Variant="Variant.Text" Dense="true" Class="mt-3">
-                Suggested template from company profile: <strong>@GetTemplateLabel(GetSuggestedTemplateKey())</strong>
-            </MudAlert>
+            <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                             ShowIcon="true"
+                             Class="mb-3">
+                <MessageTemplate>
+                    Suggested template from company profile: <strong>@GetTemplateLabel(GetSuggestedTemplateKey())</strong>
+                </MessageTemplate>
+            </AntDesign.Alert>
 
-            <MudTable Items="_reservedFamilies" Dense="true" Hover="true" Class="mt-4">
-                <HeaderContent>
-                    <MudTh>Reserved family</MudTh>
-                    <MudTh>Purpose</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Reserved family">@context.CodeRange</MudTd>
-                    <MudTd DataLabel="Purpose">@context.Purpose</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
+            <table class="citus-data-table">
+                <thead>
+                    <tr><th>Reserved family</th><th>Purpose</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var family in _reservedFamilies)
+                    {
+                        <tr><td>@family.CodeRange</td><td>@family.Purpose</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
 
-    <MudItem xs="12" xl="5">
-        <MudPaper Class="pa-4 mb-4">
-            <MudText Typo="Typo.h6" Class="mb-3">4. Review</MudText>
-            <MudStack Spacing="2">
-                <MudText Typo="Typo.body2"><strong>Business owner:</strong> @FormatReview(_ownerDisplayName, _ownerEmail)</MudText>
-                <MudText Typo="Typo.body2"><strong>Company:</strong> @FormatReview(_companyName, _country)</MudText>
-                <MudText Typo="Typo.body2"><strong>Profile:</strong> @($"{EntityType} / {Industry} / FY {_fiscalYearEnd}")</MudText>
-                <MudText Typo="Typo.body2"><strong>COA template:</strong> @TemplateKey</MudText>
-                <MudText Typo="Typo.body2"><strong>Account code length:</strong> @_accountCodeLength</MudText>
-                <MudText Typo="Typo.body2"><strong>Base currency:</strong> @_baseCurrencyCode</MudText>
-            </MudStack>
-        </MudPaper>
+    <div class="xl:col-span-5 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">4. Review</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    <tr><th>Business owner</th><td>@FormatReview(_ownerDisplayName, _ownerEmail)</td></tr>
+                    <tr><th>Company</th><td>@FormatReview(_companyName, _country)</td></tr>
+                    <tr><th>Profile</th><td>@($"{EntityType} / {Industry} / FY {_fiscalYearEnd}")</td></tr>
+                    <tr><th>COA template</th><td>@TemplateKey</td></tr>
+                    <tr><th>Account code length</th><td>@_accountCodeLength</td></tr>
+                    <tr><th>Base currency</th><td>@_baseCurrencyCode</td></tr>
+                </tbody>
+            </table>
+        </section>
 
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-3">Finish</MudText>
-            <MudText Typo="Typo.body2" Class="text-secondary mb-4">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Finish</h2>
+            <p class="text-fg-muted text-sm mb-4">
                 Finish will create the first business owner, create the company, assign the first owner membership, seed the default primary book, and provision the selected starter chart with multi-currency reserve families.
-            </MudText>
-            <MudStack Row="true" Spacing="2">
-                <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="setup/company-decision">
-                    Back
-                </MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_submitting" OnClick="FinishSetupAsync">
+            </p>
+            <div class="flex flex-wrap gap-2">
+                <a class="citus-button citus-button--ghost" href="setup/company-decision">
+                    <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+                    <span>Back</span>
+                </a>
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_submitting" OnClick="FinishSetupAsync">
                     @(_submitting ? "Provisioning..." : "Finish setup")
-                </MudButton>
-            </MudStack>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+                </CitusButton>
+            </div>
+        </section>
+    </div>
+</div>
 
-@code
-{
+@code {
+    private static readonly List<string> _entityTypes = new() { "corporation", "partnership", "sole_proprietorship" };
+    private static readonly List<string> _industries = new() { "general_services", "trading", "property_rental" };
+    private static readonly List<int> _codeLengths = new() { 4, 5, 6 };
+    private static readonly List<string> _templates = new() { "ca_general_small_business", "ca_property_rental" };
+
     private string _ownerDisplayName = "Business Owner";
     private string _ownerEmail = string.Empty;
     private string _ownerPassword = string.Empty;
@@ -230,32 +207,29 @@
 
     private string TemplateKey => _templateKey;
 
-    private Task OnEntityTypeChanged(string value)
+    private void OnEntityTypeChanged(string? value)
     {
-        _entityType = value;
+        _entityType = value ?? "corporation";
+        ApplyTemplateSuggestion();
+    }
+
+    private void OnIndustryChanged(string? value)
+    {
+        _industry = value ?? "general_services";
+        ApplyTemplateSuggestion();
+    }
+
+    private Task OnCountryChanged(string? value)
+    {
+        _country = value ?? "Canada";
         ApplyTemplateSuggestion();
         return Task.CompletedTask;
     }
 
-    private Task OnIndustryChanged(string value)
+    private void OnTemplateChanged(string? value)
     {
-        _industry = value;
-        ApplyTemplateSuggestion();
-        return Task.CompletedTask;
-    }
-
-    private Task OnCountryChanged(string value)
-    {
-        _country = value;
-        ApplyTemplateSuggestion();
-        return Task.CompletedTask;
-    }
-
-    private Task OnTemplateChanged(string value)
-    {
-        _templateKey = value;
+        _templateKey = value ?? "ca_general_small_business";
         _templateWasManuallySelected = true;
-        return Task.CompletedTask;
     }
 
     private void ApplyTemplateSuggestion()
@@ -285,6 +259,20 @@
             "ca_property_rental" => "Canada property rental",
             _ => "Canada general small business"
         };
+
+    private static string EntityTypeLabel(string value) => value switch
+    {
+        "partnership" => "Partnership",
+        "sole_proprietorship" => "Sole proprietorship",
+        _ => "Corporation"
+    };
+
+    private static string IndustryLabel(string value) => value switch
+    {
+        "trading" => "Trading",
+        "property_rental" => "Property rental",
+        _ => "General services"
+    };
 
     private async Task FinishSetupAsync()
     {

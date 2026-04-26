@@ -3,25 +3,26 @@
 
 <PageTitle>Error | Citus Business</PageTitle>
 
-<MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="mb-6">
-    The business shell encountered an unhandled error.
-</MudAlert>
+<AntDesign.Alert Type="@AntDesign.AlertType.Error"
+                 ShowIcon="true"
+                 Message="The business shell encountered an unhandled error."
+                 Class="mb-6" />
 
 @if (ShowRequestId)
 {
-    <MudText Typo="Typo.body2" Class="mb-4">
-        Request ID: <code>@RequestId</code>
-    </MudText>
+    <p class="text-sm mb-4">
+        Request ID: <span class="citus-inline-code">@RequestId</span>
+    </p>
 }
 
 <CitusEmptyState
+    Icon="IconName.AlertTriangle"
     Title="Runtime error"
     Message="Switch to Development locally for diagnostic detail. Production deployments should keep the business surface tight and controlled."
     ActionLabel="Return to dashboard"
     ActionHref="dashboard" />
 
-@code
-{
+@code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 

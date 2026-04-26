@@ -2,102 +2,68 @@
 
 @inject AppShellState ShellState
 @inject NavigationManager NavigationManager
-@inject ISnackbar Snackbar
+@inject AntDesign.IMessageService Message
 @inject SysAdminAuthenticationClient SysAdminAuthenticationClient
 
 <PageTitle>First Company Setup | Citus SysAdmin</PageTitle>
 
-<MudStack Spacing="3">
-    <MudText Typo="Typo.overline" Class="text-secondary">First-time setup</MudText>
-    <MudText Typo="Typo.h4">Create Your First Company?</MudText>
-    <MudText Typo="Typo.body1" Class="text-secondary">
+<header class="mb-6">
+    <span class="text-fg-subtle text-xs uppercase tracking-wider">First-time setup</span>
+    <h1 class="text-2xl font-semibold text-fg mt-1">Create Your First Company?</h1>
+    <p class="text-fg-muted mt-1">
         The platform administrator is ready. You can stop here and stay in SysAdmin, or continue into the first business-ready company bootstrap.
-    </MudText>
-</MudStack>
+    </p>
+</header>
 
-<MudGrid Class="mt-4">
-    <MudItem xs="12" md="7">
-        <MudPaper Class="pa-4">
-            <MudStack Spacing="3">
-                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-                    SysAdmin remains a separate platform identity. The first company flow will create a separate Business App user and owner membership.
-                </MudAlert>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-7">
+        <section class="citus-panel">
+            <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                             ShowIcon="true"
+                             Message="SysAdmin remains a separate platform identity. The first company flow will create a separate Business App user and owner membership."
+                             Class="mb-4" />
 
-                <MudStack Spacing="1">
-                    <MudText Typo="Typo.subtitle1">If you continue now</MudText>
-                    <MudText Typo="Typo.body2" Class="text-secondary">
-                        We will guide you through first business owner creation, company profile capture, and chart-of-accounts template provisioning.
-                    </MudText>
-                </MudStack>
+            <div class="mb-3">
+                <h3 class="text-base font-semibold mb-1">If you continue now</h3>
+                <p class="text-fg-muted text-sm">
+                    We will guide you through first business owner creation, company profile capture, and chart-of-accounts template provisioning.
+                </p>
+            </div>
 
-                <MudStack Spacing="1">
-                    <MudText Typo="Typo.subtitle1">If you stop here</MudText>
-                    <MudText Typo="Typo.body2" Class="text-secondary">
-                        SysAdmin stays active, but the Business App remains intentionally unavailable until the first company is created.
-                    </MudText>
-                </MudStack>
+            <div class="mb-4">
+                <h3 class="text-base font-semibold mb-1">If you stop here</h3>
+                <p class="text-fg-muted text-sm">
+                    SysAdmin stays active, but the Business App remains intentionally unavailable until the first company is created.
+                </p>
+            </div>
 
-                <MudStack Row="true" Spacing="2">
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               Disabled="_isSubmitting"
-                               OnClick="@(() => PersistDecisionAsync(createCompanyNow: true))">
-                        @(_isSubmitting ? "Saving..." : "Create first company now")
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined"
-                               Color="Color.Default"
-                               Disabled="_isSubmitting"
-                               OnClick="@(() => PersistDecisionAsync(createCompanyNow: false))">
-                        @(_isSubmitting ? "Saving..." : "Not now")
-                    </MudButton>
-                </MudStack>
-            </MudStack>
-        </MudPaper>
-    </MudItem>
+            <div class="flex flex-wrap gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="@(() => PersistDecisionAsync(true))">
+                    @(_isSubmitting ? "Saving..." : "Create first company now")
+                </CitusButton>
+                <CitusButton Disabled="_isSubmitting" OnClick="@(() => PersistDecisionAsync(false))">
+                    @(_isSubmitting ? "Saving..." : "Not now")
+                </CitusButton>
+            </div>
+        </section>
+    </div>
 
-    <MudItem xs="12" md="5">
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-3">Current setup state</MudText>
-            <MudList T="string" Dense="true">
-                <MudListItem Text="Stage">
-                    <ChildContent>
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
-                            <MudText Typo="Typo.body2">Stage</MudText>
-                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@ShellState.SetupStage</MudChip>
-                        </MudStack>
-                    </ChildContent>
-                </MudListItem>
-                <MudListItem Text="SysAdmin accounts">
-                    <ChildContent>
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
-                            <MudText Typo="Typo.body2">SysAdmin accounts</MudText>
-                            <MudText Typo="Typo.body2">@ShellState.AccountCount</MudText>
-                        </MudStack>
-                    </ChildContent>
-                </MudListItem>
-                <MudListItem Text="Companies">
-                    <ChildContent>
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
-                            <MudText Typo="Typo.body2">Companies</MudText>
-                            <MudText Typo="Typo.body2">@ShellState.CompanyCount</MudText>
-                        </MudStack>
-                    </ChildContent>
-                </MudListItem>
-                <MudListItem Text="Owner memberships">
-                    <ChildContent>
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
-                            <MudText Typo="Typo.body2">Owner memberships</MudText>
-                            <MudText Typo="Typo.body2">@ShellState.OwnerMembershipCount</MudText>
-                        </MudStack>
-                    </ChildContent>
-                </MudListItem>
-            </MudList>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+    <div class="lg:col-span-5">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Current setup state</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    <tr><th>Stage</th><td><AntDesign.Tag Color="@("blue")">@ShellState.SetupStage</AntDesign.Tag></td></tr>
+                    <tr><th>SysAdmin accounts</th><td>@ShellState.AccountCount</td></tr>
+                    <tr><th>Companies</th><td>@ShellState.CompanyCount</td></tr>
+                    <tr><th>Owner memberships</th><td>@ShellState.OwnerMembershipCount</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+</div>
 
-@code
-{
+@code {
     private bool _isSubmitting;
 
     protected override void OnInitialized()
@@ -126,7 +92,7 @@
 
             if (status is null)
             {
-                Snackbar.Add("Unable to persist the first-company setup decision.", Severity.Warning);
+                await Message.WarningAsync("Unable to persist the first-company setup decision.");
                 return;
             }
 
@@ -134,12 +100,12 @@
 
             if (createCompanyNow)
             {
-                Snackbar.Add("First company setup is ready to continue.", Severity.Success);
+                await Message.SuccessAsync("First company setup is ready to continue.");
                 NavigationManager.NavigateTo("setup/first-company");
                 return;
             }
 
-            Snackbar.Add("Business setup deferred. SysAdmin remains available.", Severity.Info);
+            await Message.InfoAsync("Business setup deferred. SysAdmin remains available.");
             NavigationManager.NavigateTo("overview");
         }
         finally

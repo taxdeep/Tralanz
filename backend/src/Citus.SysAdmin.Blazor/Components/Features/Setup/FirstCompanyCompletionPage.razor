@@ -8,150 +8,105 @@
 
 @if (_completion is null)
 {
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
-        The first-company completion summary is no longer available. Returning to SysAdmin overview.
-    </MudAlert>
+    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+                     ShowIcon="true"
+                     Message="The first-company completion summary is no longer available. Returning to SysAdmin overview." />
 }
 else
 {
-    <MudStack Spacing="3">
-        <MudStack Spacing="1">
-            <MudText Typo="Typo.overline" Class="text-secondary">First-time setup</MudText>
-            <MudText Typo="Typo.h4">Business-ready hand-off completed</MudText>
-            <MudText Typo="Typo.body1" Class="text-secondary">
-                The first company, first business owner, first owner membership, default primary book, and starter chart binding are now in place.
-            </MudText>
-        </MudStack>
+    <header class="mb-6">
+        <span class="text-fg-subtle text-xs uppercase tracking-wider">First-time setup</span>
+        <h1 class="text-2xl font-semibold text-fg mt-1">Business-ready hand-off completed</h1>
+        <p class="text-fg-muted mt-1">
+            The first company, first business owner, first owner membership, default primary book, and starter chart binding are now in place.
+        </p>
+    </header>
 
-        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">
-            <MudStack Spacing="1">
-                <MudText Typo="Typo.subtitle1">
-                    @_completion.CompanyName (@_completion.CompanyEntityNumber) is ready.
-                </MudText>
-                <MudText Typo="Typo.body2">
-                    SysAdmin remains a separate platform identity. Use the business owner account below when entering the Business App.
-                </MudText>
-            </MudStack>
-        </MudAlert>
+    <AntDesign.Alert Type="@AntDesign.AlertType.Success" ShowIcon="true" Class="mb-6">
+        <MessageTemplate>
+            <strong>@_completion.CompanyName (@_completion.CompanyEntityNumber) is ready.</strong>
+            <div class="text-fg-muted text-sm mt-1">SysAdmin remains a separate platform identity. Use the business owner account below when entering the Business App.</div>
+        </MessageTemplate>
+    </AntDesign.Alert>
 
-        <MudGrid>
-            <MudItem xs="12" lg="7">
-                <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.h6" Class="mb-3">Provisioned truth</MudText>
-                    <MudGrid>
-                        <MudItem xs="12" md="6">
-                            <MudText Typo="Typo.caption" Class="text-secondary">Business owner login</MudText>
-                            <MudText Typo="Typo.body1">@_completion.OwnerEmail</MudText>
-                        </MudItem>
-                        <MudItem xs="12" md="6">
-                            <MudText Typo="Typo.caption" Class="text-secondary">Primary book</MudText>
-                            <MudText Typo="Typo.body1">@_completion.CompanyBookCode</MudText>
-                        </MudItem>
-                        <MudItem xs="12" md="6">
-                            <MudText Typo="Typo.caption" Class="text-secondary">Template binding</MudText>
-                            <MudText Typo="Typo.body1">@_completion.TemplateKey (@_completion.TemplateVersion)</MudText>
-                        </MudItem>
-                        <MudItem xs="12" md="6">
-                            <MudText Typo="Typo.caption" Class="text-secondary">Base currency</MudText>
-                            <MudText Typo="Typo.body1">@_completion.BaseCurrencyCode</MudText>
-                        </MudItem>
-                        <MudItem xs="12" md="6">
-                            <MudText Typo="Typo.caption" Class="text-secondary">Account code length</MudText>
-                            <MudText Typo="Typo.body1">@_completion.AccountCodeLength</MudText>
-                        </MudItem>
-                        <MudItem xs="12" md="6">
-                            <MudText Typo="Typo.caption" Class="text-secondary">Provisioned at</MudText>
-                            <MudText Typo="Typo.body1">@_completion.ProvisionedAtUtc.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</MudText>
-                        </MudItem>
-                    </MudGrid>
-                </MudPaper>
-            </MudItem>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+        <div class="lg:col-span-7">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Provisioned truth</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Business owner login</th><td>@_completion.OwnerEmail</td></tr>
+                        <tr><th>Primary book</th><td>@_completion.CompanyBookCode</td></tr>
+                        <tr><th>Template binding</th><td>@_completion.TemplateKey (@_completion.TemplateVersion)</td></tr>
+                        <tr><th>Base currency</th><td>@_completion.BaseCurrencyCode</td></tr>
+                        <tr><th>Account code length</th><td>@_completion.AccountCodeLength</td></tr>
+                        <tr><th>Provisioned at</th><td>@_completion.ProvisionedAtUtc.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
 
-            <MudItem xs="12" lg="5">
-                <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.h6" Class="mb-3">Next actions</MudText>
-                    <MudList T="string" Dense="true">
-                        <MudListItem Text="1">
-                            <ChildContent>
-                                <MudText Typo="Typo.body2">Keep the SysAdmin account for platform governance only.</MudText>
-                            </ChildContent>
-                        </MudListItem>
-                        <MudListItem Text="2">
-                            <ChildContent>
-                                <MudText Typo="Typo.body2">Use the business owner email above and the password you just entered in the wizard to sign in to the Business App.</MudText>
-                            </ChildContent>
-                        </MudListItem>
-                        <MudListItem Text="3">
-                            <ChildContent>
-                                <MudText Typo="Typo.body2">Return to SysAdmin to govern modules, users, company lifecycle, and platform maintenance.</MudText>
-                            </ChildContent>
-                        </MudListItem>
-                    </MudList>
+        <div class="lg:col-span-5">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Next actions</h2>
+                <ol class="m-0 pl-4 text-sm text-fg-muted flex flex-col gap-2">
+                    <li>Keep the SysAdmin account for platform governance only.</li>
+                    <li>Use the business owner email above and the password you just entered in the wizard to sign in to the Business App.</li>
+                    <li>Return to SysAdmin to govern modules, users, company lifecycle, and platform maintenance.</li>
+                </ol>
 
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="mt-4">
-                        @if (!string.IsNullOrWhiteSpace(_businessLoginHref))
-                        {
-                            <MudButton
-                                Variant="Variant.Filled"
-                                Color="Color.Primary"
-                                Href="@_businessLoginHref"
-                                Target="_blank"
-                                Rel="noopener noreferrer">
-                                Open Business App login
-                            </MudButton>
-                        }
-                        <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="ContinueInSysAdminAsync">
-                            Continue in SysAdmin
-                        </MudButton>
-                    </MudStack>
-                </MudPaper>
-            </MudItem>
-        </MudGrid>
-
-        <MudGrid>
-            <MudItem xs="12" lg="6">
-                <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.h6" Class="mb-3">Starter account codes</MudText>
-                    @if (_completion.StarterAccountCodes.Count == 0)
+                <div class="flex flex-wrap gap-2 mt-4">
+                    @if (!string.IsNullOrWhiteSpace(_businessLoginHref))
                     {
-                        <MudText Typo="Typo.body2" Class="text-secondary">No starter accounts were returned in the provisioning summary.</MudText>
+                        <a class="citus-button citus-button--ghost" href="@_businessLoginHref" target="_blank" rel="noopener noreferrer">
+                            <CitusIcon Name="IconName.ArrowRight" Size="IconSize.Inline" />
+                            <span>Open Business App login</span>
+                        </a>
                     }
-                    else
-                    {
-                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                            @foreach (var accountCode in _completion.StarterAccountCodes)
-                            {
-                                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">@accountCode</MudChip>
-                            }
-                        </MudStack>
-                    }
-                </MudPaper>
-            </MudItem>
+                    <CitusButton OnClick="ContinueInSysAdminAsync">Continue in SysAdmin</CitusButton>
+                </div>
+            </section>
+        </div>
+    </div>
 
-            <MudItem xs="12" lg="6">
-                <MudPaper Class="pa-4">
-                    <MudText Typo="Typo.h6" Class="mb-3">Reserved multi-currency families</MudText>
-                    @if (_completion.ReservedFamilies.Count == 0)
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Starter account codes</h2>
+            @if (_completion.StarterAccountCodes.Count == 0)
+            {
+                <p class="text-fg-muted text-sm">No starter accounts were returned in the provisioning summary.</p>
+            }
+            else
+            {
+                <div class="flex flex-wrap gap-1">
+                    @foreach (var accountCode in _completion.StarterAccountCodes)
                     {
-                        <MudText Typo="Typo.body2" Class="text-secondary">No reserved families were returned in the provisioning summary.</MudText>
+                        <AntDesign.Tag Color="@("blue")">@accountCode</AntDesign.Tag>
                     }
-                    else
+                </div>
+            }
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Reserved multi-currency families</h2>
+            @if (_completion.ReservedFamilies.Count == 0)
+            {
+                <p class="text-fg-muted text-sm">No reserved families were returned in the provisioning summary.</p>
+            }
+            else
+            {
+                <div class="flex flex-wrap gap-1">
+                    @foreach (var family in _completion.ReservedFamilies)
                     {
-                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                            @foreach (var family in _completion.ReservedFamilies)
-                            {
-                                <MudChip T="string" Variant="Variant.Outlined">@family</MudChip>
-                            }
-                        </MudStack>
+                        <AntDesign.Tag Color="@("default")">@family</AntDesign.Tag>
                     }
-                </MudPaper>
-            </MudItem>
-        </MudGrid>
-    </MudStack>
+                </div>
+            }
+        </section>
+    </div>
 }
 
-@code
-{
+@code {
     private SysAdminAuthenticationClient.FirstCompanyProvisioningResponse? _completion;
     private string _businessLoginHref = string.Empty;
 
