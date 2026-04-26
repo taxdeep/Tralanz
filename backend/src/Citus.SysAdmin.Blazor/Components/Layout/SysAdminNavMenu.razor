@@ -1,15 +1,75 @@
-@inject AppShellState ShellState
+@*
+    SysAdminNavMenu — AntDesign Menu rendered from AppShellState's
+    NavigationSections. The section list switches between Setup and
+    BusinessReady automatically based on shell state.
+*@
 
-<MudNavMenu Class="pa-4">
-@foreach (var navSection in ShellState.NavigationSections)
-{
-    <MudText Typo="Typo.overline" Class="px-4 pt-4 text-secondary">@navSection.Title</MudText>
+@inject NavigationManager NavigationManager
+@inject Citus.SysAdmin.Blazor.State.AppShellState ShellState
+@implements IDisposable
 
-    @foreach (var item in navSection.Items)
+<AntDesign.Menu Mode="@AntDesign.MenuMode.Inline"
+                Theme="@AntDesign.MenuTheme.Light"
+                SelectedKeys="@SelectedKeys"
+                DefaultOpenKeys="@OpenKeys"
+                InlineCollapsed="Collapsed"
+                Class="citus-nav-menu">
+    @foreach (var section in ShellState.NavigationSections)
     {
-        <MudNavLink Href="@item.Href" Match="NavLinkMatch.Prefix" Icon="@item.Icon">
-            @item.Title
-        </MudNavLink>
+        <AntDesign.MenuItemGroup Title="@section.Title" Key="@($"group-{section.Title}")">
+            @foreach (var item in section.Items)
+            {
+                <AntDesign.MenuItem Key="@item.Href" RouterLink="@($"./{item.Href}")" RouterMatch="@NavLinkMatch.Prefix">
+                    <span class="citus-nav-menu__item">
+                        <CitusIcon Name="item.Icon" Size="IconSize.Action" />
+                        <span class="citus-nav-menu__label">@item.Title</span>
+                    </span>
+                </AntDesign.MenuItem>
+            }
+        </AntDesign.MenuItemGroup>
     }
+</AntDesign.Menu>
+
+@code {
+    [Parameter] public bool Collapsed { get; set; }
+
+    private string[] SelectedKeys { get; set; } = Array.Empty<string>();
+
+    private string[] OpenKeys =>
+        ShellState.NavigationSections.Select(s => $"group-{s.Title}").ToArray();
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.LocationChanged += HandleLocationChanged;
+        UpdateSelectedKeys();
     }
-</MudNavMenu>
+
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
+    {
+        UpdateSelectedKeys();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateSelectedKeys()
+    {
+        var path = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/');
+        if (string.IsNullOrEmpty(path))
+        {
+            SelectedKeys = ["overview"];
+            return;
+        }
+
+        var matched = ShellState.NavigationSections
+            .SelectMany(s => s.Items)
+            .Where(item => path.StartsWith(item.Href, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.Href.Length)
+            .FirstOrDefault();
+
+        SelectedKeys = matched is null ? Array.Empty<string>() : [matched.Href];
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= HandleLocationChanged;
+    }
+}

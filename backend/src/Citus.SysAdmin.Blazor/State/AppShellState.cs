@@ -1,7 +1,7 @@
 using Citus.Ui.Shared.Control;
+using Citus.Ui.Shared.Icons;
 using Citus.Ui.Shared.Navigation;
 using Citus.Ui.Shared.Shell;
-using MudBlazor;
 using Citus.SysAdmin.Blazor.Services;
 
 namespace Citus.SysAdmin.Blazor.State;
@@ -15,8 +15,8 @@ public sealed class AppShellState
             Title = "Setup",
             Items =
             [
-                new NavMenuItem { Title = "Overview", Href = "overview", Icon = Icons.Material.Filled.DashboardCustomize },
-                new NavMenuItem { Title = "First Company", Href = "setup/company-decision", Icon = Icons.Material.Filled.DomainAdd }
+                new NavMenuItem { Title = "Overview", Href = "overview", Icon = IconName.LayoutDashboard },
+                new NavMenuItem { Title = "First Company", Href = "setup/company-decision", Icon = IconName.CirclePlus }
             ]
         },
         new NavSection
@@ -24,10 +24,10 @@ public sealed class AppShellState
             Title = "Platform Control",
             Items =
             [
-                new NavMenuItem { Title = "Audit", Href = "audit", Icon = Icons.Material.Filled.FactCheck },
-                new NavMenuItem { Title = "Security", Href = "security", Icon = Icons.Material.Filled.AdminPanelSettings },
-                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = Icons.Material.Filled.BuildCircle },
-                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = Icons.Material.Filled.MonitorHeart }
+                new NavMenuItem { Title = "Audit", Href = "audit", Icon = IconName.Report },
+                new NavMenuItem { Title = "Security", Href = "security", Icon = IconName.ShieldLock },
+                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = IconName.Tool },
+                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = IconName.Activity }
             ]
         }
     ];
@@ -39,9 +39,9 @@ public sealed class AppShellState
             Title = "Control",
             Items =
             [
-                new NavMenuItem { Title = "Overview", Href = "overview", Icon = Icons.Material.Filled.DashboardCustomize },
-                new NavMenuItem { Title = "Modules", Href = "modules", Icon = Icons.Material.Filled.Extension },
-                new NavMenuItem { Title = "Entities", Href = "entities", Icon = Icons.Material.Filled.Schema }
+                new NavMenuItem { Title = "Overview", Href = "overview", Icon = IconName.LayoutDashboard },
+                new NavMenuItem { Title = "Modules", Href = "modules", Icon = IconName.Puzzle },
+                new NavMenuItem { Title = "Entities", Href = "entities", Icon = IconName.Database }
             ]
         },
         new NavSection
@@ -49,12 +49,12 @@ public sealed class AppShellState
             Title = "Operations",
             Items =
             [
-                new NavMenuItem { Title = "Companies", Href = "companies", Icon = Icons.Material.Filled.Domain },
-                new NavMenuItem { Title = "Users", Href = "users", Icon = Icons.Material.Filled.People },
-                new NavMenuItem { Title = "Audit", Href = "audit", Icon = Icons.Material.Filled.FactCheck },
-                new NavMenuItem { Title = "Security", Href = "security", Icon = Icons.Material.Filled.AdminPanelSettings },
-                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = Icons.Material.Filled.BuildCircle },
-                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = Icons.Material.Filled.MonitorHeart }
+                new NavMenuItem { Title = "Companies", Href = "companies", Icon = IconName.BuildingSkyscraper },
+                new NavMenuItem { Title = "Users", Href = "users", Icon = IconName.Users },
+                new NavMenuItem { Title = "Audit", Href = "audit", Icon = IconName.Report },
+                new NavMenuItem { Title = "Security", Href = "security", Icon = IconName.ShieldLock },
+                new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = IconName.Tool },
+                new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = IconName.Activity }
             ]
         }
     ];

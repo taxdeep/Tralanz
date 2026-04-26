@@ -1,9 +1,9 @@
 using Citus.Business.Blazor.Configuration;
 using Citus.Ui.Shared.Business;
+using Citus.Ui.Shared.Icons;
 using Citus.Ui.Shared.Navigation;
 using Citus.Ui.Shared.Shell;
 using Microsoft.Extensions.Options;
-using MudBlazor;
 
 namespace Citus.Business.Blazor.State;
 
@@ -67,10 +67,10 @@ public sealed class BusinessShellState
             Title = "Core",
             Items =
             [
-                new NavMenuItem { Title = "Dashboard", Href = "dashboard", Icon = Icons.Material.Filled.Dashboard },
-                new NavMenuItem { Title = "Journal Entry", Href = "journal-entry", Icon = Icons.Material.Filled.LibraryBooks },
-                new NavMenuItem { Title = "Invoices", Href = "invoices", Icon = Icons.Material.Filled.ReceiptLong },
-                new NavMenuItem { Title = "Bills", Href = "bills", Icon = Icons.Material.Filled.RequestQuote }
+                new NavMenuItem { Title = "Dashboard", Href = "dashboard", Icon = IconName.LayoutDashboard },
+                new NavMenuItem { Title = "Journal Entry", Href = "journal-entry", Icon = IconName.FileText },
+                new NavMenuItem { Title = "Invoices", Href = "invoices", Icon = IconName.FileInvoice },
+                new NavMenuItem { Title = "Bills", Href = "bills", Icon = IconName.Receipt }
             ]
         },
         new NavSection
@@ -78,8 +78,8 @@ public sealed class BusinessShellState
             Title = "Sales & Get Paid",
             Items =
             [
-                new NavMenuItem { Title = "Customers", Href = "customers", Icon = Icons.Material.Filled.Groups },
-                new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = Icons.Material.Filled.Payments }
+                new NavMenuItem { Title = "Customers", Href = "customers", Icon = IconName.Users },
+                new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash }
             ]
         },
         new NavSection
@@ -87,8 +87,8 @@ public sealed class BusinessShellState
             Title = "Expense & Bills",
             Items =
             [
-                new NavMenuItem { Title = "Vendors", Href = "vendors", Icon = Icons.Material.Filled.Storefront },
-                new NavMenuItem { Title = "Pay Bills", Href = "pay-bills", Icon = Icons.Material.Filled.AccountBalanceWallet }
+                new NavMenuItem { Title = "Vendors", Href = "vendors", Icon = IconName.BuildingStore },
+                new NavMenuItem { Title = "Pay Bills", Href = "pay-bills", Icon = IconName.Wallet }
             ]
         },
         new NavSection
@@ -96,9 +96,9 @@ public sealed class BusinessShellState
             Title = "Accounting",
             Items =
             [
-                new NavMenuItem { Title = "Chart of Accounts", Href = "chart-of-accounts", Icon = Icons.Material.Filled.AccountTree },
-                new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = Icons.Material.Filled.RuleFolder },
-                new NavMenuItem { Title = "Reports", Href = "reports", Icon = Icons.Material.Filled.Assessment }
+                new NavMenuItem { Title = "Chart of Accounts", Href = "chart-of-accounts", Icon = IconName.BuildingBank },
+                new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = IconName.CircleCheck },
+                new NavMenuItem { Title = "Reports", Href = "reports", Icon = IconName.ReportAnalytics }
             ]
         },
         new NavSection
@@ -106,8 +106,8 @@ public sealed class BusinessShellState
             Title = "Settings",
             Items =
             [
-                new NavMenuItem { Title = "Company Settings", Href = "settings", Icon = Icons.Material.Filled.Settings },
-                new NavMenuItem { Title = "Session", Href = "session", Icon = Icons.Material.Filled.Badge }
+                new NavMenuItem { Title = "Company Settings", Href = "settings", Icon = IconName.Settings },
+                new NavMenuItem { Title = "Session", Href = "session", Icon = IconName.User }
             ]
         }
     ];

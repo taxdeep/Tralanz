@@ -1,3 +1,5 @@
+using Citus.Ui.Shared.Icons;
+
 namespace Citus.Ui.Shared.Navigation;
 
 public sealed record class NavMenuItem
@@ -6,5 +8,5 @@ public sealed record class NavMenuItem
 
     public string Href { get; init; } = string.Empty;
 
-    public string Icon { get; init; } = string.Empty;
+    public IconName Icon { get; init; } = IconName.LayoutDashboard;
 }
