@@ -698,8 +698,8 @@ ensure_dotnet() {
   ensure_dotnet_dependencies
 
   local sdk_version="${CITUS_DOTNET_SDK_VERSION:-$(dotnet_sdk_version_from_global_json)}"
-  local dotnet_channel="${CITUS_DOTNET_CHANNEL:-11.0}"
-  local dotnet_quality="${CITUS_DOTNET_QUALITY:-preview}"
+  local dotnet_channel="${CITUS_DOTNET_CHANNEL:-10.0}"
+  local dotnet_quality="${CITUS_DOTNET_QUALITY:-GA}"
   local allow_channel_fallback="${CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK:-1}"
   local install_script="/tmp/citus-dotnet-install.sh"
   local tarball_url=""

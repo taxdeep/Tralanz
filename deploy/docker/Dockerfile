@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0-preview
-ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:11.0-preview
+ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0
 ARG NODE_IMAGE=node:20-bookworm-slim
 
 # ---- frontend stage: Tailwind v4 → wwwroot/app.css ---------------------------

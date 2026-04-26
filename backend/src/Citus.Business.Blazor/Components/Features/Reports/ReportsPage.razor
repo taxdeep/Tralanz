@@ -169,15 +169,15 @@
         }
         else
         {
-            @foreach (var section in GetIncomeSections())
+            @foreach (var reportSection in GetIncomeSections())
             {
                 <article class="citus-subpanel">
                     <header class="citus-subpanel__header">
-                        <h3 class="citus-subpanel__title">@section.Title</h3>
-                        <AntDesign.Tag Color="@TagColor(section.Tone)">@FormatAmount(section.Total)</AntDesign.Tag>
+                        <h3 class="citus-subpanel__title">@reportSection.Title</h3>
+                        <AntDesign.Tag Color="@TagColor(reportSection.Tone)">@FormatAmount(reportSection.Total)</AntDesign.Tag>
                     </header>
 
-                    @if (section.Rows.Count == 0)
+                    @if (reportSection.Rows.Count == 0)
                     {
                         <p class="text-fg-muted text-sm">No accounts in this section for the selected range.</p>
                     }
@@ -188,7 +188,7 @@
                                 <tr><th>Code</th><th>Account</th><th class="text-right">Amount</th></tr>
                             </thead>
                             <tbody>
-                                @foreach (var row in section.Rows)
+                                @foreach (var row in reportSection.Rows)
                                 {
                                     <tr>
                                         <td><span class="citus-inline-code">@row.Code</span></td>
@@ -253,15 +253,15 @@
         }
         else
         {
-            @foreach (var section in GetBalanceSections())
+            @foreach (var reportSection in GetBalanceSections())
             {
                 <article class="citus-subpanel">
                     <header class="citus-subpanel__header">
-                        <h3 class="citus-subpanel__title">@section.Title</h3>
-                        <AntDesign.Tag Color="@TagColor(section.Tone)">@FormatAmount(section.Total)</AntDesign.Tag>
+                        <h3 class="citus-subpanel__title">@reportSection.Title</h3>
+                        <AntDesign.Tag Color="@TagColor(reportSection.Tone)">@FormatAmount(reportSection.Total)</AntDesign.Tag>
                     </header>
 
-                    @if (section.Rows.Count == 0)
+                    @if (reportSection.Rows.Count == 0)
                     {
                         <p class="text-fg-muted text-sm">No accounts in this section for the selected date.</p>
                     }
@@ -272,7 +272,7 @@
                                 <tr><th>Code</th><th>Account</th><th class="text-right">Amount</th></tr>
                             </thead>
                             <tbody>
-                                @foreach (var row in section.Rows)
+                                @foreach (var row in reportSection.Rows)
                                 {
                                     <tr>
                                         <td><span class="citus-inline-code">@row.Code</span></td>

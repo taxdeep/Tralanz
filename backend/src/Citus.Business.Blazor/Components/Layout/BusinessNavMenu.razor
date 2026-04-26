@@ -15,10 +15,10 @@
                 DefaultOpenKeys="@OpenKeys"
                 InlineCollapsed="Collapsed"
                 Class="citus-nav-menu">
-    @foreach (var section in ShellState.NavigationSections)
+    @foreach (var navSection in ShellState.NavigationSections)
     {
-        <AntDesign.MenuItemGroup Title="@section.Title" Key="@($"group-{section.Title}")">
-            @foreach (var item in section.Items)
+        <AntDesign.MenuItemGroup Title="@navSection.Title" Key="@($"group-{navSection.Title}")">
+            @foreach (var item in navSection.Items)
             {
                 <AntDesign.MenuItem Key="@item.Href" RouterLink="@($"./{item.Href}")" RouterMatch="@NavLinkMatch.Prefix">
                     <span class="citus-nav-menu__item">
