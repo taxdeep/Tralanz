@@ -1,0 +1,28 @@
+@*
+    CitusMaintenanceBanner — yellow rail at the top of every page when
+    the platform is in maintenance mode. Restated from the legacy
+    MudBlazor copy on AntDesign.Alert; same data contract.
+*@
+
+@using Citus.Ui.Shared.Shell
+
+@if (State.Enabled)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+                     ShowIcon="true"
+                     Banner="true"
+                     Class="citus-banner mb-4">
+        <MessageTemplate>
+            @State.Message
+            @if (State.ScheduledUntilUtc.HasValue)
+            {
+                <span> Planned until @State.ScheduledUntilUtc.Value.ToUniversalTime().ToString("u").</span>
+            }
+        </MessageTemplate>
+    </AntDesign.Alert>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public MaintenanceStateSummary State { get; set; } = new();
+}

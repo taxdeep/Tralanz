@@ -19,32 +19,32 @@
             Label="Report home"
             Value="Five reports + CSV"
             Description="Reports remain the safest early business surface to migrate into Blazor, with backend-owned CSV export and read-only source drill-down."
-            Icon="@Icons.Material.Filled.Assessment"
-            Color="Color.Primary" />
+            Icon="IconName.ReportAnalytics"
+            Tone="StatTone.Primary" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Company"
             Value="@ShellState.ActiveCompany.CompanyCode"
             Description="@ShellState.ActiveCompany.CompanyName"
-            Icon="@Icons.Material.Filled.Domain"
-            Color="Color.Info" />
+            Icon="IconName.BuildingSkyscraper"
+            Tone="StatTone.Info" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Base currency"
             Value="@ShellState.ActiveCompany.BaseCurrencyCode"
             Description="Report totals remain grounded in company base-currency truth."
-            Icon="@Icons.Material.Filled.AttachMoney"
-            Color="Color.Success" />
+            Icon="IconName.Coin"
+            Tone="StatTone.Success" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Accounting API"
             Value="@(_health?.Status ?? "Unavailable")"
             Description="Trial Balance, Income Statement, Balance Sheet, A/R Aging, and A/P Aging now support both live HTML reads and CSV export from backend report endpoints."
-            Icon="@Icons.Material.Filled.MonitorHeart"
-            Color="Color.Secondary" />
+            Icon="IconName.Activity"
+            Tone="StatTone.Neutral" />
     </MudItem>
 </MudGrid>
 
@@ -85,32 +85,32 @@
                     Label="As of"
                     Value="@_trialBalance.AsOfDate.ToString("yyyy-MM-dd")"
                     Description="Trial Balance stays pinned to one backend-owned cut-off date."
-                    Icon="@Icons.Material.Filled.Event"
-                    Color="Color.Info" />
+                    Icon="IconName.Calendar"
+                    Tone="StatTone.Info" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Accounts"
                     Value="@_trialBalance.AccountCount.ToString()"
                     Description="Only active-company accounts participate in this report."
-                    Icon="@Icons.Material.Filled.AccountTree"
-                    Color="Color.Primary" />
+                    Icon="IconName.BuildingBank"
+                    Tone="StatTone.Primary" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Debit total"
                     Value="@FormatAmount(_trialBalance.TotalBalanceDebit)"
                     Description="@($"Base currency {_trialBalance.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.CallReceived"
-                    Color="Color.Success" />
+                    Icon="IconName.Cash"
+                    Tone="StatTone.Success" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Balance check"
                     Value="@(_trialBalance.IsBalanced ? "Balanced" : "Out of balance")"
                     Description="@($"Credit total {FormatAmount(_trialBalance.TotalBalanceCredit)} {_trialBalance.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.Balance"
-                    Color="@(_trialBalance.IsBalanced ? Color.Success : Color.Error)" />
+                    Icon="IconName.CircleCheck"
+                    Tone="@(_trialBalance.IsBalanced ? StatTone.Success : StatTone.Danger)" />
             </MudItem>
         </MudGrid>
 
@@ -193,32 +193,32 @@
                     Label="Revenue"
                     Value="@FormatAmount(_incomeStatement.TotalRevenue)"
                     Description="@($"Range {_incomeStatement.DateFrom:yyyy-MM-dd} to {_incomeStatement.DateTo:yyyy-MM-dd}")"
-                    Icon="@Icons.Material.Filled.TrendingUp"
-                    Color="Color.Success" />
+                    Icon="IconName.ReportAnalytics"
+                    Tone="StatTone.Success" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Gross profit"
                     Value="@FormatAmount(_incomeStatement.GrossProfit)"
                     Description="@($"After cost of sales in {_incomeStatement.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.ShowChart"
-                    Color="Color.Info" />
+                    Icon="IconName.ReportAnalytics"
+                    Tone="StatTone.Info" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Expenses"
                     Value="@FormatAmount(_incomeStatement.TotalExpenses)"
                     Description="Operating expense accounts in the selected range."
-                    Icon="@Icons.Material.Filled.MoneyOff"
-                    Color="Color.Warning" />
+                    Icon="IconName.Wallet"
+                    Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Net income"
                     Value="@FormatAmount(_incomeStatement.NetIncome)"
                     Description="@($"Company base currency {_incomeStatement.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.AccountBalance"
-                    Color="@(_incomeStatement.NetIncome >= 0m ? Color.Success : Color.Error)" />
+                    Icon="IconName.BuildingBank"
+                    Tone="@(_incomeStatement.NetIncome >= 0m ? StatTone.Success : StatTone.Danger)" />
             </MudItem>
         </MudGrid>
 
@@ -307,32 +307,32 @@
                     Label="Assets"
                     Value="@FormatAmount(_balanceSheet.TotalAssets)"
                     Description="@($"As of {_balanceSheet.AsOfDate:yyyy-MM-dd}")"
-                    Icon="@Icons.Material.Filled.AccountBalance"
-                    Color="Color.Info" />
+                    Icon="IconName.BuildingBank"
+                    Tone="StatTone.Info" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Liabilities"
                     Value="@FormatAmount(_balanceSheet.TotalLiabilities)"
                     Description="@($"Base currency {_balanceSheet.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.RequestQuote"
-                    Color="Color.Warning" />
+                    Icon="IconName.Receipt"
+                    Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Equity"
                     Value="@FormatAmount(_balanceSheet.TotalEquity)"
                     Description="@($"Includes current earnings {FormatAmount(_balanceSheet.CurrentEarnings)}")"
-                    Icon="@Icons.Material.Filled.PieChart"
-                    Color="Color.Success" />
+                    Icon="IconName.Report"
+                    Tone="StatTone.Success" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Balance check"
                     Value="@(_balanceSheet.IsBalanced ? "Balanced" : "Out of balance")"
                     Description="@($"Liabilities + equity {FormatAmount(_balanceSheet.TotalLiabilitiesAndEquity)}")"
-                    Icon="@Icons.Material.Filled.Balance"
-                    Color="@(_balanceSheet.IsBalanced ? Color.Success : Color.Error)" />
+                    Icon="IconName.CircleCheck"
+                    Tone="@(_balanceSheet.IsBalanced ? StatTone.Success : StatTone.Danger)" />
             </MudItem>
         </MudGrid>
 
@@ -420,53 +420,53 @@
                     Label="Outstanding"
                     Value="@FormatAmount(_arAging.TotalOutstandingAmountBase)"
                     Description="@($"As of {_arAging.AsOfDate:yyyy-MM-dd} in {_arAging.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.RequestQuote"
-                    Color="Color.Info" />
+                    Icon="IconName.Receipt"
+                    Tone="StatTone.Info" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Customers"
                     Value="@_arAging.CustomerCount.ToString()"
                     Description="@($"{_arAging.OpenItemCount} open items in scope")"
-                    Icon="@Icons.Material.Filled.Groups"
-                    Color="Color.Primary" />
+                    Icon="IconName.Users"
+                    Tone="StatTone.Primary" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Overdue"
                     Value="@FormatAmount(_arAging.TotalOverdueAmountBase)"
                     Description="Total receivable value already past due."
-                    Icon="@Icons.Material.Filled.WarningAmber"
-                    Color="@(_arAging.TotalOverdueAmountBase > 0m ? Color.Warning : Color.Success)" />
+                    Icon="IconName.AlertTriangle"
+                    Tone="@(_arAging.TotalOverdueAmountBase > 0m ? StatTone.Warning : StatTone.Success)" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="> 90 days"
                     Value="@FormatAmount(_arAging.DaysOver90AmountBase)"
                     Description="The oldest overdue bucket stays visible for control review."
-                    Icon="@Icons.Material.Filled.Schedule"
-                    Color="@(_arAging.DaysOver90AmountBase > 0m ? Color.Error : Color.Success)" />
+                    Icon="IconName.Clock"
+                    Tone="@(_arAging.DaysOver90AmountBase > 0m ? StatTone.Danger : StatTone.Success)" />
             </MudItem>
         </MudGrid>
 
         <MudGrid Class="mb-4">
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="Current" Value="@FormatAmount(_arAging.CurrentAmountBase)" Description="Not yet due" Icon="@Icons.Material.Filled.Today" Color="Color.Success" />
+                <CitusStatCard Label="Current" Value="@FormatAmount(_arAging.CurrentAmountBase)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="1-30" Value="@FormatAmount(_arAging.Days1To30AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksOne" Color="Color.Warning" />
+                <CitusStatCard Label="1-30" Value="@FormatAmount(_arAging.Days1To30AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="31-60" Value="@FormatAmount(_arAging.Days31To60AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksTwo" Color="Color.Warning" />
+                <CitusStatCard Label="31-60" Value="@FormatAmount(_arAging.Days31To60AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="61-90" Value="@FormatAmount(_arAging.Days61To90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.Looks3" Color="Color.Warning" />
+                <CitusStatCard Label="61-90" Value="@FormatAmount(_arAging.Days61To90AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="> 90" Value="@FormatAmount(_arAging.DaysOver90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.PriorityHigh" Color="Color.Error" />
+                <CitusStatCard Label="> 90" Value="@FormatAmount(_arAging.DaysOver90AmountBase)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="Total" Value="@FormatAmount(_arAging.TotalOutstandingAmountBase)" Description="Net open receivables" Icon="@Icons.Material.Filled.Summarize" Color="Color.Info" />
+                <CitusStatCard Label="Total" Value="@FormatAmount(_arAging.TotalOutstandingAmountBase)" Description="Net open receivables" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
             </MudItem>
         </MudGrid>
 
@@ -614,53 +614,53 @@
                     Label="Outstanding"
                     Value="@FormatAmount(_apAging.TotalOutstandingAmountBase)"
                     Description="@($"As of {_apAging.AsOfDate:yyyy-MM-dd} in {_apAging.BaseCurrencyCode}")"
-                    Icon="@Icons.Material.Filled.RequestQuote"
-                    Color="Color.Info" />
+                    Icon="IconName.Receipt"
+                    Tone="StatTone.Info" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Vendors"
                     Value="@_apAging.VendorCount.ToString()"
                     Description="@($"{_apAging.OpenItemCount} open items in scope")"
-                    Icon="@Icons.Material.Filled.Store"
-                    Color="Color.Primary" />
+                    Icon="IconName.BuildingStore"
+                    Tone="StatTone.Primary" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="Overdue"
                     Value="@FormatAmount(_apAging.TotalOverdueAmountBase)"
                     Description="Total payable value already past due."
-                    Icon="@Icons.Material.Filled.WarningAmber"
-                    Color="@(_apAging.TotalOverdueAmountBase > 0m ? Color.Warning : Color.Success)" />
+                    Icon="IconName.AlertTriangle"
+                    Tone="@(_apAging.TotalOverdueAmountBase > 0m ? StatTone.Warning : StatTone.Success)" />
             </MudItem>
             <MudItem xs="12" md="6" lg="3">
                 <CitusStatCard
                     Label="> 90 days"
                     Value="@FormatAmount(_apAging.DaysOver90AmountBase)"
                     Description="The oldest overdue bucket stays visible for payment control."
-                    Icon="@Icons.Material.Filled.Schedule"
-                    Color="@(_apAging.DaysOver90AmountBase > 0m ? Color.Error : Color.Success)" />
+                    Icon="IconName.Clock"
+                    Tone="@(_apAging.DaysOver90AmountBase > 0m ? StatTone.Danger : StatTone.Success)" />
             </MudItem>
         </MudGrid>
 
         <MudGrid Class="mb-4">
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="Current" Value="@FormatAmount(_apAging.CurrentAmountBase)" Description="Not yet due" Icon="@Icons.Material.Filled.Today" Color="Color.Success" />
+                <CitusStatCard Label="Current" Value="@FormatAmount(_apAging.CurrentAmountBase)" Description="Not yet due" Icon="IconName.Calendar" Tone="StatTone.Success" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="1-30" Value="@FormatAmount(_apAging.Days1To30AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksOne" Color="Color.Warning" />
+                <CitusStatCard Label="1-30" Value="@FormatAmount(_apAging.Days1To30AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="31-60" Value="@FormatAmount(_apAging.Days31To60AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.LooksTwo" Color="Color.Warning" />
+                <CitusStatCard Label="31-60" Value="@FormatAmount(_apAging.Days31To60AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="61-90" Value="@FormatAmount(_apAging.Days61To90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.Looks3" Color="Color.Warning" />
+                <CitusStatCard Label="61-90" Value="@FormatAmount(_apAging.Days61To90AmountBase)" Description="Past due" Icon="IconName.Receipt" Tone="StatTone.Warning" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="> 90" Value="@FormatAmount(_apAging.DaysOver90AmountBase)" Description="Past due" Icon="@Icons.Material.Filled.PriorityHigh" Color="Color.Error" />
+                <CitusStatCard Label="> 90" Value="@FormatAmount(_apAging.DaysOver90AmountBase)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
             </MudItem>
             <MudItem xs="12" md="6" lg="2">
-                <CitusStatCard Label="Total" Value="@FormatAmount(_apAging.TotalOutstandingAmountBase)" Description="Net open payables" Icon="@Icons.Material.Filled.Summarize" Color="Color.Info" />
+                <CitusStatCard Label="Total" Value="@FormatAmount(_apAging.TotalOutstandingAmountBase)" Description="Net open payables" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
             </MudItem>
         </MudGrid>
 

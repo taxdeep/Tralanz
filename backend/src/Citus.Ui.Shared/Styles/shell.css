@@ -227,3 +227,175 @@
     align-items: center;
     gap: var(--citus-space-2);
 }
+
+/* ---------- Page-level patterns ---------- */
+
+.citus-banner {
+    border-radius: var(--citus-radius-md);
+}
+
+.citus-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-4);
+    margin-bottom: var(--citus-space-6);
+}
+
+.citus-page-header__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+
+.citus-page-header__eyebrow {
+    color: var(--citus-color-info);
+    font-size: var(--citus-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+}
+
+.citus-page-header__title {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-2xl);
+    font-weight: 600;
+    line-height: var(--citus-leading-tight);
+}
+
+.citus-page-header__subtitle {
+    margin: 0;
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-base);
+}
+
+.citus-page-header__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    flex-shrink: 0;
+}
+
+.citus-stat-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--citus-space-4);
+    padding: var(--citus-space-5);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-lg);
+    box-shadow: var(--citus-shadow-1);
+}
+
+.citus-stat-card__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+
+.citus-stat-card__label {
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+}
+
+.citus-stat-card__value {
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-2xl);
+    font-weight: 600;
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-stat-card__description {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-stat-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-primary-bg);
+    color: var(--citus-color-primary);
+    flex-shrink: 0;
+}
+
+.citus-stat-card--success .citus-stat-card__icon {
+    background: var(--citus-color-success-bg);
+    color: var(--citus-color-success);
+}
+
+.citus-stat-card--warning .citus-stat-card__icon {
+    background: var(--citus-color-warning-bg);
+    color: var(--citus-color-warning);
+}
+
+.citus-stat-card--danger .citus-stat-card__icon {
+    background: var(--citus-color-danger-bg);
+    color: var(--citus-color-danger);
+}
+
+.citus-stat-card--info .citus-stat-card__icon {
+    background: var(--citus-color-info-bg);
+    color: var(--citus-color-info);
+}
+
+.citus-stat-card--neutral .citus-stat-card__icon {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-12) var(--citus-space-8);
+    background: var(--citus-color-bg-elevated);
+    border: 1px dashed var(--citus-color-border);
+    border-radius: var(--citus-radius-lg);
+}
+
+.citus-empty-state__icon {
+    color: var(--citus-color-fg-subtle);
+}
+
+.citus-empty-state__title {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-xl);
+    font-weight: 600;
+}
+
+.citus-empty-state__message {
+    margin: 0;
+    color: var(--citus-color-fg-muted);
+    max-width: 56ch;
+}
+
+.citus-empty-state__action {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--citus-space-2) var(--citus-space-4);
+    background: var(--citus-color-primary);
+    color: var(--citus-color-fg-on-primary);
+    border-radius: var(--citus-radius-md);
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.citus-empty-state__action:hover {
+    background: var(--citus-color-primary-hover);
+    color: var(--citus-color-fg-on-primary);
+}
+
+.citus-status-badge {
+    text-transform: capitalize;
+}

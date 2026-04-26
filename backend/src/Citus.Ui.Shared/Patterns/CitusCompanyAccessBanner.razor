@@ -1,0 +1,29 @@
+@*
+    CitusCompanyAccessBanner — informs the user when the active company
+    is read-only so they understand why writes/posting are blocked.
+*@
+
+@using Citus.Ui.Shared.Business
+
+@if (Company.IsReadOnly)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                     ShowIcon="true"
+                     Banner="true"
+                     Class="citus-banner mb-4">
+        <MessageTemplate>
+            Company <strong>@Company.CompanyName</strong> is currently <strong>@FormatStatus(Company.Status)</strong>.
+            Business access stays available for review, but writes, posting, and governed mutations are blocked by backend authority.
+        </MessageTemplate>
+    </AntDesign.Alert>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public BusinessCompanySummary Company { get; set; } = new();
+
+    private static string FormatStatus(string? status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "read-only"
+            : status.Trim().ToLowerInvariant();
+}

@@ -1,0 +1,33 @@
+@*
+    CitusPageHeader — page-level title block. Eyebrow + title + subtitle
+    with restrained typography, plus an optional action slot at the
+    right edge for primary buttons.
+*@
+
+@using Citus.Ui.Shared.Pages
+
+<header class="citus-page-header">
+    <div class="citus-page-header__text">
+        @if (!string.IsNullOrWhiteSpace(Model.Eyebrow))
+        {
+            <span class="citus-page-header__eyebrow">@Model.Eyebrow</span>
+        }
+        <h1 class="citus-page-header__title">@Model.Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
+        {
+            <p class="citus-page-header__subtitle">@Model.Subtitle</p>
+        }
+    </div>
+
+    @if (Actions is not null)
+    {
+        <div class="citus-page-header__actions">@Actions</div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired]
+    public PageHeaderModel Model { get; set; } = new();
+
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

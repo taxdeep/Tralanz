@@ -41,23 +41,23 @@
                 Label="Journal entry"
                 Value="@_review.DisplayNumber"
                 Description="@($"{_review.SourceTypeLabel} | status {_review.Status}")"
-                Icon="@Icons.Material.Filled.LibraryBooks"
-                Color="Color.Primary" />
+                Icon="IconName.FileText"
+                Tone="StatTone.Primary" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Posted at"
                 Value="@(_review.PostedAt?.ToString("yyyy-MM-dd") ?? "Pending")"
                 Description="@(_review.PostedAt?.ToString("HH:mm 'UTC'") ?? "posted_at unavailable")"
-                Icon="@Icons.Material.Filled.Schedule"
-                Color="Color.Info" />
+                Icon="IconName.Clock"
+                Tone="StatTone.Info" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Base total"
                 Value="@FormatAmount(_review.TotalDebit)"
                 Description="@($"Credit {FormatAmount(_review.TotalCredit)} {_review.BaseCurrencyCode}")"
-                Icon="@Icons.Material.Filled.AccountBalance"
+                Icon="IconName.BuildingBank"
                 Color="@(_review.TotalDebit == _review.TotalCredit ? Color.Success : Color.Error)" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
@@ -65,8 +65,8 @@
                 Label="FX snapshot"
                 Value="@_review.ExchangeRate.ToString("0.######")"
                 Description="@($"{_review.ExchangeRateSource} on {_review.ExchangeRateDate:yyyy-MM-dd}")"
-                Icon="@Icons.Material.Filled.CurrencyExchange"
-                Color="Color.Secondary" />
+                Icon="IconName.Coin"
+                Tone="StatTone.Neutral" />
         </MudItem>
     </MudGrid>
 

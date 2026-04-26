@@ -35,32 +35,32 @@
                 Label="Document"
                 Value="@_document.DisplayNumber"
                 Description="@($"{_document.SourceTypeLabel} | status {_document.Status}")"
-                Icon="@Icons.Material.Filled.Description"
-                Color="Color.Primary" />
+                Icon="IconName.FileText"
+                Tone="StatTone.Primary" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Company"
                 Value="@ShellState.ActiveCompany.CompanyCode"
                 Description="@ShellState.ActiveCompany.CompanyName"
-                Icon="@Icons.Material.Filled.Domain"
-                Color="Color.Info" />
+                Icon="IconName.BuildingSkyscraper"
+                Tone="StatTone.Info" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Total"
                 Value="@FormatAmount(_document.TotalAmount)"
                 Description="@($"{_document.TransactionCurrencyCode} transaction currency")"
-                Icon="@Icons.Material.Filled.RequestQuote"
-                Color="Color.Success" />
+                Icon="IconName.Receipt"
+                Tone="StatTone.Success" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Due date"
                 Value="@(_document.DueDate?.ToString("yyyy-MM-dd") ?? "No due date")"
                 Description="@($"Document date {_document.DocumentDate:yyyy-MM-dd}")"
-                Icon="@Icons.Material.Filled.Event"
-                Color="Color.Secondary" />
+                Icon="IconName.Calendar"
+                Tone="StatTone.Neutral" />
         </MudItem>
     </MudGrid>
 

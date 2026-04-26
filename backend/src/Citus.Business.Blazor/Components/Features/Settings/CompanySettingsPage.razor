@@ -12,31 +12,31 @@
             Label="Company"
             Value="@ShellState.ActiveCompany.CompanyCode"
             Description="@ShellState.ActiveCompany.CompanyName"
-            Icon="@Icons.Material.Filled.Domain"
-            Color="Color.Primary" />
+            Icon="IconName.BuildingSkyscraper"
+            Tone="StatTone.Primary" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Base currency"
             Value="@ShellState.ActiveCompany.BaseCurrencyCode"
             Description="Company-level accounting default."
-            Icon="@Icons.Material.Filled.AttachMoney"
-            Color="Color.Info" />
+            Icon="IconName.Coin"
+            Tone="StatTone.Info" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Multi-currency"
             Value="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled")"
             Description="Future FX controls should stay here, not spread across forms."
-            Icon="@Icons.Material.Filled.CurrencyExchange"
-            Color="Color.Success" />
+            Icon="IconName.Coin"
+            Tone="StatTone.Success" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Company status"
             Value="@FormatCompanyStatus(ShellState.ActiveCompany.Status)"
             Description="Active company lifecycle gates whether business writes remain available."
-            Icon="@Icons.Material.Filled.Policy"
+            Icon="IconName.ShieldLock"
             Color="@(ShellState.ActiveCompany.IsReadOnly ? Color.Warning : Color.Success)" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
@@ -44,15 +44,15 @@
             Label="Maintenance"
             Value="@(ShellState.MaintenanceState.Enabled ? "Active" : "Normal")"
             Description="Business write behavior must reflect platform maintenance state."
-            Icon="@Icons.Material.Filled.BuildCircle"
-            Color="Color.Secondary" />
+            Icon="IconName.Tool"
+            Tone="StatTone.Neutral" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Write mode"
             Value="@(ShellState.AreWritesBlocked ? "Blocked" : "Writable")"
             Description="@ShellState.WriteBlockMessage"
-            Icon="@Icons.Material.Filled.EditOff"
+            Icon="IconName.Eye"
             Color="@(ShellState.AreWritesBlocked ? Color.Warning : Color.Info)" />
     </MudItem>
 </MudGrid>

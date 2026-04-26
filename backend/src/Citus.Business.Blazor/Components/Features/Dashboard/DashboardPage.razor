@@ -14,32 +14,32 @@
             Label="Active company"
             Value="@ShellState.ActiveCompany.CompanyCode"
             Description="@ShellState.ActiveCompany.CompanyName"
-            Icon="@Icons.Material.Filled.Domain"
-            Color="Color.Primary" />
+            Icon="IconName.BuildingSkyscraper"
+            Tone="StatTone.Primary" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Operator"
             Value="@ShellState.User.DisplayName"
             Description="Backend-authoritative business session."
-            Icon="@Icons.Material.Filled.Badge"
-            Color="Color.Success" />
+            Icon="IconName.User"
+            Tone="StatTone.Success" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Accessible companies"
             Value="@ShellState.AvailableCompanies.Count.ToString()"
             Description="Membership-scoped company contexts."
-            Icon="@Icons.Material.Filled.Hub"
-            Color="Color.Info" />
+            Icon="IconName.World"
+            Tone="StatTone.Info" />
     </MudItem>
     <MudItem xs="12" md="6" lg="3">
         <CitusStatCard
             Label="Accounting API"
             Value="@(_health?.Status ?? "Unavailable")"
             Description="Business shell read path into the accounting backend."
-            Icon="@Icons.Material.Filled.MonitorHeart"
-            Color="Color.Secondary" />
+            Icon="IconName.Activity"
+            Tone="StatTone.Neutral" />
     </MudItem>
 </MudGrid>
 

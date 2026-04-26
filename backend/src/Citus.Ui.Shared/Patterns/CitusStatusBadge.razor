@@ -1,0 +1,26 @@
+@*
+    CitusStatusBadge — green/red pill summarising an upstream service
+    health status. Used by the SysAdmin dashboards and runtime-health
+    surfaces. Falls back to a neutral fallback string when the source
+    is missing.
+*@
+
+@using Citus.Ui.Shared.Health
+
+<AntDesign.Tag Color="@Color" Class="citus-status-badge">@ResolvedText</AntDesign.Tag>
+
+@code {
+    [Parameter] public ServiceHealthStatus? Status { get; set; }
+
+    [Parameter] public string FallbackText { get; set; } = "Unavailable";
+
+    private string ResolvedText =>
+        string.IsNullOrWhiteSpace(Status?.Status)
+            ? FallbackText
+            : Status!.Status;
+
+    private string Color =>
+        string.Equals(Status?.Status, "ok", StringComparison.OrdinalIgnoreCase)
+            ? AntDesign.PresetColor.Green.ToString().ToLowerInvariant()
+            : AntDesign.PresetColor.Orange.ToString().ToLowerInvariant();
+}

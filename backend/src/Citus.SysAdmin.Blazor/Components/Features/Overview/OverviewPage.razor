@@ -96,32 +96,32 @@ else
                 Label="Core"
                 Value="@(_overview?.Name ?? "Unavailable")"
                 Description="Metadata kernel for modules and entities."
-                Icon="@Icons.Material.Filled.Hub"
-                Color="Color.Primary" />
+                Icon="IconName.World"
+                Tone="StatTone.Primary" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Modules"
                 Value="@(_overview?.ModulesRegistered.ToString() ?? _modules.Count.ToString())"
                 Description="Registered platform modules."
-                Icon="@Icons.Material.Filled.Extension"
-                Color="Color.Secondary" />
+                Icon="IconName.Puzzle"
+                Tone="StatTone.Neutral" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Entities"
                 Value="@(_overview?.EntitiesRegistered.ToString() ?? _entities.Count.ToString())"
                 Description="Metadata entities under control."
-                Icon="@Icons.Material.Filled.Schema"
-                Color="Color.Tertiary" />
+                Icon="IconName.Database"
+                Tone="StatTone.Info" />
         </MudItem>
         <MudItem xs="12" md="6" lg="3">
             <CitusStatCard
                 Label="Health"
                 Value="@HealthSummary"
                 Description="Cross-service snapshot for the control plane."
-                Icon="@Icons.Material.Filled.MonitorHeart"
-                Color="Color.Success" />
+                Icon="IconName.Activity"
+                Tone="StatTone.Success" />
         </MudItem>
     </MudGrid>
 

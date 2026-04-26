@@ -1,0 +1,38 @@
+@*
+    CitusEmptyState — full-width empty surface for placeholder pages and
+    empty list views. Different from CitusEmpty (the in-table empty
+    slot) because this one is a page-level block with an optional CTA.
+*@
+
+<div class="citus-empty-state">
+    <div class="citus-empty-state__icon">
+        <CitusIcon Name="@Icon" Size="IconSize.Display" />
+    </div>
+
+    <div class="citus-empty-state__text">
+        <h2 class="citus-empty-state__title">@Title</h2>
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <p class="citus-empty-state__message">@Message</p>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(ActionLabel) && !string.IsNullOrWhiteSpace(ActionHref))
+    {
+        <a class="citus-empty-state__action" href="@ActionHref">
+            @ActionLabel
+        </a>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string Message { get; set; } = string.Empty;
+
+    [Parameter] public IconName Icon { get; set; } = IconName.InfoCircle;
+
+    [Parameter] public string ActionLabel { get; set; } = string.Empty;
+
+    [Parameter] public string ActionHref { get; set; } = string.Empty;
+}

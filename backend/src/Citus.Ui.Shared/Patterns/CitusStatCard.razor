@@ -1,0 +1,32 @@
+@*
+    CitusStatCard — operational metric card used on dashboards. Label,
+    big value, optional supporting line, and an icon disc tinted by the
+    Tone. Kept restrained per spec §9 — no charts, no decoration.
+*@
+
+<div class="citus-stat-card citus-stat-card--@(Tone.ToString().ToLowerInvariant())">
+    <div class="citus-stat-card__text">
+        <span class="citus-stat-card__label">@Label</span>
+        <span class="citus-stat-card__value">@Value</span>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <span class="citus-stat-card__description">@Description</span>
+        }
+    </div>
+
+    <div class="citus-stat-card__icon">
+        <CitusIcon Name="@Icon" Size="IconSize.Display" />
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+
+    [Parameter] public string? Description { get; set; }
+
+    [Parameter] public IconName Icon { get; set; } = IconName.LayoutDashboard;
+
+    [Parameter] public StatTone Tone { get; set; } = StatTone.Primary;
+}
