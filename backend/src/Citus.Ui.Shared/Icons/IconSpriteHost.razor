@@ -1,0 +1,17 @@
+@*
+    Inlines tabler-sprite.svg once per page so &lt;Icon&gt; can reference
+    its symbols by id. Place this exactly once at the top of MainLayout.
+*@
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    @Source
+</svg>
+
+@code {
+    private MarkupString Source { get; set; } = (MarkupString)string.Empty;
+
+    protected override void OnInitialized()
+    {
+        Source = (MarkupString)SpriteSource.LoadInlineSymbols();
+    }
+}

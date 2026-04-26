@@ -1,0 +1,51 @@
+@*
+    Icon — single page-level icon primitive built on the Tabler outline
+    sprite. Three fixed sizes match the design system (UI_NAVIGATION_AND_DESIGN_SYSTEM_SPEC §11):
+        Inline (18px) — inside body text or table cells
+        Action (20px) — buttons, menu items
+        Display (24px) — page header, large empty states
+    Strokes are pinned to 1.75px so Tabler's geometric line stays consistent
+    next to AntDesign chrome. Accessible labels come from `Title` (announced)
+    or default to `aria-hidden` when purely decorative.
+*@
+
+@{
+    var pixels = Size switch
+    {
+        IconSize.Display => 24,
+        IconSize.Action => 20,
+        _ => 18
+    };
+    var role = string.IsNullOrEmpty(Title) ? "presentation" : "img";
+    var ariaHidden = string.IsNullOrEmpty(Title) ? "true" : null;
+    var spriteId = IconNameMap.SpriteIds[Name];
+    var classes = string.IsNullOrEmpty(Class)
+        ? "citus-icon"
+        : $"citus-icon {Class}";
+}
+
+<svg width="@pixels"
+     height="@pixels"
+     viewBox="0 0 24 24"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="1.75"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     class="@classes"
+     role="@role"
+     aria-hidden="@ariaHidden"
+     aria-label="@Title">
+    <use href="@($"#{spriteId}")"></use>
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public IconName Name { get; set; }
+
+    [Parameter] public IconSize Size { get; set; } = IconSize.Inline;
+
+    /// <summary>Accessible label. Leave empty for decorative icons.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}
