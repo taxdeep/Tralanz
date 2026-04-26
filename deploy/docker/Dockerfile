@@ -20,7 +20,7 @@ COPY backend/src/Citus.Ui.Shared ./backend/src/Citus.Ui.Shared
 
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate \
     && cd backend/frontend \
-    && pnpm install --frozen-lockfile \
+    && NODE_ENV=development pnpm install --frozen-lockfile --prod=false \
     && pnpm run css:build
 
 # ---- build stage: dotnet publish (consumes pre-built CSS) -------------------

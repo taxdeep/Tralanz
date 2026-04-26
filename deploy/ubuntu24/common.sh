@@ -880,7 +880,12 @@ publish_backends() {
   log "Building Tailwind CSS bundles for the Blazor shells."
   (
     cd "${SOURCE_DIR}/backend/frontend"
-    PNPM_HOME="${HOME}/.local/share/pnpm" PATH="${PNPM_HOME}:${PATH}" pnpm install --frozen-lockfile
+    # tailwindcss + @tailwindcss/cli live in devDependencies. The runtime
+    # env file sets NODE_ENV=production, which would make pnpm skip them
+    # and break `pnpm run css:build`. Force the install to include
+    # devDependencies for the build step only.
+    PNPM_HOME="${HOME}/.local/share/pnpm" PATH="${PNPM_HOME}:${PATH}" \
+      NODE_ENV=development pnpm install --frozen-lockfile --prod=false
     PNPM_HOME="${HOME}/.local/share/pnpm" PATH="${PNPM_HOME}:${PATH}" pnpm run css:build
   )
 
