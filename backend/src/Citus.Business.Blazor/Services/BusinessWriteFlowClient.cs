@@ -1,0 +1,146 @@
+namespace Citus.Business.Blazor.Services;
+
+/// <summary>
+/// Placeholder client for the business write flows (manual journal posting,
+/// invoice / bill / receive-payment / pay-bill creation, customer + vendor
+/// master data). The Application layer already has the matching CQRS
+/// handlers (PostManualJournalCommandHandler, PostInvoiceCommandHandler,
+/// PostReceivePaymentCommandHandler, etc.) — what's missing is the HTTP
+/// surface on Citus.Accounting.Api. Pages that consume this client get a
+/// structured "endpoint pending" response so they can render the full form,
+/// run client-side validation, and frame the submit button correctly until
+/// the backend route lands.
+///
+/// When real endpoints arrive, replace each stub with an HttpClient call
+/// against the corresponding /accounting/...&#47;post route.
+/// </summary>
+public sealed class BusinessWriteFlowClient
+{
+    private const string PendingMessage =
+        "This write flow's HTTP endpoint is not wired yet on Citus.Accounting.Api. " +
+        "The form is fully validated and the payload is ready; once the backend " +
+        "route is published, this stub will be replaced with the real call.";
+
+    public Task<WriteFlowResult> PostManualJournalAsync(ManualJournalDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostManualJournalAsync), draft);
+
+    public Task<WriteFlowResult> PostInvoiceAsync(InvoiceDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostInvoiceAsync), draft);
+
+    public Task<WriteFlowResult> PostBillAsync(BillDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostBillAsync), draft);
+
+    public Task<WriteFlowResult> PostReceivePaymentAsync(ReceivePaymentDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostReceivePaymentAsync), draft);
+
+    public Task<WriteFlowResult> PostPayBillAsync(PayBillDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostPayBillAsync), draft);
+
+    public Task<WriteFlowResult> SaveCustomerAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(SaveCustomerAsync), draft);
+
+    public Task<WriteFlowResult> SaveVendorAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(SaveVendorAsync), draft);
+
+    private static Task<WriteFlowResult> Pending(string operation, object payload) =>
+        Task.FromResult(new WriteFlowResult(
+            Succeeded: false,
+            Message: PendingMessage,
+            Operation: operation,
+            DraftEcho: payload));
+}
+
+public sealed record WriteFlowResult(
+    bool Succeeded,
+    string Message,
+    string Operation,
+    object DraftEcho);
+
+public sealed record ManualJournalDraft
+{
+    public DateOnly Date { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public decimal? ExchangeRate { get; init; }
+    public IReadOnlyList<ManualJournalLineDraft> Lines { get; init; } = Array.Empty<ManualJournalLineDraft>();
+}
+
+public sealed record ManualJournalLineDraft
+{
+    public string AccountCode { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public decimal Debit { get; init; }
+    public decimal Credit { get; init; }
+}
+
+public sealed record InvoiceDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public DateOnly? DueDate { get; init; }
+    public Guid? CustomerId { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+public sealed record BillDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public DateOnly? DueDate { get; init; }
+    public Guid? VendorId { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+public sealed record ReceivePaymentDraft
+{
+    public DateOnly Date { get; init; }
+    public Guid? CustomerId { get; init; }
+    public decimal Amount { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<SettlementApplicationDraft> Applications { get; init; } = Array.Empty<SettlementApplicationDraft>();
+}
+
+public sealed record PayBillDraft
+{
+    public DateOnly Date { get; init; }
+    public Guid? VendorId { get; init; }
+    public decimal Amount { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<SettlementApplicationDraft> Applications { get; init; } = Array.Empty<SettlementApplicationDraft>();
+}
+
+public sealed record DocumentLineDraft
+{
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public string AccountCode { get; init; } = string.Empty;
+    public string TaxCode { get; init; } = string.Empty;
+}
+
+public sealed record SettlementApplicationDraft
+{
+    public Guid OpenItemId { get; init; }
+    public decimal AppliedAmount { get; init; }
+    public string DocumentDisplayNumber { get; init; } = string.Empty;
+}
+
+public sealed record CounterpartyDraft
+{
+    public string DisplayName { get; init; } = string.Empty;
+    public string EntityNumber { get; init; } = string.Empty;
+    public string Email { get; init; } = string.Empty;
+    public string Phone { get; init; } = string.Empty;
+    public string AddressLine { get; init; } = string.Empty;
+    public string City { get; init; } = string.Empty;
+    public string ProvinceState { get; init; } = string.Empty;
+    public string PostalCode { get; init; } = string.Empty;
+    public string Country { get; init; } = string.Empty;
+    public string TaxId { get; init; } = string.Empty;
+    public string PreferredCurrencyCode { get; init; } = string.Empty;
+    public string Notes { get; init; } = string.Empty;
+}

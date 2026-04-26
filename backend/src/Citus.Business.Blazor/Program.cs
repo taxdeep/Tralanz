@@ -25,6 +25,8 @@ if (!string.IsNullOrWhiteSpace(businessDbConnectionString))
     builder.Services.AddSingleton(new PostgreSqlConnectionFactory(businessDbConnectionString));
     builder.Services.AddSingleton<BusinessNumberingClient>();
 }
+
+builder.Services.AddScoped<BusinessWriteFlowClient>();
 builder.Services.AddHttpClient<BusinessSessionClient>(
         (serviceProvider, client) =>
         {

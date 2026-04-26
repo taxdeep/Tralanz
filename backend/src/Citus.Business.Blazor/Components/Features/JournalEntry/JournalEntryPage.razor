@@ -6,7 +6,14 @@
 
 <PageTitle>Journal Entry | Citus Business</PageTitle>
 
-<CitusPageHeader Model="_header" />
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="journal-entry/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New journal entry</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
 
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <CitusStatCard

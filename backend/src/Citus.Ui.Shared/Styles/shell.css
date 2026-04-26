@@ -557,6 +557,33 @@
     background: var(--citus-color-bg-muted);
 }
 
+.citus-data-table__total td {
+    background: var(--citus-color-bg-muted);
+    border-top: 2px solid var(--citus-color-border-strong);
+}
+
+.citus-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--citus-color-fg-muted);
+    border-radius: var(--citus-radius-sm);
+    padding: var(--citus-space-1);
+    cursor: pointer;
+}
+
+.citus-icon-button:hover {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-danger);
+}
+
+.text-warning { color: var(--citus-color-warning); }
+.text-success { color: var(--citus-color-success); }
+.text-danger  { color: var(--citus-color-danger); }
+.text-info    { color: var(--citus-color-info); }
+
 /* ---------- SysAdmin login ---------- */
 
 .sys-login {
