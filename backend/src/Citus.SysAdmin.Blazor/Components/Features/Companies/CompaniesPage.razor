@@ -1,7 +1,7 @@
 @page "/companies"
 
 @inject AppShellState ShellState
-@inject ISnackbar Snackbar
+@inject AntDesign.IMessageService Message
 @inject SysAdminControlClient SysAdminControlClient
 
 <PageTitle>Companies | Citus SysAdmin</PageTitle>
@@ -10,106 +10,93 @@
 
 @if (_isLoading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
-@if (_companies.Count == 0)
+@if (_companies.Count == 0 && !_isLoading)
 {
     <CitusEmptyState
+        Icon="IconName.BuildingSkyscraper"
         Title="No managed companies"
         Message="SysAdmin control context did not return any companies. Complete the first-company provisioning flow to create the initial workspace."
         ActionLabel="Back to overview"
         ActionHref="overview" />
 }
-else
+else if (_companies.Count > 0)
 {
-    <MudPaper Class="pa-4">
-        <MudTable Items="_companies" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
-            <HeaderContent>
-                <MudTh>Company</MudTh>
-                <MudTh>Base Currency</MudTh>
-                <MudTh>Status</MudTh>
-                <MudTh>Multi-Currency</MudTh>
-                <MudTh>Members</MudTh>
-                <MudTh>Context</MudTh>
-                <MudTh>Governance</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Company">
-                    <MudText Typo="Typo.body1">@context.CompanyName</MudText>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.CompanyCode</MudText>
-                </MudTd>
-                <MudTd DataLabel="Base Currency">@context.BaseCurrencyCode</MudTd>
-                <MudTd DataLabel="Status">
-                    <MudChip T="string"
-                             Variant="Variant.Outlined"
-                             Color="@(string.Equals(context.Status, "active", StringComparison.OrdinalIgnoreCase) ? Color.Success : Color.Warning)">
-                        @context.Status
-                    </MudChip>
-                </MudTd>
-                <MudTd DataLabel="Multi-Currency">@(context.MultiCurrencyEnabled ? "Enabled" : "Base only")</MudTd>
-                <MudTd DataLabel="Members">@context.MemberCount</MudTd>
-                <MudTd DataLabel="Context">
-                    @if (ShellState.ActiveCompany.CompanyId == context.Id)
-                    {
-                        <MudChip T="string" Color="Color.Info" Variant="Variant.Filled">Active</MudChip>
-                    }
-                    else
-                    {
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => SwitchCompanyAsync(context.Id))">
-                            Switch here
-                        </MudButton>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Governance">
-                    <MudStack Row="true" Spacing="1" Class="flex-wrap">
-                        @if (string.Equals(context.Status, "active", StringComparison.OrdinalIgnoreCase))
-                        {
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Warning"
-                                       Size="Size.Small"
-                                       Disabled="@IsStatusUpdating(context.Id)"
-                                       OnClick="@(() => SetCompanyStatusAsync(context, "inactive"))">
-                                Set inactive
-                            </MudButton>
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Error"
-                                       Size="Size.Small"
-                                       Disabled="@IsStatusUpdating(context.Id)"
-                                       OnClick="@(() => SetCompanyStatusAsync(context, "suspended"))">
-                                Suspend
-                            </MudButton>
-                        }
-                        else
-                        {
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Success"
-                                       Size="Size.Small"
-                                       Disabled="@IsStatusUpdating(context.Id)"
-                                       OnClick="@(() => SetCompanyStatusAsync(context, "active"))">
-                                Reactivate
-                            </MudButton>
-                        }
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Base Currency</th>
+                    <th>Status</th>
+                    <th>Multi-Currency</th>
+                    <th class="text-right">Members</th>
+                    <th>Context</th>
+                    <th>Governance</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var company in _companies)
+                {
+                    <tr>
+                        <td>
+                            <div>@company.CompanyName</div>
+                            <div class="text-fg-subtle text-xs">@company.CompanyCode</div>
+                        </td>
+                        <td>@company.BaseCurrencyCode</td>
+                        <td>
+                            <AntDesign.Tag Color="@StatusColor(company.Status)">@company.Status</AntDesign.Tag>
+                        </td>
+                        <td>@(company.MultiCurrencyEnabled ? "Enabled" : "Base only")</td>
+                        <td class="text-right">@company.MemberCount</td>
+                        <td>
+                            @if (ShellState.ActiveCompany.CompanyId == company.Id)
+                            {
+                                <AntDesign.Tag Color="@("blue")">Active</AntDesign.Tag>
+                            }
+                            else
+                            {
+                                <CitusButton Variant="CitusButtonVariant.Link" Size="CitusButtonSize.Small" OnClick="@(() => SwitchCompanyAsync(company.Id))">
+                                    Switch here
+                                </CitusButton>
+                            }
+                        </td>
+                        <td>
+                            <div class="flex flex-wrap gap-1">
+                                @if (string.Equals(company.Status, "active", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <CitusButton Size="CitusButtonSize.Small" Disabled="@IsStatusUpdating(company.Id)" OnClick="@(() => SetCompanyStatusAsync(company, "inactive"))">
+                                        Set inactive
+                                    </CitusButton>
+                                    <CitusButton Size="CitusButtonSize.Small" Danger="true" Disabled="@IsStatusUpdating(company.Id)" OnClick="@(() => SetCompanyStatusAsync(company, "suspended"))">
+                                        Suspend
+                                    </CitusButton>
+                                }
+                                else
+                                {
+                                    <CitusButton Size="CitusButtonSize.Small" Disabled="@IsStatusUpdating(company.Id)" OnClick="@(() => SetCompanyStatusAsync(company, "active"))">
+                                        Reactivate
+                                    </CitusButton>
+                                }
 
-                        @if (!string.Equals(context.Status, "archived", StringComparison.OrdinalIgnoreCase))
-                        {
-                            <MudButton Variant="Variant.Text"
-                                       Color="Color.Error"
-                                       Size="Size.Small"
-                                       Disabled="@IsStatusUpdating(context.Id)"
-                                       OnClick="@(() => SetCompanyStatusAsync(context, "archived"))">
-                                Archive
-                            </MudButton>
-                        }
-                    </MudStack>
-                </MudTd>
-            </RowTemplate>
-        </MudTable>
-    </MudPaper>
+                                @if (!string.Equals(company.Status, "archived", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <CitusButton Variant="CitusButtonVariant.Link" Size="CitusButtonSize.Small" Danger="true" Disabled="@IsStatusUpdating(company.Id)" OnClick="@(() => SetCompanyStatusAsync(company, "archived"))">
+                                        Archive
+                                    </CitusButton>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
 }
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Operations",
@@ -133,12 +120,12 @@ else
 
         if (context is null)
         {
-            Snackbar.Add("Unable to switch the active company context.", Severity.Warning);
+            await Message.WarningAsync("Unable to switch the active company context.");
             return;
         }
 
         ShellState.ApplyControlContext(context);
-        Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+        await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
     }
 
     private bool IsStatusUpdating(Guid companyId) => _statusUpdates.Contains(companyId);
@@ -153,16 +140,23 @@ else
             var updated = await SysAdminControlClient.SetCompanyStatusAsync(company.Id, status, reason);
             if (!updated)
             {
-                Snackbar.Add($"Unable to set {company.CompanyCode} to {status}.", Severity.Warning);
+                await Message.WarningAsync($"Unable to set {company.CompanyCode} to {status}.");
                 return;
             }
 
             _companies = await SysAdminControlClient.ListCompaniesAsync();
-            Snackbar.Add($"{company.CompanyCode} status changed to {status}.", Severity.Success);
+            await Message.SuccessAsync($"{company.CompanyCode} status changed to {status}.");
         }
         finally
         {
             _statusUpdates.Remove(company.Id);
         }
     }
+
+    private static string StatusColor(string? status) =>
+        string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)
+            ? "green"
+            : string.Equals(status, "archived", StringComparison.OrdinalIgnoreCase)
+                ? "default"
+                : "orange";
 }

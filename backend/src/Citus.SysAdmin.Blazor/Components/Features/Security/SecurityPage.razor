@@ -1,7 +1,7 @@
 @page "/security"
 
 @inject AppShellState ShellState
-@inject ISnackbar Snackbar
+@inject AntDesign.IMessageService Message
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
 @inject SysAdminAuthenticationClient SysAdminAuthenticationClient
@@ -10,55 +10,32 @@
 
 <CitusPageHeader Model="_header" />
 
-<MudPaper Class="pa-4">
-    <MudStack Spacing="1" Class="mb-4">
-        <MudText Typo="Typo.h6">Rotate SysAdmin Secret</MudText>
-        <MudText Typo="Typo.body2" Class="text-secondary">
+<section class="citus-panel max-w-2xl">
+    <div class="mb-3">
+        <h2 class="citus-panel__title">Rotate SysAdmin Secret</h2>
+        <p class="text-fg-muted text-sm">
             Rotate the current platform operator secret and revoke existing SysAdmin sessions.
-        </MudText>
-    </MudStack>
+        </p>
+    </div>
 
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
-        After a successful secret rotation, the current SysAdmin session is revoked and you will sign in again with the new secret.
-    </MudAlert>
+    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+                     ShowIcon="true"
+                     Message="After a successful secret rotation, the current SysAdmin session is revoked and you will sign in again with the new secret."
+                     Class="mb-4" />
 
-    <MudForm @ref="_form">
-        <MudStack Spacing="3">
-            <MudTextField Value="@ShellState.Operator.DisplayName"
-                          Label="Operator"
-                          Variant="Variant.Outlined"
-                          Disabled="true" />
-            <MudTextField Value="@ShellState.Operator.Email"
-                          Label="Email"
-                          Variant="Variant.Outlined"
-                          Disabled="true" />
-            <MudTextField @bind-Value="_currentPassword"
-                          Label="Current password"
-                          Variant="Variant.Outlined"
-                          InputType="InputType.Password"
-                          Required="true" />
-            <MudTextField @bind-Value="_newPassword"
-                          Label="New password"
-                          Variant="Variant.Outlined"
-                          InputType="InputType.Password"
-                          Required="true" />
-            <MudTextField @bind-Value="_confirmPassword"
-                          Label="Confirm new password"
-                          Variant="Variant.Outlined"
-                          InputType="InputType.Password"
-                          Required="true" />
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       Disabled="_isSubmitting"
-                       OnClick="RotateSecretAsync">
-                @(_isSubmitting ? "Rotating..." : "Rotate secret")
-            </MudButton>
-        </MudStack>
-    </MudForm>
-</MudPaper>
+    <div class="flex flex-col gap-3">
+        <CitusInput TValue="string" Value="@ShellState.Operator.DisplayName" Disabled="true" Placeholder="@("Operator")" />
+        <CitusInput TValue="string" Value="@ShellState.Operator.Email" Disabled="true" Placeholder="@("Email")" />
+        <AntDesign.InputPassword @bind-Value="_currentPassword" Placeholder="@("Current password")" Size="@AntDesign.InputSize.Default" />
+        <AntDesign.InputPassword @bind-Value="_newPassword" Placeholder="@("New password")" Size="@AntDesign.InputSize.Default" />
+        <AntDesign.InputPassword @bind-Value="_confirmPassword" Placeholder="@("Confirm new password")" Size="@AntDesign.InputSize.Default" />
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="RotateSecretAsync">
+            @(_isSubmitting ? "Rotating..." : "Rotate secret")
+        </CitusButton>
+    </div>
+</section>
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Operations",
@@ -66,7 +43,6 @@
         Subtitle = "Rotate the current SysAdmin secret and close existing platform sessions."
     };
 
-    private MudForm? _form;
     private string _currentPassword = string.Empty;
     private string _newPassword = string.Empty;
     private string _confirmPassword = string.Empty;
@@ -74,18 +50,15 @@
 
     private async Task RotateSecretAsync()
     {
-        if (_form is not null)
+        if (string.IsNullOrWhiteSpace(_currentPassword) || string.IsNullOrWhiteSpace(_newPassword))
         {
-            await _form.ValidateAsync();
-            if (!_form.IsValid)
-            {
-                return;
-            }
+            await Message.WarningAsync("Current and new passwords are required.");
+            return;
         }
 
         if (!string.Equals(_newPassword, _confirmPassword, StringComparison.Ordinal))
         {
-            Snackbar.Add("Password confirmation does not match.", Severity.Warning);
+            await Message.WarningAsync("Password confirmation does not match.");
             return;
         }
 
@@ -100,7 +73,7 @@
 
             if (!outcome.Succeeded)
             {
-                Snackbar.Add(outcome.Message, Severity.Warning);
+                await Message.WarningAsync(outcome.Message);
                 return;
             }
 
@@ -110,7 +83,7 @@
             _newPassword = string.Empty;
             _confirmPassword = string.Empty;
 
-            Snackbar.Add("SysAdmin secret rotated. Sign in again with the new secret.", Severity.Success);
+            await Message.SuccessAsync("SysAdmin secret rotated. Sign in again with the new secret.");
             NavigationManager.NavigateTo("login", forceLoad: true);
         }
         finally

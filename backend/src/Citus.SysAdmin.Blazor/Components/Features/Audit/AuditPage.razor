@@ -2,7 +2,7 @@
 
 @inject AppShellState ShellState
 @inject NavigationManager NavigationManager
-@inject ISnackbar Snackbar
+@inject AntDesign.IMessageService Message
 @inject SysAdminControlClient SysAdminControlClient
 
 <PageTitle>Audit | Citus SysAdmin</PageTitle>
@@ -11,197 +11,171 @@
 
 @if (_isLoading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-6" />
+    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
-<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
-    This timeline is the formal governance read model for company status, platform account status,
-    password reset requests, company membership changes, and account MFA governance.
-</MudAlert>
+<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                 ShowIcon="true"
+                 Message="This timeline is the formal governance read model for company status, platform account status, password reset requests, company membership changes, and account MFA governance."
+                 Class="mb-4" />
 
-<MudPaper Class="pa-4 mb-6">
-    <MudStack Spacing="2">
-        <MudStack Spacing="1">
-            <MudText Typo="Typo.h6">Account MFA Timeline</MudText>
-            <MudText Typo="Typo.body2" Class="text-secondary">
-                Review one platform account's MFA mode changes, recovery request/review/execute actions, and emergency resets from the formal audit trail.
-            </MudText>
-        </MudStack>
+<section class="citus-panel mb-6">
+    <div class="mb-3">
+        <h2 class="citus-panel__title">Account MFA Timeline</h2>
+        <p class="text-fg-muted text-sm">
+            Review one platform account's MFA mode changes, recovery request/review/execute actions, and emergency resets from the formal audit trail.
+        </p>
+    </div>
 
-        @if (_users.Count == 0)
-        {
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-                No managed users are available for account-scoped MFA audit review yet.
-            </MudAlert>
-        }
-        else
-        {
-            <MudStack Row="true" Spacing="2" Class="align-end flex-wrap">
-                <MudSelect T="Guid?"
-                           Label="Select account"
-                           Value="_selectedTimelineAccountId"
-                           ValueChanged="OnSelectedTimelineAccountChangedAsync"
-                           Clearable="true"
-                           Dense="true"
-                           Style="min-width: 320px;">
-                    @foreach (var user in _users.OrderBy(static user => user.DisplayName, StringComparer.OrdinalIgnoreCase))
-                    {
-                        <MudSelectItem T="Guid?" Value="@user.Id">@BuildUserOptionLabel(user)</MudSelectItem>
-                    }
-                </MudSelect>
-
-                @if (_selectedTimelineUser is not null)
-                {
-                    <MudButton Variant="Variant.Text"
-                               Color="Color.Default"
-                               Size="Size.Small"
-                               OnClick="ClearSelectedTimeline">
-                        Clear
-                    </MudButton>
-                }
-            </MudStack>
-
+    @if (_users.Count == 0)
+    {
+        <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No managed users are available for account-scoped MFA audit review yet." ShowIcon="true" />
+    }
+    else
+    {
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+            <div class="min-w-[20rem]">
+                <AntDesign.Select TItem="ManagedUserSummary"
+                                  TItemValue="Guid?"
+                                  DataSource="@_users.OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()"
+                                  Value="@_selectedTimelineAccountId"
+                                  ValueChanged="OnSelectedTimelineAccountChangedAsync"
+                                  ItemValue="@(u => (Guid?)u.Id)"
+                                  ItemLabel="@(u => BuildUserOptionLabel(u))"
+                                  Placeholder="@("Select account")"
+                                  AllowClear="true"
+                                  Style="width: 100%;" />
+            </div>
             @if (_selectedTimelineUser is not null)
             {
-                <MudText Typo="Typo.body2" Class="text-secondary">
-                    @_selectedTimelineUser.DisplayName (@_selectedTimelineUser.Username | @_selectedTimelineUser.Email)
-                </MudText>
+                <CitusButton Variant="CitusButtonVariant.Link" Size="CitusButtonSize.Small" OnClick="ClearSelectedTimeline">Clear</CitusButton>
             }
+        </div>
 
-            @if (_isTimelineLoading)
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
-            }
-            else if (_selectedTimelineUser is not null && _selectedMfaTimeline.Count == 0)
-            {
-                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-                    No MFA governance events have been recorded for this account yet.
-                </MudAlert>
-            }
-            else if (_selectedMfaTimeline.Count > 0)
-            {
-                <div style="display:grid;gap:0.75rem;">
-                    @foreach (var entry in _selectedMfaTimeline)
-                    {
-                        <MudPaper Elevation="0" Class="pa-3" Style="border:1px solid var(--mud-palette-lines-default);">
-                            <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start;">
-                                <div style="display:grid;gap:0.35rem;">
-                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
-                                        <MudChip T="string"
-                                                 Variant="Variant.Outlined"
-                                                 Color="@GetMfaTimelineColor(entry.Action)">
-                                            @entry.ActionLabel
-                                        </MudChip>
-                                        <MudChip T="string" Variant="Variant.Text" Color="Color.Default">
-                                            @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
-                                        </MudChip>
-                                    </div>
-                                    @if (!string.IsNullOrWhiteSpace(entry.Detail))
-                                    {
-                                        <MudText Typo="Typo.body2">@entry.Detail</MudText>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(entry.Reason))
-                                    {
-                                        <MudText Typo="Typo.caption" Class="text-secondary">Reason: @entry.Reason</MudText>
-                                    }
-                                </div>
-                                <MudText Typo="Typo.caption" Class="text-secondary">
-                                    @entry.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")
-                                </MudText>
-                            </div>
-                        </MudPaper>
-                    }
-                </div>
-            }
+        @if (_selectedTimelineUser is not null)
+        {
+            <p class="text-fg-muted text-sm mb-3">
+                @_selectedTimelineUser.DisplayName (@_selectedTimelineUser.Username | @_selectedTimelineUser.Email)
+            </p>
         }
-    </MudStack>
-</MudPaper>
 
-@if (_events.Count == 0)
+        @if (_isTimelineLoading)
+        {
+            <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+        }
+        else if (_selectedTimelineUser is not null && _selectedMfaTimeline.Count == 0)
+        {
+            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No MFA governance events have been recorded for this account yet." ShowIcon="true" />
+        }
+        else if (_selectedMfaTimeline.Count > 0)
+        {
+            <div class="grid grid-cols-1 gap-3">
+                @foreach (var entry in _selectedMfaTimeline)
+                {
+                    <article class="citus-subpanel">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="flex flex-col gap-1">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <AntDesign.Tag Color="@MfaTimelineColor(entry.Action)">@entry.ActionLabel</AntDesign.Tag>
+                                    <AntDesign.Tag Color="@("default")">
+                                        @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
+                                    </AntDesign.Tag>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(entry.Detail))
+                                {
+                                    <span class="text-sm">@entry.Detail</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(entry.Reason))
+                                {
+                                    <span class="text-fg-subtle text-xs">Reason: @entry.Reason</span>
+                                }
+                            </div>
+                            <span class="text-fg-subtle text-xs">@entry.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    }
+</section>
+
+@if (_events.Count == 0 && !_isLoading)
 {
     <CitusEmptyState
+        Icon="IconName.Report"
         Title="No governance audit events"
         Message="The SysAdmin audit surface has not returned any reviewable governance events yet."
         ActionLabel="Open users"
         ActionHref="users" />
 }
-else
+else if (_events.Count > 0)
 {
-    <MudPaper Class="pa-4">
-        <MudTable Items="_events" Dense="true" Hover="true" Breakpoint="Breakpoint.Md">
-            <HeaderContent>
-                <MudTh>When</MudTh>
-                <MudTh>Scope</MudTh>
-                <MudTh>Action</MudTh>
-                <MudTh>Entity</MudTh>
-                <MudTh>Actor</MudTh>
-                <MudTh>Detail</MudTh>
-                <MudTh>Reason</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="When">
-                    <MudText Typo="Typo.body2">@context.CreatedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudText>
-                </MudTd>
-                <MudTd DataLabel="Scope">
-                    <MudChip T="string"
-                             Variant="Variant.Outlined"
-                             Color="@(context.CompanyId.HasValue ? Color.Default : Color.Info)">
-                        @context.ScopeLabel
-                    </MudChip>
-                </MudTd>
-                <MudTd DataLabel="Action">
-                    <MudStack Spacing="1">
-                        <MudChip T="string"
-                                 Variant="Variant.Outlined"
-                                 Color="@GetActionColor(context.Action)">
-                            @context.ActionLabel
-                        </MudChip>
-                        <MudText Typo="Typo.caption" Class="text-secondary">@context.Action</MudText>
-                    </MudStack>
-                </MudTd>
-                <MudTd DataLabel="Entity">
-                    <MudText Typo="Typo.body2">@context.EntityLabel</MudText>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.EntityType</MudText>
-                </MudTd>
-                <MudTd DataLabel="Actor">
-                    <MudText Typo="Typo.body2">@GetActorLabel(context)</MudText>
-                    <MudText Typo="Typo.caption" Class="text-secondary">@context.ActorType</MudText>
-                </MudTd>
-                <MudTd DataLabel="Detail">
-                    <MudStack Spacing="1">
-                        @if (!string.IsNullOrWhiteSpace(context.Detail))
-                        {
-                            <MudText Typo="Typo.body2">@context.Detail</MudText>
-                        }
-
-                        @if (context.Highlights.Count > 0)
-                        {
-                            <MudStack Row="true" Spacing="1" Class="flex-wrap">
-                                @foreach (var highlight in context.Highlights)
-                                {
-                                    <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@highlight</MudChip>
-                                }
-                            </MudStack>
-                        }
-                    </MudStack>
-                </MudTd>
-                <MudTd DataLabel="Reason">
-                    @if (string.IsNullOrWhiteSpace(context.Reason))
-                    {
-                        <MudText Typo="Typo.caption" Class="text-secondary">No explicit reason</MudText>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2">@context.Reason</MudText>
-                    }
-                </MudTd>
-            </RowTemplate>
-        </MudTable>
-    </MudPaper>
+    <section class="citus-panel">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Scope</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>Actor</th>
+                    <th>Detail</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ev in _events)
+                {
+                    <tr>
+                        <td>@ev.CreatedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>
+                            <AntDesign.Tag Color="@(ev.CompanyId.HasValue ? "default" : "blue")">@ev.ScopeLabel</AntDesign.Tag>
+                        </td>
+                        <td>
+                            <AntDesign.Tag Color="@ActionColor(ev.Action)">@ev.ActionLabel</AntDesign.Tag>
+                            <div class="text-fg-subtle text-xs">@ev.Action</div>
+                        </td>
+                        <td>
+                            <div>@ev.EntityLabel</div>
+                            <div class="text-fg-subtle text-xs">@ev.EntityType</div>
+                        </td>
+                        <td>
+                            <div>@GetActorLabel(ev)</div>
+                            <div class="text-fg-subtle text-xs">@ev.ActorType</div>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(ev.Detail))
+                            {
+                                <div>@ev.Detail</div>
+                            }
+                            @if (ev.Highlights.Count > 0)
+                            {
+                                <div class="flex flex-wrap gap-1 mt-1">
+                                    @foreach (var highlight in ev.Highlights)
+                                    {
+                                        <AntDesign.Tag Color="@("default")">@highlight</AntDesign.Tag>
+                                    }
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            @if (string.IsNullOrWhiteSpace(ev.Reason))
+                            {
+                                <span class="text-fg-subtle text-xs">No explicit reason</span>
+                            }
+                            else
+                            {
+                                <span>@ev.Reason</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
 }
 
-@code
-{
+@code {
     [SupplyParameterFromQuery(Name = "accountId")]
     public Guid? AccountId { get; set; }
 
@@ -253,7 +227,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Unable to load audit events. {ex.Message}", Severity.Warning);
+            await Message.WarningAsync($"Unable to load audit events. {ex.Message}");
         }
         finally
         {
@@ -301,7 +275,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Unable to load MFA timeline. {ex.Message}", Severity.Warning);
+            await Message.WarningAsync($"Unable to load MFA timeline. {ex.Message}");
         }
         finally
         {
@@ -321,33 +295,33 @@ else
     private static string BuildUserOptionLabel(ManagedUserSummary user) =>
         $"{user.DisplayName} ({user.Username} | {user.Email})";
 
-    private static Color GetActionColor(string action) =>
+    private static string ActionColor(string action) =>
         action switch
         {
-            "company_status_changed" => Color.Warning,
-            "account_status_changed" => Color.Warning,
-            "password_reset_requested" => Color.Info,
-            "password_reset_dispatched" => Color.Success,
-            "password_reset_dispatch_failed" => Color.Error,
-            "membership_role_changed" => Color.Success,
-            "membership_permissions_saved" => Color.Primary,
-            "sysadmin_first_account_created" => Color.Info,
-            "sysadmin_password_rotated" => Color.Warning,
-            _ => Color.Default
+            "company_status_changed" => "orange",
+            "account_status_changed" => "orange",
+            "password_reset_requested" => "blue",
+            "password_reset_dispatched" => "green",
+            "password_reset_dispatch_failed" => "red",
+            "membership_role_changed" => "green",
+            "membership_permissions_saved" => "geekblue",
+            "sysadmin_first_account_created" => "blue",
+            "sysadmin_password_rotated" => "orange",
+            _ => "default"
         };
 
-    private static Color GetMfaTimelineColor(string? action) =>
+    private static string MfaTimelineColor(string? action) =>
         action switch
         {
-            "account_totp_enrollment_started" => Color.Info,
-            "account_totp_enrollment_confirmed" => Color.Success,
-            "profile_mfa_mode_saved" => Color.Primary,
-            "account_mfa_recovery_requested" => Color.Warning,
-            "account_mfa_recovery_approved" => Color.Success,
-            "account_mfa_recovery_rejected" => Color.Error,
-            "account_mfa_recovery_executed" => Color.Secondary,
-            "account_mfa_reset" => Color.Warning,
-            _ => Color.Default
+            "account_totp_enrollment_started" => "blue",
+            "account_totp_enrollment_confirmed" => "green",
+            "profile_mfa_mode_saved" => "geekblue",
+            "account_mfa_recovery_requested" => "orange",
+            "account_mfa_recovery_approved" => "green",
+            "account_mfa_recovery_rejected" => "red",
+            "account_mfa_recovery_executed" => "default",
+            "account_mfa_reset" => "orange",
+            _ => "default"
         };
 
     private static string GetActorLabel(PlatformAuditEventSummary auditEvent)
