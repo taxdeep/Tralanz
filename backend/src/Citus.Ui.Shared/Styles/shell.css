@@ -557,6 +557,20 @@
     background: var(--citus-color-bg-muted);
 }
 
+.citus-link {
+    color: var(--citus-color-primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.citus-link:hover {
+    text-decoration: underline;
+}
+
+.text-right {
+    text-align: right;
+}
+
 .citus-inline-code {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.95em;

@@ -5,159 +5,153 @@
 
 <PageTitle>@($"{_header.Title} | Citus Business")</PageTitle>
 
-<CitusPageHeader Model="_header" />
-
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
-    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="journal-entry" StartIcon="@Icons.Material.Filled.ArrowBack">
-        Back to journal entries
-    </MudButton>
-    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only review</MudChip>
-</MudStack>
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="journal-entry">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to journal entries</span>
+        </a>
+        <AntDesign.Tag Color="@("blue")">Read-only review</AntDesign.Tag>
+    </Actions>
+</CitusPageHeader>
 
 @if (_isLoading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
 @if (!string.IsNullOrWhiteSpace(_error))
 {
-    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
-        @_error
-    </MudAlert>
+    <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
 }
 
 @if (_review is not null)
 {
     @if (_review.Status is "voided" or "reversed")
     {
-        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
-            @GetLifecycleAlert(_review)
-        </MudAlert>
+        <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@GetLifecycleAlert(_review)" ShowIcon="true" Class="mb-4" />
     }
 
-    <MudGrid Class="mb-6">
-        <MudItem xs="12" md="6" lg="3">
-            <CitusStatCard
-                Label="Journal entry"
-                Value="@_review.DisplayNumber"
-                Description="@($"{_review.SourceTypeLabel} | status {_review.Status}")"
-                Icon="IconName.FileText"
-                Tone="StatTone.Primary" />
-        </MudItem>
-        <MudItem xs="12" md="6" lg="3">
-            <CitusStatCard
-                Label="Posted at"
-                Value="@(_review.PostedAt?.ToString("yyyy-MM-dd") ?? "Pending")"
-                Description="@(_review.PostedAt?.ToString("HH:mm 'UTC'") ?? "posted_at unavailable")"
-                Icon="IconName.Clock"
-                Tone="StatTone.Info" />
-        </MudItem>
-        <MudItem xs="12" md="6" lg="3">
-            <CitusStatCard
-                Label="Base total"
-                Value="@FormatAmount(_review.TotalDebit)"
-                Description="@($"Credit {FormatAmount(_review.TotalCredit)} {_review.BaseCurrencyCode}")"
-                Icon="IconName.BuildingBank"
-                Color="@(_review.TotalDebit == _review.TotalCredit ? Color.Success : Color.Error)" />
-        </MudItem>
-        <MudItem xs="12" md="6" lg="3">
-            <CitusStatCard
-                Label="FX snapshot"
-                Value="@_review.ExchangeRate.ToString("0.######")"
-                Description="@($"{_review.ExchangeRateSource} on {_review.ExchangeRateDate:yyyy-MM-dd}")"
-                Icon="IconName.Coin"
-                Tone="StatTone.Neutral" />
-        </MudItem>
-    </MudGrid>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard
+            Label="Journal entry"
+            Value="@_review.DisplayNumber"
+            Description="@($"{_review.SourceTypeLabel} | status {_review.Status}")"
+            Icon="IconName.FileText"
+            Tone="StatTone.Primary" />
+        <CitusStatCard
+            Label="Posted at"
+            Value="@(_review.PostedAt?.ToString("yyyy-MM-dd") ?? "Pending")"
+            Description="@(_review.PostedAt?.ToString("HH:mm 'UTC'") ?? "posted_at unavailable")"
+            Icon="IconName.Clock"
+            Tone="StatTone.Info" />
+        <CitusStatCard
+            Label="Base total"
+            Value="@FormatAmount(_review.TotalDebit)"
+            Description="@($"Credit {FormatAmount(_review.TotalCredit)} {_review.BaseCurrencyCode}")"
+            Icon="IconName.BuildingBank"
+            Tone="@(_review.TotalDebit == _review.TotalCredit ? StatTone.Success : StatTone.Danger)" />
+        <CitusStatCard
+            Label="FX snapshot"
+            Value="@_review.ExchangeRate.ToString("0.######")"
+            Description="@($"{_review.ExchangeRateSource} on {_review.ExchangeRateDate:yyyy-MM-dd}")"
+            Icon="IconName.Coin"
+            Tone="StatTone.Neutral" />
+    </div>
 
-    <MudGrid>
-        <MudItem xs="12" lg="7">
-            <MudPaper Class="pa-4 mb-6">
-                <MudText Typo="Typo.h6" Class="mb-4">Journal facts</MudText>
-                <MudTable Items="_factRows" Dense="true" Hover="true">
-                    <RowTemplate>
-                        <MudTd DataLabel="Field">@context.Label</MudTd>
-                        <MudTd DataLabel="Value">@context.Value</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-7 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Journal facts</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        @foreach (var fact in _factRows)
+                        {
+                            <tr><th>@fact.Label</th><td>@fact.Value</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
 
-            <MudPaper Class="pa-4">
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-                    <MudText Typo="Typo.h6">Journal lines</MudText>
-                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">@($"{_review.LineCount} lines")</MudChip>
-                </MudStack>
+            <section class="citus-panel">
+                <header class="citus-panel__header">
+                    <h2 class="citus-panel__title">Journal lines</h2>
+                    <AntDesign.Tag Color="@("default")">@($"{_review.LineCount} lines")</AntDesign.Tag>
+                </header>
 
-                <MudTable Items="@_review.Lines" Dense="true" Hover="true" Striped="true">
-                    <HeaderContent>
-                        <MudTh>Line</MudTh>
-                        <MudTh>Account</MudTh>
-                        <MudTh>Description</MudTh>
-                        <MudTh>Tx debit</MudTh>
-                        <MudTh>Tx credit</MudTh>
-                        <MudTh>Debit</MudTh>
-                        <MudTh>Credit</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Line">@context.LineNumber</MudTd>
-                        <MudTd DataLabel="Account">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.body2"><span class="citus-inline-code">@context.AccountCode</span> @context.AccountName</MudText>
-                                <MudText Typo="Typo.caption" Class="text-secondary">@context.RootType | @context.DetailType</MudText>
-                            </MudStack>
-                        </MudTd>
-                        <MudTd DataLabel="Description">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.body2">@DisplayDescription(context.Description)</MudText>
-                                @if (!string.IsNullOrWhiteSpace(context.ControlRole) || !string.IsNullOrWhiteSpace(context.TaxComponentType))
-                                {
-                                    <MudText Typo="Typo.caption" Class="text-secondary">
-                                        @DisplayLineMarkers(context)
-                                    </MudText>
-                                }
-                            </MudStack>
-                        </MudTd>
-                        <MudTd DataLabel="Tx debit">@FormatAmount(context.TxDebit)</MudTd>
-                        <MudTd DataLabel="Tx credit">@FormatAmount(context.TxCredit)</MudTd>
-                        <MudTd DataLabel="Debit">@FormatAmount(context.Debit)</MudTd>
-                        <MudTd DataLabel="Credit">@FormatAmount(context.Credit)</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        </MudItem>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Line</th>
+                            <th>Account</th>
+                            <th>Description</th>
+                            <th class="text-right">Tx debit</th>
+                            <th class="text-right">Tx credit</th>
+                            <th class="text-right">Debit</th>
+                            <th class="text-right">Credit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _review.Lines)
+                        {
+                            <tr>
+                                <td>@line.LineNumber</td>
+                                <td>
+                                    <div><span class="citus-inline-code">@line.AccountCode</span> @line.AccountName</div>
+                                    <div class="text-fg-subtle text-xs">@line.RootType | @line.DetailType</div>
+                                </td>
+                                <td>
+                                    <div>@DisplayDescription(line.Description)</div>
+                                    @if (!string.IsNullOrWhiteSpace(line.ControlRole) || !string.IsNullOrWhiteSpace(line.TaxComponentType) || line.PartyId is not null)
+                                    {
+                                        <div class="text-fg-subtle text-xs">@DisplayLineMarkers(line)</div>
+                                    }
+                                </td>
+                                <td class="text-right">@FormatAmount(line.TxDebit)</td>
+                                <td class="text-right">@FormatAmount(line.TxCredit)</td>
+                                <td class="text-right">@FormatAmount(line.Debit)</td>
+                                <td class="text-right">@FormatAmount(line.Credit)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </div>
 
-        <MudItem xs="12" lg="5">
-            <MudPaper Class="pa-4 mb-6">
-                <MudText Typo="Typo.h6" Class="mb-4">Source linkage</MudText>
-                <MudTable Items="_sourceRows" Dense="true">
-                    <RowTemplate>
-                        <MudTd DataLabel="Field">@context.Label</MudTd>
-                        <MudTd DataLabel="Value">@context.Value</MudTd>
-                    </RowTemplate>
-                </MudTable>
+        <div class="lg:col-span-5 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Source linkage</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        @foreach (var fact in _sourceRows)
+                        {
+                            <tr><th>@fact.Label</th><td>@fact.Value</td></tr>
+                        }
+                    </tbody>
+                </table>
 
                 @if (_sourceDocumentHref is not null)
                 {
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="@_sourceDocumentHref" Class="mt-4">
-                        Open source document review
-                    </MudButton>
+                    <a class="citus-button citus-button--ghost mt-4" href="@_sourceDocumentHref">
+                        <CitusIcon Name="IconName.Eye" Size="IconSize.Inline" />
+                        <span>Open source document review</span>
+                    </a>
                 }
-            </MudPaper>
+            </section>
 
-            <MudPaper Class="pa-4">
-                <MudText Typo="Typo.h6" Class="mb-4">Why this page exists</MudText>
-                <MudList T="string" Dense="true">
-                    <MudListItem>Journal review is a control surface, not an edit surface.</MudListItem>
-                    <MudListItem>FX snapshot data stays visible on the same page as line truth.</MudListItem>
-                    <MudListItem>Source linkage stays explicit so business truth and accounting truth do not drift apart.</MudListItem>
-                </MudList>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Why this page exists</h2>
+                <ul class="citus-bullet-list">
+                    <li>Journal review is a control surface, not an edit surface.</li>
+                    <li>FX snapshot data stays visible on the same page as line truth.</li>
+                    <li>Source linkage stays explicit so business truth and accounting truth do not drift apart.</li>
+                </ul>
+            </section>
+        </div>
+    </div>
 }
 
-@code
-{
+@code {
     [Parameter]
     public Guid JournalEntryId { get; set; }
 

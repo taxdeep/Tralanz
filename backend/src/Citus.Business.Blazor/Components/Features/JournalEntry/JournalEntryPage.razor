@@ -8,147 +8,147 @@
 
 <CitusPageHeader Model="_header" />
 
-<MudGrid Class="mb-6">
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Company"
-            Value="@ShellState.ActiveCompany.CompanyCode"
-            Description="The journal workspace is always scoped to the active company."
-            Icon="IconName.BuildingSkyscraper"
-            Tone="StatTone.Primary" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Recent entries"
-            Value="@_recentEntries.Count.ToString()"
-            Description="Read-only journal review now opens from live PostgreSQL journal entry truth."
-            Icon="IconName.FileText"
-            Tone="StatTone.Info" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Latest posted"
-            Value="@(_recentEntries.FirstOrDefault()?.DisplayNumber ?? "Unavailable")"
-            Description="@(_recentEntries.FirstOrDefault()?.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "No posted journal entries found yet.")"
-            Icon="IconName.Clock"
-            Tone="StatTone.Success" />
-    </MudItem>
-    <MudItem xs="12" md="6" lg="3">
-        <CitusStatCard
-            Label="Accounting API"
-            Value="@(_health?.Status ?? "Unavailable")"
-            Description="Recent list and detail pages are now backed by journal_entries and journal_entry_lines."
-            Icon="IconName.Activity"
-            Tone="StatTone.Neutral" />
-    </MudItem>
-</MudGrid>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <CitusStatCard
+        Label="Company"
+        Value="@ShellState.ActiveCompany.CompanyCode"
+        Description="The journal workspace is always scoped to the active company."
+        Icon="IconName.BuildingSkyscraper"
+        Tone="StatTone.Primary" />
+    <CitusStatCard
+        Label="Recent entries"
+        Value="@_recentEntries.Count.ToString()"
+        Description="Read-only journal review now opens from live PostgreSQL journal entry truth."
+        Icon="IconName.FileText"
+        Tone="StatTone.Info" />
+    <CitusStatCard
+        Label="Latest posted"
+        Value="@(_recentEntries.FirstOrDefault()?.DisplayNumber ?? "Unavailable")"
+        Description="@(_recentEntries.FirstOrDefault()?.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "No posted journal entries found yet.")"
+        Icon="IconName.Clock"
+        Tone="StatTone.Success" />
+    <CitusStatCard
+        Label="Accounting API"
+        Value="@(_health?.Status ?? "Unavailable")"
+        Description="Recent list and detail pages are now backed by journal_entries and journal_entry_lines."
+        Icon="IconName.Activity"
+        Tone="StatTone.Neutral" />
+</div>
 
-<MudGrid>
-    <MudItem xs="12" lg="7">
-        <MudPaper Class="pa-4 mb-6">
-            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-                <MudText Typo="Typo.h6">Recent journal reviews</MudText>
-                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Read-only</MudChip>
-            </MudStack>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-7 flex flex-col gap-6">
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Recent journal reviews</h2>
+                <AntDesign.Tag Color="@("blue")">Read-only</AntDesign.Tag>
+            </header>
 
             @if (_isLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+                <div class="mb-3"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
             }
 
             @if (!string.IsNullOrWhiteSpace(_error))
             {
-                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
-                    @_error
-                </MudAlert>
+                <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@_error" ShowIcon="true" Class="mb-3" />
             }
 
             @if (_recentEntries.Count == 0 && string.IsNullOrWhiteSpace(_error) && !_isLoading)
             {
-                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-                    No journal entries were found yet for the active company.
-                </MudAlert>
+                <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No journal entries were found yet for the active company." ShowIcon="true" />
             }
             else if (_recentEntries.Count > 0)
             {
-                <MudTable Items="_recentEntries" Dense="true" Hover="true" Striped="true">
-                    <HeaderContent>
-                        <MudTh>Journal entry</MudTh>
-                        <MudTh>Source</MudTh>
-                        <MudTh>Posted at</MudTh>
-                        <MudTh>Debit</MudTh>
-                        <MudTh>Credit</MudTh>
-                        <MudTh>Lines</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Journal entry">
-                            <MudStack Spacing="0">
-                                <MudLink Href="@($"journal-entry/review/{context.Id:D}")" Typo="Typo.body2" Underline="Underline.Always">
-                                    @context.DisplayNumber
-                                </MudLink>
-                                <MudText Typo="Typo.caption" Class="text-secondary">
-                                    <span class="citus-inline-code">@context.EntityNumber</span> | @GetLifecycleSummary(context)
-                                </MudText>
-                            </MudStack>
-                        </MudTd>
-                        <MudTd DataLabel="Source">
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.body2">@context.SourceTypeLabel</MudText>
-                                <MudText Typo="Typo.caption" Class="text-secondary"><span class="citus-inline-code">@context.SourceId</span></MudText>
-                            </MudStack>
-                        </MudTd>
-                        <MudTd DataLabel="Posted at">@(context.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Pending")</MudTd>
-                        <MudTd DataLabel="Debit">@FormatAmount(context.TotalDebit)</MudTd>
-                        <MudTd DataLabel="Credit">@FormatAmount(context.TotalCredit)</MudTd>
-                        <MudTd DataLabel="Lines">@context.LineCount</MudTd>
-                    </RowTemplate>
-                </MudTable>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Journal entry</th>
+                            <th>Source</th>
+                            <th>Posted at</th>
+                            <th class="text-right">Debit</th>
+                            <th class="text-right">Credit</th>
+                            <th class="text-right">Lines</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _recentEntries)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="citus-link" href="@($"journal-entry/review/{item.Id:D}")">@item.DisplayNumber</a>
+                                    <div class="text-fg-subtle text-xs">
+                                        <span class="citus-inline-code">@item.EntityNumber</span> | @GetLifecycleSummary(item)
+                                    </div>
+                                </td>
+                                <td>
+                                    <div>@item.SourceTypeLabel</div>
+                                    <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@item.SourceId</span></div>
+                                </td>
+                                <td>@(item.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Pending")</td>
+                                <td class="text-right">@FormatAmount(item.TotalDebit)</td>
+                                <td class="text-right">@FormatAmount(item.TotalCredit)</td>
+                                <td class="text-right">@item.LineCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             }
-        </MudPaper>
+        </section>
 
-        <MudPaper Class="pa-4">
-            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-                <MudText Typo="Typo.h6">Current backend shape</MudText>
-                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Info">Review + source linkage</MudChip>
-            </MudStack>
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Current backend shape</h2>
+                <AntDesign.Tag Color="@("blue")">Review + source linkage</AntDesign.Tag>
+            </header>
 
-            <MudTable Items="_endpointRows" Dense="true" Hover="true">
-                <HeaderContent>
-                    <MudTh>Endpoint</MudTh>
-                    <MudTh>Purpose</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Endpoint"><span class="citus-inline-code">@context.Path</span></MudTd>
-                    <MudTd DataLabel="Purpose">@context.Purpose</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Endpoint</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _endpointRows)
+                    {
+                        <tr>
+                            <td><span class="citus-inline-code">@row.Path</span></td>
+                            <td>@row.Purpose</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
 
-    <MudItem xs="12" lg="5">
-        <MudPaper Class="pa-4 mb-6">
-            <MudText Typo="Typo.h6" Class="mb-4">Why this surface matters</MudText>
-            <MudList T="string" Dense="true">
-                <MudListItem>Formal JE stays backend-owned and read-only.</MudListItem>
-                <MudListItem>Source linkage remains visible before anyone reviews lines.</MudListItem>
-                <MudListItem>Future compose flows should arrive after review feels trustworthy.</MudListItem>
-            </MudList>
-        </MudPaper>
+    <div class="lg:col-span-5 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Why this surface matters</h2>
+            <ul class="citus-bullet-list">
+                <li>Formal JE stays backend-owned and read-only.</li>
+                <li>Source linkage remains visible before anyone reviews lines.</li>
+                <li>Future compose flows should arrive after review feels trustworthy.</li>
+            </ul>
+        </section>
 
-        <MudPaper Class="pa-4">
-            <MudText Typo="Typo.h6" Class="mb-4">Session guardrails</MudText>
-            <MudTable Items="_guardrailRows" Dense="true">
-                <RowTemplate>
-                    <MudTd DataLabel="Rule">@context.Rule</MudTd>
-                    <MudTd DataLabel="Reason">@context.Reason</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Session guardrails</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    @foreach (var rule in _guardrailRows)
+                    {
+                        <tr>
+                            <th>@rule.Rule</th>
+                            <td>@rule.Reason</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
+</div>
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Core",
