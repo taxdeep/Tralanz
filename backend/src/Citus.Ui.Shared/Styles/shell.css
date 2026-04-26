@@ -557,6 +557,29 @@
     background: var(--citus-color-bg-muted);
 }
 
+.citus-subpanel {
+    background: var(--citus-color-bg);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    padding: var(--citus-space-4);
+    margin-top: var(--citus-space-4);
+}
+
+.citus-subpanel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-3);
+}
+
+.citus-subpanel__title {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-base);
+    font-weight: 600;
+}
+
 .citus-link {
     color: var(--citus-color-primary);
     text-decoration: none;
