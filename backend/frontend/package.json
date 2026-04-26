@@ -1,0 +1,25 @@
+{
+  "name": "@citus/frontend-root",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tailwind v4 + Tabler tooling for Citus.Business.Blazor and Citus.SysAdmin.Blazor",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "css:build:business": "tailwindcss -i ../src/Citus.Business.Blazor/Styles/app.css -o ../src/Citus.Business.Blazor/wwwroot/app.css --minify",
+    "css:watch:business": "tailwindcss -i ../src/Citus.Business.Blazor/Styles/app.css -o ../src/Citus.Business.Blazor/wwwroot/app.css --watch",
+    "css:build:sysadmin": "tailwindcss -i ../src/Citus.SysAdmin.Blazor/Styles/app.css -o ../src/Citus.SysAdmin.Blazor/wwwroot/app.css --minify",
+    "css:watch:sysadmin": "tailwindcss -i ../src/Citus.SysAdmin.Blazor/Styles/app.css -o ../src/Citus.SysAdmin.Blazor/wwwroot/app.css --watch",
+    "css:build": "pnpm run css:build:business && pnpm run css:build:sysadmin",
+    "css:watch": "concurrently --names business,sysadmin --prefix-colors blue,green \"pnpm:css:watch:business\" \"pnpm:css:watch:sysadmin\"",
+    "icons:sync": "node scripts/sync-tabler-icons.mjs"
+  },
+  "devDependencies": {
+    "@tabler/icons": "^3.24.0",
+    "@tailwindcss/cli": "^4.0.0",
+    "concurrently": "^9.0.0",
+    "tailwindcss": "^4.0.0"
+  }
+}

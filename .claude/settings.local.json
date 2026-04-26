@@ -4,7 +4,11 @@
       "Bash(grep -E \"\\\\.\\(cs|razor\\)$\")",
       "Bash(xargs -I {} bash -c 'echo \"=== {} ===\" && head -20 {}')",
       "Bash(dotnet sln *)",
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(pnpm --version)",
+      "Bash(npm --version)",
+      "Bash(corepack enable *)",
+      "Bash(corepack prepare *)"
     ]
   }
 }
