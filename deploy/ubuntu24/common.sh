@@ -683,6 +683,24 @@ dotnet_sdk_is_installed() {
     grep -q "^${sdk_version}[[:space:]]"
 }
 
+# Returns success if any installed SDK satisfies the requested major.minor band.
+# Used to short-circuit ensure_dotnet on a re-run when the right band is already
+# present (e.g. global.json pins 10.0.100 but 10.0.202 is already installed and
+# rollForward=latestFeature will accept it).
+dotnet_sdk_band_is_installed() {
+  local sdk_version="$1"
+  [[ -x "${DOTNET_INSTALL_DIR}/dotnet" ]] || return 1
+  [[ -n "${sdk_version}" ]] || return 1
+
+  local band
+  band="$(printf '%s' "${sdk_version}" | awk -F. '{ printf "%s.%s.", $1, $2 }')"
+  [[ -n "${band}" ]] || return 1
+
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" \
+    "${DOTNET_INSTALL_DIR}/dotnet" --list-sdks 2>/dev/null |
+    grep -q "^${band}"
+}
+
 install_dotnet_sdk_from_tarball() {
   local sdk_version="$1"
   local tarball_url="$2"
@@ -703,6 +721,18 @@ ensure_dotnet() {
   local allow_channel_fallback="${CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK:-1}"
   local install_script="/tmp/citus-dotnet-install.sh"
   local tarball_url=""
+
+  log "Required .NET SDK: ${sdk_version:-channel ${dotnet_channel}/${dotnet_quality}} (target framework net${dotnet_channel})."
+
+  # Fast path: skip re-downloading dotnet-install.sh if a compatible SDK is
+  # already installed. global.json uses rollForward=latestFeature, so any
+  # SDK in the same major.minor band satisfies the pin.
+  if dotnet_sdk_band_is_installed "${sdk_version}"; then
+    log "Compatible .NET SDK already present in ${DOTNET_INSTALL_DIR}; skipping reinstall."
+    DOTNET_ROOT="${DOTNET_INSTALL_DIR}" "${DOTNET_INSTALL_DIR}/dotnet" --list-sdks 2>&1 | sed 's/^/  /' || true
+    ln -sfn "${DOTNET_INSTALL_DIR}/dotnet" /usr/local/bin/dotnet
+    return 0
+  fi
 
   log "Installing .NET SDK into ${DOTNET_INSTALL_DIR}."
   mkdir -p "${DOTNET_INSTALL_DIR}"
@@ -737,8 +767,13 @@ ensure_dotnet() {
   ln -sfn "${DOTNET_INSTALL_DIR}/dotnet" /usr/local/bin/dotnet
   DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet --info >/dev/null
 
+  log "Installed .NET SDKs in ${DOTNET_INSTALL_DIR}:"
+  DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet --list-sdks 2>&1 | sed 's/^/  /' || true
+
   if [[ -n "${sdk_version}" ]] && ! dotnet_sdk_is_installed "${sdk_version}"; then
-    if is_truthy "${allow_channel_fallback}"; then
+    if dotnet_sdk_band_is_installed "${sdk_version}"; then
+      log "Exact SDK ${sdk_version} is not present, but a compatible SDK in the same band is. global.json's rollForward=latestFeature will accept it."
+    elif is_truthy "${allow_channel_fallback}"; then
       log "Exact SDK ${sdk_version} is still not present after fallback. Continuing with the installed SDK because global.json allows roll-forward."
     else
       fail "Expected .NET SDK ${sdk_version} was not installed into ${DOTNET_INSTALL_DIR}."
