@@ -8,7 +8,15 @@ fi
 readonly REMOTE_NAME="${1:-origin}"
 readonly REMOTE_URL="${2:-}"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+
+# Detect the working tree that actually triggered the push. The hook script
+# lives in the main repo's checkout (via core.hooksPath), but the push can
+# originate from any worktree — git's GIT_DIR / cwd already point at the
+# correct worktree, so `git rev-parse --show-toplevel` returns its working
+# tree. Computing REPO_ROOT from the script path would point at the main
+# repo, which would let `git add` stage stale files from there into the
+# worktree's index and clobber the worktree's real changes during --amend.
+readonly REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 mapfile -t PUSH_REFS < <(cat)
 
@@ -16,14 +24,14 @@ if [[ "${#PUSH_REFS[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-current_branch="$(git -C "${REPO_ROOT}" symbolic-ref --quiet --short HEAD || true)"
+current_branch="$(git symbolic-ref --quiet --short HEAD || true)"
 if [[ -z "${current_branch}" ]]; then
   exit 0
 fi
 
-bash "${SCRIPT_DIR}/bump-version.sh"
-git -C "${REPO_ROOT}" add VERSION backend/Directory.Build.props
-git -C "${REPO_ROOT}" commit --amend --no-edit --no-verify
+CITUS_REPO_ROOT="${REPO_ROOT}" bash "${SCRIPT_DIR}/bump-version.sh"
+git add VERSION backend/Directory.Build.props
+git commit --amend --no-edit --no-verify
 
 push_args=()
 for push_ref in "${PUSH_REFS[@]}"; do
@@ -37,6 +45,6 @@ for push_ref in "${PUSH_REFS[@]}"; do
 done
 
 printf 'Auto-bumped Citus version before push to %s (%s).\n' "${REMOTE_NAME}" "${REMOTE_URL}"
-CITUS_SKIP_VERSION_HOOK=1 git -C "${REPO_ROOT}" push --no-verify "${REMOTE_NAME}" "${push_args[@]}"
+CITUS_SKIP_VERSION_HOOK=1 git push --no-verify "${REMOTE_NAME}" "${push_args[@]}"
 echo "The original push is being cancelled intentionally because the hook already completed the versioned push."
 exit 1

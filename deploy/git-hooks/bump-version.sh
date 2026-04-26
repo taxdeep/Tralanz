@@ -2,7 +2,10 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+# When invoked from pre-push the caller passes CITUS_REPO_ROOT explicitly so
+# the bump targets the worktree being pushed, not the main repo where the
+# hook script lives. Fall back to script-relative discovery for direct runs.
+readonly REPO_ROOT="${CITUS_REPO_ROOT:-$(cd -- "${SCRIPT_DIR}/../.." && pwd)}"
 readonly VERSION_FILE="${REPO_ROOT}/VERSION"
 readonly BUILD_PROPS_FILE="${REPO_ROOT}/backend/Directory.Build.props"
 
