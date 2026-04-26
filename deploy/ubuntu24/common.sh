@@ -662,6 +662,81 @@ dotnet_sdk_version_from_global_json() {
   sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_ROOT}/global.json" | head -n 1
 }
 
+ensure_microsoft_apt_repo() {
+  # Idempotent: skip if the Microsoft prod feed is already registered, either
+  # through the packages-microsoft-prod meta-package or a stand-alone source list.
+  if dpkg -l packages-microsoft-prod 2>/dev/null | grep -q '^ii'; then
+    return 0
+  fi
+  if compgen -G "/etc/apt/sources.list.d/microsoft-prod*.list" >/dev/null 2>&1 ||
+     compgen -G "/etc/apt/sources.list.d/microsoft-prod*.sources" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local version_id
+  version_id="$(. /etc/os-release && printf '%s' "${VERSION_ID:-}")"
+  [[ -n "${version_id}" ]] || return 1
+
+  local deb_url="https://packages.microsoft.com/config/ubuntu/${version_id}/packages-microsoft-prod.deb"
+  local deb="/tmp/citus-packages-microsoft-prod.deb"
+
+  log "Registering Microsoft apt feed for Ubuntu ${version_id} (${deb_url})."
+  if ! curl -fsSL "${deb_url}" -o "${deb}"; then
+    log "Unable to download ${deb_url}; will skip apt install path."
+    return 1
+  fi
+
+  DEBIAN_FRONTEND=noninteractive dpkg -i "${deb}" >/dev/null
+  rm -f "${deb}"
+  apt-get update -qq
+}
+
+try_install_dotnet_via_apt() {
+  local major_minor="$1"   # e.g. "10.0"
+  [[ -n "${major_minor}" ]] || return 1
+
+  local sdk_pkg="dotnet-sdk-${major_minor}"
+  local runtime_pkg="aspnetcore-runtime-${major_minor}"
+
+  if ! ensure_microsoft_apt_repo; then
+    return 1
+  fi
+
+  if ! apt-cache show "${sdk_pkg}" 2>/dev/null | grep -q "^Package: ${sdk_pkg}\$"; then
+    log "${sdk_pkg} is not available via apt on this host; will fall back to manual install."
+    return 1
+  fi
+
+  log "Installing ${sdk_pkg} and ${runtime_pkg} via apt."
+  if ! apt_install "${sdk_pkg}" "${runtime_pkg}"; then
+    log "apt install of ${sdk_pkg}/${runtime_pkg} failed; will fall back to manual install."
+    return 1
+  fi
+
+  if [[ ! -x /usr/share/dotnet/dotnet ]]; then
+    log "apt install completed but /usr/share/dotnet/dotnet is missing; will fall back to manual install."
+    return 1
+  fi
+
+  # Make DOTNET_INSTALL_DIR point at the apt-managed install so every downstream
+  # reference (systemd units, publish steps) keeps working unchanged.
+  if [[ -L "${DOTNET_INSTALL_DIR}" ]]; then
+    if [[ "$(readlink -f "${DOTNET_INSTALL_DIR}")" != "/usr/share/dotnet" ]]; then
+      ln -sfn /usr/share/dotnet "${DOTNET_INSTALL_DIR}"
+    fi
+  elif [[ -d "${DOTNET_INSTALL_DIR}" ]]; then
+    local backup="${DOTNET_INSTALL_DIR}.preview-$(date +%Y%m%d%H%M%S)"
+    log "Existing ${DOTNET_INSTALL_DIR} directory (likely the .NET 11 preview install) moved aside to ${backup}."
+    mv "${DOTNET_INSTALL_DIR}" "${backup}"
+    ln -sfn /usr/share/dotnet "${DOTNET_INSTALL_DIR}"
+  else
+    ln -sfn /usr/share/dotnet "${DOTNET_INSTALL_DIR}"
+  fi
+
+  ln -sfn "${DOTNET_INSTALL_DIR}/dotnet" /usr/local/bin/dotnet
+  return 0
+}
+
 dotnet_sdk_tarball_url() {
   local sdk_version="$1"
 
@@ -724,9 +799,9 @@ ensure_dotnet() {
 
   log "Required .NET SDK: ${sdk_version:-channel ${dotnet_channel}/${dotnet_quality}} (target framework net${dotnet_channel})."
 
-  # Fast path: skip re-downloading dotnet-install.sh if a compatible SDK is
-  # already installed. global.json uses rollForward=latestFeature, so any
-  # SDK in the same major.minor band satisfies the pin.
+  # Fast path: skip re-installing if a compatible SDK is already present.
+  # global.json uses rollForward=latestFeature, so any SDK in the same
+  # major.minor band satisfies the pin.
   if dotnet_sdk_band_is_installed "${sdk_version}"; then
     log "Compatible .NET SDK already present in ${DOTNET_INSTALL_DIR}; skipping reinstall."
     DOTNET_ROOT="${DOTNET_INSTALL_DIR}" "${DOTNET_INSTALL_DIR}/dotnet" --list-sdks 2>&1 | sed 's/^/  /' || true
@@ -734,7 +809,33 @@ ensure_dotnet() {
     return 0
   fi
 
-  log "Installing .NET SDK into ${DOTNET_INSTALL_DIR}."
+  # Preferred path: install through Microsoft's apt feed when targeting a GA
+  # release. Manual dotnet-install.sh / tarball / channel paths only kick in
+  # when apt does not carry the requested version (e.g. preview / nightly).
+  local apt_preferred=1
+  if [[ -n "${CITUS_DOTNET_FORCE_MANUAL_INSTALL:-}" ]] && is_truthy "${CITUS_DOTNET_FORCE_MANUAL_INSTALL}"; then
+    apt_preferred=0
+  fi
+  if [[ "${dotnet_quality,,}" != "ga" ]]; then
+    apt_preferred=0
+  fi
+
+  if [[ "${apt_preferred}" == "1" ]] && try_install_dotnet_via_apt "${dotnet_channel}"; then
+    log "Installed .NET ${dotnet_channel} via apt (Microsoft package feed)."
+    DOTNET_ROOT="${DOTNET_INSTALL_DIR}" /usr/local/bin/dotnet --list-sdks 2>&1 | sed 's/^/  /' || true
+
+    if [[ -n "${sdk_version}" ]] && ! dotnet_sdk_band_is_installed "${sdk_version}"; then
+      log "Apt-managed .NET ${dotnet_channel} did not satisfy SDK band ${sdk_version}; falling through to manual install."
+    else
+      return 0
+    fi
+  fi
+
+  log "Installing .NET SDK into ${DOTNET_INSTALL_DIR} via dotnet-install.sh."
+  if [[ -L "${DOTNET_INSTALL_DIR}" ]]; then
+    log "${DOTNET_INSTALL_DIR} is currently a symlink to $(readlink -f "${DOTNET_INSTALL_DIR}"); replacing with a real directory for the manual install."
+    rm -f "${DOTNET_INSTALL_DIR}"
+  fi
   mkdir -p "${DOTNET_INSTALL_DIR}"
   curl -fsSL "https://dot.net/v1/dotnet-install.sh" -o "${install_script}"
   chmod 755 "${install_script}"

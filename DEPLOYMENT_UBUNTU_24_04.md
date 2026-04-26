@@ -190,17 +190,24 @@ sudo CITUS_APT_FORCE_IPV4=1 \
 
 After installation, edit `/etc/citus/citus.env` and rerun `sudo ./upgrade.sh` to apply changes to systemd and nginx.
 
-## .NET 11 preview fallback on Ubuntu 24.04
+## .NET 10 install path on Ubuntu 24.04
 
-Ubuntu 24.04 does not ship `.NET 10` through the default apt packages, so the deployment scripts install the SDK into `/opt/dotnet`.
+Ubuntu 24.04's default apt repositories do not ship `.NET 10`, so the deployment scripts register Microsoft's apt feed (`packages.microsoft.com`) and install the SDK from there. `/opt/dotnet` is symlinked to `/usr/share/dotnet` (where the apt package lands) so every downstream reference (systemd `DOTNET_ROOT`, `dotnet publish`) keeps working unchanged.
 
-The order is now:
+The order is:
 
-1. exact SDK install through `dotnet-install.sh`
-2. direct SDK tarball fallback from `builds.dotnet.microsoft.com`
-3. channel fallback only if exact install still fails and `CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK=1`
+1. **apt path (preferred for GA releases)** — register `packages-microsoft-prod`, then `apt install dotnet-sdk-10.0 aspnetcore-runtime-10.0`
+2. exact SDK install through `dotnet-install.sh`
+3. direct SDK tarball fallback from `builds.dotnet.microsoft.com`
+4. channel fallback only if all of the above fail and `CITUS_DOTNET_ALLOW_CHANNEL_FALLBACK=1`
 
-For the current repository `global.json`, the exact fallback URL resolves to:
+The apt path is automatically skipped (and the script falls through to `dotnet-install.sh`) when:
+
+- `CITUS_DOTNET_QUALITY` is anything other than `GA` (e.g. `preview`, `daily`, `signed`)
+- `CITUS_DOTNET_FORCE_MANUAL_INSTALL=1` is set explicitly
+- The Microsoft apt feed is unreachable, or does not carry `dotnet-sdk-10.0`
+
+For the current repository `global.json`, the manual-fallback URL resolves to:
 
 ```text
 https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.100/dotnet-sdk-10.0.100-linux-x64.tar.gz
@@ -210,14 +217,17 @@ If you need to override that source manually, set:
 
 ```bash
 sudo CITUS_DOTNET_SDK_TARBALL_URL=https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.100/dotnet-sdk-10.0.100-linux-x64.tar.gz \
+     CITUS_DOTNET_FORCE_MANUAL_INSTALL=1 \
      ./install.sh
 ```
 
-If you see this apt error:
+If you see this apt error during the apt path:
 
 ```text
 E: Unable to locate package dotnet-sdk-10.0
 E: Unable to locate package aspnetcore-runtime-10.0
 ```
 
-you are running an outdated install path or an old checkout. Do not try to fix it by adding more apt sources on Ubuntu 24.04. Pull the latest repository version and rerun `./install.sh`; the current installer uses `dotnet-install.sh` and the direct SDK tarball fallback instead of `apt install dotnet-sdk-10.0`.
+it usually means Microsoft's apt feed has not been registered for this host. The installer registers it automatically on first run; if that step failed (network or DNS issue), the script logs `Unable to download packages-microsoft-prod.deb …` and falls through to the manual install path. Re-run `./upgrade.sh` after fixing connectivity, or set `CITUS_DOTNET_FORCE_MANUAL_INSTALL=1` to skip apt entirely.
+
+If `/opt/dotnet` already contains a `.NET 11 preview` install from earlier, the apt path moves it aside to `/opt/dotnet.preview-<timestamp>` and replaces the path with the symlink; remove the backup directory once you have confirmed the new install is working.
