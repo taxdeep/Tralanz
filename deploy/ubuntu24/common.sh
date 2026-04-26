@@ -713,24 +713,32 @@ try_install_dotnet_via_apt() {
     return 1
   fi
 
-  if [[ ! -x /usr/share/dotnet/dotnet ]]; then
-    log "apt install completed but /usr/share/dotnet/dotnet is missing; will fall back to manual install."
+  local apt_dotnet_root=""
+  for candidate in /usr/share/dotnet /usr/lib/dotnet; do
+    if [[ -x "${candidate}/dotnet" ]]; then
+      apt_dotnet_root="${candidate}"
+      break
+    fi
+  done
+
+  if [[ -z "${apt_dotnet_root}" ]]; then
+    log "apt install completed but no dotnet binary was found at /usr/share/dotnet or /usr/lib/dotnet; falling back to manual install."
     return 1
   fi
 
   # Make DOTNET_INSTALL_DIR point at the apt-managed install so every downstream
   # reference (systemd units, publish steps) keeps working unchanged.
   if [[ -L "${DOTNET_INSTALL_DIR}" ]]; then
-    if [[ "$(readlink -f "${DOTNET_INSTALL_DIR}")" != "/usr/share/dotnet" ]]; then
-      ln -sfn /usr/share/dotnet "${DOTNET_INSTALL_DIR}"
+    if [[ "$(readlink -f "${DOTNET_INSTALL_DIR}")" != "${apt_dotnet_root}" ]]; then
+      ln -sfn "${apt_dotnet_root}" "${DOTNET_INSTALL_DIR}"
     fi
   elif [[ -d "${DOTNET_INSTALL_DIR}" ]]; then
     local backup="${DOTNET_INSTALL_DIR}.preview-$(date +%Y%m%d%H%M%S)"
     log "Existing ${DOTNET_INSTALL_DIR} directory (likely the .NET 11 preview install) moved aside to ${backup}."
     mv "${DOTNET_INSTALL_DIR}" "${backup}"
-    ln -sfn /usr/share/dotnet "${DOTNET_INSTALL_DIR}"
+    ln -sfn "${apt_dotnet_root}" "${DOTNET_INSTALL_DIR}"
   else
-    ln -sfn /usr/share/dotnet "${DOTNET_INSTALL_DIR}"
+    ln -sfn "${apt_dotnet_root}" "${DOTNET_INSTALL_DIR}"
   fi
 
   ln -sfn "${DOTNET_INSTALL_DIR}/dotnet" /usr/local/bin/dotnet
