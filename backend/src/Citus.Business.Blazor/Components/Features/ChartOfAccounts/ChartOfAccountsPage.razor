@@ -1,0 +1,186 @@
+@page "/chart-of-accounts"
+
+@inject BusinessShellState ShellState
+@inject TrialBalanceClient TrialBalanceClient
+
+<PageTitle>Chart of Accounts | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton LeadingIcon="IconName.Refresh" Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                 ShowIcon="true"
+                 Class="mb-4">
+    <MessageTemplate>
+        Chart of Accounts here is the read-only tree of accounts grouped by root type.
+        Underlying truth is the Trial Balance endpoint (@(_balance?.AsOfDate.ToString("yyyy-MM-dd") ?? "as-of date pending")) — chart edits will land in a follow-up once the
+        backend write surface ships.
+    </MessageTemplate>
+</AntDesign.Alert>
+
+<CitusAsyncBoundary IsLoading="_isLoading"
+                    ErrorMessage="@_error"
+                    IsEmpty="@(_groups.Count == 0)"
+                    EmptyIcon="IconName.BuildingBank"
+                    EmptyTitle="No accounts yet"
+                    EmptyMessage="Provision the chart of accounts during first-company setup to populate this surface."
+                    EmptyActionLabel="Open Reports"
+                    EmptyActionHref="reports"
+                    RetryAction="LoadAsync">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+        @foreach (var group in _groups)
+        {
+            <CitusStatCard Label="@group.RootType"
+                           Value="@group.Accounts.Count.ToString()"
+                           Description="@($"{FormatAmount(group.NetBalance)} {_balance?.BaseCurrencyCode}")"
+                           Icon="@IconForRoot(group.RootType)"
+                           Tone="@ToneForRoot(group.RootType)" />
+        }
+    </div>
+
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Accounts</h2>
+        @foreach (var group in _groups)
+        {
+            <article class="citus-subpanel">
+                <header class="citus-subpanel__header">
+                    <h3 class="citus-subpanel__title">@group.RootType</h3>
+                    <AntDesign.Tag Color="@TagColor(group.RootType)">@group.Accounts.Count accounts</AntDesign.Tag>
+                </header>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 8rem">Code</th>
+                            <th>Name</th>
+                            <th>Detail type</th>
+                            <th>Status</th>
+                            <th class="text-right">Debit</th>
+                            <th class="text-right">Credit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var acc in group.Accounts)
+                        {
+                            <tr>
+                                <td><span class="citus-inline-code">@acc.Code</span></td>
+                                <td>@acc.Name</td>
+                                <td class="text-fg-muted text-sm">@acc.DetailType</td>
+                                <td>
+                                    @(acc.IsActive ? "Active" : "Inactive")
+                                    @if (acc.IsSystem)
+                                    {
+                                        <span class="text-fg-subtle text-xs"> · System</span>
+                                    }
+                                </td>
+                                <td class="text-right">@FormatAmount(acc.BalanceDebit)</td>
+                                <td class="text-right">@FormatAmount(acc.BalanceCredit)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </article>
+        }
+    </section>
+</CitusAsyncBoundary>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Accounting",
+        Title = "Chart of accounts",
+        Subtitle = "Read-only account list grouped by root type. Each row reflects the latest Trial Balance run for the active company."
+    };
+
+    private bool _isLoading = true;
+    private string? _error;
+    private TrialBalanceReportSummary? _balance;
+    private IReadOnlyList<RootGroup> _groups = Array.Empty<RootGroup>();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+
+        try
+        {
+            _balance = await TrialBalanceClient.GetReportAsync(
+                ShellState.ActiveCompany.Id,
+                DateOnly.FromDateTime(DateTime.Today),
+                includeZeroBalances: true);
+
+            if (_balance is null)
+            {
+                _groups = Array.Empty<RootGroup>();
+                _error = "Trial Balance is unavailable. Provision the chart of accounts and confirm the API is reachable.";
+                return;
+            }
+
+            _groups = _balance.Rows
+                .GroupBy(row => string.IsNullOrWhiteSpace(row.RootType) ? "Uncategorized" : row.RootType)
+                .Select(g => new RootGroup(
+                    RootType: g.Key,
+                    Accounts: g.OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase).ToArray(),
+                    NetBalance: g.Sum(a => a.BalanceDebit - a.BalanceCredit)))
+                .OrderBy(g => RootOrder(g.RootType))
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static int RootOrder(string root) => root.ToLowerInvariant() switch
+    {
+        "asset" => 0, "assets" => 0,
+        "liability" => 1, "liabilities" => 1,
+        "equity" => 2,
+        "revenue" => 3, "income" => 3,
+        "expense" => 4, "expenses" => 4,
+        _ => 5
+    };
+
+    private static IconName IconForRoot(string root) => root.ToLowerInvariant() switch
+    {
+        "asset" or "assets" => IconName.BuildingBank,
+        "liability" or "liabilities" => IconName.Receipt,
+        "equity" => IconName.Report,
+        "revenue" or "income" => IconName.ReportAnalytics,
+        "expense" or "expenses" => IconName.Wallet,
+        _ => IconName.LayoutDashboard
+    };
+
+    private static StatTone ToneForRoot(string root) => root.ToLowerInvariant() switch
+    {
+        "asset" or "assets" => StatTone.Info,
+        "liability" or "liabilities" => StatTone.Warning,
+        "equity" => StatTone.Success,
+        "revenue" or "income" => StatTone.Primary,
+        "expense" or "expenses" => StatTone.Danger,
+        _ => StatTone.Neutral
+    };
+
+    private static string TagColor(string root) => root.ToLowerInvariant() switch
+    {
+        "asset" or "assets" => "blue",
+        "liability" or "liabilities" => "orange",
+        "equity" => "green",
+        "revenue" or "income" => "geekblue",
+        "expense" or "expenses" => "red",
+        _ => "default"
+    };
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private sealed record class RootGroup(string RootType, IReadOnlyList<TrialBalanceAccountSummary> Accounts, decimal NetBalance);
+}
