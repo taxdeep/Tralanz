@@ -1,0 +1,288 @@
+@page "/settings/numbering"
+
+@inject BusinessShellState ShellState
+@inject AntDesign.IMessageService Message
+@inject IServiceProvider Services
+
+<PageTitle>Numbering | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        @if (_isUnavailable)
+        {
+            <AntDesign.Tag Color="@("orange")">Database not configured</AntDesign.Tag>
+        }
+        else
+        {
+            <AntDesign.Tag Color="@("blue")">Backend authority</AntDesign.Tag>
+        }
+    </Actions>
+</CitusPageHeader>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <article class="citus-domain-card">
+        <header class="citus-domain-card__header">
+            <h3 class="citus-domain-card__title">Internal entity number</h3>
+            <AntDesign.Tag Color="@("default")">ENYYYY########</AntDesign.Tag>
+        </header>
+        <p class="citus-domain-card__description">Global, immutable, audit-only. Users do not edit it.</p>
+    </article>
+    <article class="citus-domain-card">
+        <header class="citus-domain-card__header">
+            <h3 class="citus-domain-card__title">Business display number</h3>
+            <AntDesign.Tag Color="@("blue")">Company + module scoped</AntDesign.Tag>
+        </header>
+        <p class="citus-domain-card__description">Shown on invoices, bills, payments, purchase orders, and journals.</p>
+    </article>
+    <article class="citus-domain-card">
+        <header class="citus-domain-card__header">
+            <h3 class="citus-domain-card__title">Backend authority</h3>
+            <AntDesign.Tag Color="@("green")">Final number on save</AntDesign.Tag>
+        </header>
+        <p class="citus-domain-card__description">Preview is advisory; the backend reserves the final number inside the save flow.</p>
+    </article>
+</div>
+
+@if (_isUnavailable)
+{
+    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+                     ShowIcon="true"
+                     Message="Numbering settings need a PostgreSQL connection. Configure ConnectionStrings:AccountingCore or CITUS_ACCOUNTING_DB on the Business host."
+                     Class="mb-4" />
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_notice))
+    {
+        <AntDesign.Alert Type="@AntDesign.AlertType.Success" Message="@_notice" ShowIcon="true" Class="mb-4" />
+    }
+
+    @if (ShellState.AreWritesBlocked)
+    {
+        <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+                         ShowIcon="true"
+                         Message="@ShellState.WriteBlockMessage"
+                         Class="mb-4" />
+    }
+
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <div class="flex items-center gap-2 flex-1 max-w-md">
+                <CitusIcon Name="IconName.Search" Size="IconSize.Inline" />
+                <CitusInput TValue="string" @bind-Value="_searchText" Placeholder="Search module, scope, prefix..." Class="flex-1" />
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-fg-muted text-sm">@FilteredRows.Count rule(s)</span>
+                <CitusButton LeadingIcon="IconName.Refresh" Disabled="@_isSaving" OnClick="LoadAsync">Refresh</CitusButton>
+            </div>
+        </header>
+
+        @if (_isLoading)
+        {
+            <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+        }
+        else if (FilteredRows.Count == 0)
+        {
+            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No numbering rule matched the current search." ShowIcon="true" />
+        }
+        else
+        {
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Module</th>
+                        <th>Scope</th>
+                        <th>Prefix</th>
+                        <th class="text-right">Padding</th>
+                        <th class="text-right">Next number</th>
+                        <th>Preview</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredRows)
+                    {
+                        <tr>
+                            <td>
+                                <div>@row.Label</div>
+                                <div class="text-fg-subtle text-xs">@row.Family</div>
+                            </td>
+                            <td><span class="citus-inline-code">@row.ScopeKey</span></td>
+                            <td>
+                                <CitusInput TValue="string" @bind-Value="row.Prefix" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Size="CitusButtonSize.Small" />
+                            </td>
+                            <td class="text-right">
+                                <AntDesign.InputNumber TValue="short" @bind-Value="row.Padding" Min="1" Max="12" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Style="width: 5rem;" />
+                            </td>
+                            <td class="text-right">
+                                <AntDesign.InputNumber TValue="long" @bind-Value="row.NextNumber" Min="1" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Style="width: 8rem;" />
+                            </td>
+                            <td><span class="citus-inline-code">@BuildPreview(row)</span></td>
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <AntDesign.Switch @bind-Value="row.Enabled" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" />
+                                    <span class="text-xs">@(row.Enabled ? "Enabled" : "Disabled")</span>
+                                </div>
+                                <AntDesign.Tag Color="@(row.IsRuntimeConnected ? "green" : "default")" Class="mt-1">@row.RuntimeStatus</AntDesign.Tag>
+                            </td>
+                            <td>
+                                <CitusButton Variant="CitusButtonVariant.Primary" Size="CitusButtonSize.Small"
+                                             Disabled="@(_isSaving || ShellState.AreWritesBlocked)"
+                                             OnClick="@(() => SaveAsync(row))">
+                                    Save
+                                </CitusButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Numbering",
+        Subtitle = "Configure business display numbers per company and module. Internal entity numbers stay global, immutable, and backend-owned."
+    };
+
+    private readonly List<NumberingRuleEditRow> _rows = [];
+    private string _searchText = string.Empty;
+    private string? _error;
+    private string? _notice;
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private bool _isUnavailable;
+    private BusinessNumberingClient? _client;
+
+    private IReadOnlyList<NumberingRuleEditRow> FilteredRows =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _rows
+            : _rows.Where(row => MatchesSearch(row, _searchText)).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = Services.GetService<BusinessNumberingClient>();
+        if (_client is null)
+        {
+            _isUnavailable = true;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_client is null) return;
+
+        try
+        {
+            _isLoading = true;
+            _error = null;
+            _notice = null;
+
+            var summary = await _client.GetSummaryAsync(ShellState.ActiveCompany.Id);
+            _rows.Clear();
+            _rows.AddRange(summary.Rules.Select(NumberingRuleEditRow.From));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync(NumberingRuleEditRow row)
+    {
+        if (_client is null) return;
+
+        try
+        {
+            _isSaving = true;
+            _error = null;
+            _notice = null;
+
+            var saved = await _client.SaveAsync(
+                ShellState.ActiveCompany.Id,
+                new BusinessNumberingRuleUpdateRequest(
+                    row.ScopeKey,
+                    row.Prefix,
+                    row.Padding,
+                    row.NextNumber,
+                    row.Enabled));
+
+            row.Apply(saved);
+            _notice = $"{row.Label} numbering saved. Preview: {row.Preview}";
+            await Message.SuccessAsync(_notice);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            await Message.ErrorAsync(_error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private static bool MatchesSearch(NumberingRuleEditRow row, string searchText) =>
+        row.SearchNeedle.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildPreview(NumberingRuleEditRow row) =>
+        $"{(row.Prefix ?? string.Empty).Trim().ToUpperInvariant()}{Math.Max(row.NextNumber, 1).ToString().PadLeft(Math.Clamp((int)row.Padding, 1, 12), '0')}";
+
+    private sealed class NumberingRuleEditRow
+    {
+        public required string Module { get; init; }
+        public required string Label { get; init; }
+        public required string ScopeKey { get; init; }
+        public required string Family { get; init; }
+        public string Prefix { get; set; } = string.Empty;
+        public short Padding { get; set; }
+        public long NextNumber { get; set; }
+        public bool Enabled { get; set; }
+        public string Preview { get; private set; } = string.Empty;
+        public bool IsRuntimeConnected { get; init; }
+        public required string RuntimeStatus { get; init; }
+        public string SearchNeedle => $"{Module} {Label} {ScopeKey} {Family} {Prefix} {RuntimeStatus}";
+
+        public static NumberingRuleEditRow From(BusinessNumberingRuleSummary rule) =>
+            new()
+            {
+                Module = rule.Module,
+                Label = rule.Label,
+                ScopeKey = rule.ScopeKey,
+                Family = rule.Family,
+                Prefix = rule.Prefix,
+                Padding = rule.Padding,
+                NextNumber = rule.NextNumber,
+                Enabled = rule.Enabled,
+                Preview = rule.Preview,
+                IsRuntimeConnected = rule.IsRuntimeConnected,
+                RuntimeStatus = rule.RuntimeStatus
+            };
+
+        public void Apply(BusinessNumberingRuleSummary rule)
+        {
+            Prefix = rule.Prefix;
+            Padding = rule.Padding;
+            NextNumber = rule.NextNumber;
+            Enabled = rule.Enabled;
+            Preview = rule.Preview;
+        }
+    }
+}

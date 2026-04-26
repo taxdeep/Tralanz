@@ -6,9 +6,9 @@
     <LangVersion>preview</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
-    <Version>0.1.0001.29</Version>
-    <AssemblyVersion>0.1.0001.29</AssemblyVersion>
-    <FileVersion>0.1.0001.29</FileVersion>
-    <InformationalVersion>0.1.0001.29</InformationalVersion>
+    <Version>0.1.0001.30</Version>
+    <AssemblyVersion>0.1.0001.30</AssemblyVersion>
+    <FileVersion>0.1.0001.30</FileVersion>
+    <InformationalVersion>0.1.0001.30</InformationalVersion>
   </PropertyGroup>
 </Project>

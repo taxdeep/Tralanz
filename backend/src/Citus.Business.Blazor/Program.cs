@@ -3,6 +3,7 @@ using Citus.Business.Blazor.Configuration;
 using Citus.Business.Blazor.Services;
 using Citus.Business.Blazor.State;
 using Citus.Ui.Shared.Theme;
+using Infrastructure.PostgreSQL;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,16 @@ builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<BusinessShellState>();
 builder.Services.AddTransient<BusinessSessionHeaderHandler>();
+
+var businessDbConnectionString =
+    builder.Configuration["CITUS_ACCOUNTING_DB"] ??
+    builder.Configuration.GetConnectionString("AccountingCore");
+
+if (!string.IsNullOrWhiteSpace(businessDbConnectionString))
+{
+    builder.Services.AddSingleton(new PostgreSqlConnectionFactory(businessDbConnectionString));
+    builder.Services.AddSingleton<BusinessNumberingClient>();
+}
 builder.Services.AddHttpClient<BusinessSessionClient>(
         (serviceProvider, client) =>
         {
