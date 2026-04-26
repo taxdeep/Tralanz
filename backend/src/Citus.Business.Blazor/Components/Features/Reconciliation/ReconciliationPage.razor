@@ -1,0 +1,217 @@
+@page "/reconciliation"
+
+@inject BusinessShellState ShellState
+@inject AntDesign.IMessageService Message
+
+<PageTitle>Reconciliation | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <AntDesign.Tag Color="@(IsZero(_difference) ? "green" : "orange")">
+            @(IsZero(_difference) ? "Difference cleared" : "Difference outstanding")
+        </AntDesign.Tag>
+    </Actions>
+</CitusPageHeader>
+
+<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                 ShowIcon="true"
+                 Message="Reconciliation can only complete when difference equals zero (spec §8). The Complete button stays locked otherwise."
+                 Class="mb-4" />
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-8 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Statement</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Bank account</label>
+                    <CitusInput TValue="string" @bind-Value="_account" Placeholder="1010 — Bank operating" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Statement date</label>
+                    <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_statementDate" Style="width: 100%;" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Statement opening balance</label>
+                    <AntDesign.InputNumber TValue="decimal" @bind-Value="_openingBalance" Style="width: 100%;" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Statement ending balance</label>
+                    <AntDesign.InputNumber TValue="decimal" @bind-Value="_endingBalance" Style="width: 100%;" />
+                </div>
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Inflow (deposits and credits)</h2>
+                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="@(() => AddRow(_inflows))">Add inflow</CitusButton>
+            </header>
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Memo</th>
+                        <th class="text-right" style="width: 9rem">Amount</th>
+                        <th style="width: 6rem">Cleared</th>
+                        <th style="width: 3rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var index = 0; index < _inflows.Count; index++)
+                    {
+                        var i = index;
+                        var row = _inflows[i];
+                        <tr>
+                            <td><AntDesign.DatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
+                            <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_inflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
+                            <td><AntDesign.InputNumber TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_inflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><AntDesign.Switch Value="@row.Cleared" ValueChanged="@(v => Update(_inflows, i, r => r with { Cleared = v }))" /></td>
+                            <td>
+                                <button type="button" class="citus-icon-button" @onclick="() => Remove(_inflows, i)">
+                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="citus-data-table__total">
+                        <td colspan="2" class="text-right font-medium">Cleared inflow</td>
+                        <td class="text-right font-semibold">@FormatAmount(_clearedInflow)</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Outflow (payments and debits)</h2>
+                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="@(() => AddRow(_outflows))">Add outflow</CitusButton>
+            </header>
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Memo</th>
+                        <th class="text-right" style="width: 9rem">Amount</th>
+                        <th style="width: 6rem">Cleared</th>
+                        <th style="width: 3rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var index = 0; index < _outflows.Count; index++)
+                    {
+                        var i = index;
+                        var row = _outflows[i];
+                        <tr>
+                            <td><AntDesign.DatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
+                            <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_outflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
+                            <td><AntDesign.InputNumber TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_outflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><AntDesign.Switch Value="@row.Cleared" ValueChanged="@(v => Update(_outflows, i, r => r with { Cleared = v }))" /></td>
+                            <td>
+                                <button type="button" class="citus-icon-button" @onclick="() => Remove(_outflows, i)">
+                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="citus-data-table__total">
+                        <td colspan="2" class="text-right font-medium">Cleared outflow</td>
+                        <td class="text-right font-semibold">@FormatAmount(_clearedOutflow)</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="lg:col-span-4 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Summary bar</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    <tr><th>Opening</th><td>@FormatAmount(_openingBalance)</td></tr>
+                    <tr><th>+ Cleared inflow</th><td>@FormatAmount(_clearedInflow)</td></tr>
+                    <tr><th>− Cleared outflow</th><td>@FormatAmount(_clearedOutflow)</td></tr>
+                    <tr><th>Calculated ending</th><td>@FormatAmount(_calculatedEnding)</td></tr>
+                    <tr><th>Statement ending</th><td>@FormatAmount(_endingBalance)</td></tr>
+                    <tr>
+                        <th>Difference</th>
+                        <td class="@(IsZero(_difference) ? "text-success" : "text-warning")">
+                            <strong>@FormatAmount(_difference)</strong>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Complete reconciliation</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Per spec §8, completion is only allowed when the difference is exactly zero. Toggle Cleared on each row until inflow and outflow match the statement.
+            </p>
+            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
+                         Disabled="@(!IsZero(_difference) || ShellState.AreWritesBlocked || _isSubmitting)"
+                         OnClick="CompleteAsync">
+                @(_isSubmitting ? "Completing..." : "Complete reconciliation")
+            </CitusButton>
+        </section>
+    </div>
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Accounting",
+        Title = "Reconciliation",
+        Subtitle = "Match the bank statement against company-side cash truth. Completion locks until difference is zero."
+    };
+
+    private string _account = string.Empty;
+    private DateTime? _statementDate = DateTime.Today;
+    private decimal _openingBalance;
+    private decimal _endingBalance;
+    private readonly List<RecRow> _inflows = new() { new RecRow { Date = DateTime.Today } };
+    private readonly List<RecRow> _outflows = new() { new RecRow { Date = DateTime.Today } };
+    private bool _isSubmitting;
+
+    private decimal _clearedInflow => _inflows.Where(r => r.Cleared).Sum(r => r.Amount);
+    private decimal _clearedOutflow => _outflows.Where(r => r.Cleared).Sum(r => r.Amount);
+    private decimal _calculatedEnding => _openingBalance + _clearedInflow - _clearedOutflow;
+    private decimal _difference => _endingBalance - _calculatedEnding;
+
+    private static bool IsZero(decimal value) => Math.Abs(value) < 0.005m;
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static void AddRow(List<RecRow> rows) => rows.Add(new RecRow { Date = DateTime.Today });
+    private static void Remove(List<RecRow> rows, int i) { if (i >= 0 && i < rows.Count) rows.RemoveAt(i); }
+    private static void Update(List<RecRow> rows, int i, Func<RecRow, RecRow> mutate) { if (i >= 0 && i < rows.Count) rows[i] = mutate(rows[i]); }
+
+    private async Task CompleteAsync()
+    {
+        if (!IsZero(_difference))
+        {
+            await Message.WarningAsync("Reconciliation requires difference == 0.");
+            return;
+        }
+
+        _isSubmitting = true;
+        try
+        {
+            await Task.Yield();
+            await Message.InfoAsync("Reconciliation complete payload built. The HTTP write surface for reconciliation is not wired yet; this submit will land once the backend route ships.");
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private sealed record class RecRow
+    {
+        public DateTime? Date { get; init; }
+        public string Memo { get; init; } = string.Empty;
+        public decimal Amount { get; init; }
+        public bool Cleared { get; init; }
+    }
+}
