@@ -3,148 +3,110 @@
 @inject AppShellState ShellState
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
-@inject ISnackbar Snackbar
+@inject AntDesign.IMessageService Message
 @inject SysAdminAuthenticationClient SysAdminAuthenticationClient
 @inject SysAdminControlClient SysAdminControlClient
 
 <PageTitle>Login | Citus SysAdmin</PageTitle>
 
-<MudPaper Class="pa-0 mt-10 sys-login">
-    <div class="sys-login__bar">
-        <MudText Typo="Typo.body2" Class="sys-login__bar-title">
-            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" />
+<div class="sys-login">
+    <header class="sys-login__bar">
+        <span class="sys-login__bar-title">
+            <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Inline" />
             SysAdmin Login
-        </MudText>
-        <MudText Typo="Typo.caption" Class="sys-login__bar-meta">PlatformOps</MudText>
-    </div>
+        </span>
+        <span class="sys-login__bar-meta">PlatformOps</span>
+    </header>
 
     @if (_isLoadingSetup)
     {
-        <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
     }
 
     <div class="sys-login__body">
         <div class="sys-login__crest" aria-hidden="true">
-            <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Large" />
+            <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Display" />
         </div>
 
         @if (_setupStatus?.SetupRequired == true)
         {
-            <MudStack Spacing="1">
-                <MudText Typo="Typo.h5" Class="sys-login__title">Create first SysAdmin</MudText>
-                <MudText Typo="Typo.body2" Class="text-secondary">
+            <div class="sys-login__heading">
+                <h1 class="sys-login__title">Create first SysAdmin</h1>
+                <p class="text-fg-muted text-sm">
                     No SysAdmin operator exists yet. Provision the independent platform admin before protected control surfaces can be used.
-                </MudText>
-            </MudStack>
+                </p>
+            </div>
 
-            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mt-4">
-                This is the governed first-use setup path. Keep SysAdmin separate from business users.
-            </MudAlert>
+            <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+                             ShowIcon="true"
+                             Message="This is the governed first-use setup path. Keep SysAdmin separate from business users."
+                             Class="mt-4" />
 
             <div class="sys-login__rule"></div>
 
-            <MudForm Class="mt-4" @ref="_setupForm">
-                <MudStack Spacing="3">
-                <MudTextField @bind-Value="_setupDisplayName"
-                              Label="Display name"
-                              Variant="Variant.Outlined"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Badge"
-                              Required="true"
-                              Immediate="true"
-                              ShrinkLabel="true" />
-                <MudTextField @bind-Value="_setupEmail"
-                              Label="Email"
-                              Variant="Variant.Outlined"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Email"
-                              Required="true"
-                              Immediate="true"
-                              ShrinkLabel="true" />
-                <MudTextField @bind-Value="_setupPassword"
-                              Label="Password"
-                              Variant="Variant.Outlined"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Lock"
-                              InputType="InputType.Password"
-                              Required="true"
-                              ShrinkLabel="true" />
-                <MudTextField @bind-Value="_setupPasswordConfirm"
-                              Label="Confirm password"
-                              Variant="Variant.Outlined"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.LockReset"
-                              InputType="InputType.Password"
-                              Required="true"
-                              ShrinkLabel="true" />
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           Class="sys-login__primary-action"
-                           Disabled="_isSubmitting"
-                           OnClick="ProvisionFirstAccountAsync">
+            <div class="flex flex-col gap-3 mt-4">
+                <CitusInput TValue="string" @bind-Value="_setupDisplayName"
+                            Placeholder="Display name"
+                            LeadingIcon="IconName.User"
+                            Size="CitusButtonSize.Large" />
+                <CitusInput TValue="string" @bind-Value="_setupEmail"
+                            Placeholder="Email"
+                            LeadingIcon="IconName.User"
+                            Size="CitusButtonSize.Large" />
+                <AntDesign.InputPassword @bind-Value="_setupPassword" Placeholder="@("Password")" Size="@AntDesign.InputSize.Large" />
+                <AntDesign.InputPassword @bind-Value="_setupPasswordConfirm" Placeholder="@("Confirm password")" Size="@AntDesign.InputSize.Large" />
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Size="CitusButtonSize.Large"
+                             Block="true"
+                             Disabled="_isSubmitting"
+                             OnClick="ProvisionFirstAccountAsync">
                     @(_isSubmitting ? "Provisioning..." : "Create first SysAdmin")
-                </MudButton>
-                </MudStack>
-            </MudForm>
+                </CitusButton>
+            </div>
         }
         else
         {
-            <MudStack Spacing="1">
-                <MudText Typo="Typo.h5" Class="sys-login__title">SysAdmin sign in</MudText>
-                <MudText Typo="Typo.body2" Class="text-secondary">
+            <div class="sys-login__heading">
+                <h1 class="sys-login__title">SysAdmin sign in</h1>
+                <p class="text-fg-muted text-sm">
                     Independent platform governance session for maintenance, company lifecycle, and account control.
-                </MudText>
-            </MudStack>
+                </p>
+            </div>
 
             @if (_setupStatus?.BootstrapSeedingActive == true)
             {
-                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-4">
-                    Development bootstrap seeding is active for `@_setupStatus.BootstrapEmailHint`. Use it only as a local bootstrap path and rotate the secret immediately after sign-in.
-                </MudAlert>
+                <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                                 ShowIcon="true"
+                                 Message="@($"Development bootstrap seeding is active for `{_setupStatus.BootstrapEmailHint}`. Use it only as a local bootstrap path and rotate the secret immediately after sign-in.")"
+                                 Class="mt-4" />
             }
 
             <div class="sys-login__rule"></div>
 
-            <MudForm Class="mt-4" @ref="_signInForm">
-                <MudStack Spacing="3">
-                <MudTextField @bind-Value="_email"
-                              Label="Email"
-                              Variant="Variant.Outlined"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Email"
-                              Required="true"
-                              Immediate="true"
-                              ShrinkLabel="true" />
-                <MudTextField @bind-Value="_password"
-                              Label="Password"
-                              Variant="Variant.Outlined"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Lock"
-                              InputType="InputType.Password"
-                              Required="true"
-                              ShrinkLabel="true" />
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           Class="sys-login__primary-action"
-                           Disabled="_isSubmitting"
-                           OnClick="SignInAsync">
+            <div class="flex flex-col gap-3 mt-4">
+                <CitusInput TValue="string" @bind-Value="_email"
+                            Placeholder="Email"
+                            LeadingIcon="IconName.User"
+                            Size="CitusButtonSize.Large" />
+                <AntDesign.InputPassword @bind-Value="_password" Placeholder="@("Password")" Size="@AntDesign.InputSize.Large" />
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Size="CitusButtonSize.Large"
+                             Block="true"
+                             Disabled="_isSubmitting"
+                             OnClick="SignInAsync">
                     @(_isSubmitting ? "Signing in..." : "Sign in")
-                </MudButton>
-                </MudStack>
-            </MudForm>
+                </CitusButton>
+            </div>
         }
     </div>
 
-    <div class="sys-login__switcher">
-        <MudText Typo="Typo.caption" Class="text-secondary">Not the correct login?</MudText>
-        <MudLink Href="/login" Class="sys-login__switch-link">Login as business user</MudLink>
-    </div>
-</MudPaper>
+    <footer class="sys-login__switcher">
+        <span class="text-fg-muted text-xs">Not the correct login?</span>
+        <a href="/login" class="citus-link">Login as business user</a>
+    </footer>
+</div>
 
-@code
-{
-    private MudForm? _signInForm;
-    private MudForm? _setupForm;
+@code {
     private SysAdminAuthenticationClient.SetupStatusResponse? _setupStatus;
     private string _email = "sysadmin@citus.local";
     private string _password = "change-me-now";
@@ -181,18 +143,15 @@
 
     private async Task ProvisionFirstAccountAsync()
     {
-        if (_setupForm is not null)
+        if (string.IsNullOrWhiteSpace(_setupDisplayName) || string.IsNullOrWhiteSpace(_setupEmail) || string.IsNullOrWhiteSpace(_setupPassword))
         {
-            await _setupForm.ValidateAsync();
-            if (!_setupForm.IsValid)
-            {
-                return;
-            }
+            await Message.WarningAsync("Display name, email, and password are required.");
+            return;
         }
 
         if (!string.Equals(_setupPassword, _setupPasswordConfirm, StringComparison.Ordinal))
         {
-            Snackbar.Add("Password confirmation does not match.", Severity.Warning);
+            await Message.WarningAsync("Password confirmation does not match.");
             return;
         }
 
@@ -207,11 +166,11 @@
 
             if (!outcome.Succeeded)
             {
-                Snackbar.Add(outcome.Message, Severity.Warning);
+                await Message.WarningAsync(outcome.Message);
                 return;
             }
 
-            Snackbar.Add("First SysAdmin operator provisioned.", Severity.Success);
+            await Message.SuccessAsync("First SysAdmin operator provisioned.");
             _email = _setupEmail;
             _password = _setupPassword;
             _setupPassword = string.Empty;
@@ -228,13 +187,10 @@
 
     private async Task SignInAsync()
     {
-        if (_signInForm is not null)
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
         {
-            await _signInForm.ValidateAsync();
-            if (!_signInForm.IsValid)
-            {
-                return;
-            }
+            await Message.WarningAsync("Email and password are required.");
+            return;
         }
 
         _isSubmitting = true;
@@ -244,7 +200,7 @@
             var response = await SysAdminAuthenticationClient.SignInAsync(_email, _password);
             if (response is null || string.IsNullOrWhiteSpace(response.SessionToken))
             {
-                Snackbar.Add("Unable to sign in. Check the SysAdmin secret and account status.", Severity.Warning);
+                await Message.WarningAsync("Unable to sign in. Check the SysAdmin secret and account status.");
                 return;
             }
 
@@ -264,7 +220,7 @@
                 ShellState.ApplyControlContext(context);
             }
 
-            Snackbar.Add($"Welcome back, {response.Session.DisplayName}.", Severity.Success);
+            await Message.SuccessAsync($"Welcome back, {response.Session.DisplayName}.");
             NavigationManager.NavigateTo(GetPostSignInRoute());
         }
         finally

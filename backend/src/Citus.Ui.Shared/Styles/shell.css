@@ -557,6 +557,84 @@
     background: var(--citus-color-bg-muted);
 }
 
+/* ---------- SysAdmin login ---------- */
+
+.sys-login {
+    max-width: 28rem;
+    margin: var(--citus-space-12) auto var(--citus-space-8);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-lg);
+    overflow: hidden;
+    box-shadow: var(--citus-shadow-2);
+}
+
+.sys-login__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-3) var(--citus-space-5);
+    background: var(--citus-color-primary-bg);
+    color: var(--citus-color-primary);
+    border-bottom: 1px solid var(--citus-color-primary-border);
+    font-size: var(--citus-text-sm);
+    font-weight: 600;
+}
+
+.sys-login__bar-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+}
+
+.sys-login__bar-meta {
+    color: var(--citus-color-fg-muted);
+    font-weight: 400;
+}
+
+.sys-login__body {
+    padding: var(--citus-space-8) var(--citus-space-6) var(--citus-space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+    align-items: stretch;
+}
+
+.sys-login__crest {
+    align-self: center;
+    color: var(--citus-color-primary);
+    margin-bottom: var(--citus-space-3);
+}
+
+.sys-login__heading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+
+.sys-login__title {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-xl);
+    font-weight: 600;
+}
+
+.sys-login__rule {
+    height: 1px;
+    background: var(--citus-color-border);
+    margin: var(--citus-space-4) 0 0;
+}
+
+.sys-login__switcher {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--citus-space-3) var(--citus-space-5);
+    border-top: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-muted);
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);
