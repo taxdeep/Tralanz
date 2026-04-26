@@ -10,6 +10,12 @@ internal static class PostgresNumberingSequences
         short padding,
         CancellationToken cancellationToken)
     {
+        var entityYear = TryParseEntityNumberYear(scopeKey, prefix);
+        if (entityYear.HasValue)
+        {
+            return await ReserveEntityNumberAsync(scope, entityYear.Value, prefix, padding, cancellationToken);
+        }
+
         await using (var seedCommand = scope.CreateCommand(
                          """
                          insert into company_numbering_sequences (
@@ -40,19 +46,10 @@ internal static class PostgresNumberingSequences
             await seedCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await NormalizeEntityNumberSequenceAsync(
-            scope,
-            companyId,
-            scopeKey,
-            prefix,
-            cancellationToken);
-
         await using var command = scope.CreateCommand(
             """
             update company_numbering_sequences
-            set prefix = @prefix,
-                padding = @padding,
-                next_number = next_number + 1,
+            set next_number = next_number + 1,
                 updated_at = now()
             where company_id = @company_id
               and scope_key = @scope_key
@@ -61,8 +58,6 @@ internal static class PostgresNumberingSequences
 
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("scope_key", scopeKey);
-        command.Parameters.AddWithValue("prefix", prefix);
-        command.Parameters.AddWithValue("padding", padding);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -78,47 +73,104 @@ internal static class PostgresNumberingSequences
         return $"{issuedPrefix}{issuedNumber.ToString().PadLeft(issuedPadding, '0')}";
     }
 
-    private static async Task NormalizeEntityNumberSequenceAsync(
+    private static async Task<string> ReserveEntityNumberAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        string scopeKey,
+        int year,
         string prefix,
+        short padding,
         CancellationToken cancellationToken)
     {
-        var year = TryParseEntityNumberYear(scopeKey, prefix);
-        if (!year.HasValue)
-        {
-            return;
-        }
+        await EnsurePlatformEntityNumberSequenceAsync(scope, cancellationToken);
 
-        var yearFloor = year.Value * 100_000_000L;
-        var yearCeiling = (year.Value + 1L) * 100_000_000L;
-        const long suffixCeiling = 100_000_000L;
+        var seedNumber = await FindEntitySeedNumberAsync(scope, year, cancellationToken);
+
+        await using (var seedCommand = scope.CreateCommand(
+            """
+            insert into platform_entity_number_sequences (entity_year, next_number)
+            values (@entity_year, @seed_number)
+            on conflict (entity_year) do update
+              set next_number = greatest(platform_entity_number_sequences.next_number, excluded.next_number);
+            """))
+        {
+            seedCommand.Parameters.AddWithValue("entity_year", year);
+            seedCommand.Parameters.AddWithValue("seed_number", seedNumber);
+            await seedCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         await using var command = scope.CreateCommand(
             """
-            update company_numbering_sequences
-            set next_number = case
-                  when next_number >= @year_floor and next_number < @year_ceiling
-                    then greatest(next_number - @year_floor, 1)
-                  when next_number >= @suffix_ceiling
-                    then greatest(mod(next_number, @suffix_ceiling), 1)
-                  else next_number
-                end,
-                updated_at = now()
-            where company_id = @company_id
-              and scope_key = @scope_key
-              and (
-                (next_number >= @year_floor and next_number < @year_ceiling)
-                or next_number >= @suffix_ceiling
-              );
+            update platform_entity_number_sequences
+            set next_number = greatest(next_number, @seed_number) + 1
+            where entity_year = @entity_year
+            returning next_number - 1 as issued_number;
             """);
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("scope_key", scopeKey);
-        command.Parameters.AddWithValue("year_floor", yearFloor);
-        command.Parameters.AddWithValue("year_ceiling", yearCeiling);
-        command.Parameters.AddWithValue("suffix_ceiling", suffixCeiling);
+        command.Parameters.AddWithValue("entity_year", year);
+        command.Parameters.AddWithValue("seed_number", seedNumber);
+
+        var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
+        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+    }
+
+    private static async Task EnsurePlatformEntityNumberSequenceAsync(
+        PostgresCommandScope scope,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            """
+            create table if not exists platform_entity_number_sequences (
+              entity_year integer primary key,
+              next_number bigint not null
+            );
+            """);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<long> FindEntitySeedNumberAsync(
+        PostgresCommandScope scope,
+        int year,
+        CancellationToken cancellationToken)
+    {
+        await using var command = scope.CreateCommand(
+            $"""
+            with all_entities as (
+              select entity_number from manual_journal_documents
+              union all
+              select entity_number from journal_entries
+              union all
+              select entity_number from invoices
+              union all
+              select entity_number from bills
+              union all
+              select entity_number from credit_notes
+              union all
+              select entity_number from vendor_credits
+              union all
+              select entity_number from receive_payments
+              union all
+              select entity_number from pay_bills
+              union all
+              select entity_number from credit_applications
+              union all
+              select entity_number from vendor_credit_applications
+              union all
+              select entity_number from fx_revaluation_batches
+              union all
+              select entity_number from accounts
+            )
+            select coalesce(
+              max(
+                case
+                  when entity_number ~ '^EN{year}[0-9]+$'
+                    then substring(entity_number from 7)::bigint
+                  else null
+                end
+              ),
+              0
+            ) + 1
+            from all_entities;
+            """);
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
     }
 
     private static int? TryParseEntityNumberYear(string scopeKey, string prefix)

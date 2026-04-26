@@ -14,6 +14,19 @@ internal static class PostgresSourceDocumentDraftNumbering
         long seedNumber,
         CancellationToken cancellationToken)
     {
+        var entityYear = TryParseEntityNumberYear(scopeKey, prefix);
+        if (entityYear.HasValue)
+        {
+            return await ReserveEntityNumberAsync(
+                connection,
+                transaction,
+                entityYear.Value,
+                prefix,
+                padding,
+                seedNumber,
+                cancellationToken);
+        }
+
         await EnsureSeededAsync(
             connection,
             transaction,
@@ -29,9 +42,7 @@ internal static class PostgresSourceDocumentDraftNumbering
         command.CommandText =
             """
             update company_numbering_sequences
-            set prefix = @prefix,
-                padding = @padding,
-                next_number = greatest(next_number, @seed_number) + 1,
+            set next_number = greatest(next_number, @seed_number) + 1,
                 updated_at = now()
             where company_id = @company_id
               and scope_key = @scope_key
@@ -39,8 +50,6 @@ internal static class PostgresSourceDocumentDraftNumbering
             """;
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("scope_key", scopeKey);
-        command.Parameters.AddWithValue("prefix", prefix);
-        command.Parameters.AddWithValue("padding", padding);
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -181,75 +190,73 @@ internal static class PostgresSourceDocumentDraftNumbering
         alignCommand.CommandText =
             """
             update company_numbering_sequences
-            set prefix = @prefix,
-                padding = @padding,
-                next_number = greatest(next_number, @seed_number),
+            set next_number = greatest(next_number, @seed_number),
                 updated_at = now()
             where company_id = @company_id
               and scope_key = @scope_key;
             """;
         alignCommand.Parameters.AddWithValue("company_id", companyId);
         alignCommand.Parameters.AddWithValue("scope_key", scopeKey);
-        alignCommand.Parameters.AddWithValue("prefix", prefix);
-        alignCommand.Parameters.AddWithValue("padding", padding);
         alignCommand.Parameters.AddWithValue("seed_number", seedNumber);
         await alignCommand.ExecuteNonQueryAsync(cancellationToken);
-
-        await NormalizeEntityNumberSequenceAsync(
-            connection,
-            transaction,
-            companyId,
-            scopeKey,
-            prefix,
-            seedNumber,
-            cancellationToken);
     }
 
-    private static async Task NormalizeEntityNumberSequenceAsync(
+    private static async Task<string> ReserveEntityNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        string scopeKey,
+        int year,
         string prefix,
+        short padding,
         long seedNumber,
         CancellationToken cancellationToken)
     {
-        var year = TryParseEntityNumberYear(scopeKey, prefix);
-        if (!year.HasValue)
-        {
-            return;
-        }
+        await EnsurePlatformEntityNumberSequenceAsync(connection, transaction, cancellationToken);
 
-        var yearFloor = year.Value * 100_000_000L;
-        var yearCeiling = (year.Value + 1L) * 100_000_000L;
-        const long suffixCeiling = 100_000_000L;
+        await using (var seedCommand = connection.CreateCommand())
+        {
+            seedCommand.Transaction = transaction;
+            seedCommand.CommandText =
+                """
+                insert into platform_entity_number_sequences (entity_year, next_number)
+                values (@entity_year, @seed_number)
+                on conflict (entity_year) do update
+                  set next_number = greatest(platform_entity_number_sequences.next_number, excluded.next_number);
+                """;
+            seedCommand.Parameters.AddWithValue("entity_year", year);
+            seedCommand.Parameters.AddWithValue("seed_number", seedNumber);
+            await seedCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
-            update company_numbering_sequences
-            set next_number = case
-                  when next_number >= @year_floor and next_number < @year_ceiling
-                    then greatest(next_number - @year_floor, @seed_number)
-                  when next_number >= @suffix_ceiling
-                    then @seed_number
-                  else next_number
-                end,
-                updated_at = now()
-            where company_id = @company_id
-              and scope_key = @scope_key
-              and (
-                (next_number >= @year_floor and next_number < @year_ceiling)
-                or next_number >= @suffix_ceiling
-              );
+            update platform_entity_number_sequences
+            set next_number = greatest(next_number, @seed_number) + 1
+            where entity_year = @entity_year
+            returning next_number - 1 as issued_number;
             """;
-        command.Parameters.AddWithValue("company_id", companyId);
-        command.Parameters.AddWithValue("scope_key", scopeKey);
-        command.Parameters.AddWithValue("year_floor", yearFloor);
-        command.Parameters.AddWithValue("year_ceiling", yearCeiling);
-        command.Parameters.AddWithValue("suffix_ceiling", suffixCeiling);
+        command.Parameters.AddWithValue("entity_year", year);
         command.Parameters.AddWithValue("seed_number", seedNumber);
+
+        var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
+        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+    }
+
+    private static async Task EnsurePlatformEntityNumberSequenceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            create table if not exists platform_entity_number_sequences (
+              entity_year integer primary key,
+              next_number bigint not null
+            );
+            """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
