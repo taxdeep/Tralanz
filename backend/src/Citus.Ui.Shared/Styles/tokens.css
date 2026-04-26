@@ -1,0 +1,150 @@
+/*
+ * Citus design tokens — single source of truth for color, spacing,
+ * radius, shadow, density, and typography. Consumed by both
+ * AntDesign Blazor's ConfigProvider (via Razor) and Tailwind v4's
+ * @theme inline (see app.css per Blazor app).
+ *
+ * Values use OKLCH where practical so the dark palette is purpose-
+ * designed (UI_NAVIGATION_AND_DESIGN_SYSTEM_SPEC §11), not a flip.
+ */
+
+:root {
+  /* Surface */
+  --citus-color-bg: oklch(99% 0.002 250);
+  --citus-color-bg-elevated: oklch(100% 0 0);
+  --citus-color-bg-muted: oklch(96.5% 0.005 250);
+  --citus-color-bg-subtle: oklch(94% 0.008 250);
+  --citus-color-border: oklch(89% 0.01 250);
+  --citus-color-border-strong: oklch(82% 0.012 250);
+
+  /* Foreground */
+  --citus-color-fg: oklch(22% 0.02 256);
+  --citus-color-fg-muted: oklch(45% 0.015 256);
+  --citus-color-fg-subtle: oklch(58% 0.01 256);
+  --citus-color-fg-on-primary: oklch(99% 0 0);
+
+  /* Brand + accent */
+  --citus-color-primary: oklch(54% 0.16 258);
+  --citus-color-primary-hover: oklch(48% 0.17 258);
+  --citus-color-primary-active: oklch(42% 0.18 258);
+  --citus-color-primary-bg: oklch(96% 0.03 258);
+  --citus-color-primary-border: oklch(85% 0.05 258);
+
+  /* Status */
+  --citus-color-success: oklch(58% 0.14 156);
+  --citus-color-success-bg: oklch(96% 0.04 156);
+  --citus-color-warning: oklch(72% 0.16 78);
+  --citus-color-warning-bg: oklch(96% 0.05 78);
+  --citus-color-danger: oklch(58% 0.21 28);
+  --citus-color-danger-bg: oklch(96% 0.04 28);
+  --citus-color-info: oklch(60% 0.13 232);
+  --citus-color-info-bg: oklch(96% 0.04 232);
+
+  /* Spacing scale (multiples of 4px) */
+  --citus-space-0: 0;
+  --citus-space-1: 0.25rem;
+  --citus-space-2: 0.5rem;
+  --citus-space-3: 0.75rem;
+  --citus-space-4: 1rem;
+  --citus-space-5: 1.25rem;
+  --citus-space-6: 1.5rem;
+  --citus-space-8: 2rem;
+  --citus-space-10: 2.5rem;
+  --citus-space-12: 3rem;
+  --citus-space-16: 4rem;
+
+  /* Type scale */
+  --citus-text-xs: 0.75rem;
+  --citus-text-sm: 0.8125rem;
+  --citus-text-base: 0.875rem;
+  --citus-text-lg: 1rem;
+  --citus-text-xl: 1.125rem;
+  --citus-text-2xl: 1.375rem;
+  --citus-text-3xl: 1.75rem;
+
+  --citus-leading-tight: 1.25;
+  --citus-leading-normal: 1.5;
+  --citus-leading-relaxed: 1.65;
+
+  /* Radius */
+  --citus-radius-sm: 0.25rem;
+  --citus-radius-md: 0.375rem;
+  --citus-radius-lg: 0.5rem;
+  --citus-radius-xl: 0.75rem;
+
+  /* Shadow */
+  --citus-shadow-1: 0 1px 2px 0 oklch(0% 0 0 / 0.06);
+  --citus-shadow-2: 0 4px 12px -2px oklch(0% 0 0 / 0.08), 0 2px 4px -2px oklch(0% 0 0 / 0.04);
+  --citus-shadow-3: 0 12px 32px -4px oklch(0% 0 0 / 0.12), 0 4px 8px -4px oklch(0% 0 0 / 0.06);
+
+  /* Table density (row heights) */
+  --citus-row-h-compact: 2.25rem;
+  --citus-row-h-default: 2.75rem;
+  --citus-row-h-comfortable: 3.25rem;
+
+  /* Typography */
+  --citus-font-sans: "Inter", "Inter Variable", ui-sans-serif, system-ui,
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
+  --citus-font-tabular: var(--citus-font-sans);
+  --citus-tabular-nums: tabular-nums lining-nums;
+
+  /* Layout primitives */
+  --citus-sider-width: 240px;
+  --citus-sider-width-collapsed: 64px;
+  --citus-header-height: 56px;
+}
+
+/*
+ * Dark theme — purpose-designed, not inverted. Lower glare bg, retains
+ * separable surface levels so dense accounting tables stay readable.
+ */
+.dark {
+  --citus-color-bg: oklch(18% 0.012 256);
+  --citus-color-bg-elevated: oklch(22% 0.014 256);
+  --citus-color-bg-muted: oklch(25% 0.014 256);
+  --citus-color-bg-subtle: oklch(28% 0.014 256);
+  --citus-color-border: oklch(34% 0.016 256);
+  --citus-color-border-strong: oklch(42% 0.018 256);
+
+  --citus-color-fg: oklch(94% 0.005 256);
+  --citus-color-fg-muted: oklch(72% 0.012 256);
+  --citus-color-fg-subtle: oklch(56% 0.014 256);
+  --citus-color-fg-on-primary: oklch(98% 0 0);
+
+  --citus-color-primary: oklch(68% 0.15 258);
+  --citus-color-primary-hover: oklch(74% 0.15 258);
+  --citus-color-primary-active: oklch(62% 0.16 258);
+  --citus-color-primary-bg: oklch(28% 0.06 258);
+  --citus-color-primary-border: oklch(40% 0.08 258);
+
+  --citus-color-success: oklch(72% 0.13 156);
+  --citus-color-success-bg: oklch(28% 0.05 156);
+  --citus-color-warning: oklch(80% 0.15 78);
+  --citus-color-warning-bg: oklch(30% 0.06 78);
+  --citus-color-danger: oklch(70% 0.18 28);
+  --citus-color-danger-bg: oklch(28% 0.07 28);
+  --citus-color-info: oklch(72% 0.12 232);
+  --citus-color-info-bg: oklch(28% 0.05 232);
+
+  --citus-shadow-1: 0 1px 2px 0 oklch(0% 0 0 / 0.45);
+  --citus-shadow-2: 0 4px 12px -2px oklch(0% 0 0 / 0.55), 0 2px 4px -2px oklch(0% 0 0 / 0.35);
+  --citus-shadow-3: 0 12px 32px -4px oklch(0% 0 0 / 0.65), 0 4px 8px -4px oklch(0% 0 0 / 0.4);
+}
+
+/* Honour OS preference unless app explicitly opts to a mode via .light/.dark on <html>. */
+@media (prefers-color-scheme: dark) {
+  html:not(.light):not(.dark) {
+    color-scheme: dark;
+  }
+}
+
+html,
+body {
+  background-color: var(--citus-color-bg);
+  color: var(--citus-color-fg);
+  font-family: var(--citus-font-sans);
+  font-size: var(--citus-text-base);
+  line-height: var(--citus-leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
