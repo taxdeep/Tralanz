@@ -1,152 +1,134 @@
 @page "/maintenance"
 
 @inject AppShellState ShellState
-@inject ISnackbar Snackbar
+@inject AntDesign.IMessageService Message
 @inject SysAdminControlClient SysAdminControlClient
 
 <PageTitle>Maintenance | Citus SysAdmin</PageTitle>
 
 <CitusPageHeader Model="_header" />
 
-<MudPaper Class="pa-4 mb-6">
-    <MudText Typo="Typo.h6" Class="mb-4">Current maintenance state</MudText>
+<section class="citus-panel mb-6 max-w-3xl">
+    <h2 class="citus-panel__title">Current maintenance state</h2>
 
-    <MudStack Spacing="3">
-        <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Warning">
-            @(_enabled ? "Maintenance enabled" : "Maintenance disabled")
-        </MudSwitch>
+    <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+            <AntDesign.Switch @bind-Value="_enabled" />
+            <span class="text-sm">@(_enabled ? "Maintenance enabled" : "Maintenance disabled")</span>
+        </div>
 
-        <MudTextField T="string"
-                      Label="Operator message"
-                      HelperText="This message is shown across the SysAdmin shell when maintenance mode is active."
-                      Lines="3"
-                      Variant="Variant.Outlined"
-                      @bind-Value="_message" />
+        <div class="flex flex-col gap-1">
+            <span class="text-sm font-medium">Operator message</span>
+            <AntDesign.TextArea @bind-Value="_message" Rows="3" />
+            <span class="text-fg-subtle text-xs">This message is shown across the SysAdmin shell when maintenance mode is active.</span>
+        </div>
 
-        <MudTextField T="string"
-                      Label="Planned until (UTC, optional)"
-                      HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z."
-                      Variant="Variant.Outlined"
-                      @bind-Value="_scheduledUntilInput" />
+        <CitusInput TValue="string" @bind-Value="_scheduledUntilInput"
+                    Placeholder="Planned until (UTC, optional)"
+                    HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z." />
 
-        <MudStack Row="true" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSavingMaintenance" OnClick="SaveMaintenanceAsync">
+        <div class="flex items-center gap-2">
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@_isSavingMaintenance" OnClick="SaveMaintenanceAsync">
                 @(_isSavingMaintenance ? "Saving..." : "Save maintenance state")
-            </MudButton>
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Link" Disabled="@_isSavingMaintenance" OnClick="ResetMaintenanceFromShellState">Reset</CitusButton>
+        </div>
+    </div>
+</section>
 
-            <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@_isSavingMaintenance" OnClick="ResetMaintenanceFromShellState">
-                Reset
-            </MudButton>
-        </MudStack>
-    </MudStack>
-</MudPaper>
-
-<MudPaper Class="pa-4 mb-6">
-    <MudStack Spacing="1" Class="mb-4">
-        <MudText Typo="Typo.h6">Notification Readiness</MudText>
-        <MudText Typo="Typo.body2" Class="text-secondary">
+<section class="citus-panel mb-6 max-w-3xl">
+    <div class="mb-3">
+        <h2 class="citus-panel__title">Notification Readiness</h2>
+        <p class="text-fg-muted text-sm">
             Secure email and password flows must be blocked until configuration exists, test send passes, and verification readiness is explicitly true.
-        </MudText>
-    </MudStack>
+        </p>
+    </div>
 
     @if (_notificationReadiness is not null)
     {
-        <MudAlert Severity="@(_notificationReadiness.IsVerificationDeliveryReady ? Severity.Success : Severity.Warning)"
-                  Variant="Variant.Outlined"
-                  Class="mb-4">
-            @(_notificationReadiness.IsVerificationDeliveryReady
-                ? "Verification delivery is ready."
-                : "Verification delivery is blocked.")
-        </MudAlert>
+        <AntDesign.Alert Type="@(_notificationReadiness.IsVerificationDeliveryReady ? AntDesign.AlertType.Success : AntDesign.AlertType.Warning)"
+                         ShowIcon="true"
+                         Message="@(_notificationReadiness.IsVerificationDeliveryReady ? "Verification delivery is ready." : "Verification delivery is blocked.")"
+                         Class="mb-3" />
 
         @if (!string.IsNullOrWhiteSpace(_notificationReadiness.BlockingReason))
         {
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
-                @_notificationReadiness.BlockingReason
-            </MudAlert>
+            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="@_notificationReadiness.BlockingReason" ShowIcon="true" Class="mb-3" />
         }
 
         @if (!string.IsNullOrWhiteSpace(_notificationReadiness.ConfigurationError))
         {
-            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-4">
-                Provider configuration issue: @_notificationReadiness.ConfigurationError
-            </MudAlert>
+            <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@($"Provider configuration issue: {_notificationReadiness.ConfigurationError}")" ShowIcon="true" Class="mb-3" />
         }
     }
 
-    <MudStack Spacing="3">
-        <MudSwitch T="bool" @bind-Value="_notificationConfigPresent" Color="Color.Info">
-            @(_notificationConfigPresent ? "Notification config present" : "Notification config missing")
-        </MudSwitch>
+    <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+            <AntDesign.Switch @bind-Value="_notificationConfigPresent" />
+            <span class="text-sm">@(_notificationConfigPresent ? "Notification config present" : "Notification config missing")</span>
+        </div>
 
-        <MudSelect T="string"
-                   Label="Test status"
-                   Variant="Variant.Outlined"
-                   @bind-Value="_notificationTestStatus">
-            <MudSelectItem T="string" Value="@("untested")">untested</MudSelectItem>
-            <MudSelectItem T="string" Value="@("passed")">passed</MudSelectItem>
-            <MudSelectItem T="string" Value="@("failed")">failed</MudSelectItem>
-        </MudSelect>
+        <div class="flex flex-col gap-1">
+            <span class="text-sm font-medium">Test status</span>
+            <AntDesign.Select TItem="string" TItemValue="string"
+                              DataSource="@_testStatusOptions"
+                              Value="@_notificationTestStatus"
+                              ValueChanged="@(s => _notificationTestStatus = s ?? "untested")"
+                              ItemValue="@(s => s)"
+                              ItemLabel="@(s => s)" />
+        </div>
 
-        <MudTextField T="string"
-                      Label="Last tested at (UTC, optional)"
-                      HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z."
-                      Variant="Variant.Outlined"
-                      @bind-Value="_notificationLastTestedInput" />
+        <CitusInput TValue="string" @bind-Value="_notificationLastTestedInput"
+                    Placeholder="Last tested at (UTC, optional)"
+                    HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z." />
 
-        <MudSwitch T="bool" @bind-Value="_notificationVerificationReady" Color="Color.Success">
-            @(_notificationVerificationReady ? "Verification ready" : "Verification not ready")
-        </MudSwitch>
+        <div class="flex items-center gap-3">
+            <AntDesign.Switch @bind-Value="_notificationVerificationReady" />
+            <span class="text-sm">@(_notificationVerificationReady ? "Verification ready" : "Verification not ready")</span>
+        </div>
 
-        <MudStack Row="true" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_isSavingNotificationReadiness" OnClick="SaveNotificationReadinessAsync">
+        <div class="flex items-center gap-2">
+            <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@_isSavingNotificationReadiness" OnClick="SaveNotificationReadinessAsync">
                 @(_isSavingNotificationReadiness ? "Saving..." : "Save notification readiness")
-            </MudButton>
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Link" Disabled="@_isSavingNotificationReadiness" OnClick="ResetNotificationReadinessAsync">Reset</CitusButton>
+        </div>
+    </div>
 
-            <MudButton Variant="Variant.Text" Color="Color.Info" Disabled="@_isSavingNotificationReadiness" OnClick="ResetNotificationReadinessAsync">
-                Reset
-            </MudButton>
-        </MudStack>
-    </MudStack>
+    <hr class="my-4 border-border" />
 
-    <MudDivider Class="my-4" />
-
-    <MudStack Spacing="3">
-        <MudText Typo="Typo.subtitle1">Send Test Email</MudText>
-        <MudText Typo="Typo.body2" Class="text-secondary">
+    <div class="flex flex-col gap-3">
+        <h3 class="text-base font-semibold">Send Test Email</h3>
+        <p class="text-fg-muted text-sm">
             This sends a real notification-provider test message without marking verification ready for business users.
-        </MudText>
+        </p>
 
-        <MudTextField T="string"
-                      Label="Test destination email"
-                      HelperText="Defaults to the current SysAdmin operator email."
-                      Variant="Variant.Outlined"
-                      @bind-Value="_notificationTestDestination" />
+        <CitusInput TValue="string" @bind-Value="_notificationTestDestination"
+                    Placeholder="Test destination email"
+                    HelperText="Defaults to the current SysAdmin operator email." />
 
-        <MudButton Variant="Variant.Filled"
-                   Color="Color.Secondary"
-                   Disabled="@_isSendingNotificationTest"
-                   OnClick="SendNotificationTestAsync">
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="@_isSendingNotificationTest" OnClick="SendNotificationTestAsync">
             @(_isSendingNotificationTest ? "Sending..." : "Send notification test")
-        </MudButton>
-    </MudStack>
-</MudPaper>
+        </CitusButton>
+    </div>
+</section>
 
-<MudPaper Class="pa-4">
-    <MudText Typo="Typo.h6" Class="mb-2">Control rule</MudText>
-    <MudText Typo="Typo.body2" Class="text-secondary">
+<section class="citus-panel max-w-3xl">
+    <h2 class="citus-panel__title">Control rule</h2>
+    <p class="text-fg-muted text-sm">
         Maintenance mode remains separate from business posting flows, while notification readiness now gates password reset issuance on the SysAdmin control plane.
-    </MudText>
-</MudPaper>
+    </p>
+</section>
 
-@code
-{
+@code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Operations",
         Title = "Maintenance",
         Subtitle = "Platform maintenance state and notification readiness."
     };
+
+    private static readonly List<string> _testStatusOptions = new() { "untested", "passed", "failed" };
 
     private bool _enabled;
     private bool _isSavingMaintenance;
@@ -200,7 +182,7 @@
     {
         if (!TryParseDateTimeOffset(_scheduledUntilInput, out var scheduledUntilUtc))
         {
-            Snackbar.Add("Planned until must be empty or parseable as a UTC date/time.", Severity.Warning);
+            await Message.WarningAsync("Planned until must be empty or parseable as a UTC date/time.");
             return;
         }
 
@@ -218,13 +200,13 @@
 
             if (state is null)
             {
-                Snackbar.Add("Unable to update maintenance state.", Severity.Warning);
+                await Message.WarningAsync("Unable to update maintenance state.");
                 return;
             }
 
             ShellState.SetMaintenanceState(state);
             ResetMaintenanceFromShellState();
-            Snackbar.Add("Maintenance state updated.", Severity.Success);
+            await Message.SuccessAsync("Maintenance state updated.");
         }
         finally
         {
@@ -236,7 +218,7 @@
     {
         if (!TryParseDateTimeOffset(_notificationLastTestedInput, out var lastTestedAtUtc))
         {
-            Snackbar.Add("Last tested at must be empty or parseable as a UTC date/time.", Severity.Warning);
+            await Message.WarningAsync("Last tested at must be empty or parseable as a UTC date/time.");
             return;
         }
 
@@ -255,13 +237,13 @@
 
             if (readiness is null)
             {
-                Snackbar.Add("Unable to update notification readiness.", Severity.Warning);
+                await Message.WarningAsync("Unable to update notification readiness.");
                 return;
             }
 
             _notificationReadiness = readiness;
             await ResetNotificationReadinessAsync();
-            Snackbar.Add("Notification readiness updated.", Severity.Success);
+            await Message.SuccessAsync("Notification readiness updated.");
         }
         finally
         {
@@ -284,13 +266,13 @@
 
             if (!string.IsNullOrWhiteSpace(error))
             {
-                Snackbar.Add(error, Severity.Warning);
+                await Message.WarningAsync(error);
                 return;
             }
 
             if (result is null)
             {
-                Snackbar.Add("Notification test send returned no result.", Severity.Warning);
+                await Message.WarningAsync("Notification test send returned no result.");
                 return;
             }
 
@@ -300,11 +282,14 @@
             _notificationLastTestedInput = result.Readiness.LastTestedAtUtc?.ToString("u") ?? string.Empty;
             _notificationVerificationReady = result.Readiness.VerificationReady;
 
-            Snackbar.Add(
-                result.Succeeded
-                    ? $"Notification test sent to {result.Destination} via {result.ProviderKey}."
-                    : $"Notification test failed: {result.FailureMessage}",
-                result.Succeeded ? Severity.Success : Severity.Error);
+            if (result.Succeeded)
+            {
+                await Message.SuccessAsync($"Notification test sent to {result.Destination} via {result.ProviderKey}.");
+            }
+            else
+            {
+                await Message.ErrorAsync($"Notification test failed: {result.FailureMessage}");
+            }
         }
         finally
         {
