@@ -1,0 +1,37 @@
+@*
+    CitusEmpty — restrained empty state for tables, lists, and dashboards.
+    Works as the default for CitusTable's empty slot and as a standalone
+    block on placeholder pages until they get real content.
+*@
+
+<div class="citus-empty @(string.IsNullOrEmpty(Class) ? string.Empty : Class)" role="status">
+    <div class="citus-empty__icon">
+        <CitusIcon Name="@DisplayIcon" Size="IconSize.Display" />
+    </div>
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <p class="citus-empty__title">@Title</p>
+    }
+    @if (!string.IsNullOrEmpty(Description))
+    {
+        <p class="citus-empty__description">@Description</p>
+    }
+    @if (Action is not null)
+    {
+        <div class="citus-empty__action">@Action</div>
+    }
+</div>
+
+@code {
+    [Parameter] public IconName Icon { get; set; } = IconName.Receipt;
+
+    [Parameter] public string? Title { get; set; } = "暂无数据";
+
+    [Parameter] public string? Description { get; set; }
+
+    [Parameter] public RenderFragment? Action { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private IconName DisplayIcon => Icon;
+}

@@ -1,0 +1,81 @@
+@*
+    CitusButton — wraps AntDesign Blazor's Button so every page in the app
+    pulls its size, type, and icon contract from one place. A leading
+    icon slot accepts a Tabler IconName; trailing icons or full markup
+    can still flow through ChildContent.
+*@
+
+<Button Type="@AntType"
+        Size="@AntSize"
+        Danger="Danger"
+        Loading="Loading"
+        Disabled="Disabled"
+        Block="Block"
+        OnClick="HandleClick"
+        Class="@CssClass"
+        HtmlType="@HtmlType">
+    @if (LeadingIcon is not null)
+    {
+        <span class="citus-button__icon">
+            <CitusIcon Name="LeadingIcon.Value" Size="IconSize.Action" />
+        </span>
+    }
+    @if (ChildContent is not null)
+    {
+        <span class="citus-button__label">@ChildContent</span>
+    }
+</Button>
+
+@code {
+    [Parameter] public CitusButtonVariant Variant { get; set; } = CitusButtonVariant.Default;
+
+    [Parameter] public CitusButtonSize Size { get; set; } = CitusButtonSize.Medium;
+
+    [Parameter] public IconName? LeadingIcon { get; set; }
+
+    [Parameter] public bool Danger { get; set; }
+
+    [Parameter] public bool Loading { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public bool Block { get; set; }
+
+    [Parameter] public string HtmlType { get; set; } = "button";
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    private ButtonType AntType => Variant switch
+    {
+        CitusButtonVariant.Primary => ButtonType.Primary,
+        CitusButtonVariant.Ghost => ButtonType.Default,
+        CitusButtonVariant.Link => ButtonType.Link,
+        CitusButtonVariant.Text => ButtonType.Text,
+        _ => ButtonType.Default
+    };
+
+    private ButtonSize AntSize => Size switch
+    {
+        CitusButtonSize.Small => ButtonSize.Small,
+        CitusButtonSize.Large => ButtonSize.Large,
+        _ => ButtonSize.Default
+    };
+
+    private string CssClass
+    {
+        get
+        {
+            var baseClass = Variant == CitusButtonVariant.Ghost
+                ? "citus-button citus-button--ghost"
+                : "citus-button";
+            return string.IsNullOrEmpty(Class) ? baseClass : $"{baseClass} {Class}";
+        }
+    }
+
+    private Task HandleClick(MouseEventArgs args) =>
+        OnClick.HasDelegate ? OnClick.InvokeAsync(args) : Task.CompletedTask;
+}
