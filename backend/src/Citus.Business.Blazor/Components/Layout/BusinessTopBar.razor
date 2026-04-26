@@ -1,49 +1,121 @@
+@*
+    BusinessTopBar — header strip rendered inside the AntDesign Layout.
+    Three slots from left to right:
+      1. drawer toggle (only visible when the Sider is collapsible)
+      2. company switcher + read-only badge
+      3. theme toggle + user dropdown
+    Bell-/notifications-style buttons stay out of P1 — they belong to
+    later phases.
+*@
+
 @inject NavigationManager NavigationManager
-@inject BusinessShellState ShellState
-@inject BusinessSessionClient BusinessSessionClient
-@inject ISnackbar Snackbar
+@inject Citus.Business.Blazor.State.BusinessShellState ShellState
+@inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
+@inject AntDesign.IMessageService Message
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined">
-        @PrimaryRole
-    </MudChip>
+<div class="citus-topbar">
+    <button type="button"
+            class="citus-topbar__drawer-toggle"
+            aria-label="Toggle navigation"
+            @onclick="OnToggle">
+        <CitusIcon Name="@(Collapsed ? IconName.Menu2 : IconName.Menu2)" Size="IconSize.Action" />
+    </button>
 
-    @if (ShellState.IsCompanyReadOnly)
-    {
-        <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled">
-            Read-only company
-        </MudChip>
-    }
+    <div class="citus-topbar__company">
+        <CitusIcon Name="IconName.BuildingSkyscraper" Size="IconSize.Inline" />
+        <AntDesign.Select TItem="BusinessCompanySummary"
+                          TItemValue="Guid"
+                          DataSource="@ShellState.AvailableCompanies"
+                          Value="@SelectedCompanyId"
+                          ValueChanged="OnCompanyChangedAsync"
+                          ItemValue="@(c => c.Id)"
+                          ItemLabel="@(c => FormatCompanyLabel(c))"
+                          Disabled="@IsCompanySwitcherDisabled"
+                          Bordered="@false"
+                          Size="@AntDesign.InputSize.Small"
+                          Style="min-width: 220px;" />
 
-    <MudStack Spacing="0">
-        <MudText Typo="Typo.caption" Class="text-secondary">User</MudText>
-        <MudText Typo="Typo.body2">@ShellState.User.DisplayName</MudText>
-    </MudStack>
+        @if (ShellState.IsCompanyReadOnly)
+        {
+            <AntDesign.Tag Color="@AntDesign.PresetColor.Orange.ToString().ToLower()" Class="citus-topbar__readonly">
+                Read-only
+            </AntDesign.Tag>
+        }
+    </div>
 
-    <MudStack Spacing="0" Style="min-width: 240px;">
-        <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
-        <MudSelect T="Guid"
-                   Dense="true"
-                   Disabled="@IsCompanySwitcherDisabled"
-                   Value="@SelectedCompanyId"
-                   ValueChanged="OnCompanyChangedAsync">
-            @foreach (var company in ShellState.AvailableCompanies)
-            {
-                <MudSelectItem T="Guid" Value="@company.Id">
-                    @company.CompanyName (@company.CompanyCode)@(company.IsReadOnly ? " | read-only" : string.Empty)
-                </MudSelectItem>
-            }
-        </MudSelect>
-    </MudStack>
-</MudStack>
+    <div class="citus-topbar__spacer"></div>
 
-@code
-{
+    <div class="citus-topbar__actions">
+        <ThemeToggle />
+
+        <AntDesign.Dropdown Trigger="@(new[] { AntDesign.Trigger.Click })">
+            <Overlay>
+                <AntDesign.Menu>
+                    <AntDesign.MenuItem Disabled="true">
+                        <strong>@ShellState.User.DisplayName</strong>
+                        <div class="citus-topbar__user-meta">@ShellState.User.Email</div>
+                    </AntDesign.MenuItem>
+                    <AntDesign.MenuDivider />
+                    <AntDesign.MenuItem RouterLink="./session">
+                        <span class="citus-topbar__menu-row">
+                            <CitusIcon Name="IconName.User" Size="IconSize.Inline" />
+                            <span>Session</span>
+                        </span>
+                    </AntDesign.MenuItem>
+                    <AntDesign.MenuItem RouterLink="./settings">
+                        <span class="citus-topbar__menu-row">
+                            <CitusIcon Name="IconName.Settings" Size="IconSize.Inline" />
+                            <span>Company settings</span>
+                        </span>
+                    </AntDesign.MenuItem>
+                </AntDesign.Menu>
+            </Overlay>
+            <ChildContent>
+                <button type="button" class="citus-topbar__user">
+                    <span class="citus-topbar__avatar">@AvatarInitials</span>
+                    <span class="citus-topbar__user-text">
+                        <span class="citus-topbar__user-name">@ShellState.User.DisplayName</span>
+                        <span class="citus-topbar__user-role">@PrimaryRole</span>
+                    </span>
+                    <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+                </button>
+            </ChildContent>
+        </AntDesign.Dropdown>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool Collapsed { get; set; }
+
+    [Parameter] public EventCallback OnToggle { get; set; }
+
     private string PrimaryRole => ShellState.User.Roles.FirstOrDefault() ?? "user";
 
     private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
 
     private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
+
+    private string AvatarInitials
+    {
+        get
+        {
+            var name = ShellState.User.DisplayName?.Trim();
+            if (string.IsNullOrEmpty(name)) return "?";
+            var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length switch
+            {
+                0 => "?",
+                1 => parts[0][..1].ToUpperInvariant(),
+                _ => $"{parts[0][..1]}{parts[^1][..1]}".ToUpperInvariant()
+            };
+        }
+    }
+
+    private static string FormatCompanyLabel(BusinessCompanySummary company)
+    {
+        var suffix = company.IsReadOnly ? " · read-only" : string.Empty;
+        return $"{company.CompanyName} ({company.CompanyCode}){suffix}";
+    }
 
     private async Task OnCompanyChangedAsync(Guid companyId)
     {
@@ -52,23 +124,23 @@
             return;
         }
 
-        var previousCompany = ShellState.ActiveCompany;
+        var previousCompanyId = ShellState.ActiveCompany.Id;
         if (!ShellState.TrySetActiveCompany(companyId))
         {
-            Snackbar.Add("The selected company is not available in this business session.", Severity.Warning);
+            await Message.WarningAsync("The selected company is not available in this business session.");
             return;
         }
 
         var context = await BusinessSessionClient.GetContextAsync();
         if (context is null)
         {
-            ShellState.TrySetActiveCompany(previousCompany.Id);
-            Snackbar.Add("Unable to refresh the business session after switching company.", Severity.Warning);
+            ShellState.TrySetActiveCompany(previousCompanyId);
+            await Message.WarningAsync("Unable to refresh the business session after switching company.");
             return;
         }
 
         ShellState.ApplySessionContext(context);
-        Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+        await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
         NavigationManager.NavigateTo("dashboard");
     }
 }

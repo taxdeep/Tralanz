@@ -1,61 +1,120 @@
+@*
+    SysAdminTopBar — header for the authenticated SysAdmin shell. The
+    company switcher only renders when business is ready and there are
+    workspaces; otherwise the header keeps a clean operator + theme +
+    logout layout.
+*@
+
 @inject NavigationManager NavigationManager
-@inject AppShellState ShellState
-@inject ISnackbar Snackbar
+@inject Citus.SysAdmin.Blazor.State.AppShellState ShellState
+@inject Citus.SysAdmin.Blazor.Services.SysAdminAuthenticationClient SysAdminAuthenticationClient
+@inject Citus.SysAdmin.Blazor.Services.SysAdminControlClient SysAdminControlClient
 @inject IJSRuntime JS
-@inject SysAdminAuthenticationClient SysAdminAuthenticationClient
-@inject SysAdminControlClient SysAdminControlClient
+@inject AntDesign.IMessageService Message
 
 @if (ShellState.IsAuthenticated)
 {
-    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-        <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">
-            @PrimaryRole
-        </MudChip>
+    <div class="citus-topbar">
+        <button type="button"
+                class="citus-topbar__drawer-toggle"
+                aria-label="Toggle navigation"
+                @onclick="OnToggle">
+            <CitusIcon Name="IconName.Menu2" Size="IconSize.Action" />
+        </button>
 
-        <MudStack Spacing="0">
-            <MudText Typo="Typo.caption" Class="text-secondary">Operator</MudText>
-            <MudText Typo="Typo.body2">@ShellState.Operator.DisplayName</MudText>
-        </MudStack>
+        @if (ShowCompanySwitcher)
+        {
+            <div class="citus-topbar__company">
+                <CitusIcon Name="IconName.BuildingSkyscraper" Size="IconSize.Inline" />
+                <AntDesign.Select TItem="CompanyWorkspaceSummary"
+                                  TItemValue="Guid"
+                                  DataSource="@ShellState.AvailableCompanies"
+                                  Value="@SelectedCompanyId"
+                                  ValueChanged="OnCompanyChangedAsync"
+                                  ItemValue="@(c => c.Id)"
+                                  ItemLabel="@(c => $"{c.CompanyName} ({c.CompanyCode})")"
+                                  Bordered="@false"
+                                  Size="@AntDesign.InputSize.Small"
+                                  Style="min-width: 220px;" />
+            </div>
+        }
+        else
+        {
+            <div class="citus-topbar__company">
+                <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Inline" />
+                <span class="citus-topbar__platform-label">Platform Control</span>
+            </div>
+        }
 
-        <MudStack Spacing="0" Style="min-width: 240px;">
-            <MudText Typo="Typo.caption" Class="text-secondary">Active company</MudText>
-            <MudSelect T="Guid"
-                       Dense="true"
-                       Disabled="@IsCompanySwitcherDisabled"
-                       Value="@SelectedCompanyId"
-                       ValueChanged="OnCompanyChangedAsync">
-                @foreach (var company in ShellState.AvailableCompanies)
-                {
-                    <MudSelectItem T="Guid" Value="@company.Id">
-                        @company.CompanyName (@company.CompanyCode)
-                    </MudSelectItem>
-                }
-            </MudSelect>
-        </MudStack>
+        <div class="citus-topbar__spacer"></div>
 
-        <MudButton Variant="Variant.Text"
-                   Color="Color.Inherit"
-                   OnClick="NavigateToSecurity">
-            Security
-        </MudButton>
+        <div class="citus-topbar__actions">
+            <ThemeToggle />
 
-        <MudButton Variant="Variant.Text"
-                   Color="Color.Inherit"
-                   OnClick="SignOutAsync">
-            Log out
-        </MudButton>
-    </MudStack>
+            <AntDesign.Dropdown Trigger="@(new[] { AntDesign.Trigger.Click })">
+                <Overlay>
+                    <AntDesign.Menu>
+                        <AntDesign.MenuItem Disabled="true">
+                            <strong>@ShellState.Operator.DisplayName</strong>
+                            <div class="citus-topbar__user-meta">@ShellState.Operator.Email</div>
+                        </AntDesign.MenuItem>
+                        <AntDesign.MenuDivider />
+                        <AntDesign.MenuItem RouterLink="./security">
+                            <span class="citus-topbar__menu-row">
+                                <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Inline" />
+                                <span>Security</span>
+                            </span>
+                        </AntDesign.MenuItem>
+                        <AntDesign.MenuItem OnClick="SignOutAsync">
+                            <span class="citus-topbar__menu-row">
+                                <CitusIcon Name="IconName.Logout" Size="IconSize.Inline" />
+                                <span>Log out</span>
+                            </span>
+                        </AntDesign.MenuItem>
+                    </AntDesign.Menu>
+                </Overlay>
+                <ChildContent>
+                    <button type="button" class="citus-topbar__user">
+                        <span class="citus-topbar__avatar">@AvatarInitials</span>
+                        <span class="citus-topbar__user-text">
+                            <span class="citus-topbar__user-name">@ShellState.Operator.DisplayName</span>
+                            <span class="citus-topbar__user-role">@PrimaryRole</span>
+                        </span>
+                        <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+                    </button>
+                </ChildContent>
+            </AntDesign.Dropdown>
+        </div>
+    </div>
 }
 
-@code
-{
+@code {
+    [Parameter] public bool Collapsed { get; set; }
+
+    [Parameter] public EventCallback OnToggle { get; set; }
+
     private string PrimaryRole => ShellState.Operator.Roles.FirstOrDefault() ?? "sysadmin";
+
+    private bool ShowCompanySwitcher =>
+        ShellState.BusinessReady && ShellState.AvailableCompanies.Count > 0;
 
     private Guid SelectedCompanyId => ShellState.ActiveCompany.CompanyId ?? Guid.Empty;
 
-    private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count == 0;
-
-    private void NavigateToSecurity() => NavigationManager.NavigateTo("security");
+    private string AvatarInitials
+    {
+        get
+        {
+            var name = ShellState.Operator.DisplayName?.Trim();
+            if (string.IsNullOrEmpty(name)) return "?";
+            var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length switch
+            {
+                0 => "?",
+                1 => parts[0][..1].ToUpperInvariant(),
+                _ => $"{parts[0][..1]}{parts[^1][..1]}".ToUpperInvariant()
+            };
+        }
+    }
 
     private async Task OnCompanyChangedAsync(Guid companyId)
     {
@@ -65,15 +124,14 @@
         }
 
         var context = await SysAdminControlClient.SetActiveCompanyAsync(companyId);
-
         if (context is null)
         {
-            Snackbar.Add("Unable to switch the active company context.", Severity.Warning);
+            await Message.WarningAsync("Unable to switch the active company context.");
             return;
         }
 
         ShellState.ApplyControlContext(context);
-        Snackbar.Add($"Active company switched to {context.ActiveCompany.CompanyName}.", Severity.Success);
+        await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
         NavigationManager.NavigateTo("overview");
     }
 
@@ -82,7 +140,7 @@
         await SysAdminAuthenticationClient.SignOutAsync(ShellState.SessionToken);
         await JS.InvokeVoidAsync("citusSysAdminAuth.clearSessionToken");
         ShellState.ClearAuthenticatedSession();
-        Snackbar.Add("SysAdmin session ended.", Severity.Success);
+        await Message.SuccessAsync("SysAdmin session ended.");
         NavigationManager.NavigateTo("login", forceLoad: true);
     }
 }

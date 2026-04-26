@@ -1,0 +1,52 @@
+@*
+    ThemeToggle — single button cycling Light → Dark → System. Uses the
+    shared IThemeService so light/dark state is consistent across both
+    Blazor shells. Three icons map to the three modes.
+*@
+
+@inject IThemeService ThemeService
+@implements IDisposable
+
+<button type="button"
+        class="citus-theme-toggle"
+        title="@Title"
+        aria-label="@Title"
+        @onclick="CycleAsync">
+    <CitusIcon Name="@CurrentIcon" Size="IconSize.Action" />
+</button>
+
+@code {
+    private IconName CurrentIcon => ThemeService.Mode switch
+    {
+        ThemeMode.Light => IconName.Sun,
+        ThemeMode.Dark => IconName.Moon,
+        _ => IconName.DeviceDesktop
+    };
+
+    private string Title => ThemeService.Mode switch
+    {
+        ThemeMode.Light => "Light theme — click to use dark",
+        ThemeMode.Dark => "Dark theme — click to follow system",
+        _ => "System theme — click to use light"
+    };
+
+    protected override void OnInitialized()
+    {
+        ThemeService.ThemeChanged += HandleThemeChanged;
+    }
+
+    private async Task CycleAsync()
+    {
+        var next = ThemeService.Mode switch
+        {
+            ThemeMode.Light => ThemeMode.Dark,
+            ThemeMode.Dark => ThemeMode.System,
+            _ => ThemeMode.Light
+        };
+        await ThemeService.SetModeAsync(next);
+    }
+
+    private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ThemeService.ThemeChanged -= HandleThemeChanged;
+}

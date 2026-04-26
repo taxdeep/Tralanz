@@ -1,9 +1,17 @@
-@inject BusinessShellState ShellState
-@inject BusinessSessionClient BusinessSessionClient
-@inject ISnackbar Snackbar
+@inject Citus.Business.Blazor.State.BusinessShellState ShellState
+@inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
+@inject AntDesign.IMessageService Message
 @inject IThemeService ThemeService
 
 @inherits LayoutComponentBase
+
+@*
+    MainLayout — AntDesign Layout shell. The sider hosts the navigation
+    menu, the header carries the company switcher and theme toggle,
+    and the content area is where every page renders. MudBlazor providers
+    are still mounted because the un-migrated pages use them; P2 strips
+    them out one page at a time.
+*@
 
 <IconSpriteHost />
 <AntDesign.AntContainer />
@@ -13,30 +21,44 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-<MudLayout>
-    <MudAppBar Elevation="1">
-        <MudText Typo="Typo.h6">Citus Business</MudText>
-        <MudSpacer />
-        <BusinessTopBar />
-    </MudAppBar>
+<AntDesign.Layout Class="citus-shell">
+    <AntDesign.Sider Collapsible="true"
+                     Collapsed="@_collapsed"
+                     CollapsedChanged="OnCollapsedChanged"
+                     Breakpoint="@AntDesign.BreakpointType.Lg"
+                     Width="240"
+                     CollapsedWidth="64"
+                     Class="citus-shell__sider"
+                     Theme="@AntDesign.SiderTheme.Light">
+        <div class="citus-shell__brand">
+            <CitusIcon Name="IconName.BuildingBank" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
+            @if (!_collapsed)
+            {
+                <span class="citus-shell__brand-text">Citus Business</span>
+            }
+        </div>
+        <BusinessNavMenu Collapsed="@_collapsed" />
+    </AntDesign.Sider>
 
-    <MudDrawer Open="true" ClipMode="DrawerClipMode.Always" Elevation="1" Variant="DrawerVariant.Responsive" Class="citus-drawer">
-        <BusinessNavMenu />
-    </MudDrawer>
+    <AntDesign.Layout>
+        <AntDesign.Header Class="citus-shell__header">
+            <BusinessTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
+        </AntDesign.Header>
 
-    <MudMainContent Class="citus-main-content">
-        <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
+        <AntDesign.Content Class="citus-shell__content">
             @if (_isContextLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+                <div class="citus-shell__loading">
+                    <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+                </div>
             }
 
             <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
             <CitusCompanyAccessBanner Company="ShellState.ActiveCompany" />
             @Body
-        </MudContainer>
-    </MudMainContent>
-</MudLayout>
+        </AntDesign.Content>
+    </AntDesign.Layout>
+</AntDesign.Layout>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -44,9 +66,9 @@
     <span class="dismiss">x</span>
 </div>
 
-@code
-{
+@code {
     private bool _isContextLoading = true;
+    private bool _collapsed;
 
     protected override async Task OnInitializedAsync()
     {
@@ -54,9 +76,8 @@
 
         if (context is null)
         {
-            Snackbar.Add(
-                "Business session context is unavailable. The shell is showing bootstrap values until Accounting API responds.",
-                Severity.Warning);
+            await Message.WarningAsync(
+                "Business session context is unavailable. The shell is showing bootstrap values until Accounting API responds.");
         }
         else
         {
@@ -73,4 +94,8 @@
             await ThemeService.InitializeInteractiveAsync();
         }
     }
+
+    private void ToggleCollapsed() => _collapsed = !_collapsed;
+
+    private void OnCollapsedChanged(bool collapsed) => _collapsed = collapsed;
 }

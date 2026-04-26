@@ -10,6 +10,7 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 
 @import "../../Citus.Ui.Shared/Styles/tokens.css";
+@import "../../Citus.Ui.Shared/Styles/shell.css";
 
 @source "../Components/**/*.razor";
 @source "../Components/**/*.cs";

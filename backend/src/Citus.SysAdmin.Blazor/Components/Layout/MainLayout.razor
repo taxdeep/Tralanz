@@ -1,12 +1,20 @@
-@inject AppShellState ShellState
-@inject ISnackbar Snackbar
+@inject Citus.SysAdmin.Blazor.State.AppShellState ShellState
+@inject AntDesign.IMessageService Message
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
-@inject SysAdminAuthenticationClient SysAdminAuthenticationClient
-@inject SysAdminControlClient SysAdminControlClient
+@inject Citus.SysAdmin.Blazor.Services.SysAdminAuthenticationClient SysAdminAuthenticationClient
+@inject Citus.SysAdmin.Blazor.Services.SysAdminControlClient SysAdminControlClient
 @inject IThemeService ThemeService
 
 @inherits LayoutComponentBase
+
+@*
+    SysAdmin MainLayout — same shape as Citus.Business.Blazor's
+    MainLayout, but the authenticated shell is gated by an auth flow
+    (login + first-company setup). The unauthenticated branch hosts
+    the login page; the authenticated branch wraps the app in
+    AntDesign Layout/Sider/Header/Content.
+*@
 
 <IconSpriteHost />
 <AntDesign.AntContainer />
@@ -18,60 +26,62 @@
 
 @if (!_isShellReady)
 {
-    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-8">
-        <MudProgressLinear Indeterminate="true" Color="Color.Info" />
-    </MudContainer>
+    <div class="citus-shell__bootstrap">
+        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+    </div>
 }
 else if (!ShellState.IsAuthenticated)
 {
-    <MudMainContent Class="citus-main-content">
-        <MudContainer MaxWidth="MaxWidth.Small" Class="pa-6">
-            @if (IsLoginRoute)
-            {
-                @Body
-            }
-            else
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Info" />
-            }
-        </MudContainer>
-    </MudMainContent>
+    <div class="citus-shell__auth-frame">
+        @if (IsLoginRoute)
+        {
+            @Body
+        }
+        else
+        {
+            <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+        }
+    </div>
 }
 else
 {
-    <MudLayout>
-        <MudAppBar Elevation="1">
-            <MudIconButton
-                Icon="@Icons.Material.Filled.Menu"
-                Color="Color.Inherit"
-                Edge="Edge.Start"
-                OnClick="ToggleDrawer" />
-            <MudText Typo="Typo.h6">Citus SysAdmin</MudText>
-            <MudSpacer />
-            <SysAdminTopBar />
-        </MudAppBar>
+    <AntDesign.Layout Class="citus-shell">
+        <AntDesign.Sider Collapsible="true"
+                         Collapsed="@_collapsed"
+                         CollapsedChanged="OnCollapsedChanged"
+                         Breakpoint="@AntDesign.BreakpointType.Lg"
+                         Width="240"
+                         CollapsedWidth="64"
+                         Class="citus-shell__sider"
+                         Theme="@AntDesign.SiderTheme.Light">
+            <div class="citus-shell__brand">
+                <CitusIcon Name="IconName.ShieldLock" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
+                @if (!_collapsed)
+                {
+                    <span class="citus-shell__brand-text">Citus SysAdmin</span>
+                }
+            </div>
+            <SysAdminNavMenu Collapsed="@_collapsed" />
+        </AntDesign.Sider>
 
-        <MudDrawer
-            @bind-Open="_drawerOpen"
-            ClipMode="DrawerClipMode.Always"
-            Elevation="1"
-            Variant="DrawerVariant.Responsive"
-            Class="citus-drawer">
-            <SysAdminNavMenu />
-        </MudDrawer>
+        <AntDesign.Layout>
+            <AntDesign.Header Class="citus-shell__header">
+                <SysAdminTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
+            </AntDesign.Header>
 
-        <MudMainContent Class="citus-main-content">
-            <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
+            <AntDesign.Content Class="citus-shell__content">
                 @if (_isContextLoading)
                 {
-                    <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mb-4" />
+                    <div class="citus-shell__loading">
+                        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+                    </div>
                 }
 
                 <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
                 @Body
-            </MudContainer>
-        </MudMainContent>
-    </MudLayout>
+            </AntDesign.Content>
+        </AntDesign.Layout>
+    </AntDesign.Layout>
 }
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -82,9 +92,9 @@ else
 
 @code
 {
-    private bool _drawerOpen = true;
     private bool _isContextLoading = true;
     private bool _isShellReady;
+    private bool _collapsed;
 
     private bool IsLoginRoute =>
         NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
@@ -156,10 +166,9 @@ else
         StateHasChanged();
     }
 
-    private void ToggleDrawer()
-    {
-        _drawerOpen = !_drawerOpen;
-    }
+    private void ToggleCollapsed() => _collapsed = !_collapsed;
+
+    private void OnCollapsedChanged(bool collapsed) => _collapsed = collapsed;
 
     private async Task LoadControlContextAsync()
     {
@@ -171,9 +180,8 @@ else
 
             if (context is null)
             {
-                Snackbar.Add(
-                    "SysAdmin control context is unavailable. The shell will stay in fallback mode until the API responds.",
-                    Severity.Warning);
+                await Message.WarningAsync(
+                    "SysAdmin control context is unavailable. The shell will stay in fallback mode until the API responds.");
                 return;
             }
 

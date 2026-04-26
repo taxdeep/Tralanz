@@ -1,0 +1,229 @@
+/*
+ * Citus shell — visual rules for the AntDesign Layout/Sider/Header
+ * scaffolding shared by Citus.Business.Blazor and Citus.SysAdmin.Blazor.
+ * Tokens come from tokens.css; this file only composes the chrome.
+ */
+
+.citus-shell {
+    min-height: 100vh;
+    background: var(--citus-color-bg);
+}
+
+.citus-shell__sider {
+    background: var(--citus-color-bg-elevated) !important;
+    border-right: 1px solid var(--citus-color-border);
+}
+
+.citus-shell__sider .ant-layout-sider-children {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.citus-shell__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-4) var(--citus-space-5);
+    color: var(--citus-color-fg);
+    font-weight: 600;
+    border-bottom: 1px solid var(--citus-color-border);
+    min-height: var(--citus-header-height);
+}
+
+.citus-shell__brand-text {
+    font-size: var(--citus-text-lg);
+    letter-spacing: 0.01em;
+}
+
+.citus-shell__header {
+    background: var(--citus-color-bg-elevated) !important;
+    border-bottom: 1px solid var(--citus-color-border);
+    padding: 0 var(--citus-space-5) !important;
+    line-height: var(--citus-header-height) !important;
+    height: var(--citus-header-height) !important;
+}
+
+.citus-shell__content {
+    padding: var(--citus-space-6);
+    background: var(--citus-color-bg);
+    min-height: 0;
+}
+
+.citus-shell__loading {
+    margin-bottom: var(--citus-space-4);
+}
+
+.citus-shell__bootstrap,
+.citus-shell__auth-frame {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    padding: var(--citus-space-12);
+    background: var(--citus-color-bg);
+}
+
+/* ---------- Nav menu ---------- */
+
+.citus-nav-menu {
+    border-right: 0 !important;
+    background: transparent !important;
+    padding: var(--citus-space-2) 0;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.citus-nav-menu .ant-menu-item-group-title {
+    padding-left: var(--citus-space-5) !important;
+    color: var(--citus-color-fg-subtle) !important;
+    font-size: var(--citus-text-xs) !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.citus-nav-menu .ant-menu-item {
+    height: 36px !important;
+    line-height: 36px !important;
+    margin: 2px var(--citus-space-2) !important;
+    padding-inline: var(--citus-space-3) !important;
+    border-radius: var(--citus-radius-md) !important;
+    color: var(--citus-color-fg-muted) !important;
+}
+
+.citus-nav-menu .ant-menu-item-selected {
+    background: var(--citus-color-primary-bg) !important;
+    color: var(--citus-color-primary) !important;
+    font-weight: 500;
+}
+
+.citus-nav-menu .ant-menu-item:hover {
+    color: var(--citus-color-fg) !important;
+    background: var(--citus-color-bg-muted) !important;
+}
+
+.citus-nav-menu__item {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-3);
+    width: 100%;
+}
+
+.citus-nav-menu__label {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* ---------- Top bar ---------- */
+
+.citus-topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-3);
+    height: 100%;
+}
+
+.citus-topbar__drawer-toggle,
+.citus-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--citus-color-fg-muted);
+    padding: var(--citus-space-2);
+    border-radius: var(--citus-radius-md);
+    cursor: pointer;
+}
+
+.citus-topbar__drawer-toggle:hover,
+.citus-theme-toggle:hover {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+}
+
+.citus-topbar__company {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-topbar__platform-label {
+    font-weight: 500;
+    color: var(--citus-color-fg);
+}
+
+.citus-topbar__readonly {
+    margin-left: var(--citus-space-2);
+}
+
+.citus-topbar__spacer {
+    flex: 1;
+}
+
+.citus-topbar__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+}
+
+.citus-topbar__user {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--citus-color-fg);
+    padding: var(--citus-space-1) var(--citus-space-3);
+    border-radius: var(--citus-radius-md);
+    cursor: pointer;
+    line-height: 1.2;
+}
+
+.citus-topbar__user:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-topbar__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: var(--citus-color-primary-bg);
+    color: var(--citus-color-primary);
+    font-size: var(--citus-text-sm);
+    font-weight: 600;
+}
+
+.citus-topbar__user-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.citus-topbar__user-name {
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+}
+
+.citus-topbar__user-role {
+    font-size: var(--citus-text-xs);
+    color: var(--citus-color-fg-subtle);
+}
+
+.citus-topbar__user-meta {
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
+}
+
+.citus-topbar__menu-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+}
