@@ -96,40 +96,94 @@
 }
 
 /*
- * Dark theme — purpose-designed, not inverted. Lower glare bg, retains
- * separable surface levels so dense accounting tables stay readable.
+ * Dark theme — purpose-designed for finance work, not a light-flip.
+ * Spec §11 calls out "low-glare and purpose-designed". The palette below:
+ *
+ *  - bg sits in the 14–17% L range (warm-leaning blue-grey at hue 254)
+ *    instead of pure black, so long-running accounting tables stop
+ *    feeling like a void. Three separable surface layers (bg / elevated /
+ *    muted) keep dense rows scannable.
+ *  - fg leaves 90% L max (no #fff) so the contrast against the dimmed
+ *    background never becomes a glare bar. Muted/subtle drop in defined
+ *    8-percentage-point steps for a clean hierarchy.
+ *  - status hues are pulled toward warm-cool balance: success and
+ *    danger are desaturated relative to the light palette, warning
+ *    keeps energy because finance users rely on it for past-due cues.
+ *  - primary stays distinguishable but doesn't ring; the bg variant is
+ *    a heavier saturation so selected rows / pills carry weight.
+ *  - shadows shift to subtle haloed lifts. Pure-black alpha is replaced
+ *    with cool-grey alpha so cards don't punch out of the page.
  */
 .dark {
-  --citus-color-bg: oklch(18% 0.012 256);
-  --citus-color-bg-elevated: oklch(22% 0.014 256);
-  --citus-color-bg-muted: oklch(25% 0.014 256);
-  --citus-color-bg-subtle: oklch(28% 0.014 256);
-  --citus-color-border: oklch(34% 0.016 256);
-  --citus-color-border-strong: oklch(42% 0.018 256);
+  --citus-color-bg: oklch(15% 0.010 254);
+  --citus-color-bg-elevated: oklch(19% 0.012 254);
+  --citus-color-bg-muted: oklch(23% 0.012 254);
+  --citus-color-bg-subtle: oklch(27% 0.012 254);
+  --citus-color-border: oklch(31% 0.014 254);
+  --citus-color-border-strong: oklch(40% 0.016 254);
 
-  --citus-color-fg: oklch(94% 0.005 256);
-  --citus-color-fg-muted: oklch(72% 0.012 256);
-  --citus-color-fg-subtle: oklch(56% 0.014 256);
+  --citus-color-fg: oklch(90% 0.006 254);
+  --citus-color-fg-muted: oklch(70% 0.012 254);
+  --citus-color-fg-subtle: oklch(54% 0.014 254);
   --citus-color-fg-on-primary: oklch(98% 0 0);
 
-  --citus-color-primary: oklch(68% 0.15 258);
-  --citus-color-primary-hover: oklch(74% 0.15 258);
-  --citus-color-primary-active: oklch(62% 0.16 258);
-  --citus-color-primary-bg: oklch(28% 0.06 258);
-  --citus-color-primary-border: oklch(40% 0.08 258);
+  --citus-color-primary: oklch(70% 0.13 256);
+  --citus-color-primary-hover: oklch(76% 0.13 256);
+  --citus-color-primary-active: oklch(64% 0.14 256);
+  --citus-color-primary-bg: oklch(30% 0.07 256);
+  --citus-color-primary-border: oklch(42% 0.09 256);
 
-  --citus-color-success: oklch(72% 0.13 156);
-  --citus-color-success-bg: oklch(28% 0.05 156);
-  --citus-color-warning: oklch(80% 0.15 78);
-  --citus-color-warning-bg: oklch(30% 0.06 78);
-  --citus-color-danger: oklch(70% 0.18 28);
-  --citus-color-danger-bg: oklch(28% 0.07 28);
-  --citus-color-info: oklch(72% 0.12 232);
-  --citus-color-info-bg: oklch(28% 0.05 232);
+  --citus-color-success: oklch(70% 0.11 158);
+  --citus-color-success-bg: oklch(26% 0.04 158);
+  --citus-color-warning: oklch(80% 0.14 80);
+  --citus-color-warning-bg: oklch(30% 0.06 80);
+  --citus-color-danger: oklch(68% 0.15 27);
+  --citus-color-danger-bg: oklch(27% 0.06 27);
+  --citus-color-info: oklch(72% 0.10 234);
+  --citus-color-info-bg: oklch(26% 0.04 234);
 
-  --citus-shadow-1: 0 1px 2px 0 oklch(0% 0 0 / 0.45);
-  --citus-shadow-2: 0 4px 12px -2px oklch(0% 0 0 / 0.55), 0 2px 4px -2px oklch(0% 0 0 / 0.35);
-  --citus-shadow-3: 0 12px 32px -4px oklch(0% 0 0 / 0.65), 0 4px 8px -4px oklch(0% 0 0 / 0.4);
+  --citus-shadow-1: 0 1px 2px 0 oklch(20% 0.01 254 / 0.55);
+  --citus-shadow-2: 0 4px 12px -2px oklch(15% 0.01 254 / 0.55), 0 2px 4px -2px oklch(15% 0.01 254 / 0.35);
+  --citus-shadow-3: 0 12px 32px -4px oklch(10% 0.01 254 / 0.55), 0 4px 8px -4px oklch(15% 0.01 254 / 0.35);
+}
+
+/*
+ * Dark-specific tweaks for AntDesign chrome that lives outside the citus token
+ * system. Without these, AntDesign's table headers, inputs, and secondary
+ * buttons render with their default light values inside our dark surfaces.
+ */
+.dark .ant-table {
+  background: var(--citus-color-bg-elevated);
+  color: var(--citus-color-fg);
+}
+.dark .ant-table-thead > tr > th {
+  background: var(--citus-color-bg-muted) !important;
+  color: var(--citus-color-fg-muted) !important;
+  border-bottom-color: var(--citus-color-border) !important;
+}
+.dark .ant-table-tbody > tr > td,
+.dark .ant-input,
+.dark .ant-input-number,
+.dark .ant-input-affix-wrapper,
+.dark .ant-select-selector,
+.dark .ant-picker {
+  background: var(--citus-color-bg-elevated) !important;
+  color: var(--citus-color-fg) !important;
+  border-color: var(--citus-color-border) !important;
+}
+.dark .ant-input::placeholder,
+.dark .ant-picker-input > input::placeholder {
+  color: var(--citus-color-fg-subtle) !important;
+}
+.dark .ant-btn:not(.ant-btn-primary) {
+  background: var(--citus-color-bg-elevated);
+  color: var(--citus-color-fg);
+  border-color: var(--citus-color-border);
+}
+.dark .ant-btn:not(.ant-btn-primary):hover {
+  background: var(--citus-color-bg-muted);
+  color: var(--citus-color-fg);
+  border-color: var(--citus-color-border-strong);
 }
 
 /* Honour OS preference unless app explicitly opts to a mode via .light/.dark on <html>. */
