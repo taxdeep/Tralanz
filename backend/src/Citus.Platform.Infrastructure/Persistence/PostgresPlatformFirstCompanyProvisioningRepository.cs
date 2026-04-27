@@ -83,6 +83,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             alter table companies add column if not exists postal_code text;
             alter table companies add column if not exists country text not null default 'Canada';
             alter table companies add column if not exists account_code_length smallint not null default 4;
+            alter table companies alter column account_code_length set default 5;
 
             do $$
             begin
@@ -261,8 +262,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             var companyBookId = Guid.NewGuid();
             var companyEntityNumber = await ReserveEntityNumberAsync(connection, transaction, provisionedAtUtc.Year, cancellationToken);
             var effectiveFrom = normalized.IncorporatedOn!.Value.Date;
+            // Filter out template rows whose canonical code can't truncate
+            // cleanly to the chosen length (sub-currency variants like 11001
+            // / 20001 at length 4). Those rows are conceptually present only
+            // at richer code lengths.
             var starterAccountCodes = template.Accounts
                 .Select(account => FormatAccountCode(account.CanonicalCode, normalized.AccountCodeLength))
+                .OfType<string>()
                 .ToArray();
 
             await InsertBusinessOwnerAsync(connection, transaction, ownerUserId, normalized, provisionedAtUtc, cancellationToken);
@@ -275,6 +281,15 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             foreach (var account in template.Accounts)
             {
                 var formattedCode = FormatAccountCode(account.CanonicalCode, normalized.AccountCodeLength);
+                if (formattedCode is null)
+                {
+                    // Sub-currency variant or richer-length-only row; the
+                    // chosen account_code_length can't host it without losing
+                    // information. Skip cleanly — InsertCompanySettings
+                    // already received the filtered code list above so the
+                    // company settings stay consistent with what's seeded.
+                    continue;
+                }
                 await InsertStarterAccountAsync(
                     connection,
                     transaction,
@@ -382,9 +397,9 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             return Failed("missing_business_number", "Business number is required.");
         }
 
-        if (command.AccountCodeLength is < 4 or > 6)
+        if (command.AccountCodeLength is < 4 or > 10)
         {
-            return Failed("invalid_account_code_length", "Account code length must be between 4 and 6.");
+            return Failed("invalid_account_code_length", "Account code length must be between 4 and 10.");
         }
 
         if (string.IsNullOrWhiteSpace(command.CompanyEmail))
@@ -535,59 +550,136 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             ? "ASPE"
             : "IFRS";
 
-        return normalizedTemplateKey switch
-        {
-            "ca_property_rental" => new TemplateDefinition(
-                normalizedTemplateKey,
-                TemplateVersion,
-                accountingStandard,
-                DefaultReservedFamilies,
-                DefaultMandatorySystemRoles,
-                [
-                    new StarterAccountDefinition("1000", "Operating Bank", "asset", "bank", false, true, null, null, true),
-                    new StarterAccountDefinition("1200", "Accounts Receivable", "asset", "accounts_receivable", true, true, "control_account:accounts_receivable:base", "accounts_receivable", false),
-                    new StarterAccountDefinition("1300", "Prepaids", "asset", "prepaids", false, false, null, null, true),
-                    new StarterAccountDefinition("3000", "Accounts Payable", "liability", "accounts_payable", true, true, "control_account:accounts_payable:base", "accounts_payable", false),
-                    new StarterAccountDefinition("4500", "Retained Earnings", "equity", "retained_earnings", true, true, "equity:retained_earnings", "retained_earnings", false),
-                    new StarterAccountDefinition("5001", "Rental Income", "revenue", "rental_income", false, true, null, null, true),
-                    new StarterAccountDefinition("5254", "Property Management Fee", "expense", "property_operating_expense", false, true, null, null, true),
-                    new StarterAccountDefinition("5600", "Realized FX Gain", "revenue", "fx_gain", true, true, "fx:realized_gain", "realized_fx_gain", false),
-                    new StarterAccountDefinition("5601", "Realized FX Loss", "expense", "fx_loss", true, true, "fx:realized_loss", "realized_fx_loss", false),
-                    new StarterAccountDefinition("5602", "Unrealized FX Gain", "revenue", "fx_gain", true, true, "fx:unrealized_gain", "unrealized_fx_gain", false),
-                    new StarterAccountDefinition("5603", "Unrealized FX Loss", "expense", "fx_loss", true, true, "fx:unrealized_loss", "unrealized_fx_loss", false),
-                    new StarterAccountDefinition("5604", "Translation Adjustment Reserve", "equity", "translation_adjustment", true, true, "fx:translation_adjustment", "translation_adjustment", false)
-                ]),
-            _ => new TemplateDefinition(
-                "ca_general_small_business",
-                TemplateVersion,
-                accountingStandard,
-                DefaultReservedFamilies,
-                DefaultMandatorySystemRoles,
-                [
-                    new StarterAccountDefinition("1000", "Operating Bank", "asset", "bank", false, true, null, null, true),
-                    new StarterAccountDefinition("1200", "Accounts Receivable", "asset", "accounts_receivable", true, true, "control_account:accounts_receivable:base", "accounts_receivable", false),
-                    new StarterAccountDefinition("1300", "Prepaids", "asset", "prepaids", false, false, null, null, true),
-                    new StarterAccountDefinition("3000", "Accounts Payable", "liability", "accounts_payable", true, true, "control_account:accounts_payable:base", "accounts_payable", false),
-                    new StarterAccountDefinition("4500", "Retained Earnings", "equity", "retained_earnings", true, true, "equity:retained_earnings", "retained_earnings", false),
-                    new StarterAccountDefinition("5000", "Sales Revenue", "revenue", "operating_revenue", false, true, null, null, true),
-                    new StarterAccountDefinition("5200", "General Operating Expense", "expense", "operating_expense", false, true, null, null, true),
-                    new StarterAccountDefinition("5600", "Realized FX Gain", "revenue", "fx_gain", true, true, "fx:realized_gain", "realized_fx_gain", false),
-                    new StarterAccountDefinition("5601", "Realized FX Loss", "expense", "fx_loss", true, true, "fx:realized_loss", "realized_fx_loss", false),
-                    new StarterAccountDefinition("5602", "Unrealized FX Gain", "revenue", "fx_gain", true, true, "fx:unrealized_gain", "unrealized_fx_gain", false),
-                    new StarterAccountDefinition("5603", "Unrealized FX Loss", "expense", "fx_loss", true, true, "fx:unrealized_loss", "unrealized_fx_loss", false),
-                    new StarterAccountDefinition("5604", "Translation Adjustment Reserve", "equity", "translation_adjustment", true, true, "fx:translation_adjustment", "translation_adjustment", false)
-                ])
-        };
+        // The PDF-derived canonical chart has 64 user-visible accounts
+        // covering bank / AR / OCA / FA / OA / AP / OCL / Equity / Income /
+        // COGS / Expense / Other Expense plus 4 hidden FX rows the Posting
+        // Engine needs (unrealized gain/loss, translation adjustment, and a
+        // separate realized loss account so the system can distinguish gain
+        // vs. loss postings even when the user-visible "Exchange Gain or
+        // Loss" account is shared on the income-statement face). Codes are
+        // authored at the canonical 5-digit length; FormatAccountCode
+        // shifts them up or down for the company's chosen length.
+        var canonicalChart = BuildCanonicalChart();
+
+        return new TemplateDefinition(
+            normalizedTemplateKey,
+            TemplateVersion,
+            accountingStandard,
+            DefaultReservedFamilies,
+            DefaultMandatorySystemRoles,
+            canonicalChart);
     }
+
+    private static IReadOnlyList<StarterAccountDefinition> BuildCanonicalChart() =>
+    [
+        // ---- Banks (10000-10999) ----
+        new StarterAccountDefinition("10000", "Cash on Hand", "asset", "bank", false, true, null, null, true),
+        new StarterAccountDefinition("10010", "JP CAD Chequing", "asset", "bank", false, false, null, null, true),
+        new StarterAccountDefinition("10020", "JPM-USD-4419", "asset", "bank", false, false, null, null, true),
+        new StarterAccountDefinition("10999", "CLEARING ACCT-USD", "asset", "clearing", false, false, null, null, true),
+
+        // ---- Accounts Receivable (11000 base + 11001 USD subcurrency) ----
+        new StarterAccountDefinition("11000", "Accounts Receivable", "asset", "accounts_receivable", true, true, "control_account:accounts_receivable:base", "accounts_receivable", false),
+        new StarterAccountDefinition("11001", "Accounts Receivable - USD", "asset", "accounts_receivable_subcurrency", true, false, "control_account:accounts_receivable:usd", null, false),
+
+        // ---- Other Current Asset (12000-13100, 18100) ----
+        new StarterAccountDefinition("12000", "Undeposited Funds", "asset", "undeposited_funds", false, true, null, null, true),
+        new StarterAccountDefinition("12800", "Employee Advances", "asset", "employee_advances", false, false, null, null, true),
+        new StarterAccountDefinition("13100", "Prepaid Insurance", "asset", "prepaids", false, false, null, null, true),
+        new StarterAccountDefinition("18100", "Inventory", "asset", "inventory", false, false, null, null, true),
+
+        // ---- Fixed Asset (15000-17000) ----
+        new StarterAccountDefinition("15000", "Furniture and Equipment", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("15200", "Buildings and Improvements", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("15400", "Custom Software", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("15600", "Land", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("15900", "Leasehold Improvements", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("16300", "Tractors and Trailers", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("16400", "Vehicles", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("16500", "Warehouse Equipment", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("17000", "Accumulated Depreciation", "asset", "contra_asset", false, false, null, null, true),
+
+        // ---- Other Asset (18010-18700) ----
+        new StarterAccountDefinition("18010", "Due from Affiliates", "asset", "other_asset", false, false, null, null, true),
+        new StarterAccountDefinition("18700", "Security Deposits Asset", "asset", "other_asset", false, false, null, null, true),
+
+        // ---- Accounts Payable (20000 base + 20001 USD subcurrency) ----
+        new StarterAccountDefinition("20000", "Accounts Payable", "liability", "accounts_payable", true, true, "control_account:accounts_payable:base", "accounts_payable", false),
+        new StarterAccountDefinition("20001", "Accounts Payable - USD", "liability", "accounts_payable_subcurrency", true, false, "control_account:accounts_payable:usd", null, false),
+
+        // ---- Other Current Liability (24000-26100) ----
+        new StarterAccountDefinition("24000", "Shareholder Loan", "liability", "shareholder_loan", false, false, null, null, true),
+        new StarterAccountDefinition("24010", "Loan to Affiliates", "liability", "intercompany_loan", false, false, null, null, true),
+        new StarterAccountDefinition("24700", "Customer Deposits", "liability", "customer_deposits", false, false, null, null, true),
+        new StarterAccountDefinition("25500", "GST/HST Payable", "liability", "tax", false, true, null, null, true),
+        new StarterAccountDefinition("25530", "GST/QST Payable", "liability", "tax", false, false, null, null, true),
+        new StarterAccountDefinition("25550", "PST Payable (BC)", "liability", "tax", false, false, null, null, true),
+        new StarterAccountDefinition("26100", "Worker's Comp Premiums - Admin", "liability", "payroll_liability", false, false, null, null, true),
+
+        // ---- Equity (30000-32000) ----
+        new StarterAccountDefinition("30000", "Opening Balance Equity", "equity", "opening_balance", true, true, "equity:opening_balance", null, true),
+        new StarterAccountDefinition("30100", "Capital Stock", "equity", "capital_stock", false, false, null, null, true),
+        new StarterAccountDefinition("30200", "Dividends Paid", "equity", "dividends", false, false, null, null, true),
+        new StarterAccountDefinition("30800", "Owners Draw", "equity", "owners_draw", false, false, null, null, true),
+        new StarterAccountDefinition("31400", "Shareholder Distributions", "equity", "shareholder_distributions", false, false, null, null, true),
+        new StarterAccountDefinition("32000", "Retained Earnings", "equity", "retained_earnings", true, true, "equity:retained_earnings", "retained_earnings", false),
+
+        // ---- Income (47900-49900) ----
+        new StarterAccountDefinition("47900", "Sales", "revenue", "sales", false, true, null, null, true),
+        new StarterAccountDefinition("48900", "Shipping and Delivery Income", "revenue", "shipping_revenue", false, false, null, null, true),
+        new StarterAccountDefinition("49900", "Uncategorized Income", "revenue", "uncategorized", false, false, null, null, true),
+
+        // ---- Cost of Goods Sold (51000-51800) ----
+        new StarterAccountDefinition("51000", "Purchase Cost", "cost_of_sales", "purchase_cost", false, true, null, null, true),
+        new StarterAccountDefinition("51200", "Freight Costs", "cost_of_sales", "freight", false, false, null, null, true),
+        new StarterAccountDefinition("51800", "Merchant Account Fees", "cost_of_sales", "merchant_fees", false, false, null, null, true),
+
+        // ---- Operating Expense (60000-69800) ----
+        new StarterAccountDefinition("60000", "Advertising and Promotion", "expense", "advertising", false, false, null, null, true),
+        new StarterAccountDefinition("60100", "Auto and Truck Expenses", "expense", "auto", false, false, null, null, true),
+        new StarterAccountDefinition("60400", "Bank Service Charges", "expense", "bank_fees", false, false, null, null, true),
+        new StarterAccountDefinition("61700", "Computer and Internet Expenses", "expense", "technology", false, false, null, null, true),
+        new StarterAccountDefinition("62400", "Depreciation Expense", "expense", "depreciation", false, false, null, null, true),
+        new StarterAccountDefinition("63300", "Insurance Expense", "expense", "insurance", false, false, null, null, true),
+        new StarterAccountDefinition("63400", "Interest Expense", "expense", "interest", false, false, null, null, true),
+        new StarterAccountDefinition("64300", "Meals and Entertainment", "expense", "meals", false, false, null, null, true),
+        new StarterAccountDefinition("64900", "Office Supplies", "expense", "office", false, false, null, null, true),
+        new StarterAccountDefinition("66600", "Printing and Reproduction", "expense", "printing", false, false, null, null, true),
+        new StarterAccountDefinition("66700", "Professional Fees", "expense", "professional_fees", false, false, null, null, true),
+        new StarterAccountDefinition("67100", "Rent Expense", "expense", "rent", false, false, null, null, true),
+        new StarterAccountDefinition("67200", "Repairs and Maintenance", "expense", "repairs", false, false, null, null, true),
+        new StarterAccountDefinition("68000", "Taxes - Property", "expense", "property_tax", false, false, null, null, true),
+        new StarterAccountDefinition("68100", "Telephone Expense", "expense", "telephone", false, false, null, null, true),
+        new StarterAccountDefinition("68400", "Travel Expense", "expense", "travel", false, false, null, null, true),
+        new StarterAccountDefinition("68600", "Utilities", "expense", "utilities", false, false, null, null, true),
+        new StarterAccountDefinition("69800", "Uncategorized Expenses", "expense", "uncategorized", false, false, null, null, true),
+
+        // ---- FX family (77000-77400) ----
+        // 77000 is the user-visible "Exchange Gain or Loss" from the
+        // canonical chart — flagged as the realized_fx_gain destination.
+        // 77100-77400 are engine-required system rows hidden behind
+        // is_system=true so the Posting Engine has distinct accounts for
+        // realized_fx_loss, unrealized_fx_gain / loss, and translation
+        // adjustment. They're authored with all-zero tails so the 4-digit
+        // truncation produces 7710 / 7720 / 7730 / 7740 cleanly.
+        new StarterAccountDefinition("77000", "Exchange Gain or Loss", "expense", "fx", false, true, "fx:realized_gain", "realized_fx_gain", true),
+        new StarterAccountDefinition("77100", "Realized FX Loss", "expense", "fx", true, true, "fx:realized_loss", "realized_fx_loss", false),
+        new StarterAccountDefinition("77200", "Unrealized FX Gain", "revenue", "fx", true, true, "fx:unrealized_gain", "unrealized_fx_gain", false),
+        new StarterAccountDefinition("77300", "Unrealized FX Loss", "expense", "fx", true, true, "fx:unrealized_loss", "unrealized_fx_loss", false),
+        new StarterAccountDefinition("77400", "Translation Adjustment Reserve", "equity", "fx", true, true, "fx:translation_adjustment", "translation_adjustment", false),
+
+        // ---- Other Expense (80000) ----
+        new StarterAccountDefinition("80000", "Ask My Accountant", "expense", "other_expense", false, false, null, null, true),
+    ];
 
     private static IReadOnlyList<ReservedFamily> DefaultReservedFamilies { get; } =
     [
-        new("1000-1099", "Cash and bank family"),
-        new("1200", "Base accounts receivable control"),
-        new("1210-1249", "Multi-currency AR reserve"),
-        new("3000", "Base accounts payable control"),
-        new("3010-3049", "Multi-currency AP reserve"),
-        new("5600-5699", "FX gain/loss and translation reserve family")
+        new("10000-10999", "Cash and bank family"),
+        new("11000", "Base accounts receivable control"),
+        new("11001-11099", "Multi-currency AR reserve"),
+        new("20000", "Base accounts payable control"),
+        new("20001-20099", "Multi-currency AP reserve"),
+        new("77000-77499", "FX gain/loss and translation reserve family")
     ];
 
     private static IReadOnlyList<string> DefaultMandatorySystemRoles { get; } =
@@ -601,10 +693,57 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         "translation_adjustment"
     ];
 
-    private static string FormatAccountCode(string canonicalCode, int accountCodeLength) =>
-        canonicalCode.Trim().Length >= accountCodeLength
-            ? canonicalCode.Trim()
-            : canonicalCode.Trim().PadRight(accountCodeLength, '0');
+    /// <summary>
+    /// Canonical chart-of-accounts codes are stored at 5 digits (the same
+    /// length QuickBooks ships its default chart at). When a company picks
+    /// a different account_code_length (4–10), <see cref="FormatAccountCode"/>
+    /// shifts the canonical code up or down:
+    ///   * length == 5: returned unchanged.
+    ///   * length &gt; 5: pad RIGHT with zeros (10000 → 100000 → 1000000…),
+    ///     keeping the leading digits' meaning.
+    ///   * length &lt; 5: drop the trailing chars; if any of them is NOT '0'
+    ///     the truncation would lose information (e.g. 11001 / 20001
+    ///     multi-currency variants), so the helper returns null and the
+    ///     seeding loop skips the row.
+    /// Returning null (rather than throwing) is intentional: the canonical
+    /// chart can include rows that only make sense at richer code lengths
+    /// (sub-currency variants, hidden FX bookkeeping rows in a 7700x family),
+    /// and the seeder treats "skip" as the correct response for a 4-digit
+    /// company that wouldn't host those distinctions anyway.
+    /// </summary>
+    private const int CanonicalCodeLength = 5;
+
+    private static string? FormatAccountCode(string canonicalCode, int accountCodeLength)
+    {
+        var trimmed = canonicalCode.Trim();
+        if (trimmed.Length != CanonicalCodeLength)
+        {
+            // Defensive: every row in ResolveTemplateDefinition is authored
+            // at exactly CanonicalCodeLength characters. A mismatch here is
+            // a template bug, not user input — fail fast at startup-time
+            // tests rather than silently mis-formatting.
+            throw new InvalidOperationException(
+                $"Canonical account code '{trimmed}' must be exactly {CanonicalCodeLength} characters; templates must author codes at the canonical length.");
+        }
+
+        if (accountCodeLength == CanonicalCodeLength)
+        {
+            return trimmed;
+        }
+
+        if (accountCodeLength > CanonicalCodeLength)
+        {
+            return trimmed.PadRight(accountCodeLength, '0');
+        }
+
+        var charsToDrop = CanonicalCodeLength - accountCodeLength;
+        var tail = trimmed[^charsToDrop..];
+        if (tail.Any(ch => ch != '0'))
+        {
+            return null;
+        }
+        return trimmed[..accountCodeLength];
+    }
 
     private sealed record TemplateDefinition(
         string TemplateKey,

@@ -143,7 +143,7 @@
 @code {
     private static readonly List<string> _entityTypes = new() { "corporation", "partnership", "sole_proprietorship" };
     private static readonly List<string> _industries = new() { "general_services", "trading", "property_rental" };
-    private static readonly List<int> _codeLengths = new() { 4, 5, 6 };
+    private static readonly List<int> _codeLengths = new() { 4, 5, 6, 7, 8, 9, 10 };
     private static readonly List<string> _templates = new() { "ca_general_small_business", "ca_property_rental" };
 
     private string _ownerDisplayName = "Business Owner";
@@ -156,7 +156,7 @@
     private DateTime? _incorporatedOn = DateTime.Today;
     private string _fiscalYearEnd = "12-31";
     private string _businessNumber = string.Empty;
-    private int _accountCodeLength = 4;
+    private int _accountCodeLength = 5;
     private string _phone = string.Empty;
     private string _companyEmail = string.Empty;
     private string _addressLine = string.Empty;
