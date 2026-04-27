@@ -22,6 +22,7 @@ using Citus.Modules.UnityAi.Application.Contracts;
 using Citus.Modules.UnityAi.Domain.Shared;
 using Citus.Modules.Inventory.Application.Contracts;
 using Infrastructure.PostgreSQL;
+using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
@@ -156,6 +157,14 @@ builder.Services.AddSingleton<IUserProfileOverrideStore, PostgreSqlUserProfileOv
 // settings UI does not yet expose (recoverability_mode, account refs).
 builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
 
+// Chart of Accounts (per-company). Reads/writes the existing accounts
+// table from the migration draft. The UnitySearch projection store
+// (SeedAccountDocumentsAsync) reads the same table on its periodic
+// refresh, so newly-created accounts surface in pickers automatically.
+// is_system rows are protected: update / activate-toggle refuse to
+// modify them so AR/AP/FX control accounts stay stable.
+builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
+
 // ----- unityAI V1 -------------------------------------------------------
 // Authority: AI_PRODUCT_ARCHITECTURE.md
 // Defaults are conservative: gateway off, AI hints pending, traces sampled.
@@ -235,12 +244,14 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
     var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
+    var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
     await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
+    await accountStore.EnsureSchemaAsync(CancellationToken.None);
 }
 
 var accounting = app.MapGroup("/accounting");
@@ -3378,6 +3389,183 @@ static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
     if (string.IsNullOrWhiteSpace(request.AppliesTo) || !TaxCodeAppliesTo.IsValid(request.AppliesTo.Trim().ToLowerInvariant()))
     {
         return "Applies to must be 'sales', 'purchase', or 'both'.";
+    }
+    return null;
+}
+
+// ===========================================================================
+// Chart of Accounts (per-company)
+//
+// V1 surface: list / create / update / activate-toggle. The UnitySearch
+// projection (PostgreSqlUnitySearchProjectionStore.SeedAccountDocumentsAsync)
+// already reads the same table on its periodic refresh, so newly-created
+// accounts appear in the journal-entry account picker automatically.
+// is_system rows are protected — UI-issued updates / deactivations refuse
+// to modify them so AR / AP / FX control accounts stay stable.
+// ===========================================================================
+
+accounting.MapGet(
+    "/accounts",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore store,
+        bool? includeInactive,
+        string? rootType,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(rootType))
+        {
+            var wanted = rootType.Trim().ToLowerInvariant();
+            if (AccountRootType.IsValid(wanted))
+            {
+                rows = rows.Where(r => string.Equals(r.RootType, wanted, StringComparison.OrdinalIgnoreCase)).ToArray();
+            }
+        }
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/accounts",
+    async (
+        AccountUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateAccountInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var record = await store.CreateAsync(
+                session.ActiveCompanyId,
+                new AccountUpsertInput(
+                    Code: request.Code!.Trim(),
+                    Name: request.Name!.Trim(),
+                    RootType: request.RootType!.Trim().ToLowerInvariant(),
+                    DetailType: request.DetailType?.Trim(),
+                    CurrencyCode: request.CurrencyCode?.Trim(),
+                    AllowManualPosting: request.AllowManualPosting ?? true,
+                    IsActive: request.IsActive ?? true),
+                cancellationToken);
+            return Results.Ok(record);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Account code '{request.Code}' already exists for this company." });
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = $"Currency '{request.CurrencyCode}' is not in the platform currency catalog." });
+        }
+    });
+
+accounting.MapPut(
+    "/accounts/{id:guid}",
+    async (
+        Guid id,
+        AccountUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateAccountInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var updated = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                id,
+                new AccountUpsertInput(
+                    Code: request.Code!.Trim(),
+                    Name: request.Name!.Trim(),
+                    RootType: request.RootType!.Trim().ToLowerInvariant(),
+                    DetailType: request.DetailType?.Trim(),
+                    CurrencyCode: request.CurrencyCode?.Trim(),
+                    AllowManualPosting: request.AllowManualPosting ?? true,
+                    IsActive: request.IsActive ?? true),
+                cancellationToken);
+            // Update returns null when the row is missing OR when is_system
+            // blocked the WHERE clause. The maintenance UI hides edit on
+            // system rows so a 404 here is the right honest response.
+            return updated is null
+                ? Results.NotFound(new { message = "Account not found, or it is a system control account that cannot be edited from this surface." })
+                : Results.Ok(updated);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Account code '{request.Code}' already exists for this company." });
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = $"Currency '{request.CurrencyCode}' is not in the platform currency catalog." });
+        }
+    });
+
+accounting.MapPost(
+    "/accounts/{id:guid}/activate",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
+        return updated is null
+            ? Results.NotFound(new { message = "Account not found or system-protected." })
+            : Results.Ok(updated);
+    });
+
+accounting.MapPost(
+    "/accounts/{id:guid}/deactivate",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
+        return updated is null
+            ? Results.NotFound(new { message = "Account not found or system-protected." })
+            : Results.Ok(updated);
+    });
+
+static string? ValidateAccountInput(AccountUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
+    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
+    if (request.Name.Length > 200) return "Name must be 200 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.RootType) || !AccountRootType.IsValid(request.RootType.Trim().ToLowerInvariant()))
+    {
+        return "Root type must be one of: asset, liability, equity, revenue, cost_of_sales, expense.";
+    }
+    if (request.DetailType is { Length: > 80 }) return "Detail type must be 80 characters or fewer.";
+    if (!string.IsNullOrWhiteSpace(request.CurrencyCode))
+    {
+        var c = request.CurrencyCode.Trim();
+        if (c.Length != 3) return "Currency code must be exactly 3 letters (ISO 4217).";
     }
     return null;
 }

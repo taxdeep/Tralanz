@@ -51,3 +51,14 @@ public sealed record TaxCodeUpsertHttpRequest
     public string? AppliesTo { get; init; }
     public bool? IsActive { get; init; }
 }
+
+public sealed record AccountUpsertHttpRequest
+{
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+    public string? RootType { get; init; }
+    public string? DetailType { get; init; }
+    public string? CurrencyCode { get; init; }
+    public bool? AllowManualPosting { get; init; }
+    public bool? IsActive { get; init; }
+}

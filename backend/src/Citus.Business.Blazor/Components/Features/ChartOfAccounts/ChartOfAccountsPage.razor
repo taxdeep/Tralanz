@@ -1,138 +1,303 @@
 @page "/chart-of-accounts"
 
 @inject BusinessShellState ShellState
-@inject TrialBalanceClient TrialBalanceClient
+@inject AccountClient AccountClient
+@inject AntDesign.IMessageService Message
+
+@*
+    Chart of Accounts maintenance — per-company catalog. Replaces the
+    earlier read-only view that inferred accounts from Trial Balance
+    rows. Reads the accounts table directly via /accounting/accounts;
+    creating / editing / activate-toggling rows here is what later
+    surfaces them in the journal-entry account picker (UnitySearch
+    SeedAccountDocumentsAsync runs against the same table on its
+    periodic refresh).
+
+    System accounts (is_system = true) are read-only in this UI; the
+    Posting Engine's AR / AP / FX control rows are protected so they
+    can't be quietly mutated through the maintenance surface.
+*@
 
 <PageTitle>Chart of Accounts | Citus Business</PageTitle>
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <CitusButton LeadingIcon="IconName.Refresh" Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+        <CitusButton LeadingIcon="IconName.Plus"
+                     Variant="CitusButtonVariant.Primary"
+                     Size="CitusButtonSize.Small"
+                     Disabled="@_isLoading"
+                     OnClick="StartCreating">
+            New account
+        </CitusButton>
     </Actions>
 </CitusPageHeader>
 
-<AntDesign.Alert Type="@AntDesign.AlertType.Info"
-                 ShowIcon="true"
-                 Class="mb-4">
-    <MessageTemplate>
-        Chart of Accounts here is the read-only tree of accounts grouped by root type.
-        Underlying truth is the Trial Balance endpoint (@(_balance?.AsOfDate.ToString("yyyy-MM-dd") ?? "as-of date pending")) — chart edits will land in a follow-up once the
-        backend write surface ships.
-    </MessageTemplate>
-</AntDesign.Alert>
-
-<CitusAsyncBoundary IsLoading="_isLoading"
-                    ErrorMessage="@_error"
-                    IsEmpty="@(_groups.Count == 0)"
-                    EmptyIcon="IconName.BuildingBank"
-                    EmptyTitle="No accounts yet"
-                    EmptyMessage="Provision the chart of accounts during first-company setup to populate this surface."
-                    EmptyActionLabel="Open Reports"
-                    EmptyActionHref="reports"
-                    RetryAction="LoadAsync">
-
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-        @foreach (var group in _groups)
-        {
-            <CitusStatCard Label="@group.RootType"
-                           Value="@group.Accounts.Count.ToString()"
-                           Description="@($"{FormatAmount(group.NetBalance)} {_balance?.BaseCurrencyCode}")"
-                           Icon="@IconForRoot(group.RootType)"
-                           Tone="@ToneForRoot(group.RootType)" />
-        }
-    </div>
-
-    <section class="citus-panel">
+<section class="citus-panel">
+    <header class="citus-panel__header">
         <h2 class="citus-panel__title">Accounts</h2>
-        @foreach (var group in _groups)
-        {
-            <article class="citus-subpanel">
-                <header class="citus-subpanel__header">
-                    <h3 class="citus-subpanel__title">@group.RootType</h3>
-                    <AntDesign.Tag Color="@TagColor(group.RootType)">@group.Accounts.Count accounts</AntDesign.Tag>
-                </header>
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 8rem">Code</th>
-                            <th>Name</th>
-                            <th>Detail type</th>
-                            <th>Status</th>
-                            <th class="text-right">Debit</th>
-                            <th class="text-right">Credit</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var acc in group.Accounts)
-                        {
-                            <tr>
-                                <td><span class="citus-inline-code">@acc.Code</span></td>
-                                <td>@acc.Name</td>
-                                <td class="text-fg-muted text-sm">@acc.DetailType</td>
-                                <td>
-                                    @(acc.IsActive ? "Active" : "Inactive")
-                                    @if (acc.IsSystem)
-                                    {
-                                        <span class="text-fg-subtle text-xs"> · System</span>
-                                    }
-                                </td>
-                                <td class="text-right">@FormatAmount(acc.BalanceDebit)</td>
-                                <td class="text-right">@FormatAmount(acc.BalanceCredit)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </article>
-        }
+        <div class="flex items-center gap-3">
+            <select class="citus-form-field__input"
+                    style="width: 12rem"
+                    value="@_filterRootType"
+                    @onchange="@OnFilterRootTypeChanged">
+                <option value="">All root types</option>
+                @foreach (var type in RootTypeOptions)
+                {
+                    <option value="@type.Value">@type.Label</option>
+                }
+            </select>
+            <label class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_includeInactive"
+                       @onchange="@OnToggleInactive" />
+                Show inactive
+            </label>
+            <AntDesign.Tag Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
+                @ShellState.ActiveCompany.CompanyCode
+            </AntDesign.Tag>
+        </div>
+    </header>
+
+    @if (_isLoading)
+    {
+        <AntDesign.Progress Type="@AntDesign.ProgressType.Line"
+                           Percent="100"
+                           Status="@AntDesign.ProgressStatus.Active"
+                           ShowInfo="false" />
+    }
+    else if (FilteredRows.Count == 0)
+    {
+        <div class="citus-empty">
+            <p class="text-fg-muted text-sm">
+                @(_rows.Count == 0
+                    ? "No accounts yet. Click \"New account\" to start your chart of accounts."
+                    : "No accounts match the current filters.")
+            </p>
+        </div>
+    }
+    else
+    {
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th style="width: 7rem">Code</th>
+                    <th>Name</th>
+                    <th style="width: 9rem">Root type</th>
+                    <th style="width: 9rem">Detail</th>
+                    <th style="width: 5rem">Currency</th>
+                    <th style="width: 7rem">Status</th>
+                    <th style="width: 11rem"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in FilteredRows)
+                {
+                    <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
+                        <td>
+                            <span class="citus-inline-code">@row.Code</span>
+                            @if (row.IsSystem)
+                            {
+                                <span class="text-fg-subtle text-xs ml-2">system</span>
+                            }
+                        </td>
+                        <td>@row.Name</td>
+                        <td>@HumanizeRootType(row.RootType)</td>
+                        <td class="text-fg-muted">@(string.IsNullOrEmpty(row.DetailType) ? "—" : row.DetailType)</td>
+                        <td class="text-fg-muted">@(string.IsNullOrWhiteSpace(row.CurrencyCode) ? "—" : row.CurrencyCode)</td>
+                        <td>
+                            <AntDesign.Tag Color="@(row.IsActive ? "green" : "default")">
+                                @(row.IsActive ? "Active" : "Inactive")
+                            </AntDesign.Tag>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-2">
+                                @if (!row.IsSystem)
+                                {
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => StartEditing(row))">
+                                        Edit
+                                    </CitusButton>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@_isMutating"
+                                                 OnClick="@(() => ToggleActiveAsync(row))">
+                                        @(row.IsActive ? "Deactivate" : "Activate")
+                                    </CitusButton>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-subtle text-xs">Read-only</span>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@if (_isFormOpen)
+{
+    <section class="citus-panel mt-6">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">@(_editingId is null ? "New account" : "Edit account")</h2>
+        </header>
+
+        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
+              @onsubmit="OnSaveAsync"
+              @onsubmit:preventDefault>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Code</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formCode"
+                       @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="32"
+                       placeholder="1000, 4100, 6300, …"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Name</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formName"
+                       @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="200"
+                       placeholder="Cash, Accounts Receivable, Office Expense, …"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Root type</span>
+                <select class="citus-form-field__input"
+                        value="@_formRootType"
+                        @onchange="@(e => _formRootType = e.Value?.ToString() ?? "asset")"
+                        disabled="@_isMutating">
+                    @foreach (var type in RootTypeOptions)
+                    {
+                        <option value="@type.Value">@type.Label</option>
+                    }
+                </select>
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Detail type (optional)</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formDetailType"
+                       @oninput="@(e => _formDetailType = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="80"
+                       placeholder="bank, receivable, equipment, …"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Currency (optional, ISO 4217)</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formCurrencyCode"
+                       @oninput="@(e => _formCurrencyCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="3"
+                       placeholder="@($"Defaults to {ShellState.ActiveCompany.BaseCurrencyCode}")"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@_formAllowManualPosting"
+                           @onchange="@(e => _formAllowManualPosting = (bool)(e.Value ?? false))"
+                           disabled="@_isMutating" />
+                    Allow manual posting (uncheck to make this a rollup-only account)
+                </span>
+            </label>
+
+            <label class="citus-form-field md:col-span-2">
+                <span class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@_formIsActive"
+                           @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
+                           disabled="@_isMutating" />
+                    Active (available for selection on new transactions)
+                </span>
+            </label>
+
+            <div class="md:col-span-2 flex items-center gap-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             HtmlType="@("submit")"
+                             Disabled="@_isMutating"
+                             OnClick="OnSaveAsync">
+                    @(_isMutating ? "Saving…" : "Save")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Disabled="@_isMutating"
+                             OnClick="CancelForm">
+                    Cancel
+                </CitusButton>
+            </div>
+        </form>
     </section>
-</CitusAsyncBoundary>
+}
 
 @code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Accounting",
         Title = "Chart of accounts",
-        Subtitle = "Read-only account list grouped by root type. Each row reflects the latest Trial Balance run for the active company."
+        Subtitle = "Per-company account catalog. Used by journal entry, invoice, bill, and report surfaces."
+    };
+
+    private static readonly (string Value, string Label)[] RootTypeOptions =
+    {
+        ("asset", "Asset"),
+        ("liability", "Liability"),
+        ("equity", "Equity"),
+        ("revenue", "Revenue"),
+        ("cost_of_sales", "Cost of sales"),
+        ("expense", "Expense"),
     };
 
     private bool _isLoading = true;
-    private string? _error;
-    private TrialBalanceReportSummary? _balance;
-    private IReadOnlyList<RootGroup> _groups = Array.Empty<RootGroup>();
+    private bool _isMutating;
+    private bool _isFormOpen;
+    private bool _includeInactive;
+    private string _filterRootType = string.Empty;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private Guid? _editingId;
+    private string _formCode = string.Empty;
+    private string _formName = string.Empty;
+    private string _formRootType = "asset";
+    private string _formDetailType = string.Empty;
+    private string _formCurrencyCode = string.Empty;
+    private bool _formAllowManualPosting = true;
+    private bool _formIsActive = true;
+
+    private List<AccountSummary> _rows = new();
+
+    private IReadOnlyList<AccountSummary> FilteredRows =>
+        string.IsNullOrEmpty(_filterRootType)
+            ? _rows
+            : _rows.Where(r => string.Equals(r.RootType, _filterRootType, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
         _isLoading = true;
-        _error = null;
-
         try
         {
-            _balance = await TrialBalanceClient.GetReportAsync(
-                ShellState.ActiveCompany.Id,
-                DateOnly.FromDateTime(DateTime.Today),
-                includeZeroBalances: true);
-
-            if (_balance is null)
-            {
-                _groups = Array.Empty<RootGroup>();
-                _error = "Trial Balance is unavailable. Provision the chart of accounts and confirm the API is reachable.";
-                return;
-            }
-
-            _groups = _balance.Rows
-                .GroupBy(row => string.IsNullOrWhiteSpace(row.RootType) ? "Uncategorized" : row.RootType)
-                .Select(g => new RootGroup(
-                    RootType: g.Key,
-                    Accounts: g.OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase).ToArray(),
-                    NetBalance: g.Sum(a => a.BalanceDebit - a.BalanceCredit)))
-                .OrderBy(g => RootOrder(g.RootType))
-                .ToArray();
-        }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
+            var rows = await AccountClient.ListAsync(includeInactive: _includeInactive);
+            _rows = rows
+                .OrderBy(r => RootTypeRank(r.RootType))
+                .ThenBy(r => r.Code, StringComparer.Ordinal)
+                .ToList();
         }
         finally
         {
@@ -140,47 +305,154 @@
         }
     }
 
-    private static int RootOrder(string root) => root.ToLowerInvariant() switch
+    private async Task OnToggleInactive(ChangeEventArgs args)
     {
-        "asset" => 0, "assets" => 0,
-        "liability" => 1, "liabilities" => 1,
-        "equity" => 2,
-        "revenue" => 3, "income" => 3,
-        "expense" => 4, "expenses" => 4,
-        _ => 5
+        _includeInactive = (bool)(args.Value ?? false);
+        await LoadAsync();
+    }
+
+    private void OnFilterRootTypeChanged(ChangeEventArgs args)
+    {
+        _filterRootType = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void StartCreating()
+    {
+        _editingId = null;
+        _formCode = string.Empty;
+        _formName = string.Empty;
+        _formRootType = string.IsNullOrEmpty(_filterRootType) ? "asset" : _filterRootType;
+        _formDetailType = string.Empty;
+        _formCurrencyCode = string.Empty;
+        _formAllowManualPosting = true;
+        _formIsActive = true;
+        _isFormOpen = true;
+    }
+
+    private void StartEditing(AccountSummary row)
+    {
+        _editingId = row.Id;
+        _formCode = row.Code;
+        _formName = row.Name;
+        _formRootType = row.RootType;
+        _formDetailType = row.DetailType ?? string.Empty;
+        _formCurrencyCode = row.CurrencyCode ?? string.Empty;
+        _formAllowManualPosting = row.AllowManualPosting;
+        _formIsActive = row.IsActive;
+        _isFormOpen = true;
+    }
+
+    private void CancelForm()
+    {
+        _isFormOpen = false;
+        _editingId = null;
+    }
+
+    private async Task OnSaveAsync()
+    {
+        if (_isMutating) return;
+
+        if (string.IsNullOrWhiteSpace(_formCode))
+        {
+            await Message.WarningAsync("Code is required.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_formName))
+        {
+            await Message.WarningAsync("Name is required.");
+            return;
+        }
+        if (!IsValidRootType(_formRootType))
+        {
+            await Message.WarningAsync("Pick a root type.");
+            return;
+        }
+        var currency = _formCurrencyCode?.Trim();
+        if (!string.IsNullOrEmpty(currency) && currency.Length != 3)
+        {
+            await Message.WarningAsync("Currency code must be exactly 3 letters (ISO 4217).");
+            return;
+        }
+
+        _isMutating = true;
+        try
+        {
+            var payload = new AccountUpsertPayload(
+                Code: _formCode.Trim(),
+                Name: _formName.Trim(),
+                RootType: _formRootType,
+                DetailType: string.IsNullOrWhiteSpace(_formDetailType) ? null : _formDetailType.Trim(),
+                CurrencyCode: string.IsNullOrEmpty(currency) ? null : currency,
+                AllowManualPosting: _formAllowManualPosting,
+                IsActive: _formIsActive);
+
+            var outcome = _editingId is null
+                ? await AccountClient.CreateAsync(payload)
+                : await AccountClient.UpdateAsync(_editingId.Value, payload);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(string.IsNullOrWhiteSpace(outcome.ErrorMessage)
+                    ? "Unable to save account."
+                    : outcome.ErrorMessage);
+                return;
+            }
+
+            var wasEditing = _editingId is not null;
+            _isFormOpen = false;
+            _editingId = null;
+            await LoadAsync();
+            await Message.SuccessAsync(wasEditing ? "Account updated." : "Account created.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private async Task ToggleActiveAsync(AccountSummary row)
+    {
+        if (_isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await AccountClient.SetActiveAsync(row.Id, !row.IsActive);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to update account status.");
+                return;
+            }
+            await LoadAsync();
+            await Message.SuccessAsync(row.IsActive ? "Account deactivated." : "Account activated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private static bool IsValidRootType(string? value) =>
+        value is "asset" or "liability" or "equity" or "revenue" or "cost_of_sales" or "expense";
+
+    private static int RootTypeRank(string rootType) => rootType switch
+    {
+        "asset" => 1,
+        "liability" => 2,
+        "equity" => 3,
+        "revenue" => 4,
+        "cost_of_sales" => 5,
+        "expense" => 6,
+        _ => 9,
     };
 
-    private static IconName IconForRoot(string root) => root.ToLowerInvariant() switch
+    private static string HumanizeRootType(string rootType) => rootType switch
     {
-        "asset" or "assets" => IconName.BuildingBank,
-        "liability" or "liabilities" => IconName.Receipt,
-        "equity" => IconName.Report,
-        "revenue" or "income" => IconName.ReportAnalytics,
-        "expense" or "expenses" => IconName.Wallet,
-        _ => IconName.LayoutDashboard
+        "asset" => "Asset",
+        "liability" => "Liability",
+        "equity" => "Equity",
+        "revenue" => "Revenue",
+        "cost_of_sales" => "Cost of sales",
+        "expense" => "Expense",
+        _ => rootType,
     };
-
-    private static StatTone ToneForRoot(string root) => root.ToLowerInvariant() switch
-    {
-        "asset" or "assets" => StatTone.Info,
-        "liability" or "liabilities" => StatTone.Warning,
-        "equity" => StatTone.Success,
-        "revenue" or "income" => StatTone.Primary,
-        "expense" or "expenses" => StatTone.Danger,
-        _ => StatTone.Neutral
-    };
-
-    private static string TagColor(string root) => root.ToLowerInvariant() switch
-    {
-        "asset" or "assets" => "blue",
-        "liability" or "liabilities" => "orange",
-        "equity" => "green",
-        "revenue" or "income" => "geekblue",
-        "expense" or "expenses" => "red",
-        _ => "default"
-    };
-
-    private static string FormatAmount(decimal amount) => amount.ToString("N2");
-
-    private sealed record class RootGroup(string RootType, IReadOnlyList<TrialBalanceAccountSummary> Accounts, decimal NetBalance);
 }
