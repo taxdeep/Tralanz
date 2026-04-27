@@ -1,76 +1,355 @@
 @page "/settings/tax-rates"
 
 @inject BusinessShellState ShellState
+@inject TaxCodeClient TaxCodeClient
+@inject AntDesign.IMessageService Message
+
+@*
+    Tax Rates — per-company tax-code catalog. Lists, creates, edits and
+    activate-toggles entries in the tax_codes table. The Settings → Tax
+    Rates link in the nav menu points here.
+
+    V1 surfaces the fields the journal-entry / invoice / bill UIs need
+    today: code, name, rate, applies-to scope, active flag. The full
+    migration-draft schema (recoverability_mode, account refs) stays
+    server-side with safe defaults; advanced editing lands in a later
+    batch when the Posting Engine wiring needs it.
+*@
 
 <PageTitle>Tax Rates | Citus Business</PageTitle>
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <AntDesign.Tag Color="@("default")">Read-only</AntDesign.Tag>
+        <CitusButton LeadingIcon="IconName.Plus"
+                     Variant="CitusButtonVariant.Primary"
+                     Size="CitusButtonSize.Small"
+                     Disabled="@_isLoading"
+                     OnClick="StartCreating">
+            New tax code
+        </CitusButton>
     </Actions>
 </CitusPageHeader>
 
-<AntDesign.Alert Type="@AntDesign.AlertType.Info"
-                 ShowIcon="true"
-                 Message="Tax codes are governed by the backend Posting Engine. The list shown below is an advisory snapshot derived from the company profile; the canonical truth lives in the tax engine and will be wired through an HTTP endpoint in a follow-up."
-                 Class="mb-6" />
-
 <section class="citus-panel">
     <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Configured tax codes</h2>
-        <AntDesign.Tag Color="@("blue")">Snapshot</AntDesign.Tag>
+        <h2 class="citus-panel__title">Tax codes</h2>
+        <div class="flex items-center gap-3">
+            <label class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_includeInactive"
+                       @onchange="@OnToggleInactive" />
+                Show inactive
+            </label>
+            <AntDesign.Tag Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
+                @ShellState.ActiveCompany.CompanyCode
+            </AntDesign.Tag>
+        </div>
     </header>
 
-    <table class="citus-data-table">
-        <thead>
-            <tr>
-                <th>Code</th>
-                <th>Description</th>
-                <th class="text-right">Rate</th>
-                <th>Applies to</th>
-                <th>Recoverable</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var rate in _rates)
-            {
+    @if (_isLoading)
+    {
+        <AntDesign.Progress Type="@AntDesign.ProgressType.Line"
+                           Percent="100"
+                           Status="@AntDesign.ProgressStatus.Active"
+                           ShowInfo="false" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="citus-empty">
+            <p class="text-fg-muted text-sm">
+                No tax codes yet. Click <strong>New tax code</strong> to create your first one.
+            </p>
+        </div>
+    }
+    else
+    {
+        <table class="citus-data-table">
+            <thead>
                 <tr>
-                    <td><span class="citus-inline-code">@rate.Code</span></td>
-                    <td>@rate.Description</td>
-                    <td class="text-right">@rate.Rate.ToString("P2")</td>
-                    <td>@rate.AppliesTo</td>
-                    <td>@(rate.Recoverable ? "Yes" : "No")</td>
+                    <th style="width: 8rem">Code</th>
+                    <th>Name</th>
+                    <th class="text-right" style="width: 6rem">Rate</th>
+                    <th style="width: 8rem">Applies to</th>
+                    <th style="width: 6rem">Status</th>
+                    <th style="width: 9rem"></th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
+                        <td><span class="citus-inline-code">@row.Code</span></td>
+                        <td>@row.Name</td>
+                        <td class="text-right">@FormatRate(row.RatePercent)</td>
+                        <td>@HumanizeAppliesTo(row.AppliesTo)</td>
+                        <td>
+                            <AntDesign.Tag Color="@(row.IsActive ? "green" : "default")">
+                                @(row.IsActive ? "Active" : "Inactive")
+                            </AntDesign.Tag>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-2">
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             Disabled="@_isMutating"
+                                             OnClick="@(() => StartEditing(row))">
+                                    Edit
+                                </CitusButton>
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             Disabled="@_isMutating"
+                                             OnClick="@(() => ToggleActiveAsync(row))">
+                                    @(row.IsActive ? "Deactivate" : "Activate")
+                                </CitusButton>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
 </section>
 
-<section class="citus-panel mt-6">
-    <h2 class="citus-panel__title">Why this is advisory</h2>
-    <ul class="citus-bullet-list">
-        <li>The backend Posting Engine is the single source of truth for tax math; a UI override would silently desync.</li>
-        <li>Posted documents already carry a frozen tax snapshot — changes to the rate table do not retro-edit posted invoices or bills.</li>
-        <li>Tax setup and recoverability flags are governed via the `Citus.Accounting.Application` tax-setup commands; an HTTP endpoint plus a real editor lands later in the rewrite.</li>
-    </ul>
-</section>
+@if (_isFormOpen)
+{
+    <section class="citus-panel mt-6">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">@(_editingId is null ? "New tax code" : "Edit tax code")</h2>
+        </header>
+
+        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
+              @onsubmit="OnSaveAsync"
+              @onsubmit:preventDefault>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Code</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formCode"
+                       @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="32"
+                       placeholder="HST_ON, GST, PST_BC, …"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Name</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formName"
+                       @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="120"
+                       placeholder="Ontario HST 13%"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Rate (%)</span>
+                <input type="number"
+                       class="citus-form-field__input"
+                       step="0.01"
+                       min="0"
+                       max="100"
+                       value="@_formRate"
+                       @oninput="@(e => _formRate = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Applies to</span>
+                <select class="citus-form-field__input"
+                        value="@_formAppliesTo"
+                        @onchange="@(e => _formAppliesTo = e.Value?.ToString() ?? "both")"
+                        disabled="@_isMutating">
+                    <option value="sales">Sales only</option>
+                    <option value="purchase">Purchases only</option>
+                    <option value="both">Sales and purchases</option>
+                </select>
+            </label>
+
+            <label class="citus-form-field md:col-span-2">
+                <span class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@_formIsActive"
+                           @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
+                           disabled="@_isMutating" />
+                    Active (available for selection on new documents)
+                </span>
+            </label>
+
+            <div class="md:col-span-2 flex items-center gap-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             HtmlType="@("submit")"
+                             Disabled="@_isMutating"
+                             OnClick="OnSaveAsync">
+                    @(_isMutating ? "Saving…" : "Save")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Disabled="@_isMutating"
+                             OnClick="CancelForm">
+                    Cancel
+                </CitusButton>
+            </div>
+        </form>
+    </section>
+}
 
 @code {
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
         Title = "Tax rates",
-        Subtitle = "Advisory snapshot of tax codes that apply to the active company. Backend-owned; not editable from this page."
+        Subtitle = "Per-company tax-code catalog. Used by journal entry, invoice, and bill surfaces."
     };
 
-    private readonly IReadOnlyList<TaxRateRow> _rates =
-    [
-        new("HST_ON", "Ontario HST", 0.13m, "Sales / Purchases", true),
-        new("GST",    "Federal GST", 0.05m, "Sales / Purchases", true),
-        new("PST_BC", "British Columbia PST", 0.07m, "Sales", false),
-        new("ZERO",   "Zero-rated", 0.00m, "Sales / Purchases", true),
-        new("EXEMPT", "Tax exempt", 0.00m, "Sales / Purchases", false)
-    ];
+    private bool _isLoading = true;
+    private bool _isMutating;
+    private bool _isFormOpen;
+    private bool _includeInactive;
+    private Guid? _editingId;
+    private string _formCode = string.Empty;
+    private string _formName = string.Empty;
+    private string _formRate = "0";
+    private string _formAppliesTo = "both";
+    private bool _formIsActive = true;
 
-    private sealed record class TaxRateRow(string Code, string Description, decimal Rate, string AppliesTo, bool Recoverable);
+    private List<TaxCodeSummary> _rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await TaxCodeClient.ListAsync(includeInactive: _includeInactive);
+            _rows = rows.OrderByDescending(r => r.IsActive).ThenBy(r => r.Code).ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnToggleInactive(ChangeEventArgs args)
+    {
+        _includeInactive = (bool)(args.Value ?? false);
+        await LoadAsync();
+    }
+
+    private void StartCreating()
+    {
+        _editingId = null;
+        _formCode = string.Empty;
+        _formName = string.Empty;
+        _formRate = "0";
+        _formAppliesTo = "both";
+        _formIsActive = true;
+        _isFormOpen = true;
+    }
+
+    private void StartEditing(TaxCodeSummary row)
+    {
+        _editingId = row.Id;
+        _formCode = row.Code;
+        _formName = row.Name;
+        _formRate = row.RatePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        _formAppliesTo = row.AppliesTo;
+        _formIsActive = row.IsActive;
+        _isFormOpen = true;
+    }
+
+    private void CancelForm()
+    {
+        _isFormOpen = false;
+        _editingId = null;
+    }
+
+    private async Task OnSaveAsync()
+    {
+        if (_isMutating) return;
+
+        if (string.IsNullOrWhiteSpace(_formCode))
+        {
+            await Message.WarningAsync("Code is required.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_formName))
+        {
+            await Message.WarningAsync("Name is required.");
+            return;
+        }
+        if (!decimal.TryParse(_formRate, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rate) ||
+            rate < 0m || rate > 100m)
+        {
+            await Message.WarningAsync("Rate must be between 0 and 100.");
+            return;
+        }
+
+        _isMutating = true;
+        try
+        {
+            var payload = new TaxCodeUpsertPayload(
+                Code: _formCode.Trim(),
+                Name: _formName.Trim(),
+                RatePercent: rate,
+                AppliesTo: _formAppliesTo,
+                IsActive: _formIsActive);
+
+            TaxCodeMutationOutcome outcome = _editingId is null
+                ? await TaxCodeClient.CreateAsync(payload)
+                : await TaxCodeClient.UpdateAsync(_editingId.Value, payload);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(string.IsNullOrWhiteSpace(outcome.ErrorMessage)
+                    ? "Unable to save tax code."
+                    : outcome.ErrorMessage);
+                return;
+            }
+
+            _isFormOpen = false;
+            _editingId = null;
+            await LoadAsync();
+            await Message.SuccessAsync(_editingId is null ? "Tax code created." : "Tax code updated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private async Task ToggleActiveAsync(TaxCodeSummary row)
+    {
+        if (_isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await TaxCodeClient.SetActiveAsync(row.Id, !row.IsActive);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to update tax code status.");
+                return;
+            }
+            await LoadAsync();
+            await Message.SuccessAsync(row.IsActive ? "Tax code deactivated." : "Tax code activated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private static string FormatRate(decimal ratePercent) =>
+        ratePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static string HumanizeAppliesTo(string appliesTo) => appliesTo switch
+    {
+        "sales" => "Sales only",
+        "purchase" => "Purchases only",
+        "both" => "Sales + purchases",
+        _ => appliesTo,
+    };
 }

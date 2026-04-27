@@ -5,6 +5,7 @@
 
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject TaxCodeClient TaxCodeClient
 @inject NavigationManager NavigationManager
 @inject AntDesign.IMessageService Message
 
@@ -161,9 +162,13 @@
                                         value="@line.TaxCode"
                                         @onchange="@(e => UpdateLine(i, l => l with { TaxCode = e.Value?.ToString() ?? string.Empty }))">
                                     <option value=""></option>
-                                    @foreach (var tax in TaxCodeOptions)
+                                    @if (_taxCodes.Count == 0 && !_isLoadingTaxCodes)
                                     {
-                                        <option value="@tax.Code">@tax.Label</option>
+                                        <option value="" disabled>No tax codes — add in Settings</option>
+                                    }
+                                    @foreach (var tax in _taxCodes)
+                                    {
+                                        <option value="@tax.Code">@FormatTaxOption(tax)</option>
                                     }
                                 </select>
                             </td>
@@ -264,16 +269,14 @@
         decimal Credit = 0m,
         string TaxCode = "");
 
-    private static readonly (string Code, string Label)[] TaxCodeOptions =
+    private List<TaxCodeSummary> _taxCodes = new();
+    private bool _isLoadingTaxCodes;
+
+    private static string FormatTaxOption(TaxCodeSummary tax)
     {
-        ("GST", "GST 5%"),
-        ("HST", "HST"),
-        ("PST", "PST"),
-        ("QST", "QST"),
-        ("ZERO_RATED", "Zero rated"),
-        ("EXEMPT", "Exempt"),
-        ("OUT_OF_SCOPE", "Out of scope"),
-    };
+        var rate = tax.RatePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        return $"{tax.Code} ({rate}%) — {tax.Name}";
+    }
 
     private DateTime? _date = DateTime.Today;
     private string _description = string.Empty;
@@ -288,12 +291,28 @@
     private decimal _totalCredit => _lines.Sum(l => l.Credit);
     private bool _isBalanced => _lines.Count > 0 && _totalDebit == _totalCredit && _totalDebit > 0;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
         for (var i = 0; i < 4; i++)
         {
             _lines.Add(new JournalLineEditState());
+        }
+
+        // Load active tax codes that apply to sales (manual journals tend to
+        // adjust revenue; "sales" filter also surfaces "both"-scope codes).
+        _isLoadingTaxCodes = true;
+        try
+        {
+            var rows = await TaxCodeClient.ListAsync(appliesTo: "sales");
+            _taxCodes = rows
+                .Where(r => r.IsActive)
+                .OrderBy(r => r.Code)
+                .ToList();
+        }
+        finally
+        {
+            _isLoadingTaxCodes = false;
         }
     }
 

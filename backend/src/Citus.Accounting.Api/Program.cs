@@ -28,6 +28,7 @@ using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
+using Infrastructure.PostgreSQL.Tax;
 using Infrastructure.PostgreSQL.UnitySearch;
 using Infrastructure.PostgreSQL.UnityAi;
 using Microsoft.Extensions.Options;
@@ -150,6 +151,11 @@ builder.Services.AddSingleton<UnitySearchEngine>();
 // Persists across bootstrap-session reloads so name changes stick.
 builder.Services.AddSingleton<IUserProfileOverrideStore, PostgreSqlUserProfileOverrideStore>();
 
+// Tax code catalog (per-company). Reads/writes the existing tax_codes
+// table from the migration draft; safe defaults fill the columns the V1
+// settings UI does not yet expose (recoverability_mode, account refs).
+builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
+
 // ----- unityAI V1 -------------------------------------------------------
 // Authority: AI_PRODUCT_ARCHITECTURE.md
 // Defaults are conservative: gateway off, AI hints pending, traces sampled.
@@ -228,11 +234,13 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var unitySearchProjectionStore = startupScope.ServiceProvider.GetRequiredService<IUnitySearchProjectionStore>();
     var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
     var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
+    var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
     await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
+    await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
 }
 
 var accounting = app.MapGroup("/accounting");
@@ -3207,6 +3215,172 @@ accounting.MapPost(
             updatedAt = saved.UpdatedAt,
         });
     });
+
+// ===========================================================================
+// Tax codes (per-company catalog)
+//
+// V1 surface: list / create / update / activate-toggle. Backs the
+// Settings → Tax Rates page and the per-line Sales Tax dropdowns.
+// Posting-Engine consumers read the same tax_codes table directly; the
+// store fills migration-draft columns (entity_number,
+// recoverability_mode, account refs) with safe defaults when the V1 UI
+// does not expose them yet.
+// ===========================================================================
+
+accounting.MapGet(
+    "/tax-codes",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeStore store,
+        bool? includeInactive,
+        string? appliesTo,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(appliesTo))
+        {
+            // applies_to=sales also surfaces 'both'; same for purchase.
+            var wanted = appliesTo.Trim().ToLowerInvariant();
+            rows = wanted switch
+            {
+                TaxCodeAppliesTo.Sales => rows.Where(r => r.AppliesTo is TaxCodeAppliesTo.Sales or TaxCodeAppliesTo.Both).ToArray(),
+                TaxCodeAppliesTo.Purchase => rows.Where(r => r.AppliesTo is TaxCodeAppliesTo.Purchase or TaxCodeAppliesTo.Both).ToArray(),
+                TaxCodeAppliesTo.Both => rows,
+                _ => rows,
+            };
+        }
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/tax-codes",
+    async (
+        TaxCodeUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var validation = ValidateTaxCodeInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var record = await store.CreateAsync(
+                session.ActiveCompanyId,
+                new TaxCodeUpsertInput(
+                    Code: request.Code!.Trim(),
+                    Name: request.Name!.Trim(),
+                    RatePercent: request.RatePercent ?? 0m,
+                    AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
+                    IsActive: request.IsActive ?? true),
+                cancellationToken);
+            return Results.Ok(record);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            // Unique violation — most likely (company_id, code) clash.
+            return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPut(
+    "/tax-codes/{id:guid}",
+    async (
+        Guid id,
+        TaxCodeUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var validation = ValidateTaxCodeInput(request);
+        if (validation is not null)
+        {
+            return Results.BadRequest(new { message = validation });
+        }
+
+        try
+        {
+            var updated = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                id,
+                new TaxCodeUpsertInput(
+                    Code: request.Code!.Trim(),
+                    Name: request.Name!.Trim(),
+                    RatePercent: request.RatePercent ?? 0m,
+                    AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
+                    IsActive: request.IsActive ?? true),
+                cancellationToken);
+            return updated is null ? Results.NotFound() : Results.Ok(updated);
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Tax code '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPost(
+    "/tax-codes/{id:guid}/activate",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapPost(
+    "/tax-codes/{id:guid}/deactivate",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        ITaxCodeStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
+    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
+    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
+    if (request.RatePercent is null || request.RatePercent < 0m) return "Rate must be 0 or greater.";
+    if (request.RatePercent > 100m) return "Rate must be 100 or lower.";
+    if (string.IsNullOrWhiteSpace(request.AppliesTo) || !TaxCodeAppliesTo.IsValid(request.AppliesTo.Trim().ToLowerInvariant()))
+    {
+        return "Applies to must be 'sales', 'purchase', or 'both'.";
+    }
+    return null;
+}
 
 accounting.MapPost(
     "/unitysearch/usage",

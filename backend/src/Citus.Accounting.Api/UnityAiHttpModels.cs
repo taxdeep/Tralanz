@@ -42,3 +42,12 @@ public sealed record UpdateDisplayNameHttpRequest
 {
     public string? DisplayName { get; init; }
 }
+
+public sealed record TaxCodeUpsertHttpRequest
+{
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+    public decimal? RatePercent { get; init; }
+    public string? AppliesTo { get; init; }
+    public bool? IsActive { get; init; }
+}
