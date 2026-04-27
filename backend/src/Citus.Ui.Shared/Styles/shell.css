@@ -9,15 +9,29 @@
     background: var(--citus-color-bg);
 }
 
-.citus-shell__sider {
-    background: var(--citus-color-bg-elevated) !important;
-    border-right: 1px solid var(--citus-color-border);
+.citus-shell {
+    display: flex;
 }
 
-.citus-shell__sider .ant-layout-sider-children {
+.citus-shell__sider {
+    background: var(--citus-color-bg-elevated);
+    border-right: 1px solid var(--citus-color-border);
+    width: 240px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    height: 100%;
+    transition: width 180ms ease;
+}
+
+.citus-shell--collapsed .citus-shell__sider {
+    width: 64px;
+}
+
+.citus-shell__main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
 .citus-shell__brand {
@@ -318,6 +332,133 @@
 
 .citus-user-menu__item--danger:hover {
     color: #d4351c;
+}
+
+/* ---------- Buttons (Phase 9: replaces AntDesign Button) ---------- */
+
+.citus-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--citus-space-2);
+    padding: 0 var(--citus-space-4);
+    height: 32px;
+    border-radius: var(--citus-radius-md);
+    font: inherit;
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    user-select: none;
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.citus-button:hover {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+}
+
+.citus-button:focus-visible {
+    outline: 2px solid var(--citus-color-primary);
+    outline-offset: 2px;
+}
+
+.citus-button:disabled,
+.citus-button[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.citus-button--primary {
+    background: var(--citus-color-primary);
+    color: var(--citus-color-primary-fg, #fff);
+    border-color: var(--citus-color-primary);
+}
+
+.citus-button--primary:hover {
+    background: var(--citus-color-primary-hover, var(--citus-color-primary));
+    color: var(--citus-color-primary-fg, #fff);
+}
+
+.citus-button--ghost {
+    background: transparent;
+}
+
+.citus-button--ghost:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-button--link {
+    background: transparent;
+    border-color: transparent;
+    padding-inline: 0;
+    color: var(--citus-color-primary);
+    height: auto;
+}
+
+.citus-button--link:hover {
+    background: transparent;
+    color: var(--citus-color-primary-hover, var(--citus-color-primary));
+    text-decoration: underline;
+}
+
+.citus-button--text {
+    background: transparent;
+    border-color: transparent;
+}
+
+.citus-button--text:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-button--danger {
+    color: #d4351c;
+    border-color: rgba(212, 53, 28, 0.4);
+}
+
+.citus-button--danger:hover {
+    background: rgba(212, 53, 28, 0.08);
+}
+
+.citus-button--primary.citus-button--danger {
+    background: #d4351c;
+    color: #fff;
+    border-color: #d4351c;
+}
+
+.citus-button--block {
+    width: 100%;
+}
+
+.citus-button--sm {
+    height: 26px;
+    padding: 0 var(--citus-space-3);
+    font-size: var(--citus-text-xs);
+}
+
+.citus-button--lg {
+    height: 40px;
+    padding: 0 var(--citus-space-5);
+    font-size: var(--citus-text-base);
+}
+
+.citus-button__icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.citus-button__label {
+    display: inline-flex;
+    align-items: center;
+}
+
+.citus-button--loading {
+    pointer-events: none;
+    opacity: 0.7;
 }
 
 /* ---------- Page-level patterns ---------- */
@@ -836,65 +977,15 @@
     border-radius: var(--citus-radius-sm);
 }
 
-/* ---------- Dark-mode sidebar contrast overrides ----------
-   The Sider is hard-coded to Theme="Light" so AntDesign applies its
-   light-mode .ant-menu-light selectors (dark text on light bg). On our
-   dark sider that paints near-black text on a near-black surface — i.e.
-   the text becomes invisible.
-
-   The fix targets every level AntDesign paints text at:
-     * the <li class="ant-menu-item"> itself
-     * the inner <a class="ant-menu-title-content">
-     * our own .citus-nav-menu__item / __label spans
-     * the SVG icon (currentColor)
-
-   We use BOTH html.dark (matches tokens.css convention) and
-   html[data-theme="dark"] (matches App.razor's attribute). Either is set
-   by the theme service in dark mode, so paired they survive any future
-   refactor on either side. Selectivity is high enough to beat
-   AntDesign's default rules even when those carry their own !important. */
+/* ---------- Dark-mode sidebar contrast override ----------
+   The plain BEM selectors above pull from --citus-color-* tokens so they
+   flip on .dark / [data-theme="dark"] automatically. The only dark-mode
+   tweak still needed is the sider's bespoke background, which is darker
+   than --citus-color-bg-elevated to give the chrome a visible edge. */
 
 html.dark .citus-shell__sider,
 html[data-theme="dark"] .citus-shell__sider {
-    background: oklch(18% 0.012 254) !important;
-}
-
-html.dark .citus-nav-menu .ant-menu-item-group-title,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item-group-title {
-    color: var(--citus-color-fg-muted) !important;
-    font-weight: 500;
-    opacity: 1;
-}
-
-html.dark .citus-nav-menu .ant-menu-item,
-html.dark .citus-nav-menu .ant-menu-item .ant-menu-title-content,
-html.dark .citus-nav-menu .ant-menu-item > a,
-html.dark .citus-nav-menu .ant-menu-item .citus-nav-menu__item,
-html.dark .citus-nav-menu .ant-menu-item .citus-nav-menu__label,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item .ant-menu-title-content,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item > a,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item .citus-nav-menu__item,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item .citus-nav-menu__label {
-    color: var(--citus-color-fg) !important;
-}
-
-/* Selected and hover state keep their primary tint — re-assert after the
-   broad overrides above. */
-html.dark .citus-nav-menu .ant-menu-item-selected,
-html.dark .citus-nav-menu .ant-menu-item-selected .ant-menu-title-content,
-html.dark .citus-nav-menu .ant-menu-item-selected .citus-nav-menu__label,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected .ant-menu-title-content,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected .citus-nav-menu__label {
-    color: var(--citus-color-primary) !important;
-}
-
-html.dark .citus-nav-menu .ant-menu-item:hover .ant-menu-title-content,
-html.dark .citus-nav-menu .ant-menu-item:hover .citus-nav-menu__label,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .ant-menu-title-content,
-html[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .citus-nav-menu__label {
-    color: var(--citus-color-primary-hover) !important;
+    background: oklch(18% 0.012 254);
 }
 
 /* ---------- Top-bar global search slot ----------

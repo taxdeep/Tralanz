@@ -9,7 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="@AppHostOptions.NormalizeBaseHref(HostOptions.Value.PathBase)" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="_content/AntDesign/css/ant-design-blazor.css" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/default-base.css" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Citus.SysAdmin.Blazor.styles.css"]" />
     <ImportMap />
@@ -19,6 +19,7 @@
 <body>
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
     <script src="js/sysadmin-auth.js"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>

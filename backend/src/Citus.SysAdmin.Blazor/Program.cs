@@ -12,7 +12,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddAntDesign();
 builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<CitusToastService>();
 builder.Services.AddCitusTheme();

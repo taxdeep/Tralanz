@@ -13,12 +13,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddAntDesign();
-
-// Radzen.Blazor — coexists with AntDesign. Used for high-volume report
-// grids (Trial Balance first; charts and Aging tables next if the
-// spike pans out). Different namespaces, scoped CSS, no global style
-// collision expected.
 builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<CitusToastService>();
 builder.Services.AddCitusTheme();

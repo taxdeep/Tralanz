@@ -81,13 +81,3 @@
     color: var(--citus-color-fg-muted);
 }
 
-.citus-table--compact :where(.ant-table-tbody) > tr > td {
-    height: var(--citus-row-h-compact);
-    padding-top: var(--citus-space-1);
-    padding-bottom: var(--citus-space-1);
-}
-
-.citus-table :where(.ant-table-tbody) td {
-    font-variant-numeric: var(--citus-tabular-nums);
-    font-feature-settings: "tnum";
-}

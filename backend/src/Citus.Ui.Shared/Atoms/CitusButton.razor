@@ -1,19 +1,14 @@
 @*
-    CitusButton — wraps AntDesign Blazor's Button so every page in the app
-    pulls its size, type, and icon contract from one place. A leading
-    icon slot accepts a Tabler IconName; trailing icons or full markup
-    can still flow through ChildContent.
+    CitusButton — plain <button> with class composition. Phase 9 of the
+    UI library migration: AntDesign Blazor's <Button> is gone, the
+    visual surface (primary / ghost / link / text / danger / block /
+    sm / lg) lives entirely in shell.css's .citus-button* rules.
 *@
 
-<Button Type="@AntType"
-        Size="@AntSize"
-        Danger="Danger"
-        Loading="Loading"
-        Disabled="Disabled"
-        Block="Block"
-        OnClick="HandleClick"
-        Class="@CssClass"
-        HtmlType="@HtmlType">
+<button type="@HtmlType"
+        class="@CssClass"
+        disabled="@(Disabled || Loading)"
+        @onclick="HandleClick">
     @if (LeadingIcon is not null)
     {
         <span class="citus-button__icon">
@@ -24,7 +19,7 @@
     {
         <span class="citus-button__label">@ChildContent</span>
     }
-</Button>
+</button>
 
 @code {
     [Parameter] public CitusButtonVariant Variant { get; set; } = CitusButtonVariant.Default;
@@ -49,33 +44,49 @@
 
     [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
 
-    private ButtonType AntType => Variant switch
-    {
-        CitusButtonVariant.Primary => ButtonType.Primary,
-        CitusButtonVariant.Ghost => ButtonType.Default,
-        CitusButtonVariant.Link => ButtonType.Link,
-        CitusButtonVariant.Text => ButtonType.Text,
-        _ => ButtonType.Default
-    };
-
-    private ButtonSize AntSize => Size switch
-    {
-        CitusButtonSize.Small => ButtonSize.Small,
-        CitusButtonSize.Large => ButtonSize.Large,
-        _ => ButtonSize.Default
-    };
-
     private string CssClass
     {
         get
         {
-            var baseClass = Variant == CitusButtonVariant.Ghost
-                ? "citus-button citus-button--ghost"
-                : "citus-button";
-            return string.IsNullOrEmpty(Class) ? baseClass : $"{baseClass} {Class}";
+            var classes = new List<string> { "citus-button" };
+
+            switch (Variant)
+            {
+                case CitusButtonVariant.Primary:
+                    classes.Add("citus-button--primary");
+                    break;
+                case CitusButtonVariant.Ghost:
+                    classes.Add("citus-button--ghost");
+                    break;
+                case CitusButtonVariant.Link:
+                    classes.Add("citus-button--link");
+                    break;
+                case CitusButtonVariant.Text:
+                    classes.Add("citus-button--text");
+                    break;
+            }
+
+            switch (Size)
+            {
+                case CitusButtonSize.Small:
+                    classes.Add("citus-button--sm");
+                    break;
+                case CitusButtonSize.Large:
+                    classes.Add("citus-button--lg");
+                    break;
+            }
+
+            if (Danger) classes.Add("citus-button--danger");
+            if (Block) classes.Add("citus-button--block");
+            if (Loading) classes.Add("citus-button--loading");
+            if (!string.IsNullOrEmpty(Class)) classes.Add(Class);
+
+            return string.Join(' ', classes);
         }
     }
 
     private Task HandleClick(MouseEventArgs args) =>
-        OnClick.HasDelegate ? OnClick.InvokeAsync(args) : Task.CompletedTask;
+        !Disabled && !Loading && OnClick.HasDelegate
+            ? OnClick.InvokeAsync(args)
+            : Task.CompletedTask;
 }
