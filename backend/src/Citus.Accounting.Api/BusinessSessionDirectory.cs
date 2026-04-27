@@ -69,6 +69,18 @@ public sealed class BusinessSessionDirectory
                     });
             }
 
+            // Persisted workflow returned no row for (UserId, ActiveCompanyId).
+            // The session may still be a recognised bootstrap / dev-config user
+            // whose IDs live in the in-memory directory but were never seeded
+            // into the deployed company-access tables. Probe the static
+            // directory; if it has an exact match, accept it. Otherwise
+            // reject with the persisted-membership message — that wording is
+            // still accurate, since the request hit the workflow first.
+            if (TryResolve(session, out var staticResolution, out _))
+            {
+                return ResolveResult.Accepted(staticResolution!);
+            }
+
             if (!_allowStaticFallback)
             {
                 return ResolveResult.Rejected(
