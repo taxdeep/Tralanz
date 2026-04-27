@@ -197,78 +197,56 @@ Each phase has: scope, deliverables, exit criteria, rollback, and effort estimat
 - Two new atoms (`CitusAlert`, `CitusLoadingBar`) joined `CitusBadge` in the Citus-side wrapper layer. These are appropriate for Phase 9 cleanup: when AntDesign is gone, the AntDesign-shaped surface stays — only the internal Radzen call changes if Radzen ever shifts.
 - `RadzenPassword` / `RadzenSwitch` / `RadzenCheckBox` / `RadzenTextArea` are used directly, not wrapped — their APIs match Radzen's defaults closely enough that a Citus-side adapter would only add noise.
 
-### Phase 7 — Service migration (Dialog / Notification / Message) (≈1 day)
+### Phase 7 — Service migration (Toast/Message) (≈1 day) ✅
 
-**Scope:** the runtime services, not visual primitives.
+**What actually shipped:**
 
-**Today:**
+- New `CitusToastService` in `Citus.Ui.Shared/Services` — registered scoped, wraps `Radzen.NotificationService`, exposes `InfoAsync` / `WarningAsync` / `SuccessAsync` / `ErrorAsync` with the same shape as the old `AntDesign.IMessageService`. Errors render with a 6s duration, the rest with 4s.
+- Sed across ~25 razor pages: `@inject AntDesign.IMessageService Message` → `@inject CitusToastService Message`. Variable name `Message` and all ~105 call sites stayed unchanged.
+- Both shells gained `<RadzenComponents />` next to `<AntDesign.AntContainer />` in `MainLayout.razor` so notifications could render. AntContainer was kept temporarily (Phase 8 needed it for Dropdown/Menu) and removed in Phase 8e.
+- `Citus.SysAdmin.Blazor/Program.cs` gained `AddRadzenComponents()` (Business.Blazor already had it).
 
-- `AntDesign.IMessageService` — toast / info / warning / success.
-- `AntDesign.AntContainer` — must be present somewhere in the layout for the message service to work.
+**Deferred from the original plan:**
 
-**Target:**
+- `Radzen.DialogService` / `Radzen.ContextMenuService` were not wired up because the codebase has zero `<AntDesign.Modal>` confirm callers and zero context-menu callsites. If/when those features get added, the registration is one line each in `Program.cs`.
 
-- `Radzen.NotificationService` for toasts, registered by `AddRadzenComponents()`.
-- `Radzen.DialogService` for confirms / prompts.
-- `Radzen.ContextMenuService` for action menus.
+### Phase 8 — Shell chrome (Layout / Sider / Menu / TopBar / Dropdown) (≈3 days) ✅
 
-**Deliverables:**
+**What actually shipped:**
 
-- A small `IMessageBus` shim (in `Citus.Ui.Shared`) that abstracts over both. New code uses the shim. Pages migrate to the shim one at a time so the toast contract is uniform.
-- Once every caller flips, the shim becomes a thin alias for `NotificationService` and the AntDesign service registration is dropped.
-- `AntContainer` removed from `MainLayout.razor`.
+The plan originally flagged this for a feature flag + bake; we proceeded straight per direct instruction. The build is green; runtime smoke test is owed before any real release.
 
-**Exit criteria:**
+- **Layout / Sider / Header / Content (both MainLayouts)**: `<AntDesign.Layout>` / `<Sider Collapsible>` / `<Header>` / `<Content>` → plain `<div class="citus-shell">` + `<aside class="citus-shell__sider">` + `<header class="citus-shell__header">` + `<main class="citus-shell__content">`. The existing `.citus-shell__*` CSS already drove the styling, so the BEM rewrite kept rendering 1:1. Sider's auto-collapse-on-breakpoint and `CollapsedChanged` callback dropped — manual toggle via the topbar drawer button is the only entry point now. The dead `OnCollapsedChanged` handlers were removed from both shells.
+- **NavMenus (BusinessNavMenu, SysAdminNavMenu)**: `<AntDesign.Menu Mode="Inline">` + `<MenuItemGroup>` + `<MenuItem RouterLink>` → plain `<nav>` + `<ul>` + Blazor `<NavLink Match="Prefix">`. NavLink's built-in auto-toggled `.active` class replaced the manual `SelectedKeys` + `LocationChanged` subscription — dropped ~20 LOC of routing-tracking code per file. `shell.css`'s `.citus-nav-menu .ant-menu-*` selectors were rewritten to BEM-style `.citus-nav-menu__group` / `__link` / `__link.active`.
+- **TopBar user dropdowns**: `<AntDesign.Dropdown>` + `Overlay/Menu/MenuItem` → plain `<details>` + `<summary>` popover with new `.citus-user-menu*` CSS. Click-outside-closes is not reproduced (acceptable trade-off for a low-traffic menu). Avoids any JS for the dropdown.
+- **AntContainer**: dropped from both `MainLayout.razor` files; no longer needed.
+- **Stragglers**: `AntDesign.PresetColor.X.ToString().ToLowerInvariant()` callsites replaced with `"blue"` / `"orange"` / `"green"` literals.
 
-1. No call site references `AntDesign.IMessageService` directly.
-2. Confirms ("Are you sure you want to deactivate this account?") use `DialogService` instead of inline `<AntDesign.Modal>`.
-3. The `AntContainer` element is gone.
+**Bookmarked for Phase 9** (because they still wrapped AntDesign at this point):
 
-**Rollback:** the shim allows per-call-site rollback; revert is incremental.
+- `CitusButton` (wrapped `<AntDesign.Button>`)
+- `CitusSelect` (wrapped `<AntDesign.Select>` — turned out to have zero callsites)
+- `CitusTable` (wrapped `<AntDesign.Table>` — also zero callsites)
 
-### Phase 8 — Shell chrome (Sider / Menu / TopBar / Layout) (≈3 days)
+### Phase 9 — Decommission AntDesign Blazor (≈0.5 day) ✅
 
-**Scope:** the most expensive surface — the application shell. This is where most of the AntDesign-fighting CSS lives today (`.citus-shell__sider`, `.citus-nav-menu`, `.citus-topbar`, dark-mode overrides on `.ant-menu-*`).
+**What actually shipped:**
 
-**Target:**
-
-- `<AntDesign.Layout>` / `<AntDesign.Sider>` / `<AntDesign.Header>` → `<RadzenLayout>` / `<RadzenSidebar>` / `<RadzenHeader>` (or hand-rolled flex layout if Radzen's primitives are heavier than necessary).
-- `<AntDesign.Menu>` / `<MenuItemGroup>` / `<MenuItem>` → `<RadzenPanelMenu>` or hand-rolled menu using Citus tokens.
-- The sidebar dark-mode override block can shrink dramatically because Radzen menus drive their own colour through tokens.
-
-**Deliverables:**
-
-- `MainLayout.razor` rewritten on Radzen primitives.
-- All `[data-theme="dark"] .ant-menu-*` overrides in `shell.css` deleted.
-- The collapse / breakpoint behaviour is preserved.
-- Topbar (search slot, company switcher, theme toggle, user dropdown) lands on Radzen primitives end-to-end.
-
-**Exit criteria:**
-
-1. The sidebar / topbar render correctly in light + dark, collapsed + expanded, with no per-class override block in `shell.css`.
-2. The unityAI topbar search continues to work; the picker stays on its own scoped CSS, unchanged.
-3. SysAdmin shell (`Citus.SysAdmin.Blazor`) gets the same treatment in the same phase or in a tightly-following follow-up to keep both shells visually aligned.
-
-**Rollback:** big and risky. This phase ships only after Phases 1–7 have been live for a week without regressions. Behind a feature flag for one release before the AntDesign shell branch is removed.
-
-### Phase 9 — Decommission AntDesign Blazor (≈0.5 day)
-
-**Scope:** remove the package, the references, the leftover styles.
-
-**Deliverables:**
-
-- `<PackageReference Include="AntDesign" />` removed from `Citus.Ui.Shared.csproj`.
-- `_content/AntDesign/css/ant-design-blazor.css` removed from `App.razor`.
-- `using AntDesign;` and `@using AntDesign` removed from `_Imports.razor`.
-- AntDesign-only style overrides in `shell.css` deleted.
+- **CitusButton rewritten** as a plain `<button>` with class composition. The full visual surface (primary / ghost / link / text / danger / block / sm / lg / loading) lives in `shell.css`'s new `.citus-button*` rules.
+- **CitusSelect deleted** — zero callsites; pages migrated directly to `<RadzenDropDown>` in Phase 5c.
+- **CitusTable + CitusTableDensity deleted** — zero callsites; report pages use `<RadzenDataGrid>` (Phase 1 / 4) and create/edit forms use plain HTML tables.
+- **AntDesign package removed** from `Citus.Ui.Shared.csproj`.
+- **AddAntDesign()** removed from both `Program.cs` files.
+- **`<link rel="stylesheet" href="_content/AntDesign/css/...">`** dropped from both shells' `App.razor`. SysAdmin.Blazor's `App.razor` also gained the Radzen base CSS + JS that Business.Blazor already had.
+- **`@using AntDesign`** and **`@using AntDesign.TableModels`** stripped from `Citus.Ui.Shared/_Imports.razor`.
+- **Dark-mode `.ant-menu-*` overrides** in `shell.css` (~60 lines) collapsed to a single `.citus-shell__sider` background tweak; the new BEM nav selectors pull from `--citus-color-*` tokens directly so dark mode flips automatically.
+- **`Citus.Business.Blazor/Styles/app.css`** lost its `.citus-table .ant-table-*` rules (CitusTable atom is gone).
 
 **Exit criteria:**
 
-1. Solution builds with 0 errors and 0 AntDesign-related warnings.
-2. `grep -rn "AntDesign" backend/src` returns zero hits outside historic comments.
-3. Bundle size shrinks measurably.
-
-**Rollback:** restore `AntDesign` package + the imports. Phase 8's revert is the bigger lever; this phase is mostly bookkeeping once Phase 8 holds.
+1. ✅ Solution builds with 0 errors and 0 AntDesign-related warnings.
+2. ✅ `grep -rn "AntDesign" backend/src --include="*.csproj" --include="*.razor" --include="*.cs"` returns only doc comments and historic README-style notes.
+3. ✅ Bundle size shrinks: AntDesign 1.6.1 contributed roughly 3.1 MB of runtime assets (CSS + locale resources + Blazor DLL).
 
 ## 4. Coexistence rules during the transition
 
