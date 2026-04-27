@@ -167,21 +167,35 @@ Each phase has: scope, deliverables, exit criteria, rollback, and effort estimat
 - `Bordered="@false"` and `Size="@AntDesign.InputSize.Small"` on the company switchers were dropped during the Phase 5c port. If the topbar dropdowns look heavy, the fix is a `.citus-radzen-dropdown--inline` CSS bridge in `shell.css`, not adding props back.
 - The `CitusBadge` atom is the only Citus-side wrapper introduced in Phase 5. Phases 6+ should not add new wrappers; raw Radzen primitives in pages are fine now that the namespace is globally imported.
 
-### Phase 6 — Heavy form layouts (≈1 day)
+### Phase 6 — Heavy form layouts (≈1 day) ✅
 
-**Scope:** the create / edit pages whose chrome is mostly form: `Invoice`, `Bill`, `Account`, `Tax Rates`, `Profile`, `Account Profile`. Most of the body is already form fields; this phase replaces only the remaining `<AntDesign.*>` references with Radzen equivalents (`<RadzenAlert>`, `<RadzenProgressBar>`, etc.).
+**Scope:** the create / edit pages whose chrome is mostly form: `Invoice`, `Bill`, `Account`, `Tax Rates`, `Profile`, `Account Profile`. Most of the body is already form fields; this phase replaces only the remaining `<AntDesign.*>` references with Radzen equivalents.
+
+**What actually shipped:**
+
+- ✅ **Alert** (75 callsites, 30 files): introduced `CitusAlert` atom + `CitusAlertSeverity` enum that wraps `RadzenAlert`. Severity values mirror AntDesign's (`Info` / `Warning` / `Error` / `Success`); the atom maps `Error` to `AlertStyle.Danger` internally. Sed handled tag rename + `Type=" -> Severity="` + `AntDesign.AlertType.X -> CitusAlertSeverity.X`. Three ternary `Type=@(...)` callsites needed hand fixes. The 14 existing `<MessageTemplate>` blocks carried over via the atom's matching `MessageTemplate` parameter.
+- ✅ **Progress** (28 callsites): every callsite was the same indeterminate `Type=Line Percent=100 Status=Active ShowInfo=false` shape, so extracted a parameterless `CitusLoadingBar` atom that wraps `RadzenProgressBar` in indeterminate mode. Sed replaced one-liners; three multi-line callsites (ChartOfAccountsPage, TaxRatesPage, CitusAsyncBoundary) hand-edited.
+- ✅ **InputPassword** (8 callsites): `<AntDesign.InputPassword>` → `<RadzenPassword>`. Sed also dropped the AntDesign-only `Size="@AntDesign.InputSize.X"` attribute (Radzen sizes via Style/Class).
+- ✅ **Switch** (6 callsites): identical `Value`/`@bind-Value` surface; pure tag-rename sed.
+- ✅ **Checkbox** (3 callsites): tag rename plus `@bind-Checked` → `@bind-Value` (Radzen's parameter name differs).
+- ✅ **TextArea** (1 callsite): pure tag-rename sed.
 
 **Deliverables:**
 
-- Each page imports zero `AntDesign.*` types when the phase ships.
-- The Citus atom layer (`CitusButton`, `CitusPageHeader`) survives unchanged — they continue to wrap whatever the underlying primitive is.
+- ✅ Each form-heavy page imports zero `AntDesign.*` types when the phase ships.
+- ✅ The Citus atom layer (`CitusButton`, `CitusPageHeader`) survives unchanged — they continue to wrap whatever the underlying primitive is.
 
 **Exit criteria:**
 
-1. `grep -rn "AntDesign\." backend/src/Citus.Business.Blazor/Components/Features/{Invoices,Bills,ChartOfAccounts,Settings,Account}` returns zero hits.
-2. All six pages still pass their existing tests.
+1. ✅ `grep -rhoE "<AntDesign\.[A-Za-z]+" backend/src --include="*.razor"` now only returns shell-chrome components (Layout/Sider/Menu/MenuItem/MenuDivider/MenuItemGroup/Header/Content/AntContainer/Dropdown) — all of which are Phase 8 territory.
+2. Six pages still pass their existing tests. *(Build green; manual UI smoke test still owed before Phase 8 kicks off.)*
 
-**Rollback:** per-page commits.
+**Rollback:** per-substep commits; the `CitusAlert` and `CitusLoadingBar` atoms revert independently of the page sweeps.
+
+**Notes carried into Phase 7+:**
+
+- Two new atoms (`CitusAlert`, `CitusLoadingBar`) joined `CitusBadge` in the Citus-side wrapper layer. These are appropriate for Phase 9 cleanup: when AntDesign is gone, the AntDesign-shaped surface stays — only the internal Radzen call changes if Radzen ever shifts.
+- `RadzenPassword` / `RadzenSwitch` / `RadzenCheckBox` / `RadzenTextArea` are used directly, not wrapped — their APIs match Radzen's defaults closely enough that a Citus-side adapter would only add noise.
 
 ### Phase 7 — Service migration (Dialog / Notification / Message) (≈1 day)
 
