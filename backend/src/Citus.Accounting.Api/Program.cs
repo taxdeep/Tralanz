@@ -118,6 +118,14 @@ builder.Services.AddScoped<IUnitOfWork, PostgresUnitOfWork>();
 builder.Services.AddScoped<IPostingValidator, DefaultPostingValidator>();
 builder.Services.AddScoped<ITaxEngine, NullTaxEngine>();
 builder.Services.AddScoped<IFxResolutionService, LocalFirstFxResolutionService>();
+builder.Services.AddSingleton<IFxRateCacheRepository, PostgresFxRateCacheRepository>();
+builder.Services.AddScoped<IRecommendedFxRateService, LocalFirstRecommendedFxRateService>();
+builder.Services.AddHttpClient<IFrankfurterFxRateClient, FrankfurterFxRateClient>(client =>
+{
+    client.BaseAddress = new Uri(FrankfurterFxRateClient.ProviderBaseUrl, UriKind.Absolute);
+    client.Timeout = TimeSpan.FromSeconds(8);
+    client.DefaultRequestHeaders.Add("User-Agent", "Citus.Accounting.Api/1.0");
+});
 builder.Services.AddScoped<IPostingFragmentBuilder, AccountingPostingFragmentBuilder>();
 builder.Services.AddScoped<IJournalAggregator, DefaultJournalAggregator>();
 builder.Services.AddScoped<IJournalEntryWriter, PostgresJournalEntryWriter>();
@@ -287,6 +295,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
+    var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -304,6 +313,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await bootstrapFixtures.EnsureAsync(CancellationToken.None);
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
+    await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
     await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -644,6 +654,53 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+    });
+
+// -----------------------------------------------------------------------
+// Recommended FX rate.
+//
+// Returns the suggested per-document FX rate for the given posting date,
+// looking up D-1 in the global fx_rates_daily cache and falling through
+// to a live frankfurter call (and from there to a most-recent-business-
+// close cache lookup if frankfurter is unreachable).
+//
+// The recommendation is what the UI pre-fills into a document's fx_rate
+// field. The user can override; the override is what posts. This
+// endpoint is read-only from the caller's perspective even though it
+// may write to the cache as a side effect.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/fx-rates/recommended",
+    async (
+        DateOnly date,
+        string baseCode,
+        string quoteCode,
+        IRecommendedFxRateService rateService,
+        CancellationToken cancellationToken) =>
+    {
+        if (string.IsNullOrWhiteSpace(baseCode) || string.IsNullOrWhiteSpace(quoteCode))
+        {
+            return Results.BadRequest(new { message = "baseCode and quoteCode are required." });
+        }
+
+        var rate = await rateService.GetAsync(date, baseCode, quoteCode, cancellationToken);
+        if (rate is null)
+        {
+            return Results.NotFound(new
+            {
+                message = $"No recommended FX rate available for {baseCode}->{quoteCode} on {date:yyyy-MM-dd}."
+            });
+        }
+
+        return Results.Ok(new
+        {
+            rate.RateDate,
+            rate.BaseCurrencyCode,
+            rate.QuoteCurrencyCode,
+            rate.Rate,
+            rate.Source,
+            rate.IsStale
+        });
     });
 
 accounting.MapGet(
