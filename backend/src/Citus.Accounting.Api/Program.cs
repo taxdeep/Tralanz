@@ -3476,6 +3476,15 @@ accounting.MapPost(
             return Results.BadRequest(new { message = validation });
         }
 
+        // Default the account currency to the company's base currency when
+        // the user leaves the field blank. The Blazor form's "Defaults to
+        // USD" placeholder describes this behaviour; without the API-side
+        // default it would have stored NULL, which downstream FX / Trial
+        // Balance code handles less cleanly than an explicit code.
+        var requestedCurrency = string.IsNullOrWhiteSpace(request.CurrencyCode)
+            ? sessionAccessor.CurrentResolution?.ActiveCompany.BaseCurrencyCode
+            : request.CurrencyCode.Trim().ToUpperInvariant();
+
         try
         {
             var record = await store.CreateAsync(
@@ -3485,7 +3494,7 @@ accounting.MapPost(
                     Name: request.Name!.Trim(),
                     RootType: request.RootType!.Trim().ToLowerInvariant(),
                     DetailType: request.DetailType?.Trim(),
-                    CurrencyCode: request.CurrencyCode?.Trim(),
+                    CurrencyCode: requestedCurrency,
                     AllowManualPosting: request.AllowManualPosting ?? true,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
@@ -3497,7 +3506,21 @@ accounting.MapPost(
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23503")
         {
-            return Results.BadRequest(new { message = $"Currency '{request.CurrencyCode}' is not in the platform currency catalog." });
+            // 23503 = foreign-key violation. The accounts table has multiple
+            // FKs (company_id -> companies, currency_code -> currency_catalog)
+            // — surface the specific constraint name so the operator can act
+            // on it instead of being misled by a generic "Currency" message.
+            var constraint = pgEx.ConstraintName ?? "(unknown)";
+            var hint = constraint.Contains("currency", StringComparison.OrdinalIgnoreCase)
+                ? $"Currency '{requestedCurrency}' is not in the platform currency catalog."
+                : constraint.Contains("company", StringComparison.OrdinalIgnoreCase)
+                    ? $"Active company '{session.ActiveCompanyId:D}' is not present in the persisted companies table — provision the company through the SysAdmin First-Company Wizard or enable bootstrap fixtures in this environment."
+                    : $"A foreign-key reference is missing for this account row.";
+            return Results.BadRequest(new
+            {
+                message = hint,
+                constraint = constraint
+            });
         }
     });
 
@@ -3519,6 +3542,12 @@ accounting.MapPut(
             return Results.BadRequest(new { message = validation });
         }
 
+        // Same blank-currency default as the POST path, for consistency
+        // when an operator clears the field on edit.
+        var requestedCurrency = string.IsNullOrWhiteSpace(request.CurrencyCode)
+            ? sessionAccessor.CurrentResolution?.ActiveCompany.BaseCurrencyCode
+            : request.CurrencyCode.Trim().ToUpperInvariant();
+
         try
         {
             var updated = await store.UpdateAsync(
@@ -3529,7 +3558,7 @@ accounting.MapPut(
                     Name: request.Name!.Trim(),
                     RootType: request.RootType!.Trim().ToLowerInvariant(),
                     DetailType: request.DetailType?.Trim(),
-                    CurrencyCode: request.CurrencyCode?.Trim(),
+                    CurrencyCode: requestedCurrency,
                     AllowManualPosting: request.AllowManualPosting ?? true,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
@@ -3546,7 +3575,17 @@ accounting.MapPut(
         }
         catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23503")
         {
-            return Results.BadRequest(new { message = $"Currency '{request.CurrencyCode}' is not in the platform currency catalog." });
+            var constraint = pgEx.ConstraintName ?? "(unknown)";
+            var hint = constraint.Contains("currency", StringComparison.OrdinalIgnoreCase)
+                ? $"Currency '{requestedCurrency}' is not in the platform currency catalog."
+                : constraint.Contains("company", StringComparison.OrdinalIgnoreCase)
+                    ? $"Active company '{session.ActiveCompanyId:D}' is not present in the persisted companies table — provision the company through the SysAdmin First-Company Wizard or enable bootstrap fixtures in this environment."
+                    : $"A foreign-key reference is missing for this account row.";
+            return Results.BadRequest(new
+            {
+                message = hint,
+                constraint = constraint
+            });
         }
     });
 
