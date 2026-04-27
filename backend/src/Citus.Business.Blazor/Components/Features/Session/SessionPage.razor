@@ -50,6 +50,7 @@
         <thead>
             <tr>
                 <th>Company</th>
+                <th>Id</th>
                 <th>Base currency</th>
                 <th>Multi-currency</th>
             </tr>
@@ -61,6 +62,7 @@
                     <td>
                         @company.CompanyName <span class="text-fg-muted">(@company.CompanyCode)</span>
                     </td>
+                    <td><span class="citus-inline-code">@FormatGuid(company.Id)</span></td>
                     <td>@company.BaseCurrencyCode</td>
                     <td>@(company.MultiCurrencyEnabled ? "Enabled" : "Disabled")</td>
                 </tr>
@@ -82,16 +84,31 @@
         new("Display name", ShellState.User.DisplayName),
         new("Username", ShellState.User.Username),
         new("Email", ShellState.User.Email),
-        new("Roles", string.Join(", ", ShellState.User.Roles))
+        // Surface the underlying Guid so support / ops can confirm the
+        // session-header pipeline is hydrating real identity (not Guid.Empty).
+        new("User Id", FormatGuid(ShellState.User.Id)),
+        new("Roles", string.Join(", ", ShellState.User.Roles)),
+        new("Session token", string.IsNullOrEmpty(ShellState.SessionToken)
+            ? "(none)"
+            : $"{ShellState.SessionToken[..Math.Min(8, ShellState.SessionToken.Length)]}… ({(ShellState.IsBootstrapSession ? "bootstrap" : "real")})")
     ];
 
     private IReadOnlyList<FactRow> _companyFacts =>
     [
         new("Company", $"{ShellState.ActiveCompany.CompanyName} ({ShellState.ActiveCompany.CompanyCode})"),
+        // Same intent as User Id — verify the active-company-id sent to
+        // the API in headers / query strings is a real Guid.
+        new("Company Id", FormatGuid(ShellState.ActiveCompany.Id)),
         new("Base currency", ShellState.ActiveCompany.BaseCurrencyCode),
         new("Multi-currency", ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled"),
+        new("Read-only", ShellState.IsCompanyReadOnly ? "Yes" : "No"),
         new("Maintenance", ShellState.MaintenanceState.Enabled ? ShellState.MaintenanceState.Message : "Disabled")
     ];
+
+    private static string FormatGuid(Guid value) =>
+        value == Guid.Empty
+            ? "(empty — Guid.Empty, not hydrated)"
+            : value.ToString("D");
 
     private sealed record class FactRow(string Label, string Value);
 }
