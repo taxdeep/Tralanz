@@ -1,9 +1,28 @@
+/*
+ * SysAdmin LoginPage card chrome.
+ *
+ * §20.4 token-driven theming: every color comes from --citus-color-*
+ * tokens so light/dark mode flips uniformly. The previous version
+ * hard-coded #ffffff / #f8fafc / #0f172a everywhere, which left the
+ * card light while the form inputs flipped dark via the token-driven
+ * .citus-input / Radzen rules — that's the inversion the user reported.
+ *
+ * One intentional exception: .sys-login__bar keeps a dark navy
+ * background in both modes. It's a brand element ("SysAdmin / PlatformOps"
+ * heading), and the contrast between the dark bar and whatever the
+ * card body is reinforces "this is a governance-only surface, not the
+ * normal Business shell". A second-tier brand bar follows the convention
+ * used by financial workstation logins (Bloomberg, FactSet, Refinitiv).
+ */
+
 .sys-login {
     width: min(660px, calc(100vw - 2rem));
     margin-inline: auto;
     overflow: hidden;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    background: #ffffff;
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg-elevated);
+    border-radius: var(--citus-radius-md);
+    box-shadow: var(--citus-shadow-1);
 }
 
 .sys-login__bar {
@@ -12,6 +31,7 @@
     justify-content: space-between;
     gap: 1rem;
     padding: 0.72rem 1rem;
+    /* Brand-locked dark; intentionally not token-bound. See header note. */
     background: #111827;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -30,37 +50,43 @@
 }
 
 .sys-login__body {
-    padding: 1.65rem 1rem 1.35rem;
+    padding: 1.25rem 1rem 1rem;
 }
 
 .sys-login__crest {
     display: grid;
-    width: 104px;
-    height: 104px;
-    margin: 0 auto 1.3rem;
+    width: 96px;
+    height: 96px;
+    margin: 0 auto 1rem;
     place-items: center;
-    border-radius: 28px;
+    border-radius: 24px;
     color: #0f172a;
     background:
         radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.8), transparent 28%),
         linear-gradient(135deg, #7ab6d9, #6fcf97);
-    box-shadow: 0 18px 28px rgba(15, 23, 42, 0.16);
+    box-shadow: 0 14px 24px rgba(15, 23, 42, 0.16);
 }
 
 .sys-login__title {
-    color: #0f172a;
+    color: var(--citus-color-fg);
     font-weight: 700;
+    font-size: var(--citus-text-xl);
+    margin: 0;
+}
+
+.sys-login__heading {
+    text-align: left;
 }
 
 .sys-login__rule {
     height: 1px;
     margin: 1rem 0 0;
-    background: rgba(15, 23, 42, 0.18);
+    background: var(--citus-color-border);
 }
 
 .sys-login__primary-action {
     margin-top: 0.45rem;
-    min-height: 44px;
+    min-height: 40px;
     font-weight: 700;
     letter-spacing: 0.03em;
 }
@@ -70,12 +96,19 @@
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
-    padding: 1rem;
-    background: #f8fafc;
-    border-top: 1px solid rgba(15, 23, 42, 0.1);
+    padding: 0.85rem 1rem;
+    background: var(--citus-color-bg-muted);
+    border-top: 1px solid var(--citus-color-border);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
 }
 
 .sys-login__switch-link {
-    color: #0e7490;
-    font-size: 0.82rem;
+    color: var(--citus-color-primary);
+    font-size: var(--citus-text-sm);
+    text-decoration: none;
+}
+
+.sys-login__switch-link:hover {
+    text-decoration: underline;
 }
