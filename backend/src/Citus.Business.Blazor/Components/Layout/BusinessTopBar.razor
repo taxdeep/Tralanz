@@ -8,6 +8,8 @@
     later phases.
 *@
 
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 @inject NavigationManager NavigationManager
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 @inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
@@ -43,7 +45,15 @@
         }
     </div>
 
-    <div class="citus-topbar__spacer"></div>
+    <div class="citus-topbar__search">
+        <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                           UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                           Context="@SearchScopeContext.GlobalTopbar"
+                           Placeholder="Search anything…"
+                           Take="8"
+                           SourceRoute="@NavigationManager.Uri"
+                           OnOptionSelected="OnGlobalSearchSelected" />
+    </div>
 
     <div class="citus-topbar__actions">
         <ThemeToggle />
@@ -115,6 +125,20 @@
     {
         var suffix = company.IsReadOnly ? " · read-only" : string.Empty;
         return $"{company.CompanyName} ({company.CompanyCode}){suffix}";
+    }
+
+    private void OnGlobalSearchSelected(UnitySearchPickerOption option)
+    {
+        // Trust the backend-provided NavigationHref; the unitysearch
+        // policy registry already enforced company / permission scope
+        // before this row reached the client. The picker's usage event
+        // (select) has already been fire-and-forgotten by the picker.
+        if (string.IsNullOrWhiteSpace(option.NavigationHref))
+        {
+            return;
+        }
+
+        NavigationManager.NavigateTo(option.NavigationHref);
     }
 
     private async Task OnCompanyChangedAsync(Guid companyId)

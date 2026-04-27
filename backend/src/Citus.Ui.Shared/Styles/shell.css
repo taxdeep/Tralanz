@@ -743,3 +743,61 @@
     padding: 0 var(--citus-space-1);
     border-radius: var(--citus-radius-sm);
 }
+
+/* ---------- Dark-mode sidebar contrast overrides ----------
+   Scoped to data-theme="dark" so global tokens stay untouched.
+   The default fg-muted / fg-subtle work fine in light mode but read as
+   illegible greys against the elevated dark sider; bump them locally. */
+
+[data-theme="dark"] .citus-shell__sider {
+    background: oklch(18% 0.012 254) !important;
+}
+
+[data-theme="dark"] .citus-nav-menu .ant-menu-item-group-title {
+    color: oklch(75% 0.014 254) !important;
+    font-weight: 500;
+}
+
+[data-theme="dark"] .citus-nav-menu .ant-menu-item {
+    color: oklch(88% 0.008 254) !important;
+}
+
+[data-theme="dark"] .citus-nav-menu .ant-menu-item .citus-icon {
+    opacity: 0.9;
+}
+
+[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected .citus-icon,
+[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .citus-icon {
+    opacity: 1;
+}
+
+/* ---------- Top-bar global search slot ----------
+   The middle slot of citus-topbar hosts the unityAI-aware UnitySearch
+   picker (context = global.topbar). Constrain width and centre it so
+   long company names + actions on either side stay anchored. */
+
+.citus-topbar__search {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: center;
+    padding: 0 var(--citus-space-4);
+    min-width: 0;
+}
+
+.citus-topbar__search > .unity-picker {
+    width: 100%;
+    max-width: 480px;
+}
+
+[data-theme="dark"] .citus-topbar__search .unity-picker__control {
+    background: oklch(22% 0.014 254);
+    border-color: oklch(34% 0.016 254);
+}
+
+[data-theme="dark"] .citus-topbar__search .unity-picker__input {
+    color: oklch(92% 0 0);
+}
+
+[data-theme="dark"] .citus-topbar__search .unity-picker__input::placeholder {
+    color: oklch(60% 0.012 254);
+}
