@@ -50,6 +50,13 @@
                     <label class="text-sm font-medium block mb-1">Amount received</label>
                     <RadzenNumeric TValue="decimal" @bind-Value="_amount" Min="0" Style="width: 100%;" />
                 </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
+                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                  QuoteCurrencyCode="@_currency"
+                                  @bind-Rate="_fxRate" />
+                </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Reference / cheque number / wire memo" />
@@ -147,6 +154,7 @@
     private DateTime? _date = DateTime.Today;
     private string _customerIdInput = string.Empty;
     private string _currency = string.Empty;
+    private decimal? _fxRate;
     private decimal _amount;
     private string _memo = string.Empty;
     private readonly List<SettlementApplicationDraft> _applications = new() { new SettlementApplicationDraft() };
@@ -186,6 +194,7 @@
                 CustomerId = customerId,
                 Amount = _amount,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+                FxRate = _fxRate,
                 Memo = _memo.Trim(),
                 Applications = _applications.ToArray()
             };

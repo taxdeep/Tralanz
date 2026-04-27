@@ -65,8 +65,11 @@
                     @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
                          !string.IsNullOrWhiteSpace(_currency.Trim()))
                     {
-                        <label class="text-sm font-medium block mb-1">FX rate (advisory)</label>
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_exchangeRate" Min="0.000001m" Style="width: 100%;" />
+                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_exchangeRate" />
                     }
                 </div>
                 <div class="md:col-span-3">

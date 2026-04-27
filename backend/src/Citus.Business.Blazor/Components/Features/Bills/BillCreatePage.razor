@@ -58,6 +58,13 @@
                     <label class="text-sm font-medium block mb-1">Transaction currency</label>
                     <CitusInput TValue="string" @bind-Value="_currency" Placeholder="USD" />
                 </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                  QuoteCurrencyCode="@_currency"
+                                  @bind-Rate="_fxRate" />
+                </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
@@ -121,6 +128,13 @@
                     <tr><th>Lines</th><td>@_lines.Count</td></tr>
                     <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
                     <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
+                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        <tr>
+                            <th>FX rate</th>
+                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
+                        </tr>
+                    }
                 </tbody>
             </table>
         </section>
@@ -151,6 +165,7 @@
     private DateTime? _dueDate = DateTime.Today.AddDays(30);
     private string _vendorIdInput = string.Empty;
     private string _currency = string.Empty;
+    private decimal? _fxRate;
     private string _memo = string.Empty;
     private readonly List<DocumentLineDraft> _lines = new() { new DocumentLineDraft { Quantity = 1m } };
     private bool _isSubmitting;
@@ -187,6 +202,7 @@
                 DueDate = _dueDate.HasValue ? DateOnly.FromDateTime(_dueDate.Value.Date) : null,
                 VendorId = vendorId,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+                FxRate = _fxRate,
                 Memo = _memo.Trim(),
                 Lines = _lines.ToArray()
             };

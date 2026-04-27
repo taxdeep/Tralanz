@@ -79,6 +79,14 @@ public sealed record InvoiceDraft
     public DateOnly? DueDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    /// <summary>
+    /// Per-document FX rate (transaction → company base currency). Pre-filled
+    /// with the recommended D-1 close rate from <c>fx_rates_daily</c> /
+    /// frankfurter, but the user can override (credit-card statement rate,
+    /// hand-negotiated conversion, etc.). Null when the transaction
+    /// currency equals the base currency.
+    /// </summary>
+    public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
     public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
 }
@@ -89,6 +97,8 @@ public sealed record BillDraft
     public DateOnly? DueDate { get; init; }
     public Guid? VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    /// <summary>Per-document FX rate (transaction → base). Same semantics as <see cref="InvoiceDraft.FxRate"/>.</summary>
+    public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
     public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
 }
@@ -99,6 +109,8 @@ public sealed record ReceivePaymentDraft
     public Guid? CustomerId { get; init; }
     public decimal Amount { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    /// <summary>Per-payment FX rate (transaction → base). Used when the customer pays in a non-base currency; bank deposits at a different rate than the originating invoice carry that delta into FX gain/loss.</summary>
+    public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
     public IReadOnlyList<SettlementApplicationDraft> Applications { get; init; } = Array.Empty<SettlementApplicationDraft>();
 }
@@ -109,6 +121,8 @@ public sealed record PayBillDraft
     public Guid? VendorId { get; init; }
     public decimal Amount { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    /// <summary>Per-payment FX rate (transaction → base). Mirrors <see cref="ReceivePaymentDraft.FxRate"/>; matters most for credit-card / bank-converted payments where the bank's rate differs from the bill's posted rate.</summary>
+    public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
     public IReadOnlyList<SettlementApplicationDraft> Applications { get; init; } = Array.Empty<SettlementApplicationDraft>();
 }
