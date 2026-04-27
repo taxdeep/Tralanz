@@ -51,7 +51,7 @@ Citus aims to provide a system that is:
 - stable enough for long-term expansion
 
 ### 1.4 核心技术栈（ABP 治理版，适合 AI 主导开发）
-- 框架：.NET 11 + C# 15（当前按 preview SDK / preview language features 基线推进）(ASP.NET Core)
+- 框架：.NET 10 GA + C# 14（ASP.NET Core）。曾短暂尝试 .NET 11 preview，但因第三方组件库的兼容性 / 稳定性问题已主动回退到 .NET 10 GA；下一次目标版本评估应以 .NET 11 GA 为基线，而不是 preview。
 - **总体架构**：**Modular Monolith + DDD（领域驱动设计） + CQRS（读写分离） + Vertical Slice Architecture（按功能切片）**
 
   - Citus 自研模块负责 accounting truth、posting/tax/FX/reconciliation 等核心业务真相。
@@ -65,14 +65,18 @@ Citus aims to provide a system that is:
   - 写操作（Commands）：统一使用 EF Core，负责事务、Change Tracking、迁移、领域验证。
   - 读操作（Queries）：默认使用 EF Core（AsNoTracking / Projection / Raw SQL）。
   - 只有在报表、大分页、复杂聚合、性能热点被确认后，再引入 Dapper。
-- 前端：Blazor Web App + Ant Design Blazor（C# 全栈基线）
+- 前端：Blazor Web App (Interactive Server) + `Radzen.Blazor` 5.x（C# 全栈基线）
   - 保持 C# 全栈，最大化模型共享、类型安全和维护性，降低学习与长期维护成本。
-  - 优先服务内部 ERP / Back Office 场景
-  - 首期不把 React/Vue + TypeScript 作为主路线。若未来需要独立客户门户、公开站点、移动端配套或前端团队独立演进，再评估 React/Vue + TypeScript。
-
-  - `AR` 正式采用 `Ant Design Blazor` 作为主组件体系，`Tailwind CSS` 作为辅助布局/间距/密度样式层，图标统一采用 `Tabler Icons`。
-  - `AP` 在进入下一轮正式业务面交付时，应遵循与 `AR` 相同的 UI/UX 技术基线，避免 AR/AP 在 operator-facing surface 上出现两套长期并存的设计语言。
-  - 该决定优先适用于 AR/AP 新交付面与重做面，不要求一次性重写 GL、Company Setup、Inventory、SysAdmin 或其他既有页面。
+  - 优先服务内部 ERP / Back Office 场景。
+  - **组件库基线统一**：全部 operator-facing 页面（AR、AP、GL、Company Setup、Inventory、Reports、SysAdmin、Shell chrome）都采用 `Radzen.Blazor`。先前的 `AntDesign Blazor` 已通过 9 阶段迁移完全退场，详见 [`UI_LIBRARY_MIGRATION_PLAN.md`](./UI_LIBRARY_MIGRATION_PLAN.md)。
+  - 辅助样式 / 图标：`Tailwind CSS` 作为布局 / 间距 / 密度样式层，`Tabler Icons` 为统一图标体系；token 系统住在 `tokens.css`（`--citus-color-*`），所有组件桥接到该 token 体系，dark mode 通过 `.dark` / `[data-theme="dark"]` 自动翻转。
+  - Citus-side atoms（`CitusButton`、`CitusInput`、`CitusBadge`、`CitusAlert`、`CitusLoadingBar`、`CitusToastService` 等）保留 AntDesign 原有的 API 形态，对内桥接 Radzen primitives，确保 callsite 在跨库迁移时零改动。
+  - **混合前端栈条款（默认禁用、按需开启）**：默认不把 `React/Vue + TypeScript` 作为主路线。但允许 **按受控方式** 在自包含的整块 surface（不是模块里的一页）上引入 React + TypeScript，前提是：
+    - 该 surface 存在 Radzen.Blazor 当前版本验证后确实补不上的能力差距（例如交互式透视表、同屏多 viz 联动仪表盘、电子表格级编辑工作台等）；
+    - 必须以 iframe 或 React-island（JS interop 挂载到 Blazor 宿主组件）方式集成，session token / active company / 主题通过显式 bridge 共享；
+    - 必须复用 `--citus-color-*` token 体系，不允许引入第二套设计系统；
+    - 路由必须双向：从 Blazor 壳深链到 React surface 再返回不得破坏 session。
+    决策时必须在该 surface 的设计文档中记录"为何 Radzen 当前版本无法满足"，便于后续 Radzen 升级后回收 React 部分。当前 Citus 没有任何已批准的 React+TS surface；该条款是预留给未来真有显著差距时使用，不是路线图。
 - 身份认证 / 账户：借鉴 ABP 的权限与多租户理念
   - 实现细粒度权限系统（支持 AR、AP、Reports、Approval 等领域权限）。
   - 严格的多公司隔离（Company Isolation）：每个会话必须有明确的 active_company_id，所有数据操作必须强制过滤。
@@ -294,8 +298,10 @@ User-facing business surfaces such as Journal Entry、Chart of Accounts、Invoic
 - Blob Storing
 - Text Template Management
 - Shared Cache Infrastructure
-- AI Assist Platform
-- SmartPicker Acceleration
+- **unityAI Platform** — Layer B in [`AI_PRODUCT_ARCHITECTURE.md`](./AI_PRODUCT_ARCHITECTURE.md). Provider abstraction, prompt registry, model router, structured-output validation, decision-trace logging, feature flags. Concrete project namespace: `Citus.Modules.UnityAi.Gateway.*`.
+- **UnitySearch Picker + Acceleration** — legal-candidate entry surface for controlled selection (vendors, customers, accounts, products, tax codes, payment accounts) plus the acceleration / ranking / usage-signal layer. Concrete project namespace: `Citus.Modules.UnitySearch.*`.
+- **AI Learning Module** — Layer C. Behavior events, usage stats, pair stats, learning profiles, ranking hints. Concrete project namespace: `Citus.Modules.Learning.*` (planned).
+- **AI Output Surfaces** — Layer D. Dashboard widget suggestions, Action Center, copilot drafts, OCR output, NL command UI. Concrete project namespaces: `Citus.Modules.Dashboard.*`, `Citus.Modules.ActionCenter.*`, `Citus.Modules.Copilot.*`, `Citus.Modules.DocumentAi.*` (planned).
 - Report Acceleration
 
 #### Connector Layers
@@ -364,11 +370,21 @@ Approved root engines:
 
 Approved root infrastructure areas:
 
-- `AIAssist`
 - `Notifications`
 - `Caching`
-- `SmartPicker`
 - `Reporting`
+
+Approved root AI / picker areas (per [`AI_PRODUCT_ARCHITECTURE.md`](./AI_PRODUCT_ARCHITECTURE.md), the four-layer model):
+
+- `UnityAi` — Layer B unityAI Gateway: provider abstraction, prompt registry, model router, structured-output validation, decision-trace logs. Concrete: `Citus.Modules.UnityAi.Gateway.*`.
+- `UnitySearch` — picker + acceleration: legal candidate resolution, ranking, recent / hot / pair stats. Concrete: `Citus.Modules.UnitySearch.*`. **Replaces the legacy abstract name `SmartPicker`.**
+- `Learning` — Layer C AI Learning Module: behavior events, usage stats, learning profiles, ranking hints. Planned.
+- `Dashboard` — Layer D Dashboard Intelligence surface. Planned.
+- `ActionCenter` — Layer D rule + AI-assisted task list. Planned.
+- `Copilot` — Layer D NL command + draft builder. Planned.
+- `DocumentAi` — Layer D OCR / extraction pipeline. Planned.
+
+> The legacy abstract names `AIAssist` and `SmartPicker` are retired. Existing references in older specs / commit messages should be read as `UnityAi` and `UnitySearch` respectively. Do not introduce new code under the legacy names.
 
 Mapping rules:
 
@@ -379,7 +395,7 @@ Mapping rules:
 - Provider-agnostic payment request, hosted payment session, gateway transaction normalization, gateway refund/dispute handling, and payment-channel orchestration belong to `PaymentGateway`.
 - Company-level controlled areas such as Profile, Templates, Sales Tax, Numbering, Notifications, Security, Currencies, Books, Accounting Standards, Revaluation Profiles, inventory costing policy, and governed accounting policy settings belong to `Company`.
 - Company membership, invitations, owner/user assignment, active company context, and company-scoped authorization belong to `CompanyAccess`.
-- Dashboard is a host-level product surface, not an independent root module.
+- Dashboard is a host-level product surface; the **AI-driven** widget composition / suggestion / layout-persistence layer lives under the planned `Dashboard` AI module.
 - Settings is a navigation surface, not a dumping-ground root module.
 
 ## 4. Multi-Company Architecture
@@ -544,7 +560,7 @@ When ABP SaaS / Feature Management is enabled, feature flags and editions may be
 Examples:
 
 - multi-currency enabled
-- AI assist enabled
+- unityAI enabled (gates Layer B / C / D in §24)
 - advanced reports enabled
 - attachments enabled
 - customer portal enabled
@@ -2005,7 +2021,7 @@ No flashy, noisy, or game-like UI direction.
 ### 20.2 Core UX Rules
 
 - left sidebar is the main navigation anchor
-- Dashboard is an operational overview, not heavy BI
+- Dashboard is an operational overview, not heavy BI (the AI-assisted widget composition layer is the planned `Dashboard` AI module per §24.2 / [`AI_PRODUCT_ARCHITECTURE.md`](./AI_PRODUCT_ARCHITECTURE.md))
 - Reports is the standard reporting home
 - users must always know current company context
 - tables and forms must support long-duration work
@@ -2023,6 +2039,14 @@ The design system should progressively support:
 
 Dark mode should not be simple inversion.
 It should be a professional low-glare theme suitable for accounting workflows.
+
+### 20.4 Component Library and Token System (binding)
+
+- **Single component library**: `Radzen.Blazor` 5.x is the only blessed Blazor component library. AntDesign Blazor has been fully decommissioned (see [`UI_LIBRARY_MIGRATION_PLAN.md`](./UI_LIBRARY_MIGRATION_PLAN.md)). New code must not introduce a second Blazor component library.
+- **Token-driven theming**: every component (Radzen primitives + Citus atoms + custom HTML) must read color, spacing, radius, and density from `--citus-color-*` / `--citus-space-*` / `--citus-radius-*` tokens in `tokens.css`. Hard-coded hex / rgb in component code is forbidden except for the few intentional sider-background tweaks in `shell.css`.
+- **Citus atoms over raw library types**: pages must prefer Citus atoms (`CitusButton`, `CitusInput`, `CitusBadge`, `CitusAlert`, `CitusLoadingBar`, `CitusToastService`, `CitusPageHeader`, `CitusEmpty`) when one exists. Atoms keep an AntDesign-shaped public API and bridge to Radzen internally; this insulates callsites from any future component-library swap.
+- **Dark mode via tokens, not per-page overrides**: dark mode is driven by a single `.dark` / `[data-theme="dark"]` switch on `<html>` flipping the token values. Per-page or per-component dark-mode CSS overrides are a smell; the correct fix is to drive the value through a token.
+- **Mixed React+TypeScript surfaces**: see §1.4. Default禁用; allowed only for self-contained surfaces with a verified Radzen.Blazor capability gap, and must reuse the same `--citus-color-*` token system through CSS custom properties.
 
 ## 21. Sidebar and Navigation
 
@@ -2065,25 +2089,28 @@ Settings remains a distinct entry point, with structured internal subsections.
 - moving Reports elsewhere is forbidden
 - breaking business meaning in navigation is forbidden
 
-## 22. SmartPicker and Acceleration Infrastructure
+## 22. UnitySearch Picker and Acceleration Infrastructure
 
-### 22.1 SmartPicker Positioning
+> **Naming note:** the legacy abstract name `SmartPicker` has been retired in favour of the concrete shipped module `UnitySearch` (`Citus.Modules.UnitySearch.*`). Old references in other specs / commit messages should be read as `UnitySearch`. The detailed executable spec lives in [`AI_PRODUCT_ARCHITECTURE.md`](./AI_PRODUCT_ARCHITECTURE.md) (Section 3 — UnitySearch as the Closed-Loop Reference).
 
-SmartPicker is the legal-candidate entry surface for controlled selection fields.
+### 22.1 UnitySearch Positioning
+
+UnitySearch is the legal-candidate entry surface for controlled selection fields (vendor / customer / account / product / tax-code / payment-account pickers and the global topbar search).
 
 It must remain responsible for:
 
-- entity/provider resolution
+- entity / provider resolution
 - company scope enforcement
-- context filtering
-- active/type guard
+- context filtering (per `SearchScopeContext`)
+- active / type guard
 - Search / GetByID legality semantics
+- policy registry (decides which pickers are permitted in which surface for the current user / role / company)
 
 It must not become the home of unrelated AI or persistence truth.
 
-### 22.2 SmartPicker Acceleration
+### 22.2 UnitySearch Acceleration
 
-SmartPicker Acceleration is a separate enhancement layer.
+UnitySearch Acceleration is a separate enhancement layer.
 
 It may own:
 
@@ -2101,7 +2128,11 @@ Rules:
 - backend legality remains authoritative
 - write-side invalidation is required after relevant master-data changes
 
-### 22.3 Shared Cache Infrastructure
+### 22.3 UnitySearch Learning (Layer C)
+
+When the AI Learning Module ships, UnitySearch gains a learning extension that observes picker selections and emits ranking hints, alias suggestions, and no-match query classifications. The learning extension is **observational** and **company-scoped** — it never bypasses backend legality and never crosses companies.
+
+### 22.4 Shared Cache Infrastructure
 
 Shared cache infrastructure should support:
 
@@ -2192,13 +2223,15 @@ Backend Authority：报表的计算逻辑必须由后端引擎决定（使用 Da
 - 在 Dashboard 或关键报表中显示当前使用的 Report Type。
 - 提供 “Compare Accrual vs Cash” 并排视图（高级功能）。
 
-## 24. AI Layer
+## 24. AI Layer (unityAI)
+
+The detailed executable architecture lives in [`AI_PRODUCT_ARCHITECTURE.md`](./AI_PRODUCT_ARCHITECTURE.md). This section establishes the **authoritative principles**; that document operationalizes them.
 
 ### 24.1 Definition
 
-**AI = advisor / external accountant style assistant, not executor**
+**unityAI = advisor / external-accountant-style assistant, not executor.** The brand and product layer is named **unityAI**. The concrete code root is `Citus.Modules.UnityAi.*`.
 
-AI should help:
+unityAI should help:
 
 - supervise bookkeeping
 - explain business
@@ -2206,43 +2239,51 @@ AI should help:
 - identify anomalies
 - support better decisions
 
-### 24.2 Strictly Forbidden
+### 24.2 Four-Layer Architecture (mandatory)
+
+unityAI is organized into four layers. Crossing layers must follow strict data-flow rules:
+
+- **Layer A — Business Truth Layer**: Posting / Tax / FX / Lifecycle / Permission / Audit. Authoritative. AI-immutable. Already exists in `Engines/*`, `Modules/AR/*`, `Modules/AP/*`, `Modules/GL/*`, `Modules/Inventory/*`, etc.
+- **Layer B — unityAI Gateway**: provider abstraction, model router, prompt registry, tool registry, structured-output validation, decision-trace logs, request logs, feature flags. **Only egress point for AI provider calls.** Project namespace: `Citus.Modules.UnityAi.Gateway.*`.
+- **Layer C — AI Learning Module**: behavior events, usage stats, pair stats, learning profiles, ranking hints. Reads from Layer A read models + the user-event stream; writes only to its own learning tables. **Never** writes journal / document tables. Project namespace: `Citus.Modules.Learning.*` (planned).
+- **Layer D — AI Output Module**: UnitySearch recommendations, dashboard suggestions, Action Center, copilot drafts, OCR output, NL command UI. Reads from Layer C, may call Layer B, submits drafts back into Layer A through the same command paths a human user would use — including all Layer A validation. Project namespaces: `Citus.Modules.UnitySearch.*` (existing), `Citus.Modules.Dashboard.*`, `Citus.Modules.ActionCenter.*`, `Citus.Modules.Copilot.*`, `Citus.Modules.DocumentAi.*` (planned).
+
+### 24.3 Strictly Forbidden
 
 - AI changing books
 - AI auto-posting
 - AI auto-completing reconciliation
 - AI bypassing validation
 - AI becoming accounting truth
+- AI provider calls that bypass the unityAI Gateway (Layer B is the only egress)
+- Cross-company learning or any cross-company data leak in Layer C
+- Layer C or Layer D writing to journal / document / posting tables directly
 
-### 24.3 Currently Allowed AI Capabilities
+### 24.4 Currently Allowed AI Capabilities
 
 - suggestions
-- rankings
+- rankings (Layer C → UnitySearch / Dashboard / Action Center)
 - explanations
 - anomaly hints
 - report interpretation
 - tax reasonableness hints
 - account recommendations
 - writing assistance for controlled text fields
+- structured drafts that re-enter the same command paths a human user would use (must pass Layer A validation)
 
-### 24.4 AI Assist Platform
+### 24.5 Conservative Defaults (mandatory)
 
-AI access should be centralized through an AI Assist Platform.
+- AI external calls are **off** by default. The gateway short-circuits to `Disabled` when no provider is configured / no prompt is registered / the gateway flag is off, and every gateway call still writes a request-log row even when disabled.
+- AI-generated suggestions are **pending** by default; user confirmation flips them to applied.
+- Learning is **company-scoped**; cross-company is forbidden.
+- Decision tracing is **sample-based** by default to bound cost / storage.
+- High-risk actions (post, void, reconcile, close period, change Accounting Standard, change Functional Currency binding) always require explicit user confirmation. AI never confirms on the user's behalf.
 
-This layer may own:
+### 24.6 Long-Term AI Vision
 
-- provider abstraction
-- prompt registry
-- safety rules
-- audit logging
-- fallback behavior
-- latency / timeout / retry governance
+The long-term unityAI direction is closer to an **AI CFO / external accountant layer** than to OCR automation. It should help small business owners understand their business more deeply.
 
-### 24.5 Long-Term AI Vision
-
-The long-term AI direction is closer to an **AI CFO / external accountant layer** than to OCR automation.
-
-It should help small business owners understand their business more deeply.
+OCR / extraction (`DocumentAi`) is a useful Layer D capability, but it is a sub-feature of the broader vision, not the headline.
 
 ## 25. AI for Reconciliation
 
@@ -2427,11 +2468,21 @@ Approved root engines:
 
 Approved root infrastructure names:
 
-- `AIAssist`
 - `Notifications`
 - `Caching`
-- `SmartPicker`
 - `Reporting`
+
+Approved root AI / picker names (per §3.5 and [`AI_PRODUCT_ARCHITECTURE.md`](./AI_PRODUCT_ARCHITECTURE.md)):
+
+- `UnityAi` (and `UnityAi.Gateway`) — Layer B
+- `UnitySearch` — Layer D picker + acceleration
+- `Learning` — Layer C (planned)
+- `Dashboard` — Layer D (planned)
+- `ActionCenter` — Layer D (planned)
+- `Copilot` — Layer D (planned)
+- `DocumentAi` — Layer D (planned)
+
+> The legacy abstract names `AIAssist` and `SmartPicker` are retired. Do not introduce new code, projects, or namespaces under those names.
 
 Approved connector root names include patterns such as:
 
@@ -2448,7 +2499,8 @@ Examples:
 - `Citus.Modules.PaymentGateway.Application`
 - `Citus.Engines.Posting`
 - `Citus.Engines.Costing`
-- `Citus.Infrastructure.AIAssist`
+- `Citus.Modules.UnityAi.Gateway.Application`
+- `Citus.Modules.UnitySearch.Application`
 - `Citus.Connectors.Payment.Stripe`
 
 Allowed layers for business modules:
@@ -2527,11 +2579,20 @@ Approved root engines:
 - ReconciliationControl
 
 Approved root infrastructure names:
-- AIAssist
 - Notifications
 - Caching
-- SmartPicker
 - Reporting
+
+Approved root AI / picker names (see §3.5 and `AI_PRODUCT_ARCHITECTURE.md`):
+- UnityAi (with sub-root `UnityAi.Gateway`)
+- UnitySearch
+- Learning (planned)
+- Dashboard (planned)
+- ActionCenter (planned)
+- Copilot (planned)
+- DocumentAi (planned)
+
+> Retired legacy names — do NOT introduce: AIAssist, SmartPicker.
 
 Approved connector root names include patterns such as:
 - Payment.<Provider>
