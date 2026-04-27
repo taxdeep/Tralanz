@@ -35,16 +35,18 @@
     {
         <div class="flex flex-wrap items-center gap-3 mb-3">
             <div class="min-w-[20rem]">
-                <AntDesign.Select TItem="ManagedUserSummary"
-                                  TItemValue="Guid?"
-                                  DataSource="@_users.OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()"
-                                  Value="@_selectedTimelineAccountId"
-                                  ValueChanged="OnSelectedTimelineAccountChangedAsync"
-                                  ItemValue="@(u => (Guid?)u.Id)"
-                                  ItemLabel="@(u => BuildUserOptionLabel(u))"
-                                  Placeholder="@("Select account")"
-                                  AllowClear="true"
-                                  Style="width: 100%;" />
+                <RadzenDropDown TValue="Guid?"
+                                Data="@_users.OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()"
+                                Value="@_selectedTimelineAccountId"
+                                ValueChanged="OnSelectedTimelineAccountChangedAsync"
+                                ValueProperty="Id"
+                                Placeholder="Select account"
+                                AllowClear="true"
+                                Style="width: 100%;">
+                    <Template Context="ctx">
+                        @BuildUserOptionLabel((ManagedUserSummary)ctx)
+                    </Template>
+                </RadzenDropDown>
             </div>
             @if (_selectedTimelineUser is not null)
             {

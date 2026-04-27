@@ -26,16 +26,19 @@
         {
             <div class="citus-topbar__company">
                 <CitusIcon Name="IconName.BuildingSkyscraper" Size="IconSize.Inline" />
-                <AntDesign.Select TItem="CompanyWorkspaceSummary"
-                                  TItemValue="Guid"
-                                  DataSource="@ShellState.AvailableCompanies"
-                                  Value="@SelectedCompanyId"
-                                  ValueChanged="OnCompanyChangedAsync"
-                                  ItemValue="@(c => c.Id)"
-                                  ItemLabel="@(c => $"{c.CompanyName} ({c.CompanyCode})")"
-                                  Bordered="@false"
-                                  Size="@AntDesign.InputSize.Small"
-                                  Style="min-width: 220px;" />
+                <RadzenDropDown TValue="Guid"
+                                Data="@ShellState.AvailableCompanies"
+                                Value="@SelectedCompanyId"
+                                ValueChanged="OnCompanyChangedAsync"
+                                ValueProperty="Id"
+                                Style="min-width: 220px;">
+                    <Template Context="ctx">
+                        @{
+                            var c = (CompanyWorkspaceSummary)ctx;
+                        }
+                        @c.CompanyName (@c.CompanyCode)
+                    </Template>
+                </RadzenDropDown>
             </div>
         }
         else

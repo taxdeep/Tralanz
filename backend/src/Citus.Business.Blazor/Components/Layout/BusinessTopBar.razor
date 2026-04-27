@@ -27,17 +27,17 @@
 
     <div class="citus-topbar__company">
         <CitusIcon Name="IconName.BuildingSkyscraper" Size="IconSize.Inline" />
-        <AntDesign.Select TItem="BusinessCompanySummary"
-                          TItemValue="Guid"
-                          DataSource="@ShellState.AvailableCompanies"
-                          Value="@SelectedCompanyId"
-                          ValueChanged="OnCompanyChangedAsync"
-                          ItemValue="@(c => c.Id)"
-                          ItemLabel="@(c => FormatCompanyLabel(c))"
-                          Disabled="@IsCompanySwitcherDisabled"
-                          Bordered="@false"
-                          Size="@AntDesign.InputSize.Small"
-                          Style="min-width: 220px;" />
+        <RadzenDropDown TValue="Guid"
+                        Data="@ShellState.AvailableCompanies"
+                        Value="@SelectedCompanyId"
+                        ValueChanged="OnCompanyChangedAsync"
+                        ValueProperty="Id"
+                        Disabled="@IsCompanySwitcherDisabled"
+                        Style="min-width: 220px;">
+            <Template Context="ctx">
+                @FormatCompanyLabel((BusinessCompanySummary)ctx)
+            </Template>
+        </RadzenDropDown>
 
         @if (ShellState.IsCompanyReadOnly)
         {

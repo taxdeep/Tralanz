@@ -40,30 +40,28 @@
             <h2 class="citus-panel__title">2. Company profile</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <CitusInput TValue="string" @bind-Value="_companyName" Placeholder="Company name" />
-                <AntDesign.Select TItem="string" TItemValue="string"
-                                  DataSource="@_entityTypes"
-                                  Value="@EntityType"
-                                  ValueChanged="OnEntityTypeChanged"
-                                  ItemValue="@(s => s)"
-                                  ItemLabel="@(s => EntityTypeLabel(s))"
-                                  Placeholder="@("Entity type")" />
-                <AntDesign.Select TItem="string" TItemValue="string"
-                                  DataSource="@_industries"
-                                  Value="@Industry"
-                                  ValueChanged="OnIndustryChanged"
-                                  ItemValue="@(s => s)"
-                                  ItemLabel="@(s => IndustryLabel(s))"
-                                  Placeholder="@("Industry")" />
+                <RadzenDropDown TValue="string"
+                                Data="@_entityTypes"
+                                Value="@EntityType"
+                                ValueChanged="OnEntityTypeChanged"
+                                Placeholder="Entity type">
+                    <Template Context="ctx">@EntityTypeLabel((string)ctx)</Template>
+                </RadzenDropDown>
+                <RadzenDropDown TValue="string"
+                                Data="@_industries"
+                                Value="@Industry"
+                                ValueChanged="OnIndustryChanged"
+                                Placeholder="Industry">
+                    <Template Context="ctx">@IndustryLabel((string)ctx)</Template>
+                </RadzenDropDown>
                 <RadzenDatePicker TValue="DateTime?" @bind-Value="_incorporatedOn" Placeholder="@("Incorporated date")" />
                 <CitusInput TValue="string" @bind-Value="_fiscalYearEnd" Placeholder="Fiscal year end (MM-DD)" />
                 <CitusInput TValue="string" @bind-Value="_businessNumber" Placeholder="Business number" />
-                <AntDesign.Select TItem="int" TItemValue="int"
-                                  DataSource="@_codeLengths"
-                                  Value="@_accountCodeLength"
-                                  ValueChanged="@(v => _accountCodeLength = v)"
-                                  ItemValue="@(i => i)"
-                                  ItemLabel="@(i => i.ToString())"
-                                  Placeholder="@("Account code length")" />
+                <RadzenDropDown TValue="int"
+                                Data="@_codeLengths"
+                                Value="@_accountCodeLength"
+                                ValueChanged="@(v => _accountCodeLength = v)"
+                                Placeholder="Account code length" />
                 <CitusInput TValue="string" @bind-Value="_phone" Placeholder="Phone (optional)" />
                 <CitusInput TValue="string" @bind-Value="_companyEmail" Placeholder="Company email" />
                 <div class="md:col-span-2"><CitusInput TValue="string" @bind-Value="_addressLine" Placeholder="Address line" /></div>
@@ -77,13 +75,13 @@
         <section class="citus-panel">
             <h2 class="citus-panel__title">3. Chart template and multi-currency reserve preview</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <AntDesign.Select TItem="string" TItemValue="string"
-                                  DataSource="@_templates"
-                                  Value="@TemplateKey"
-                                  ValueChanged="OnTemplateChanged"
-                                  ItemValue="@(s => s)"
-                                  ItemLabel="@(s => GetTemplateLabel(s))"
-                                  Placeholder="@("Template")" />
+                <RadzenDropDown TValue="string"
+                                Data="@_templates"
+                                Value="@TemplateKey"
+                                ValueChanged="OnTemplateChanged"
+                                Placeholder="Template">
+                    <Template Context="ctx">@GetTemplateLabel((string)ctx)</Template>
+                </RadzenDropDown>
                 <CitusInput TValue="string" @bind-Value="_baseCurrencyCode" Placeholder="Base currency" />
             </div>
 
