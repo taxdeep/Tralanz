@@ -9,6 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Domain.Shared\Citus.Modules.UnityAi.Domain.Shared.csproj" />
     <ProjectReference Include="..\Application.Contracts\Citus.Modules.UnityAi.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\UnitySearch\Application.Contracts\Citus.Modules.UnitySearch.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\UnitySearch\Domain.Shared\Citus.Modules.UnitySearch.Domain.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

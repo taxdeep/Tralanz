@@ -141,7 +141,9 @@ builder.Services.AddSingleton<UnitySearchPolicyRegistry>();
 builder.Services.AddSingleton<IUnitySearchProjectionStore, PostgreSqlUnitySearchProjectionStore>();
 builder.Services.AddSingleton<IUnitySearchQueryService, PostgreSqlUnitySearchQueryService>();
 builder.Services.AddSingleton<IUnitySearchStatsStore, PostgreSqlUnitySearchStatsStore>();
-builder.Services.AddSingleton<IUnitySearchEngine, UnitySearchEngine>();
+// Inner engine registered as the concrete type so the unityAI reranking
+// decorator below can take it as a dependency without a self-cycle.
+builder.Services.AddSingleton<UnitySearchEngine>();
 
 // ----- unityAI V1 -------------------------------------------------------
 // Authority: AI_PRODUCT_ARCHITECTURE.md
@@ -157,6 +159,15 @@ builder.Services.AddSingleton<IUnitysearchRecentQueryStore, PostgreSqlUnitysearc
 builder.Services.AddSingleton<IUnitysearchRankingHintStore, PostgreSqlUnitysearchRankingHintStore>();
 builder.Services.AddSingleton<IUnitysearchDecisionTraceStore, PostgreSqlUnitysearchDecisionTraceStore>();
 builder.Services.AddSingleton<IUnitysearchRankingEngine, UnitysearchRankingEngine>();
+// Register the reranking decorator as the IUnitySearchEngine the rest of
+// the API resolves. It wraps the concrete UnitySearchEngine and falls
+// through to its ordering when the learning flag is off or when the
+// ranking engine throws — search must never break because of unityAI.
+builder.Services.AddSingleton<IUnitySearchEngine>(sp => new UnitysearchAiRerankingEngine(
+    inner: sp.GetRequiredService<UnitySearchEngine>(),
+    ranking: sp.GetRequiredService<IUnitysearchRankingEngine>(),
+    flags: sp.GetRequiredService<UnityAiFeatureFlagAccessor>(),
+    logger: sp.GetRequiredService<ILogger<UnitysearchAiRerankingEngine>>()));
 builder.Services.AddSingleton<IReportUsageEventStore, PostgreSqlReportUsageEventStore>();
 builder.Services.AddSingleton<IReportUsageStatStore, PostgreSqlReportUsageStatStore>();
 builder.Services.AddSingleton<IDashboardUserWidgetStore, PostgreSqlDashboardUserWidgetStore>();
