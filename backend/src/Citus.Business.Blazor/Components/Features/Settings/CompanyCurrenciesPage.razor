@@ -1,59 +1,180 @@
 @page "/settings/currencies"
 
 @inject BusinessShellState ShellState
+@inject CompanyCurrencyClient CurrencyClient
 
 <PageTitle>Currencies | Citus Business</PageTitle>
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <CitusBadge Color="@("default")">Read-only</CitusBadge>
+        <RadzenButton Text="Add currency"
+                      ButtonStyle="ButtonStyle.Primary"
+                      Icon="add"
+                      Click="OpenDrawer" />
     </Actions>
 </CitusPageHeader>
 
 <CitusAlert Severity="CitusAlertSeverity.Info"
-                 ShowIcon="true"
-                 Class="mb-6">
+            ShowIcon="true"
+            Class="mb-6">
     <MessageTemplate>
-        Base currency and multi-currency state are company-scoped truth. Switching the base currency requires a governed migration and is not editable from this surface.
+        Base currency is set at company creation and cannot be changed here. Adding another currency seeds AR/AP control accounts so foreign-currency invoices and bills can be posted.
     </MessageTemplate>
 </CitusAlert>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
     <CitusStatCard
         Label="Base currency"
-        Value="@ShellState.ActiveCompany.BaseCurrencyCode"
+        Value="@(_profile?.BaseCurrencyCode ?? ShellState.ActiveCompany.BaseCurrencyCode)"
         Description="The accounting truth currency for this company."
         Icon="IconName.Coin"
         Tone="StatTone.Primary" />
     <CitusStatCard
         Label="Multi-currency"
-        Value="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled")"
+        Value="@MultiCurrencyLabel()"
         Description="Toggles whether transactional currency may differ from base."
         Icon="IconName.Coin"
-        Tone="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? StatTone.Success : StatTone.Neutral)" />
+        Tone="@MultiCurrencyTone()" />
     <CitusStatCard
-        Label="Open accessible companies"
-        Value="@ShellState.AvailableCompanies.Count.ToString()"
-        Description="Switch from the top bar to view another company's settings."
-        Icon="IconName.BuildingSkyscraper"
+        Label="Enabled currencies"
+        Value="@EnabledCount().ToString()"
+        Description="Total currencies usable on documents (base + foreign)."
+        Icon="IconName.LayoutDashboard"
         Tone="StatTone.Info" />
 </div>
 
 <section class="citus-panel">
-    <h2 class="citus-panel__title">FX governance</h2>
-    <ul class="citus-bullet-list">
-        <li>Base currency is locked at company creation. Migrations require backend governance.</li>
-        <li>FX rate snapshots remain immutable at posting time and live with each journal entry.</li>
-        <li>Multi-currency enablement gates whether transaction currency may differ from base on posted documents.</li>
-        <li>FX revaluation is a backend engine flow, not a UI-driven setting.</li>
-    </ul>
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">All currencies</h2>
+    </header>
+
+    @if (_profile is null)
+    {
+        <p class="text-sm citus-fg-muted">Loading currencies…</p>
+    }
+    else
+    {
+        <RadzenDataGrid Data="@_profile.Currencies"
+                        TItem="CompanyCurrencyEntry"
+                        AllowSorting="true"
+                        AllowPaging="false"
+                        Density="Density.Compact">
+            <Columns>
+                <RadzenDataGridColumn TItem="CompanyCurrencyEntry"
+                                      Property="CurrencyCode"
+                                      Title="Code"
+                                      Width="120px" />
+                <RadzenDataGridColumn TItem="CompanyCurrencyEntry"
+                                      Property="CurrencyName"
+                                      Title="Name" />
+                <RadzenDataGridColumn TItem="CompanyCurrencyEntry"
+                                      Title="Base"
+                                      Sortable="false"
+                                      Width="100px">
+                    <Template Context="row">
+                        @if (row.IsBaseCurrency)
+                        {
+                            <CitusBadge Color="@("geekblue")">Base</CitusBadge>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CompanyCurrencyEntry"
+                                      Title="Status"
+                                      Sortable="false"
+                                      Width="140px">
+                    <Template Context="row">
+                        @if (row.IsEnabled)
+                        {
+                            <CitusBadge Color="@("green")">Enabled</CitusBadge>
+                        }
+                        else
+                        {
+                            <CitusBadge Color="@("default")">Available</CitusBadge>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CompanyCurrencyEntry"
+                                      Title="Actions"
+                                      Sortable="false"
+                                      Width="160px">
+                    <Template Context="row">
+                        @if (!row.IsEnabled)
+                        {
+                            <RadzenButton Text="Enable"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Size="ButtonSize.Small"
+                                          Click="@(() => EnableAsync(row.CurrencyCode))" />
+                        }
+                        else if (!row.IsBaseCurrency)
+                        {
+                            <RadzenButton Text="Remove"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Size="ButtonSize.Small"
+                                          Disabled="true"
+                                          title="Removing currencies will be supported once balance checks land." />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    }
 </section>
 
+<MultiCurrencyDrawer @ref="_drawer" ProfileChanged="OnDrawerProfileChanged" />
+
 @code {
+    private MultiCurrencyDrawer? _drawer;
+    private CompanyCurrencyProfileSummary? _profile;
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
         Title = "Currencies",
-        Subtitle = "Base currency, multi-currency state, and the FX governance rules that surround them."
+        Subtitle = "All currencies for this company. Add a currency to seed its AR/AP control accounts."
     };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _profile = await CurrencyClient.GetAsync();
+    }
+
+    private async Task EnableAsync(string code)
+    {
+        var outcome = await CurrencyClient.EnableAsync(code);
+        if (outcome.Profile is not null)
+        {
+            _profile = outcome.Profile;
+            StateHasChanged();
+        }
+    }
+
+    private Task OpenDrawer()
+    {
+        if (_drawer is null)
+        {
+            return Task.CompletedTask;
+        }
+        return _drawer.OpenAsync();
+    }
+
+    private Task OnDrawerProfileChanged(CompanyCurrencyProfileSummary profile)
+    {
+        _profile = profile;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private string MultiCurrencyLabel() =>
+        (_profile?.MultiCurrencyEnabled ?? ShellState.ActiveCompany.MultiCurrencyEnabled) ? "Enabled" : "Disabled";
+
+    private StatTone MultiCurrencyTone() =>
+        (_profile?.MultiCurrencyEnabled ?? ShellState.ActiveCompany.MultiCurrencyEnabled) ? StatTone.Success : StatTone.Neutral;
+
+    private int EnabledCount() =>
+        _profile?.Currencies.Count(c => c.IsEnabled) ?? 1;
 }
