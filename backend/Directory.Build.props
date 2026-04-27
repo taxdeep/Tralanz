@@ -6,9 +6,26 @@
     <LangVersion>preview</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
-    <Version>0.1.0003.32</Version>
-    <AssemblyVersion>0.1.0003.32</AssemblyVersion>
-    <FileVersion>0.1.0003.32</FileVersion>
-    <InformationalVersion>0.1.0003.32</InformationalVersion>
+    <!--
+      Version scheme reset 2026-04-27: starting over from zero.
+
+      Display form (in VERSION + InformationalVersion):
+          MAJOR.MINOR.PATCH.BUILD
+        where MAJOR is decimal (typically 1 char),
+              MINOR is decimal padded to 3 chars (000-999),
+              PATCH is base-36 padded to 3 chars (000-ZZZ, 36^3 = 46 656 values),
+              BUILD is base-36 padded to 4 chars (0000-ZZZZ, 36^4 = 1 679 616 values).
+
+      System.Version-compatible numeric fields (Version / AssemblyVersion /
+      FileVersion) stay at 0.0.0.0. The auto-bump hook leaves them alone — it
+      only updates VERSION + InformationalVersion. MSBuild needs strictly
+      decimal Version components and they cap at 65 534 per part, so the
+      base-36 BUILD slot can't be embedded there directly. AssemblyVersion
+      stability also keeps binding redirects from churning on every push.
+    -->
+    <Version>0.0.0.0</Version>
+    <AssemblyVersion>0.0.0.0</AssemblyVersion>
+    <FileVersion>0.0.0.0</FileVersion>
+    <InformationalVersion>0.000.000.0000</InformationalVersion>
   </PropertyGroup>
 </Project>
