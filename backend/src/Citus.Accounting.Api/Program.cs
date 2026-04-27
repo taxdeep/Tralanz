@@ -1,4 +1,5 @@
 using Citus.Accounting.Api;
+using Citus.Accounting.Api.Initialization;
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.CoaTemplates;
@@ -177,6 +178,14 @@ builder.Services.AddSingleton<ICoaTemplateSeeder, CoaTemplateSeeder>();
 // Defaults are conservative: gateway off, AI hints pending, traces sampled.
 builder.Services.AddSingleton<UnityAiFeatureFlagAccessor>();
 builder.Services.AddSingleton<PostgreSqlUnityAiSchemaInitializer>();
+
+// Platform bootstrap fixtures: ensure currency_catalog / companies / users /
+// company_memberships exist and are seeded with the dev/bootstrap rows.
+// See PlatformBootstrapFixturesInitializer for the why.
+builder.Services.AddSingleton<Citus.Platform.Core.Runtime.SysAdminPasswordHasher>();
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository,
+    Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();
+builder.Services.AddSingleton<PlatformBootstrapFixturesInitializer>();
 builder.Services.AddSingleton<IAiJobRunStore, PostgreSqlAiJobRunStore>();
 builder.Services.AddSingleton<IAiRequestLogStore, PostgreSqlAiRequestLogStore>();
 builder.Services.AddSingleton<IUnitysearchEventStore, PostgreSqlUnitysearchEventStore>();
@@ -252,11 +261,20 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
+    var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
     await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
+    // Platform tables (currency_catalog, companies, users, company_memberships,
+    // company_books, etc.) and bootstrap fixtures must exist before any
+    // accountStore / taxCodeStore insert that FKs into them. The Accounting
+    // API used to assume the SysAdmin First-Company Wizard had run first to
+    // create those tables and seed the catalog, but bootstrap-mode sessions
+    // skip that wizard — this initializer runs the same idempotent schema
+    // setup directly so the API works end-to-end without external bootstrapping.
+    await bootstrapFixtures.EnsureAsync(CancellationToken.None);
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
 }
