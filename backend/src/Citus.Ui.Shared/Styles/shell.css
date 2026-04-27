@@ -981,12 +981,28 @@ select.citus-journal-lines__cell-input {
     font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Radzen DataGrid → Citus tokens bridge ----------
-   Radzen ships its own CSS (`default-base.css` is the unstyled base).
-   Bridging a few class names to our --citus-color-* tokens makes the
-   spike grid feel native in both light and dark modes without pulling
-   the full Radzen theme. Limited to .citus-radzen-grid so the rest of
-   the page is untouched. */
+/* ===========================================================================
+   Radzen → Citus tokens bridge
+   ===========================================================================
+   Radzen ships `default-base.css` as the unstyled base; bridging selected
+   class names to `--citus-color-*` tokens lets each Radzen primitive feel
+   native in both light and dark mode without pulling a full Radzen theme.
+
+   Conventions for adding a new bridge block:
+     1. Wrap each Radzen surface in a `.citus-radzen-*` parent class on the
+        razor side and let the bridge target `.citus-radzen-* .rz-…`. Plain
+        `.rz-…` selectors at module scope are forbidden — they would leak
+        across the page.
+     2. Drive every colour through a token (`--citus-color-bg-elevated`,
+        `--citus-color-fg`, `--citus-color-border`, `--citus-color-primary`,
+        `--citus-color-primary-bg`, …). Hard-coded hex / oklch goes against
+        the dark-mode contract.
+     3. Group blocks by primitive, in the order they were added. Each block
+        is short — six to twelve declarations covering background, fg,
+        border, hover, focus, disabled. Keep it scannable.
+   --------------------------------------------------------------------------- */
+
+/* ---------- Radzen DataGrid (.citus-radzen-grid) ---------- */
 
 .citus-radzen-grid.rz-data-grid,
 .citus-radzen-grid .rz-data-grid {
