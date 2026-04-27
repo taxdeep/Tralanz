@@ -54,17 +54,21 @@ public sealed class PlatformBootstrapFixturesInitializer
 
         -- Bootstrap companies. base_currency_code FK to currency_catalog
         -- is satisfied because EnsureSchemaAsync seeded USD/CAD already.
+        -- Entity numbers must match the companies_entity_number_format_chk
+        -- regex (EN<year><8-digit-sequence>); we reserve year 2000 sequence
+        -- numbers 1..2 for bootstrap fixtures so they never collide with
+        -- the real First-Company-Wizard sequence (uses the current year).
         insert into companies (
             id, entity_number, legal_name, base_currency_code,
             multi_currency_enabled, status, country, account_code_length,
             entity_type, industry, fiscal_year_end_month, fiscal_year_end_day)
         values
           ('5e492df2-37ab-47df-a1bb-2d559c876cbc',
-           'BS-NORTHWIND', 'Northwind Studio Ltd.', 'USD',
+           'EN20000000000001', 'Northwind Studio Ltd.', 'USD',
            true, 'active', 'United States', 4,
            'corporation', 'general_services', 12, 31),
           ('e56df08c-39ae-405b-8ed2-247b97d2f9f6',
-           'BS-BLUEHARBOR', 'Blue Harbor Trading Co.', 'CAD',
+           'EN20000000000002', 'Blue Harbor Trading Co.', 'CAD',
            false, 'active', 'Canada', 4,
            'corporation', 'trading', 12, 31)
         on conflict (id) do nothing;
@@ -123,14 +127,31 @@ public sealed class PlatformBootstrapFixturesInitializer
             return;
         }
 
-        await using var connection = await _connections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = FixturesSql;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        // Fixtures are convenience-only (dev shortcut). If the SQL fails for
+        // any reason — schema drift in a future migration adds a check we
+        // didn't anticipate, a column rename, etc. — we log and continue
+        // rather than core-dump the API. The platform schema itself is
+        // already up at this point, so business writes can still succeed
+        // for any user that does have real persisted membership; only the
+        // bootstrap session shortcut would break, and that's already a dev
+        // convenience.
+        try
+        {
+            await using var connection = await _connections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = FixturesSql;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation(
-            "Platform bootstrap fixtures seeded (Environment={Environment}): currencies, companies (Northwind {Northwind}, Blue Harbor {BlueHarbor}), users (Alice {Alice}, Ben {Ben}), memberships.",
-            _hostEnvironment.EnvironmentName,
-            NorthwindId, BlueHarborId, AliceId, BenId);
+            _logger.LogInformation(
+                "Platform bootstrap fixtures seeded (Environment={Environment}): currencies, companies (Northwind {Northwind}, Blue Harbor {BlueHarbor}), users (Alice {Alice}, Ben {Ben}), memberships.",
+                _hostEnvironment.EnvironmentName,
+                NorthwindId, BlueHarborId, AliceId, BenId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Platform bootstrap fixtures could not be seeded; the API will start without them. Bootstrap-session writes may fail until this is resolved or real users are provisioned.");
+        }
     }
 }
