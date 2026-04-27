@@ -56,7 +56,16 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                    <CitusInput TValue="string" @bind-Value="_currency" Placeholder="USD" />
+                    <CitusInput TValue="string"
+                                @bind-Value="_currency"
+                                Placeholder="USD"
+                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
+                    {
+                        <p class="text-fg-subtle text-xs mt-1">
+                            Multi-currency is off — enable in Settings to choose another currency.
+                        </p>
+                    }
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Exchange rate</label>
