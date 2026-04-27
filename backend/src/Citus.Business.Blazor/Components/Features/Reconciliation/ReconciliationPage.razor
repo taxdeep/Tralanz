@@ -29,7 +29,7 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement date</label>
-                    <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_statementDate" Style="width: 100%;" />
+                    <RadzenDatePicker TValue="DateTime?" @bind-Value="_statementDate" Style="width: 100%;" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement opening balance</label>
@@ -63,7 +63,7 @@
                         var i = index;
                         var row = _inflows[i];
                         <tr>
-                            <td><AntDesign.DatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
+                            <td><RadzenDatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
                             <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_inflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
                             <td><AntDesign.InputNumber TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_inflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
                             <td><AntDesign.Switch Value="@row.Cleared" ValueChanged="@(v => Update(_inflows, i, r => r with { Cleared = v }))" /></td>
@@ -104,7 +104,7 @@
                         var i = index;
                         var row = _outflows[i];
                         <tr>
-                            <td><AntDesign.DatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
+                            <td><RadzenDatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
                             <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_outflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
                             <td><AntDesign.InputNumber TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_outflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
                             <td><AntDesign.Switch Value="@row.Cleared" ValueChanged="@(v => Update(_outflows, i, r => r with { Cleared = v }))" /></td>

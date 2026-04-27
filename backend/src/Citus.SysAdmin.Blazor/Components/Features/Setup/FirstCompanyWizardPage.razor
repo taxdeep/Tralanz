@@ -54,7 +54,7 @@
                                   ItemValue="@(s => s)"
                                   ItemLabel="@(s => IndustryLabel(s))"
                                   Placeholder="@("Industry")" />
-                <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_incorporatedOn" Placeholder="@("Incorporated date")" />
+                <RadzenDatePicker TValue="DateTime?" @bind-Value="_incorporatedOn" Placeholder="@("Incorporated date")" />
                 <CitusInput TValue="string" @bind-Value="_fiscalYearEnd" Placeholder="Fiscal year end (MM-DD)" />
                 <CitusInput TValue="string" @bind-Value="_businessNumber" Placeholder="Business number" />
                 <AntDesign.Select TItem="int" TItemValue="int"
