@@ -59,7 +59,16 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                    <CitusInput TValue="string" @bind-Value="_currency" Placeholder="USD" />
+                    <CitusInput TValue="string"
+                                @bind-Value="_currency"
+                                Placeholder="USD"
+                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
+                    {
+                        <p class="text-fg-subtle text-xs mt-1">
+                            Multi-currency is off — enable in Settings to choose another currency.
+                        </p>
+                    }
                 </div>
                 <div>
                     @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
@@ -91,10 +100,10 @@
                         <th class="citus-journal-lines__num"></th>
                         <th class="citus-journal-lines__gutter"></th>
                         <th>ACCOUNT</th>
-                        <th class="citus-journal-lines__name">NAME</th>
+                        <th class="text-right citus-journal-lines__amount">DEBIT (@_currency.ToUpperInvariant())</th>
+                        <th class="text-right citus-journal-lines__amount">CREDIT (@_currency.ToUpperInvariant())</th>
                         <th class="citus-journal-lines__desc">DESCRIPTION</th>
-                        <th class="text-right citus-journal-lines__amount">DEBIT</th>
-                        <th class="text-right citus-journal-lines__amount">CREDIT</th>
+                        <th class="citus-journal-lines__name">NAME</th>
                         <th class="citus-journal-lines__tax">SALES TAX</th>
                         <th class="citus-journal-lines__action"></th>
                     </tr>
@@ -115,34 +124,14 @@
                                 </button>
                             </td>
                             <td>
-                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                                                   Context="@SearchScopeContext.JournalEntryAccountPicker"
-                                                   EntityType="account"
-                                                   Take="8"
-                                                   Placeholder="Account"
-                                                   SourceRoute="/journal-entry/new"
-                                                   SelectedDisplayText="@line.AccountDisplay"
-                                                   OnOptionSelected="@(option => OnAccountSelected(i, option))"
-                                                   OnCleared="@(() => ClearAccount(i))" />
-                            </td>
-                            <td>
-                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                                                   Context="@SearchScopeContext.JournalEntryNamePicker"
-                                                   Take="6"
-                                                   Placeholder="Customer / vendor"
-                                                   SourceRoute="/journal-entry/new"
-                                                   SelectedDisplayText="@line.NameDisplay"
-                                                   OnOptionSelected="@(option => OnNameSelected(i, option))"
-                                                   OnCleared="@(() => ClearName(i))" />
-                            </td>
-                            <td>
-                                <input type="text"
-                                       class="citus-journal-lines__cell-input"
-                                       value="@line.Description"
-                                       @oninput="@(e => UpdateLine(i, l => l with { Description = e.Value?.ToString() ?? string.Empty }))"
-                                       placeholder="Memo" />
+                                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               Context="journal_entry.account_picker"
+                                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                               SelectedId="@line.AccountId"
+                                               SelectedDisplayText="@line.AccountDisplay"
+                                               OnAccountSelected="@(account => OnAccountPicked(i, account))"
+                                               OnCleared="@(() => ClearAccount(i))" />
                             </td>
                             <td>
                                 <input type="number"
@@ -159,6 +148,24 @@
                                        class="citus-journal-lines__cell-input citus-journal-lines__amount-input"
                                        value="@FormatDecimalForInput(line.Credit)"
                                        @oninput="@(e => UpdateCredit(i, e.Value?.ToString()))" />
+                            </td>
+                            <td>
+                                <input type="text"
+                                       class="citus-journal-lines__cell-input"
+                                       value="@line.Description"
+                                       @oninput="@(e => UpdateLine(i, l => l with { Description = e.Value?.ToString() ?? string.Empty }))"
+                                       placeholder="Memo" />
+                            </td>
+                            <td>
+                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   Context="@SearchScopeContext.JournalEntryNamePicker"
+                                                   Take="6"
+                                                   Placeholder="Customer / vendor"
+                                                   SourceRoute="/journal-entry/new"
+                                                   SelectedDisplayText="@line.NameDisplay"
+                                                   OnOptionSelected="@(option => OnNameSelected(i, option))"
+                                                   OnCleared="@(() => ClearName(i))" />
                             </td>
                             <td>
                                 <select class="citus-journal-lines__cell-input"
@@ -186,10 +193,10 @@
                         </tr>
                     }
                     <tr class="citus-journal-lines__total">
-                        <td colspan="5" class="text-right font-medium">Totals</td>
+                        <td colspan="3" class="text-right font-medium">Totals</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalDebit)</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalCredit)</td>
-                        <td colspan="2"></td>
+                        <td colspan="4"></td>
                     </tr>
                 </tbody>
             </table>
@@ -364,15 +371,13 @@
         UpdateLine(index, l => l with { Credit = parsed });
     }
 
-    private void OnAccountSelected(int index, UnitySearchPickerOption option)
+    private void OnAccountPicked(int index, AccountSummary account)
     {
         UpdateLine(index, l => l with
         {
-            AccountId = option.SourceId,
-            AccountCode = option.PrimaryText,
-            AccountDisplay = string.IsNullOrWhiteSpace(option.SecondaryText)
-                ? option.PrimaryText
-                : $"{option.PrimaryText} - {option.SecondaryText}",
+            AccountId = account.Id,
+            AccountCode = account.Code,
+            AccountDisplay = $"{account.Code} {account.Name}",
         });
     }
 
