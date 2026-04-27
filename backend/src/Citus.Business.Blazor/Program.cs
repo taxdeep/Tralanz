@@ -3,6 +3,7 @@ using Citus.Business.Blazor.Configuration;
 using Citus.Business.Blazor.Services;
 using Citus.Business.Blazor.State;
 using Citus.Modules.UnitySearch.Blazor;
+using Citus.Ui.Shared.Services;
 using Citus.Ui.Shared.Theme;
 using Infrastructure.PostgreSQL;
 using Microsoft.Extensions.Options;
@@ -19,6 +20,7 @@ builder.Services.AddAntDesign();
 // spike pans out). Different namespaces, scoped CSS, no global style
 // collision expected.
 builder.Services.AddRadzenComponents();
+builder.Services.AddScoped<CitusToastService>();
 builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<BusinessShellState>();

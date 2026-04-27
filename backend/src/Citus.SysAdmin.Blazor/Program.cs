@@ -3,14 +3,18 @@ using Citus.SysAdmin.Blazor.Configuration;
 using Citus.SysAdmin.Blazor.Services;
 using Citus.SysAdmin.Blazor.State;
 using Citus.Ui.Shared.Localization;
+using Citus.Ui.Shared.Services;
 using Citus.Ui.Shared.Theme;
 using Microsoft.Extensions.Options;
+using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddAntDesign();
+builder.Services.AddRadzenComponents();
+builder.Services.AddScoped<CitusToastService>();
 builder.Services.AddCitusTheme();
 builder.Services.AddCitusLocalization();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));

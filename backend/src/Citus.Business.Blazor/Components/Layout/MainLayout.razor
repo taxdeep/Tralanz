@@ -1,7 +1,7 @@
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 @inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
 @inject Citus.Business.Blazor.Services.BusinessAuthenticationClient BusinessAuthenticationClient
-@inject AntDesign.IMessageService Message
+@inject CitusToastService Message
 @inject IThemeService ThemeService
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
@@ -17,6 +17,7 @@
 
 <IconSpriteHost />
 <AntDesign.AntContainer />
+<RadzenComponents />
 
 @if (!_isShellReady)
 {
