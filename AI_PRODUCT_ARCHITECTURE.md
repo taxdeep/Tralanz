@@ -672,7 +672,36 @@ For each subsequent phase, before merge:
 - [ ] No AI module bypasses backend validation (covered by integration tests against the same handlers a human user hits).
 - [ ] No cross-company data access (covered by repository-level tests).
 
-## 15. Glossary
+## 15. V1 Implementation Status
+
+This section tracks what has actually landed in the codebase versus what is still scaffold or future work.
+
+### 15.1 What landed (V1)
+
+- **Schema** — [`CITUS_UNITYAI_V1_SCHEMA.sql`](./CITUS_UNITYAI_V1_SCHEMA.sql) defines all 16 tables; runtime initializer at [`PostgreSqlUnityAiSchemaInitializer`](backend/src/Infrastructure/PostgreSQL/UnityAi/PostgreSqlUnityAiSchemaInitializer.cs) keeps the embedded SQL in sync and runs at startup.
+- **AI infrastructure foundation** — `Citus.Modules.UnityAi.{Domain.Shared, Application.Contracts, Application}`. `IUnityAiGateway`, `IUnityAiProvider`, `IUnityAiModelRouter`, `IUnityAiPromptRegistry`, `IUnityAiStructuredOutputValidator` interfaces; `NoopAiProvider` + Noop router/registry/validator; `UnityAiGateway` short-circuits to `Disabled` when the gateway flag is off, no provider is selected, or no prompt is registered. Every gateway call writes an `ai_request_logs` row even when disabled.
+- **UnitySearch learning + ranking** — Postgres stores for events, usage stats, pair stats, recent queries, ranking hints, alias suggestions, decision traces. `UnitysearchRankingEngine` implements the deterministic formula in §9 (text match + user freq + company freq + recency + pair + alias + ai-hint + status − penalty), with capped AI hint and trace sampling. AI hints with `status = pending`, expired hints, and cross-company hints are filtered.
+- **Report usage** — events + scoped stats stores; `POST /accounting/reports/usage` endpoint records both event and aggregate.
+- **Dashboard intelligence** — pending-by-default suggestions; `DashboardSuggestionService` reads report stats, maps to widget keys with thresholds (open ≥3 / export ≥1 / drilldown ≥2 in 30 days), dedupes against active widgets and existing pending/snoozed/accepted suggestions. Accept / dismiss / snooze endpoints. Accept upserts into `dashboard_user_widgets` with `source = suggestion`.
+- **Action Center** — `ActionCenterTaskService` runs registered providers, fingerprint-dedupes, transitions tasks (start / done / dismiss / snooze), and writes `action_center_task_events` for every transition. One real provider ships (`SystemSetupActionCenterTaskProvider`); AR / AP / banking / sales-tax filing are registered as `NullActionCenterTaskProvider` instances that return no tasks and log warnings — no fabricated tasks.
+- **Accounting Copilot scaffolding** — `IAccountingCopilotPlanner` interface + `NoopAccountingCopilotPlanner` returning unsupported on every method. No code path writes to any business engine.
+- **Endpoints** — wired in `Citus.Accounting.Api/Program.cs`: `POST /accounting/unitysearch/usage`, `POST /accounting/reports/usage`, `GET /accounting/dashboard/suggestions`, `POST /accounting/dashboard/suggestions/{generate, {id}/accept, {id}/dismiss, {id}/snooze}`, `GET /accounting/action-center/tasks`, `POST /accounting/action-center/{regenerate, tasks/{id}/start, /done, /dismiss, /snooze}`.
+- **Feature flags** — `UnityAiFeatureFlagAccessor` reads the keys from §10 with the conservative defaults; gateway and AI hint flows respect them.
+- **Tests** — `Citus.Modules.UnityAi.Tests` ships 24 tests covering NoopAiProvider, gateway disabled-by-default behavior, ranking formula, AI hint cap, pending-hint filtering, expired-hint filtering, cross-company isolation, action center fingerprint dedupe, status transitions, and Copilot Noop.
+
+### 15.2 Deferred to a follow-up batch
+
+These are intentionally out of V1 scope and marked here so a follow-up has a clean punch list:
+
+- **Wiring the new ranking engine into the existing `unity-search` search endpoint.** The existing endpoint stays untouched; the engine is fed by tests and ready to consume real candidates from the existing `IUnitySearchEngine` once integration is designed.
+- **Frontend usage emit from `UnitySearchPickerService`.** The endpoint is live; the Blazor picker is not yet posting `select` / `no_match` / `create_new` events to it.
+- **Real AR overdue / AP bills-due / banking / sales-tax filing providers.** AR and AP modules don't yet expose ready-made aggregates of "open documents with due-date and balance-due"; banking has no module; sales-tax filing has no calendar table. V1 ships null providers that log warnings instead of fabricating tasks.
+- **`SystemSetupSnapshot` reader from real settings.** The `SystemSetupActionCenterTaskProvider` is registered with an optimistic snapshot (assume SMTP configured, profile complete). Wiring it to the actual `company_settings` row is the simplest first follow-up.
+- **AI provider adapters.** Today only `NoopAiProvider` is registered. Real providers (OpenAI / Anthropic / etc.) plug into `IUnityAiProvider`; the gateway already enforces flag / router / prompt-registry gating around them.
+- **Report usage emit from report pages.** Endpoint is live; report shells are not yet posting to it.
+- **A scheduled background trigger.** No `IHostedService` exists in the codebase yet; today `RegenerateAsync` is invoked manually via `POST /accounting/action-center/regenerate`. A scheduler (systemd timer or future hosted service) is the natural next step.
+
+## 16. Glossary
 
 - **unityAI** — the Citus AI capability brand. Public-facing name across UI, docs, and marketing.
 - **UnitySearch** — Citus's universal search/picker module. Pre-existing; the canonical Learning + Output reference.

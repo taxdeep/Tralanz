@@ -1,0 +1,153 @@
+namespace Citus.Modules.UnityAi.Application.Contracts;
+
+public sealed record UnitysearchEventInput(
+    Guid CompanyId,
+    Guid? UserId,
+    string? SessionId,
+    string Context,
+    string EntityType,
+    string? Query,
+    string? NormalizedQuery,
+    string EventType,
+    Guid? SelectedEntityId,
+    int? RankPosition,
+    int? ResultCount,
+    string? SourceRoute,
+    string? AnchorContext,
+    string? AnchorEntityType,
+    Guid? AnchorEntityId,
+    string? MetadataJson);
+
+public sealed record UnitysearchUsageStatRecord(
+    Guid Id,
+    Guid CompanyId,
+    string ScopeType,
+    Guid? UserId,
+    string Context,
+    string EntityType,
+    Guid EntityId,
+    int SelectCount,
+    int SelectCount7d,
+    int SelectCount30d,
+    int SelectCount90d,
+    DateTimeOffset? LastSelectedAt,
+    string? LastQuery,
+    decimal? AvgRankPosition,
+    DateTimeOffset UpdatedAt);
+
+public sealed record UnitysearchPairStatRecord(
+    Guid Id,
+    Guid CompanyId,
+    string ScopeType,
+    Guid? UserId,
+    string SourceContext,
+    string AnchorEntityType,
+    Guid AnchorEntityId,
+    string TargetContext,
+    string TargetEntityType,
+    Guid TargetEntityId,
+    int SelectCount,
+    int TotalAnchorSelectCount,
+    decimal ConfidenceScore,
+    DateTimeOffset? LastSelectedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record UnitysearchRankingHintRecord(
+    Guid Id,
+    Guid CompanyId,
+    Guid? UserId,
+    string Context,
+    string EntityType,
+    Guid EntityId,
+    decimal BoostScore,
+    decimal Confidence,
+    string? Reason,
+    string Source,
+    string Status,
+    string ValidationStatus,
+    DateTimeOffset? ExpiresAt);
+
+public interface IUnitysearchEventStore
+{
+    Task RecordEventAsync(UnitysearchEventInput input, CancellationToken cancellationToken);
+}
+
+public interface IUnitysearchUsageStatStore
+{
+    Task UpsertOnSelectAsync(
+        Guid companyId,
+        Guid? userId,
+        string context,
+        string entityType,
+        Guid entityId,
+        int? rankPosition,
+        string? query,
+        DateTimeOffset selectedAt,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<Guid, UnitysearchUsageStatRecord>> GetForCandidatesAsync(
+        Guid companyId,
+        Guid? userId,
+        string scopeType,
+        string context,
+        string entityType,
+        IReadOnlyCollection<Guid> entityIds,
+        CancellationToken cancellationToken);
+}
+
+public interface IUnitysearchPairStatStore
+{
+    Task UpsertOnSelectAsync(
+        Guid companyId,
+        Guid? userId,
+        string sourceContext,
+        string anchorEntityType,
+        Guid anchorEntityId,
+        string targetContext,
+        string targetEntityType,
+        Guid targetEntityId,
+        DateTimeOffset selectedAt,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<UnitysearchPairStatRecord>> GetForAnchorAsync(
+        Guid companyId,
+        Guid? userId,
+        string scopeType,
+        string sourceContext,
+        string anchorEntityType,
+        Guid anchorEntityId,
+        string targetContext,
+        string targetEntityType,
+        CancellationToken cancellationToken);
+}
+
+public interface IUnitysearchRecentQueryStore
+{
+    Task RecordAsync(
+        Guid companyId,
+        Guid? userId,
+        string context,
+        string query,
+        string normalizedQuery,
+        bool resultClicked,
+        string? clickedEntityType,
+        Guid? clickedEntityId,
+        int? resultCount,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken);
+}
+
+public interface IUnitysearchRankingHintStore
+{
+    Task<IReadOnlyList<UnitysearchRankingHintRecord>> GetActiveAsync(
+        Guid companyId,
+        Guid? userId,
+        string context,
+        string entityType,
+        IReadOnlyCollection<Guid>? entityIds,
+        CancellationToken cancellationToken);
+
+    Task UpsertAsync(
+        UnitysearchRankingHintRecord record,
+        CancellationToken cancellationToken);
+}

@@ -8,6 +8,9 @@
     <ProjectReference Include="..\Modules\Inventory\Application.Contracts\Citus.Modules.Inventory.Application.Contracts.csproj" />
     <ProjectReference Include="..\Modules\UnitySearch\Application\Citus.Modules.UnitySearch.Application.csproj" />
     <ProjectReference Include="..\Modules\UnitySearch\Application.Contracts\Citus.Modules.UnitySearch.Application.Contracts.csproj" />
+    <ProjectReference Include="..\Modules\UnityAi\Domain.Shared\Citus.Modules.UnityAi.Domain.Shared.csproj" />
+    <ProjectReference Include="..\Modules\UnityAi\Application.Contracts\Citus.Modules.UnityAi.Application.Contracts.csproj" />
+    <ProjectReference Include="..\Modules\UnityAi\Application\Citus.Modules.UnityAi.Application.csproj" />
     <ProjectReference Include="..\Citus.Platform.Core\Citus.Platform.Core.csproj" />
     <ProjectReference Include="..\Citus.Platform.Infrastructure\Citus.Platform.Infrastructure.csproj" />
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />

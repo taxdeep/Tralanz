@@ -17,6 +17,9 @@ using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
 using Citus.Modules.UnitySearch.Application;
 using Citus.Modules.UnitySearch.Application.Contracts;
+using Citus.Modules.UnityAi.Application;
+using Citus.Modules.UnityAi.Application.Contracts;
+using Citus.Modules.UnityAi.Domain.Shared;
 using Citus.Modules.Inventory.Application.Contracts;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Company;
@@ -25,6 +28,7 @@ using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
 using Infrastructure.PostgreSQL.UnitySearch;
+using Infrastructure.PostgreSQL.UnityAi;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.SessionContext;
 using Modules.Company.MultiBook;
@@ -139,6 +143,66 @@ builder.Services.AddSingleton<IUnitySearchQueryService, PostgreSqlUnitySearchQue
 builder.Services.AddSingleton<IUnitySearchStatsStore, PostgreSqlUnitySearchStatsStore>();
 builder.Services.AddSingleton<IUnitySearchEngine, UnitySearchEngine>();
 
+// ----- unityAI V1 -------------------------------------------------------
+// Authority: AI_PRODUCT_ARCHITECTURE.md
+// Defaults are conservative: gateway off, AI hints pending, traces sampled.
+builder.Services.AddSingleton<UnityAiFeatureFlagAccessor>();
+builder.Services.AddSingleton<PostgreSqlUnityAiSchemaInitializer>();
+builder.Services.AddSingleton<IAiJobRunStore, PostgreSqlAiJobRunStore>();
+builder.Services.AddSingleton<IAiRequestLogStore, PostgreSqlAiRequestLogStore>();
+builder.Services.AddSingleton<IUnitysearchEventStore, PostgreSqlUnitysearchEventStore>();
+builder.Services.AddSingleton<IUnitysearchUsageStatStore, PostgreSqlUnitysearchUsageStatStore>();
+builder.Services.AddSingleton<IUnitysearchPairStatStore, PostgreSqlUnitysearchPairStatStore>();
+builder.Services.AddSingleton<IUnitysearchRecentQueryStore, PostgreSqlUnitysearchRecentQueryStore>();
+builder.Services.AddSingleton<IUnitysearchRankingHintStore, PostgreSqlUnitysearchRankingHintStore>();
+builder.Services.AddSingleton<IUnitysearchDecisionTraceStore, PostgreSqlUnitysearchDecisionTraceStore>();
+builder.Services.AddSingleton<IUnitysearchRankingEngine, UnitysearchRankingEngine>();
+builder.Services.AddSingleton<IReportUsageEventStore, PostgreSqlReportUsageEventStore>();
+builder.Services.AddSingleton<IReportUsageStatStore, PostgreSqlReportUsageStatStore>();
+builder.Services.AddSingleton<IDashboardUserWidgetStore, PostgreSqlDashboardUserWidgetStore>();
+builder.Services.AddSingleton<IDashboardWidgetSuggestionStore, PostgreSqlDashboardWidgetSuggestionStore>();
+builder.Services.AddSingleton<IDashboardSuggestionService, DashboardSuggestionService>();
+builder.Services.AddSingleton<IActionCenterTaskStore, PostgreSqlActionCenterTaskStore>();
+builder.Services.AddSingleton<IActionCenterTaskEventStore, PostgreSqlActionCenterTaskEventStore>();
+builder.Services.AddSingleton<IActionCenterTaskService, ActionCenterTaskService>();
+builder.Services.AddSingleton<IUnityAiProvider, NoopAiProvider>();
+builder.Services.AddSingleton<IUnityAiModelRouter, NoopUnityAiModelRouter>();
+builder.Services.AddSingleton<IUnityAiPromptRegistry, NoopUnityAiPromptRegistry>();
+builder.Services.AddSingleton<IUnityAiStructuredOutputValidator, NoopUnityAiStructuredOutputValidator>();
+builder.Services.AddSingleton<IUnityAiGateway, UnityAiGateway>();
+builder.Services.AddSingleton<IAccountingCopilotPlanner, NoopAccountingCopilotPlanner>();
+
+// V1 ships only the system-setup task provider as a real rule, plus null
+// providers for AR / AP / banking / sales-tax — those domains do not yet
+// expose the read shape these rules need, and the architecture forbids
+// fabricating tasks. Each null provider logs once-per-call so the gap
+// is operationally visible.
+builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new SystemSetupActionCenterTaskProvider(
+    readSnapshotAsync: (companyId, ct) =>
+    {
+        // V1: optimistic snapshot — assume profile complete and SMTP configured
+        // until a real settings reader is wired in. Wiring this to the real
+        // company_settings table is the first follow-up.
+        return ValueTask.FromResult(new SystemSetupSnapshot(SmtpConfigured: true, CompanyProfileComplete: true));
+    },
+    sp.GetRequiredService<ILogger<SystemSetupActionCenterTaskProvider>>()));
+builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCenterTaskProvider(
+    name: "ar_overdue_invoices",
+    missingDomain: "AR open-invoice aggregate not exposed",
+    sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
+builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCenterTaskProvider(
+    name: "ap_bills_due_soon",
+    missingDomain: "AP unpaid-bill aggregate not exposed",
+    sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
+builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCenterTaskProvider(
+    name: "bank_unmatched_transactions",
+    missingDomain: "banking / reconciliation module not yet present",
+    sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
+builder.Services.AddSingleton<IActionCenterTaskProvider>(sp => new NullActionCenterTaskProvider(
+    name: "sales_tax_filing_due",
+    missingDomain: "sales-tax filing calendar not yet exposed",
+    sp.GetRequiredService<ILogger<NullActionCenterTaskProvider>>()));
+
 var app = builder.Build();
 
 await using (var startupScope = app.Services.CreateAsyncScope())
@@ -146,9 +210,11 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var runtimeStateRepository = startupScope.ServiceProvider.GetRequiredService<IPlatformRuntimeStateRepository>();
     var adjustmentAccountMappingRepository = startupScope.ServiceProvider.GetRequiredService<IOpenItemAdjustmentAccountMappingRepository>();
     var unitySearchProjectionStore = startupScope.ServiceProvider.GetRequiredService<IUnitySearchProjectionStore>();
+    var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
+    await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
 }
 
 var accounting = app.MapGroup("/accounting");
@@ -3046,6 +3112,349 @@ accounting.MapPost(
             cancellationToken);
 
         return Results.Accepted();
+    });
+
+// ===========================================================================
+// unityAI V1 endpoints
+//
+// Authority: AI_PRODUCT_ARCHITECTURE.md
+// Each endpoint is a thin shell over the unityAI Application services.
+// Company isolation: every payload's CompanyId is checked against the
+// authenticated session before any store call. Errors are non-fatal —
+// usage tracking failures must not break the user's primary flow.
+// ===========================================================================
+
+accounting.MapPost(
+    "/unitysearch/usage",
+    async (
+        UnitysearchUsageHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IUnitysearchEventStore eventStore,
+        IUnitysearchUsageStatStore usageStore,
+        IUnitysearchPairStatStore pairStore,
+        IUnitysearchRecentQueryStore recentQueries,
+        UnityAiFeatureFlagAccessor flags,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        var logger = loggerFactory.CreateLogger("unitysearch.usage");
+
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+        if (request.CompanyId != Guid.Empty && request.CompanyId != session.ActiveCompanyId)
+        {
+            return Results.BadRequest(new { message = "company_id mismatch" });
+        }
+        if (string.IsNullOrWhiteSpace(request.Context) || string.IsNullOrWhiteSpace(request.EntityType) || string.IsNullOrWhiteSpace(request.EventType))
+        {
+            return Results.BadRequest(new { message = "context, entity_type, and event_type are required" });
+        }
+
+        if (!flags.UnitysearchLearningEnabled)
+        {
+            return Results.Ok(new { ok = true, learning = "disabled" });
+        }
+
+        var companyId = session.ActiveCompanyId;
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var now = DateTimeOffset.UtcNow;
+        var normalizedQuery = string.IsNullOrWhiteSpace(request.Query) ? null : request.Query.Trim().ToLowerInvariant();
+
+        try
+        {
+            await eventStore.RecordEventAsync(new UnitysearchEventInput(
+                CompanyId: companyId,
+                UserId: userId,
+                SessionId: request.SessionId,
+                Context: request.Context.Trim(),
+                EntityType: request.EntityType.Trim(),
+                Query: request.Query,
+                NormalizedQuery: normalizedQuery,
+                EventType: request.EventType.Trim(),
+                SelectedEntityId: request.SelectedEntityId,
+                RankPosition: request.RankPosition,
+                ResultCount: request.ResultCount,
+                SourceRoute: request.SourceRoute,
+                AnchorContext: request.AnchorContext,
+                AnchorEntityType: request.AnchorEntityType,
+                AnchorEntityId: request.AnchorEntityId,
+                MetadataJson: request.MetadataJson), cancellationToken);
+
+            if (string.Equals(request.EventType, UnitysearchEventType.Select, StringComparison.OrdinalIgnoreCase) && request.SelectedEntityId.HasValue)
+            {
+                await usageStore.UpsertOnSelectAsync(
+                    companyId, userId, request.Context, request.EntityType, request.SelectedEntityId.Value,
+                    request.RankPosition, request.Query, now, cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(request.AnchorContext) &&
+                    !string.IsNullOrWhiteSpace(request.AnchorEntityType) &&
+                    request.AnchorEntityId.HasValue)
+                {
+                    await pairStore.UpsertOnSelectAsync(
+                        companyId, userId,
+                        request.AnchorContext!, request.AnchorEntityType!, request.AnchorEntityId.Value,
+                        request.Context, request.EntityType, request.SelectedEntityId.Value,
+                        now, cancellationToken);
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Query) && !string.IsNullOrWhiteSpace(normalizedQuery))
+                {
+                    await recentQueries.RecordAsync(
+                        companyId, userId, request.Context, request.Query, normalizedQuery,
+                        resultClicked: true,
+                        clickedEntityType: request.EntityType,
+                        clickedEntityId: request.SelectedEntityId,
+                        resultCount: request.ResultCount,
+                        createdAt: now,
+                        cancellationToken);
+                }
+            }
+
+            return Results.Ok(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "unitysearch usage tracking failed (context={Context})", request.Context);
+            return Results.Ok(new { ok = false, error = "tracking_failed" });
+        }
+    });
+
+accounting.MapPost(
+    "/reports/usage",
+    async (
+        ReportUsageHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IReportUsageEventStore eventStore,
+        IReportUsageStatStore statStore,
+        UnityAiFeatureFlagAccessor flags,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        var logger = loggerFactory.CreateLogger("reports.usage");
+
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+        if (string.IsNullOrWhiteSpace(request.ReportKey) || string.IsNullOrWhiteSpace(request.EventType))
+        {
+            return Results.BadRequest(new { message = "report_key and event_type are required" });
+        }
+
+        if (!flags.ReportUsageLearningEnabled)
+        {
+            return Results.Ok(new { ok = true, learning = "disabled" });
+        }
+
+        var companyId = session.ActiveCompanyId;
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var input = new ReportUsageEventInput(
+            CompanyId: companyId,
+            UserId: userId,
+            ReportKey: request.ReportKey.Trim(),
+            EventType: request.EventType.Trim(),
+            DateRangeKey: request.DateRangeKey,
+            FiltersJson: request.FiltersJson,
+            SourceRoute: request.SourceRoute,
+            MetadataJson: request.MetadataJson);
+
+        try
+        {
+            await eventStore.RecordAsync(input, cancellationToken);
+            await statStore.UpsertAsync(input, DateTimeOffset.UtcNow, cancellationToken);
+            return Results.Ok(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "report usage tracking failed (report={ReportKey})", request.ReportKey);
+            return Results.Ok(new { ok = false, error = "tracking_failed" });
+        }
+    });
+
+accounting.MapGet(
+    "/dashboard/suggestions",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IDashboardWidgetSuggestionStore store,
+        string? status,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var items = await store.GetForUserAsync(session.ActiveCompanyId, userId, status, cancellationToken);
+        return Results.Ok(items);
+    });
+
+accounting.MapPost(
+    "/dashboard/suggestions/generate",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IDashboardSuggestionService service,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var now = DateTimeOffset.UtcNow;
+        var result = await service.GenerateAsync(session.ActiveCompanyId, userId, now.AddDays(-30), now, cancellationToken);
+        return Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/dashboard/suggestions/{id:guid}/accept",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        IDashboardWidgetSuggestionStore store,
+        IDashboardUserWidgetStore widgetStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var existing = await store.GetByIdAsync(session.ActiveCompanyId, id, cancellationToken);
+        if (existing is null) return Results.NotFound();
+
+        var now = DateTimeOffset.UtcNow;
+        await store.UpdateStatusAsync(id, DashboardSuggestionStatus.Accepted, now, null, null, cancellationToken);
+
+        await widgetStore.UpsertAsync(new DashboardUserWidgetRecord(
+            Id: Guid.NewGuid(),
+            CompanyId: existing.CompanyId,
+            UserId: existing.UserId,
+            WidgetKey: existing.WidgetKey,
+            Title: existing.Title,
+            ConfigJson: null,
+            Position: null,
+            Source: DashboardWidgetSource.Suggestion,
+            Active: true,
+            CreatedAt: now,
+            UpdatedAt: now), cancellationToken);
+
+        return Results.Ok(new { ok = true });
+    });
+
+accounting.MapPost(
+    "/dashboard/suggestions/{id:guid}/dismiss",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        IDashboardWidgetSuggestionStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var existing = await store.GetByIdAsync(session.ActiveCompanyId, id, cancellationToken);
+        if (existing is null) return Results.NotFound();
+
+        await store.UpdateStatusAsync(id, DashboardSuggestionStatus.Dismissed, null, DateTimeOffset.UtcNow, null, cancellationToken);
+        return Results.Ok(new { ok = true });
+    });
+
+accounting.MapPost(
+    "/dashboard/suggestions/{id:guid}/snooze",
+    async (
+        Guid id,
+        DashboardSnoozeHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IDashboardWidgetSuggestionStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var existing = await store.GetByIdAsync(session.ActiveCompanyId, id, cancellationToken);
+        if (existing is null) return Results.NotFound();
+
+        var until = request.SnoozedUntil ?? DateTimeOffset.UtcNow.AddDays(7);
+        await store.UpdateStatusAsync(id, DashboardSuggestionStatus.Snoozed, null, null, until, cancellationToken);
+        return Results.Ok(new { ok = true });
+    });
+
+accounting.MapGet(
+    "/action-center/tasks",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IActionCenterTaskService service,
+        string? status,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var statusFilter = string.IsNullOrWhiteSpace(status) ? null : status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var tasks = await service.GetTasksAsync(session.ActiveCompanyId, userId, statusFilter, cancellationToken);
+        return Results.Ok(tasks);
+    });
+
+accounting.MapPost(
+    "/action-center/regenerate",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IActionCenterTaskService service,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var result = await service.RegenerateAsync(session.ActiveCompanyId, userId, cancellationToken);
+        return Results.Ok(result);
+    });
+
+accounting.MapPost(
+    "/action-center/tasks/{id:guid}/start",
+    async (Guid id, BusinessSessionContextAccessor sessionAccessor, IActionCenterTaskService service, CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var updated = await service.StartAsync(session.ActiveCompanyId, id, userId, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapPost(
+    "/action-center/tasks/{id:guid}/done",
+    async (Guid id, BusinessSessionContextAccessor sessionAccessor, IActionCenterTaskService service, CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var updated = await service.CompleteAsync(session.ActiveCompanyId, id, userId, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapPost(
+    "/action-center/tasks/{id:guid}/dismiss",
+    async (Guid id, BusinessSessionContextAccessor sessionAccessor, IActionCenterTaskService service, CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var updated = await service.DismissAsync(session.ActiveCompanyId, id, userId, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapPost(
+    "/action-center/tasks/{id:guid}/snooze",
+    async (
+        Guid id,
+        ActionCenterSnoozeHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IActionCenterTaskService service,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var until = request.SnoozedUntil ?? DateTimeOffset.UtcNow.AddDays(1);
+        var updated = await service.SnoozeAsync(session.ActiveCompanyId, id, userId, until, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
 accounting.MapPost(
