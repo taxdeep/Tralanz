@@ -13,7 +13,9 @@
 @inject NavigationManager NavigationManager
 @inject Citus.Business.Blazor.State.BusinessShellState ShellState
 @inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
+@inject Citus.Business.Blazor.Services.BusinessAuthenticationClient BusinessAuthenticationClient
 @inject AntDesign.IMessageService Message
+@inject IJSRuntime JS
 
 <div class="citus-topbar">
     <button type="button"
@@ -66,16 +68,23 @@
                         <div class="citus-topbar__user-meta">@ShellState.User.Email</div>
                     </AntDesign.MenuItem>
                     <AntDesign.MenuDivider />
-                    <AntDesign.MenuItem RouterLink="./session">
+                    <AntDesign.MenuItem RouterLink="./account/profile">
                         <span class="citus-topbar__menu-row">
                             <CitusIcon Name="IconName.User" Size="IconSize.Inline" />
+                            <span>Profile</span>
+                        </span>
+                    </AntDesign.MenuItem>
+                    <AntDesign.MenuItem RouterLink="./session">
+                        <span class="citus-topbar__menu-row">
+                            <CitusIcon Name="IconName.Activity" Size="IconSize.Inline" />
                             <span>Session</span>
                         </span>
                     </AntDesign.MenuItem>
-                    <AntDesign.MenuItem RouterLink="./settings">
-                        <span class="citus-topbar__menu-row">
-                            <CitusIcon Name="IconName.Settings" Size="IconSize.Inline" />
-                            <span>Company settings</span>
+                    <AntDesign.MenuDivider />
+                    <AntDesign.MenuItem OnClick="OnSignOutAsync">
+                        <span class="citus-topbar__menu-row citus-topbar__menu-row--danger">
+                            <CitusIcon Name="IconName.Logout" Size="IconSize.Inline" />
+                            <span>Sign out</span>
                         </span>
                     </AntDesign.MenuItem>
                 </AntDesign.Menu>
@@ -125,6 +134,35 @@
     {
         var suffix = company.IsReadOnly ? " · read-only" : string.Empty;
         return $"{company.CompanyName} ({company.CompanyCode}){suffix}";
+    }
+
+    private async Task OnSignOutAsync()
+    {
+        // Best-effort backend revocation. Bootstrap sessions short-circuit
+        // inside the auth client; real sessions hit /accounting/auth/logout.
+        try
+        {
+            await BusinessAuthenticationClient.SignOutAsync(ShellState.SessionToken);
+        }
+        catch (Exception)
+        {
+            // Sign-out must always succeed locally even if the backend can't
+            // be reached — clearing client state is the user-visible promise.
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("citusBusinessAuth.clearSessionToken");
+        }
+        catch (Exception)
+        {
+            // sessionStorage clear failed — proceed; the next page load will
+            // not find a token and the auth gate will redirect to login.
+        }
+
+        ShellState.ClearAuthenticatedSession();
+        await Message.InfoAsync("Signed out.");
+        NavigationManager.NavigateTo(string.Empty);
     }
 
     private void OnGlobalSearchSelected(UnitySearchPickerOption option)

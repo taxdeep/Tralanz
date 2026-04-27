@@ -73,6 +73,9 @@
     padding: var(--citus-space-2) 0;
     flex: 1;
     overflow-y: auto;
+    /* AntDesign Menu's default rule occasionally introduces a horizontal
+       scroll when the inner <ul> picks up a 2px focus outline; clamp it. */
+    overflow-x: hidden;
 }
 
 .citus-nav-menu .ant-menu-item-group-title {
@@ -745,30 +748,64 @@
 }
 
 /* ---------- Dark-mode sidebar contrast overrides ----------
-   Scoped to data-theme="dark" so global tokens stay untouched.
-   The default fg-muted / fg-subtle work fine in light mode but read as
-   illegible greys against the elevated dark sider; bump them locally. */
+   The Sider is hard-coded to Theme="Light" so AntDesign applies its
+   light-mode .ant-menu-light selectors (dark text on light bg). On our
+   dark sider that paints near-black text on a near-black surface — i.e.
+   the text becomes invisible.
 
-[data-theme="dark"] .citus-shell__sider {
+   The fix targets every level AntDesign paints text at:
+     * the <li class="ant-menu-item"> itself
+     * the inner <a class="ant-menu-title-content">
+     * our own .citus-nav-menu__item / __label spans
+     * the SVG icon (currentColor)
+
+   We use BOTH html.dark (matches tokens.css convention) and
+   html[data-theme="dark"] (matches App.razor's attribute). Either is set
+   by the theme service in dark mode, so paired they survive any future
+   refactor on either side. Selectivity is high enough to beat
+   AntDesign's default rules even when those carry their own !important. */
+
+html.dark .citus-shell__sider,
+html[data-theme="dark"] .citus-shell__sider {
     background: oklch(18% 0.012 254) !important;
 }
 
-[data-theme="dark"] .citus-nav-menu .ant-menu-item-group-title {
-    color: oklch(75% 0.014 254) !important;
+html.dark .citus-nav-menu .ant-menu-item-group-title,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item-group-title {
+    color: var(--citus-color-fg-muted) !important;
     font-weight: 500;
-}
-
-[data-theme="dark"] .citus-nav-menu .ant-menu-item {
-    color: oklch(88% 0.008 254) !important;
-}
-
-[data-theme="dark"] .citus-nav-menu .ant-menu-item .citus-icon {
-    opacity: 0.9;
-}
-
-[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected .citus-icon,
-[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .citus-icon {
     opacity: 1;
+}
+
+html.dark .citus-nav-menu .ant-menu-item,
+html.dark .citus-nav-menu .ant-menu-item .ant-menu-title-content,
+html.dark .citus-nav-menu .ant-menu-item > a,
+html.dark .citus-nav-menu .ant-menu-item .citus-nav-menu__item,
+html.dark .citus-nav-menu .ant-menu-item .citus-nav-menu__label,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item .ant-menu-title-content,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item > a,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item .citus-nav-menu__item,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item .citus-nav-menu__label {
+    color: var(--citus-color-fg) !important;
+}
+
+/* Selected and hover state keep their primary tint — re-assert after the
+   broad overrides above. */
+html.dark .citus-nav-menu .ant-menu-item-selected,
+html.dark .citus-nav-menu .ant-menu-item-selected .ant-menu-title-content,
+html.dark .citus-nav-menu .ant-menu-item-selected .citus-nav-menu__label,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected .ant-menu-title-content,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item-selected .citus-nav-menu__label {
+    color: var(--citus-color-primary) !important;
+}
+
+html.dark .citus-nav-menu .ant-menu-item:hover .ant-menu-title-content,
+html.dark .citus-nav-menu .ant-menu-item:hover .citus-nav-menu__label,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .ant-menu-title-content,
+html[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .citus-nav-menu__label {
+    color: var(--citus-color-primary-hover) !important;
 }
 
 /* ---------- Top-bar global search slot ----------

@@ -1,0 +1,244 @@
+@page "/account/profile"
+
+@inject BusinessShellState ShellState
+@inject AntDesign.IMessageService Message
+
+@*
+    AccountProfilePage — the user-facing profile editor reachable from the
+    topbar avatar dropdown.
+
+    V1 scope: surface the current identity and accept name / password
+    changes in a real form. The Accounting API does not yet ship a
+    profile-update endpoint, so the save buttons emit an Info toast that
+    explains the change has not been persisted. The form is intentionally
+    fully functional from a UX standpoint so the wiring becomes a
+    one-method-call exercise once the backend lands.
+*@
+
+<PageTitle>Profile | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header" />
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Your details</h2>
+        <p class="text-fg-muted text-sm mb-4">
+            Update your display name. Your sign-in email and assigned roles are managed
+            elsewhere and shown read-only.
+        </p>
+
+        <form class="flex flex-col gap-3" @onsubmit="OnSaveDetailsAsync" @onsubmit:preventDefault>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Display name</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_displayName"
+                       @oninput="@(e => _displayName = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSavingDetails"
+                       maxlength="120" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Email</span>
+                <input type="email"
+                       class="citus-form-field__input"
+                       value="@ShellState.User.Email"
+                       readonly />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Username</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@ShellState.User.Username"
+                       readonly />
+            </label>
+
+            <div class="flex items-center gap-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Size="CitusButtonSize.Medium"
+                             HtmlType="@("submit")"
+                             Disabled="_isSavingDetails || !HasUnsavedDetails"
+                             OnClick="OnSaveDetailsAsync">
+                    @(_isSavingDetails ? "Saving…" : "Save changes")
+                </CitusButton>
+                @if (HasUnsavedDetails && !_isSavingDetails)
+                {
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Size="CitusButtonSize.Medium"
+                                 OnClick="ResetDetails">
+                        Discard
+                    </CitusButton>
+                }
+            </div>
+        </form>
+    </section>
+
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Change password</h2>
+        <p class="text-fg-muted text-sm mb-4">
+            Choose a new password. You will be signed out from any device that has not
+            seen the new credential.
+        </p>
+
+        <form class="flex flex-col gap-3" @onsubmit="OnChangePasswordAsync" @onsubmit:preventDefault>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Current password</span>
+                <input type="password"
+                       class="citus-form-field__input"
+                       value="@_currentPassword"
+                       @oninput="@(e => _currentPassword = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSavingPassword"
+                       autocomplete="current-password" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">New password</span>
+                <input type="password"
+                       class="citus-form-field__input"
+                       value="@_newPassword"
+                       @oninput="@(e => _newPassword = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSavingPassword"
+                       autocomplete="new-password" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Confirm new password</span>
+                <input type="password"
+                       class="citus-form-field__input"
+                       value="@_confirmPassword"
+                       @oninput="@(e => _confirmPassword = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSavingPassword"
+                       autocomplete="new-password" />
+            </label>
+
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Size="CitusButtonSize.Medium"
+                         HtmlType="@("submit")"
+                         Disabled="_isSavingPassword"
+                         OnClick="OnChangePasswordAsync">
+                @(_isSavingPassword ? "Updating…" : "Update password")
+            </CitusButton>
+        </form>
+    </section>
+</div>
+
+<section class="citus-panel">
+    <h2 class="citus-panel__title">Roles and access</h2>
+    <p class="text-fg-muted text-sm mb-4">
+        Roles are controlled by an account owner. Contact your administrator to request a change.
+    </p>
+    <div class="flex flex-wrap gap-2">
+        @if (ShellState.User.Roles.Count == 0)
+        {
+            <span class="text-fg-muted text-sm">No roles assigned.</span>
+        }
+        else
+        {
+            @foreach (var role in ShellState.User.Roles)
+            {
+                <AntDesign.Tag Color="@AntDesign.PresetColor.Blue.ToString().ToLowerInvariant()">@role</AntDesign.Tag>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Account",
+        Title = "Profile",
+        Subtitle = "Personal details, password, and assigned roles for the signed-in user."
+    };
+
+    private string _displayName = string.Empty;
+    private string _currentPassword = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private bool _isSavingDetails;
+    private bool _isSavingPassword;
+
+    private bool HasUnsavedDetails =>
+        !string.Equals(_displayName?.Trim(), ShellState.User.DisplayName?.Trim(), StringComparison.Ordinal);
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrEmpty(_displayName))
+        {
+            _displayName = ShellState.User.DisplayName ?? string.Empty;
+        }
+    }
+
+    private void ResetDetails()
+    {
+        _displayName = ShellState.User.DisplayName ?? string.Empty;
+    }
+
+    private async Task OnSaveDetailsAsync()
+    {
+        if (_isSavingDetails)
+        {
+            return;
+        }
+
+        var trimmed = _displayName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            await Message.WarningAsync("Display name cannot be empty.");
+            return;
+        }
+
+        _isSavingDetails = true;
+        try
+        {
+            // The Accounting API does not yet expose a profile-update endpoint.
+            // Surface that honestly so the user knows the change is not persisted.
+            await Message.InfoAsync("Profile updates are not yet wired to the backend; this change has not been saved.");
+        }
+        finally
+        {
+            _isSavingDetails = false;
+        }
+    }
+
+    private async Task OnChangePasswordAsync()
+    {
+        if (_isSavingPassword)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_currentPassword) ||
+            string.IsNullOrWhiteSpace(_newPassword) ||
+            string.IsNullOrWhiteSpace(_confirmPassword))
+        {
+            await Message.WarningAsync("Fill in all password fields.");
+            return;
+        }
+
+        if (!string.Equals(_newPassword, _confirmPassword, StringComparison.Ordinal))
+        {
+            await Message.WarningAsync("New password and confirmation do not match.");
+            return;
+        }
+
+        if (_newPassword.Length < 8)
+        {
+            await Message.WarningAsync("New password must be at least 8 characters.");
+            return;
+        }
+
+        _isSavingPassword = true;
+        try
+        {
+            await Message.InfoAsync("Password change is not yet wired to the backend; the new password has not been applied.");
+            _currentPassword = string.Empty;
+            _newPassword = string.Empty;
+            _confirmPassword = string.Empty;
+        }
+        finally
+        {
+            _isSavingPassword = false;
+        }
+    }
+}
