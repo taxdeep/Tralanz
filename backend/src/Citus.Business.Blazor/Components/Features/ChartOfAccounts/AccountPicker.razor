@@ -1,0 +1,469 @@
+@*
+    AccountPicker — typed-input + popup for selecting a chart-of-accounts
+    row inline on document forms (journal entry lines, invoice line account
+    column, etc.). Reuses UnitySearchPickerService for ranking — the
+    learned "you pick this account often" signal still applies — but
+    enriches each result with currency / detail-type metadata from
+    AccountClient so the popup can render the QuickBooks-style triple
+    column (code | name - CCY | detail/parent hint).
+
+    Includes an inline "+ Add new {query}" affordance that opens a
+    minimal expansion panel: code / name / root type / currency, posts
+    via AccountClient.CreateAsync, then auto-selects the new account.
+    The newly-created row also lands in the local cache so subsequent
+    keystrokes show it without waiting for the UnitySearch projection
+    refresh.
+*@
+
+@namespace Citus.Business.Blazor.Components.Features.ChartOfAccounts
+@inject AccountClient AccountClient
+@inject Citus.Modules.UnitySearch.Blazor.UnitySearchPickerService PickerService
+@inject CitusToastService Toast
+
+<div class="citus-account-picker @(Disabled ? "citus-account-picker--disabled" : null)">
+    <div class="citus-account-picker__control" @onclick="HandleControlClick">
+        <input class="citus-account-picker__input"
+               type="text"
+               value="@_searchText"
+               placeholder="@Placeholder"
+               disabled="@Disabled"
+               @ref="_inputRef"
+               @oninput="HandleInputAsync"
+               @onfocus="HandleFocus"
+               @onblur="HandleBlurAsync"
+               @onkeydown="HandleKeyDownAsync" />
+        <i class="citus-account-picker__chevron" aria-hidden="true">▾</i>
+        @if (!Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
+        {
+            <button type="button"
+                    class="citus-account-picker__clear"
+                    @onmousedown:preventDefault
+                    @onclick="ClearAsync"
+                    aria-label="Clear">×</button>
+        }
+    </div>
+
+    @if (_showResults)
+    {
+        <div class="citus-account-picker__panel" role="listbox">
+            @if (CanCreate)
+            {
+                <button type="button"
+                        class="citus-account-picker__create"
+                        @onmousedown:preventDefault
+                        @onclick="OpenCreatePanelAsync">
+                    <span class="citus-account-picker__create-plus">+</span>
+                    <span>Add new @(_searchText.Trim().Length > 0 ? $"\"{_searchText.Trim()}\"" : "account")</span>
+                </button>
+            }
+            @if (_loading)
+            {
+                <div class="citus-account-picker__empty">Loading…</div>
+            }
+            else if (_visibleRows.Count == 0)
+            {
+                <div class="citus-account-picker__empty">No matching accounts.</div>
+            }
+            else
+            {
+                @for (var idx = 0; idx < _visibleRows.Count; idx++)
+                {
+                    var i = idx;
+                    var row = _visibleRows[i];
+                    <button type="button"
+                            class="citus-account-picker__option @(i == _highlightedIndex ? "is-active" : null)"
+                            @onmousedown:preventDefault
+                            @onclick="@(() => SelectAsync(row))"
+                            @onmouseover="() => _highlightedIndex = i">
+                        <span class="citus-account-picker__option-code">@RenderHighlight(row.Code)</span>
+                        <span class="citus-account-picker__option-name">
+                            @RenderHighlight(row.Name)
+                            @if (!string.IsNullOrEmpty(row.CurrencyCode))
+                            {
+                                <span class="citus-account-picker__option-ccy"> - @row.CurrencyCode</span>
+                            }
+                        </span>
+                        <span class="citus-account-picker__option-meta">@FormatMeta(row)</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+
+    @if (_creating)
+    {
+        <div class="citus-account-picker__create-panel">
+            <div class="citus-account-picker__create-row">
+                <label class="text-xs font-medium block mb-1">Code</label>
+                <input class="citus-account-picker__create-input"
+                       value="@_newCode"
+                       @oninput="@(e => _newCode = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <div class="citus-account-picker__create-row">
+                <label class="text-xs font-medium block mb-1">Name</label>
+                <input class="citus-account-picker__create-input"
+                       value="@_newName"
+                       @oninput="@(e => _newName = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <div class="citus-account-picker__create-row">
+                <label class="text-xs font-medium block mb-1">Type</label>
+                <select class="citus-account-picker__create-input"
+                        value="@_newRootType"
+                        @onchange="@(e => _newRootType = e.Value?.ToString() ?? "expense")">
+                    <option value="asset">Asset</option>
+                    <option value="liability">Liability</option>
+                    <option value="equity">Equity</option>
+                    <option value="revenue">Revenue</option>
+                    <option value="cost_of_sales">Cost of Sales</option>
+                    <option value="expense">Expense</option>
+                </select>
+            </div>
+            <div class="citus-account-picker__create-actions">
+                <button type="button" class="citus-account-picker__create-cancel" @onclick="CancelCreate">Cancel</button>
+                <button type="button"
+                        class="citus-account-picker__create-save"
+                        disabled="@(_creatingBusy || string.IsNullOrWhiteSpace(_newCode) || string.IsNullOrWhiteSpace(_newName))"
+                        @onclick="SaveCreateAsync">
+                    @(_creatingBusy ? "Saving…" : "Save")
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(_createError))
+            {
+                <p class="citus-account-picker__create-error">@_createError</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CompanyId { get; set; }
+    [Parameter] public Guid? UserId { get; set; }
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public string? SelectedDisplayText { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Account";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? DefaultCurrencyCode { get; set; }
+    [Parameter] public EventCallback<AccountSummary> OnAccountSelected { get; set; }
+    [Parameter] public EventCallback OnCleared { get; set; }
+    [Parameter] public string Context { get; set; } = "journal_entry.account_picker";
+
+    private ElementReference _inputRef;
+    private string _searchText = string.Empty;
+    private bool _showResults;
+    private bool _isFocused;
+    private bool _loading;
+    private bool _hasLoadedOnce;
+    private int _highlightedIndex = -1;
+
+    // Full company chart, loaded once per session and refreshed when we
+    // create a row inline. Search filters this list client-side; ranking
+    // is layered on top via UnitySearchPickerService.SearchAsync results.
+    private List<AccountSummary> _allAccounts = new();
+    private IReadOnlyList<AccountSummary> _visibleRows = Array.Empty<AccountSummary>();
+    private CancellationTokenSource? _searchCts;
+    private CancellationTokenSource? _blurCts;
+
+    // Inline create-account panel state.
+    private bool _creating;
+    private bool _creatingBusy;
+    private string _newCode = string.Empty;
+    private string _newName = string.Empty;
+    private string _newRootType = "expense";
+    private string? _createError;
+
+    private bool CanCreate => !Disabled && !_creating;
+
+    protected override void OnParametersSet()
+    {
+        if (!_isFocused && !string.IsNullOrEmpty(SelectedDisplayText))
+        {
+            _searchText = SelectedDisplayText;
+        }
+    }
+
+    private async Task EnsureLoadedAsync()
+    {
+        if (_hasLoadedOnce || Disabled || CompanyId == Guid.Empty)
+        {
+            return;
+        }
+        _hasLoadedOnce = true;
+        _loading = true;
+        try
+        {
+            var rows = await AccountClient.ListAsync();
+            _allAccounts = rows.Where(static r => r.IsActive).ToList();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleFocus(FocusEventArgs _)
+    {
+        _isFocused = true;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        _blurCts = null;
+
+        await EnsureLoadedAsync();
+        await ApplyFilterAsync(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private async Task HandleControlClick()
+    {
+        if (Disabled) return;
+        if (!_showResults)
+        {
+            await HandleFocus(default!);
+        }
+    }
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _highlightedIndex = -1;
+        _showResults = true;
+        await EnsureLoadedAsync();
+        await ApplyFilterAsync(_searchText);
+        StateHasChanged();
+    }
+
+    private async Task ApplyFilterAsync(string query)
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+
+        var trimmed = query.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            // No query → top-N by code, gives the user something useful
+            // immediately on focus.
+            _visibleRows = _allAccounts
+                .OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
+                .Take(15)
+                .ToArray();
+            return;
+        }
+
+        // Local match: starts-with code wins, then contains-in-code, then
+        // contains-in-name. This is the immediate result so the popup
+        // never feels like it's waiting on the network.
+        var localMatches = _allAccounts
+            .Where(a =>
+                a.Code.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                a.Code.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                a.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(a => a.Code.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
+            .Take(15)
+            .ToArray();
+        _visibleRows = localMatches;
+
+        if (trimmed.Length < 2 || CompanyId == Guid.Empty)
+        {
+            return;
+        }
+
+        // Ranked overlay — UnitySearch returns SourceIds in learned-rank
+        // order. Re-order the local matches to follow that order, falling
+        // back to local order for anything UnitySearch didn't rank.
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            var ranked = await PickerService.SearchAsync(
+                CompanyId,
+                UserId,
+                Context,
+                trimmed,
+                take: 15,
+                cts.Token);
+
+            if (cts.IsCancellationRequested || ranked.Count == 0)
+            {
+                return;
+            }
+
+            var indexById = _allAccounts.ToDictionary(a => a.Id);
+            var rankOrdered = ranked
+                .Where(opt => indexById.ContainsKey(opt.SourceId))
+                .Select(opt => indexById[opt.SourceId])
+                .ToList();
+            // Append local matches that weren't in the ranked set so we
+            // never lose data the user expected to see.
+            foreach (var local in localMatches)
+            {
+                if (!rankOrdered.Any(r => r.Id == local.Id))
+                {
+                    rankOrdered.Add(local);
+                }
+            }
+            _visibleRows = rankOrdered;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task HandleBlurAsync(FocusEventArgs _)
+    {
+        _isFocused = false;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _blurCts = cts;
+
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            if (!cts.IsCancellationRequested && !_creating)
+            {
+                _showResults = false;
+                _searchText = SelectedDisplayText ?? _searchText;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!_showResults || _visibleRows.Count == 0) return;
+        if (e.Key == "ArrowDown")
+        {
+            _highlightedIndex = Math.Min(_highlightedIndex + 1, _visibleRows.Count - 1);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+        }
+        else if (e.Key == "Enter" && _highlightedIndex >= 0 && _highlightedIndex < _visibleRows.Count)
+        {
+            await SelectAsync(_visibleRows[_highlightedIndex]);
+        }
+        else if (e.Key == "Escape")
+        {
+            _showResults = false;
+        }
+    }
+
+    private async Task SelectAsync(AccountSummary row)
+    {
+        _showResults = false;
+        _searchText = $"{row.Code} {row.Name}";
+        await OnAccountSelected.InvokeAsync(row);
+        StateHasChanged();
+    }
+
+    private async Task ClearAsync()
+    {
+        _searchText = string.Empty;
+        _showResults = false;
+        await OnCleared.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private Task OpenCreatePanelAsync()
+    {
+        // Pre-populate from what the user has typed: numeric → Code, else → Name.
+        var typed = _searchText.Trim();
+        if (typed.Length > 0 && typed.All(char.IsDigit))
+        {
+            _newCode = typed;
+            _newName = string.Empty;
+        }
+        else
+        {
+            _newCode = string.Empty;
+            _newName = typed;
+        }
+        _newRootType = "expense";
+        _createError = null;
+        _creating = true;
+        _showResults = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void CancelCreate()
+    {
+        _creating = false;
+        _createError = null;
+    }
+
+    private async Task SaveCreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newCode) || string.IsNullOrWhiteSpace(_newName))
+        {
+            return;
+        }
+        _creatingBusy = true;
+        _createError = null;
+        try
+        {
+            var payload = new AccountUpsertPayload(
+                Code: _newCode.Trim(),
+                Name: _newName.Trim(),
+                RootType: _newRootType,
+                DetailType: null,
+                CurrencyCode: DefaultCurrencyCode,
+                AllowManualPosting: true,
+                IsActive: true);
+
+            var outcome = await AccountClient.CreateAsync(payload);
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _createError = outcome.ErrorMessage ?? "Could not save the account.";
+                return;
+            }
+
+            _allAccounts.Add(outcome.Saved);
+            _creating = false;
+            await Toast.SuccessAsync($"Account {outcome.Saved.Code} created.");
+            await SelectAsync(outcome.Saved);
+        }
+        finally
+        {
+            _creatingBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatMeta(AccountSummary row)
+    {
+        var rootLabel = char.ToUpperInvariant(row.RootType[0]) + row.RootType.Substring(1).Replace('_', ' ');
+        if (!string.IsNullOrEmpty(row.DetailType) && !string.Equals(row.DetailType, row.RootType, StringComparison.OrdinalIgnoreCase))
+        {
+            return rootLabel;
+        }
+        return rootLabel;
+    }
+
+    private RenderFragment RenderHighlight(string text) => builder =>
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        var query = _searchText?.Trim();
+        if (string.IsNullOrEmpty(query))
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+        var idx = text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+        if (idx > 0) builder.AddContent(1, text.Substring(0, idx));
+        builder.OpenElement(2, "strong");
+        builder.AddAttribute(3, "class", "citus-account-picker__match");
+        builder.AddContent(4, text.Substring(idx, query.Length));
+        builder.CloseElement();
+        var tail = idx + query.Length;
+        if (tail < text.Length) builder.AddContent(5, text.Substring(tail));
+    };
+}
