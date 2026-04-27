@@ -42,10 +42,16 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
     /// 2026-04-27: prior 64-account variant included company-specific bank
     /// names, region-specific tax payables, and industry-specific fixed
     /// assets (logistics tractors / warehouse equipment). This version
-    /// targets ~46 user-visible universal accounts plus 6 hidden system
-    /// rows (5 FX + 2 sub-currency reserves), with payroll / bad-debt /
-    /// long-term-debt / income-tax coverage that the previous chart
-    /// missed.
+    /// targets ~46 user-visible universal accounts plus 5 hidden FX system
+    /// rows, with payroll / bad-debt / long-term-debt / income-tax coverage
+    /// that the previous chart missed.
+    ///
+    /// Note (2026-04-27): the prior 11001 / 20001 sub-currency reserve rows
+    /// were removed. AR/AP foreign-currency control accounts are now created
+    /// on demand by the multi-currency seeder when a company enables an
+    /// additional currency (so a USD-enabled company gets "Accounts
+    /// Receivable - USD" / "Accounts Payable - USD" allocated into the
+    /// 11xxx / 20xxx reserve families).
     ///
     /// All canonical codes are exactly 5 digits. The Wizard's account
     /// code length picker (4–10) reformats them on apply: trailing zeros
@@ -55,9 +61,9 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
     /// </summary>
     private static CoaTemplate BuildCanonical5Digit() => new(
         Key: "ca_general_small_business",
-        Version: "3",
+        Version: "4",
         Name: "General business (5-digit canonical)",
-        Description: "Generic universal chart of accounts for SMBs. Covers cash, AR/AP control, current/fixed assets, current and long-term liabilities (incl. credit card, payroll, sales/income tax), equity, income, COGS, operating expense (incl. payroll), FX, asset disposal, and income tax expense, plus engine-required hidden FX system rows. Codes are stored at 5 digits and shifted to the company's chosen length (4–10).",
+        Description: "Generic universal chart of accounts for SMBs. Covers cash, AR/AP control (base currency only — per-currency AR/AP rows are added when multi-currency is enabled), current/fixed assets, current and long-term liabilities (incl. credit card, payroll, sales/income tax), equity, income, COGS, operating expense (incl. payroll), FX, asset disposal, and income tax expense, plus engine-required hidden FX system rows. Codes are stored at 5 digits and shifted to the company's chosen length (4–10).",
         Country: "Generic",
         AccountCodeLength: 5,
         Accounts: new CoaTemplateAccount[]
@@ -66,16 +72,12 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             new("10000", "Cash on Hand", "asset", DetailType: "bank"),
             new("10100", "Bank Operating Account", "asset", DetailType: "bank"),
 
-            // ---- Accounts Receivable (11000 base + 11001 sub-currency) ----
+            // ---- Accounts Receivable (11000 base; 11001-11099 reserved for per-currency rows) ----
             new("11000", "Accounts Receivable", "asset",
                 DetailType: "accounts_receivable",
                 AllowManualPosting: false,
                 SystemKey: "control_account:accounts_receivable:base",
                 SystemRole: "accounts_receivable"),
-            new("11001", "Accounts Receivable - Foreign Currency", "asset",
-                DetailType: "accounts_receivable_subcurrency",
-                AllowManualPosting: false,
-                SystemKey: "control_account:accounts_receivable:foreign"),
 
             // ---- Other Current Asset (12000-13999) ----
             new("12000", "Undeposited Funds", "asset", DetailType: "undeposited_funds"),
@@ -98,16 +100,12 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             // ---- Other Asset (18700) ----
             new("18700", "Security Deposits Asset", "asset", DetailType: "other_asset"),
 
-            // ---- Accounts Payable (20000 base + 20001 sub-currency) ----
+            // ---- Accounts Payable (20000 base; 20001-20099 reserved for per-currency rows) ----
             new("20000", "Accounts Payable", "liability",
                 DetailType: "accounts_payable",
                 AllowManualPosting: false,
                 SystemKey: "control_account:accounts_payable:base",
                 SystemRole: "accounts_payable"),
-            new("20001", "Accounts Payable - Foreign Currency", "liability",
-                DetailType: "accounts_payable_subcurrency",
-                AllowManualPosting: false,
-                SystemKey: "control_account:accounts_payable:foreign"),
 
             // ---- Credit Card Payable (21000) ----
             new("21000", "Credit Card Payable", "liability", DetailType: "credit_card"),

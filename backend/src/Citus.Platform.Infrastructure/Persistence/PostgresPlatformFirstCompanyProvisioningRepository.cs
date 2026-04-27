@@ -262,10 +262,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             var companyBookId = Guid.NewGuid();
             var companyEntityNumber = await ReserveEntityNumberAsync(connection, transaction, provisionedAtUtc.Year, cancellationToken);
             var effectiveFrom = normalized.IncorporatedOn!.Value.Date;
-            // Filter out template rows whose canonical code can't truncate
-            // cleanly to the chosen length (sub-currency variants like 11001
-            // / 20001 at length 4). Those rows are conceptually present only
-            // at richer code lengths.
+            // FormatAccountCode skips canonical rows that cannot truncate
+            // cleanly to the chosen account_code_length (i.e. trailing
+            // non-zero digits). The current canonical chart authors all
+            // rows with all-zero tails so nothing is filtered today, but
+            // the helper is kept defensive for future template edits and
+            // for the per-currency rows the multi-currency seeder allocates
+            // at runtime.
             var starterAccountCodes = template.Accounts
                 .Select(account => FormatAccountCode(account.CanonicalCode, normalized.AccountCodeLength))
                 .OfType<string>()
@@ -283,11 +286,11 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
                 var formattedCode = FormatAccountCode(account.CanonicalCode, normalized.AccountCodeLength);
                 if (formattedCode is null)
                 {
-                    // Sub-currency variant or richer-length-only row; the
-                    // chosen account_code_length can't host it without losing
-                    // information. Skip cleanly — InsertCompanySettings
-                    // already received the filtered code list above so the
-                    // company settings stay consistent with what's seeded.
+                    // Richer-length-only row; the chosen account_code_length
+                    // can't host it without losing information. Skip cleanly
+                    // — InsertCompanySettings already received the filtered
+                    // code list above so the company settings stay
+                    // consistent with what's seeded.
                     continue;
                 }
                 await InsertStarterAccountAsync(
@@ -575,41 +578,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     //
     // Source: cleaned 2026-04-27 from QuickBooks-derived reference + a Canadian
     // tax-mapped reference, with company / industry / region-specific rows
-    // pruned. ~46 user-visible accounts plus 6 hidden system rows (5 FX +
-    // 2 sub-currency reserves).
+    // pruned. ~46 user-visible accounts plus 5 hidden FX system rows.
     //
-    // Removed (vs. the prior 64-account variant):
-    //   - Specific bank names (10010/10020/10999) — users add their own.
-    //   - Logistics-only fixed assets (16300 tractors, 16500 warehouse).
-    //   - Intercompany rows (18010, 24010) — niche, users add as needed.
-    //   - Canada-specific tax payables (25500/25530/25550) — replaced by
-    //     a generic 25000 Sales Tax Payable.
-    //   - Region-named payroll row (26100 Worker's Comp Premiums - Admin)
-    //     — replaced by a generic 26000 Payroll Liabilities.
-    //   - Shareholder Distributions (31400) — overlaps with Dividends.
-    //   - Shipping income (48900), Merchant Account Fees (51800) — channel
-    //     and industry-specific.
-    //
-    // Added (universal items the prior chart was missing):
-    //   - 10100 Bank Operating Account (generic placeholder).
-    //   - 12500 Short-Term Investments.
-    //   - 14000 Inventory (relocated from a misclassified 18100 "other asset"
-    //     position to the conventional 14000 current-asset family).
-    //   - 21000 Credit Card Payable (universal).
-    //   - 25500 Income Tax Payable, 26000 Payroll Liabilities, 28000
-    //     Long-Term Debt — standard SMB liability coverage.
-    //   - 48000 Service Revenue (for service businesses).
-    //   - 64500 Bad Debt Expense, 65000 Wages and Salaries, 65100 Employee
-    //     Benefits, 65500 Professional Development — payroll was the most
-    //     glaring miss before; major correction.
-    //   - 78000 Gain (Loss) on Sale of Assets, 90000 Income Tax Expense.
-    //
-    // Renamed for clarity / breadth:
-    //   - 13100 Prepaid Insurance → Prepaid Expenses
-    //   - 15400 Custom Software → Computer Equipment
-    //   - 30200 Dividends Paid → Dividends Declared
-    //   - 51000 Purchase Cost → Cost of Goods Sold
-    //   - 68000 Taxes - Property → Taxes & Licenses
+    // 2026-04-27 follow-up: removed the 11001 / 20001 sub-currency reserve
+    // rows. AR/AP foreign-currency control accounts are now created on
+    // demand by IMultiCurrencyControlAccountSeeder when a company enables
+    // an additional currency — those rows are allocated into the
+    // 11001-11099 / 20001-20099 reserved families per the chart binding.
     // -----------------------------------------------------------------------
     private static IReadOnlyList<StarterAccountDefinition> BuildCanonicalChart() =>
     [
@@ -617,9 +592,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         new StarterAccountDefinition("10000", "Cash on Hand", "asset", "bank", false, true, null, null, true),
         new StarterAccountDefinition("10100", "Bank Operating Account", "asset", "bank", false, true, null, null, true),
 
-        // ---- Accounts Receivable (11000 base + 11001 sub-currency reserve) ----
+        // ---- Accounts Receivable (11000 base; 11001-11099 reserved for per-currency rows) ----
         new StarterAccountDefinition("11000", "Accounts Receivable", "asset", "accounts_receivable", true, true, "control_account:accounts_receivable:base", "accounts_receivable", false),
-        new StarterAccountDefinition("11001", "Accounts Receivable - Foreign Currency", "asset", "accounts_receivable_subcurrency", true, false, "control_account:accounts_receivable:foreign", null, false),
 
         // ---- Other Current Asset (12000-13999) ----
         new StarterAccountDefinition("12000", "Undeposited Funds", "asset", "undeposited_funds", false, true, null, null, true),
@@ -642,9 +616,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         // ---- Other Asset (18700) ----
         new StarterAccountDefinition("18700", "Security Deposits Asset", "asset", "other_asset", false, false, null, null, true),
 
-        // ---- Accounts Payable (20000 base + 20001 sub-currency reserve) ----
+        // ---- Accounts Payable (20000 base; 20001-20099 reserved for per-currency rows) ----
         new StarterAccountDefinition("20000", "Accounts Payable", "liability", "accounts_payable", true, true, "control_account:accounts_payable:base", "accounts_payable", false),
-        new StarterAccountDefinition("20001", "Accounts Payable - Foreign Currency", "liability", "accounts_payable_subcurrency", true, false, "control_account:accounts_payable:foreign", null, false),
 
         // ---- Credit Card Payable (21000) ----
         new StarterAccountDefinition("21000", "Credit Card Payable", "liability", "credit_card", false, true, null, null, true),
@@ -751,14 +724,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     ///   * length &gt; 5: pad RIGHT with zeros (10000 → 100000 → 1000000…),
     ///     keeping the leading digits' meaning.
     ///   * length &lt; 5: drop the trailing chars; if any of them is NOT '0'
-    ///     the truncation would lose information (e.g. 11001 / 20001
-    ///     multi-currency variants), so the helper returns null and the
-    ///     seeding loop skips the row.
-    /// Returning null (rather than throwing) is intentional: the canonical
-    /// chart can include rows that only make sense at richer code lengths
-    /// (sub-currency variants, hidden FX bookkeeping rows in a 7700x family),
-    /// and the seeder treats "skip" as the correct response for a 4-digit
-    /// company that wouldn't host those distinctions anyway.
+    ///     the truncation would lose information, so the helper returns null
+    ///     and the seeding loop skips the row.
+    /// Returning null (rather than throwing) is intentional: future template
+    /// rows or per-currency AR/AP rows allocated at runtime may carry
+    /// non-zero trailing digits (e.g. 11001 Accounts Receivable - USD), and
+    /// the seeder treats "skip" as the correct response for a 4-digit
+    /// company that can't host those codes without collision.
     /// </summary>
     private const int CanonicalCodeLength = 5;
 
