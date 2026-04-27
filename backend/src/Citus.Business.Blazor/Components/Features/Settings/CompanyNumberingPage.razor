@@ -10,11 +10,11 @@
     <Actions>
         @if (_isUnavailable)
         {
-            <AntDesign.Tag Color="@("orange")">Database not configured</AntDesign.Tag>
+            <CitusBadge Color="@("orange")">Database not configured</CitusBadge>
         }
         else
         {
-            <AntDesign.Tag Color="@("blue")">Backend authority</AntDesign.Tag>
+            <CitusBadge Color="@("blue")">Backend authority</CitusBadge>
         }
     </Actions>
 </CitusPageHeader>
@@ -23,21 +23,21 @@
     <article class="citus-domain-card">
         <header class="citus-domain-card__header">
             <h3 class="citus-domain-card__title">Internal entity number</h3>
-            <AntDesign.Tag Color="@("default")">ENYYYY########</AntDesign.Tag>
+            <CitusBadge Color="@("default")">ENYYYY########</CitusBadge>
         </header>
         <p class="citus-domain-card__description">Global, immutable, audit-only. Users do not edit it.</p>
     </article>
     <article class="citus-domain-card">
         <header class="citus-domain-card__header">
             <h3 class="citus-domain-card__title">Business display number</h3>
-            <AntDesign.Tag Color="@("blue")">Company + module scoped</AntDesign.Tag>
+            <CitusBadge Color="@("blue")">Company + module scoped</CitusBadge>
         </header>
         <p class="citus-domain-card__description">Shown on invoices, bills, payments, purchase orders, and journals.</p>
     </article>
     <article class="citus-domain-card">
         <header class="citus-domain-card__header">
             <h3 class="citus-domain-card__title">Backend authority</h3>
-            <AntDesign.Tag Color="@("green")">Final number on save</AntDesign.Tag>
+            <CitusBadge Color="@("green")">Final number on save</CitusBadge>
         </header>
         <p class="citus-domain-card__description">Preview is advisory; the backend reserves the final number inside the save flow.</p>
     </article>
@@ -129,7 +129,7 @@ else
                                     <AntDesign.Switch @bind-Value="row.Enabled" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" />
                                     <span class="text-xs">@(row.Enabled ? "Enabled" : "Disabled")</span>
                                 </div>
-                                <AntDesign.Tag Color="@(row.IsRuntimeConnected ? "green" : "default")" Class="mt-1">@row.RuntimeStatus</AntDesign.Tag>
+                                <CitusBadge Color="@(row.IsRuntimeConnected ? "green" : "default")" Class="mt-1">@row.RuntimeStatus</CitusBadge>
                             </td>
                             <td>
                                 <CitusButton Variant="CitusButtonVariant.Primary" Size="CitusButtonSize.Small"

@@ -7,7 +7,7 @@
 
 @using Citus.Ui.Shared.Health
 
-<AntDesign.Tag Color="@Color" Class="citus-status-badge">@ResolvedText</AntDesign.Tag>
+<CitusBadge Color="@Color" Class="citus-status-badge">@ResolvedText</CitusBadge>
 
 @code {
     [Parameter] public ServiceHealthStatus? Status { get; set; }

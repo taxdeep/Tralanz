@@ -47,14 +47,14 @@ else if (_companies.Count > 0)
                         </td>
                         <td>@company.BaseCurrencyCode</td>
                         <td>
-                            <AntDesign.Tag Color="@StatusColor(company.Status)">@company.Status</AntDesign.Tag>
+                            <CitusBadge Color="@StatusColor(company.Status)">@company.Status</CitusBadge>
                         </td>
                         <td>@(company.MultiCurrencyEnabled ? "Enabled" : "Base only")</td>
                         <td class="text-right">@company.MemberCount</td>
                         <td>
                             @if (ShellState.ActiveCompany.CompanyId == company.Id)
                             {
-                                <AntDesign.Tag Color="@("blue")">Active</AntDesign.Tag>
+                                <CitusBadge Color="@("blue")">Active</CitusBadge>
                             }
                             else
                             {

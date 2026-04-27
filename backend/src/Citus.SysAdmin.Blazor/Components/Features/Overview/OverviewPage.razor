@@ -51,7 +51,7 @@
         <div class="flex flex-wrap gap-1">
             @foreach (var moduleKey in _lastBootstrapReport.ModuleKeys)
             {
-                <AntDesign.Tag Color="@("blue")">@moduleKey</AntDesign.Tag>
+                <CitusBadge Color="@("blue")">@moduleKey</CitusBadge>
             }
         </div>
     </section>
@@ -85,7 +85,7 @@ else
             <section class="citus-panel">
                 <header class="citus-panel__header">
                     <h2 class="citus-panel__title">Platform capabilities</h2>
-                    <AntDesign.Tag Color="@("blue")">Phase 1</AntDesign.Tag>
+                    <CitusBadge Color="@("blue")">Phase 1</CitusBadge>
                 </header>
 
                 @if (_overview?.Capabilities.Count > 0)
@@ -93,7 +93,7 @@ else
                     <div class="flex flex-wrap gap-1">
                         @foreach (var capability in _overview.Capabilities)
                         {
-                            <AntDesign.Tag Color="@("default")">@capability</AntDesign.Tag>
+                            <CitusBadge Color="@("default")">@capability</CitusBadge>
                         }
                     </div>
                 }

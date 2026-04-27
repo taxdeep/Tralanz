@@ -7,9 +7,9 @@
 
 <CitusPageHeader Model="_header">
     <Actions>
-        <AntDesign.Tag Color="@(IsZero(_difference) ? "green" : "orange")">
+        <CitusBadge Color="@(IsZero(_difference) ? "green" : "orange")">
             @(IsZero(_difference) ? "Difference cleared" : "Difference outstanding")
-        </AntDesign.Tag>
+        </CitusBadge>
     </Actions>
 </CitusPageHeader>
 

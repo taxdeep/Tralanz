@@ -78,10 +78,10 @@
                         <div class="flex flex-wrap items-start justify-between gap-3">
                             <div class="flex flex-col gap-1">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <AntDesign.Tag Color="@MfaTimelineColor(entry.Action)">@entry.ActionLabel</AntDesign.Tag>
-                                    <AntDesign.Tag Color="@("default")">
+                                    <CitusBadge Color="@MfaTimelineColor(entry.Action)">@entry.ActionLabel</CitusBadge>
+                                    <CitusBadge Color="@("default")">
                                         @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
-                                    </AntDesign.Tag>
+                                    </CitusBadge>
                                 </div>
                                 @if (!string.IsNullOrWhiteSpace(entry.Detail))
                                 {
@@ -131,10 +131,10 @@ else if (_events.Count > 0)
                     <tr>
                         <td>@ev.CreatedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
                         <td>
-                            <AntDesign.Tag Color="@(ev.CompanyId.HasValue ? "default" : "blue")">@ev.ScopeLabel</AntDesign.Tag>
+                            <CitusBadge Color="@(ev.CompanyId.HasValue ? "default" : "blue")">@ev.ScopeLabel</CitusBadge>
                         </td>
                         <td>
-                            <AntDesign.Tag Color="@ActionColor(ev.Action)">@ev.ActionLabel</AntDesign.Tag>
+                            <CitusBadge Color="@ActionColor(ev.Action)">@ev.ActionLabel</CitusBadge>
                             <div class="text-fg-subtle text-xs">@ev.Action</div>
                         </td>
                         <td>
@@ -155,7 +155,7 @@ else if (_events.Count > 0)
                                 <div class="flex flex-wrap gap-1 mt-1">
                                     @foreach (var highlight in ev.Highlights)
                                     {
-                                        <AntDesign.Tag Color="@("default")">@highlight</AntDesign.Tag>
+                                        <CitusBadge Color="@("default")">@highlight</CitusBadge>
                                     }
                                 </div>
                             }

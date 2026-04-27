@@ -1,0 +1,39 @@
+@*
+    CitusBadge — small status pill. Phase 5e of the UI library
+    migration: wraps Radzen.RadzenBadge but keeps AntDesign's
+    color-string vocabulary so the 80+ existing <AntDesign.Tag
+    Color="@..."> callsites can switch with a one-line tag rename.
+
+    Color accepts the AntDesign preset names ("blue", "green",
+    "orange", "red", "default", "magenta", "purple", "cyan",
+    "yellow", "geekblue", "lime", "volcano", "gold") plus an
+    explicit "" / null which maps to BadgeStyle.Light.
+*@
+
+@using Radzen
+@using Radzen.Blazor
+
+<RadzenBadge BadgeStyle="@MappedStyle"
+             Variant="Variant.Filled"
+             Class="@(string.IsNullOrEmpty(Class) ? "citus-badge" : $"citus-badge {Class}")">
+    @ChildContent
+</RadzenBadge>
+
+@code {
+    [Parameter] public string? Color { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private BadgeStyle MappedStyle => (Color ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "green" or "lime" => BadgeStyle.Success,
+        "blue" or "geekblue" or "cyan" => BadgeStyle.Info,
+        "orange" or "gold" or "yellow" or "volcano" => BadgeStyle.Warning,
+        "red" => BadgeStyle.Danger,
+        "magenta" or "purple" or "pink" => BadgeStyle.Secondary,
+        "default" or "" => BadgeStyle.Light,
+        _ => BadgeStyle.Light
+    };
+}

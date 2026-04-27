@@ -17,9 +17,9 @@
             <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
             <span>Back to journal entries</span>
         </a>
-        <AntDesign.Tag Color="@(_isBalanced ? "green" : "orange")">
+        <CitusBadge Color="@(_isBalanced ? "green" : "orange")">
             @(_isBalanced ? "Balanced" : "Out of balance")
-        </AntDesign.Tag>
+        </CitusBadge>
     </Actions>
 </CitusPageHeader>
 

@@ -55,10 +55,10 @@ else if (_users.Count > 0)
                             <div class="text-fg-subtle text-xs">@user.Username | @user.Email</div>
                         </td>
                         <td>
-                            <AntDesign.Tag Color="@(user.IsActive ? "green" : "default")">@(user.IsActive ? "Active" : "Disabled")</AntDesign.Tag>
+                            <CitusBadge Color="@(user.IsActive ? "green" : "default")">@(user.IsActive ? "Active" : "Disabled")</CitusBadge>
                         </td>
                         <td>
-                            <AntDesign.Tag Color="@(string.Equals(user.MfaMode, "none", StringComparison.OrdinalIgnoreCase) ? "default" : "blue")">@user.MfaModeLabel</AntDesign.Tag>
+                            <CitusBadge Color="@(string.Equals(user.MfaMode, "none", StringComparison.OrdinalIgnoreCase) ? "default" : "blue")">@user.MfaModeLabel</CitusBadge>
                             @if (user.LastMfaResetAtUtc.HasValue)
                             {
                                 <div class="text-fg-subtle text-xs mt-1">
@@ -76,7 +76,7 @@ else if (_users.Count > 0)
                             <div class="text-fg-subtle text-xs">@user.EmergencyMfaResetPolicyReason</div>
                         </td>
                         <td>
-                            <AntDesign.Tag Color="@(user.IsSysAdmin ? "blue" : "default")">@(user.IsSysAdmin ? "SysAdmin" : "Business")</AntDesign.Tag>
+                            <CitusBadge Color="@(user.IsSysAdmin ? "blue" : "default")">@(user.IsSysAdmin ? "SysAdmin" : "Business")</CitusBadge>
                         </td>
                         <td>
                             @if (user.Roles.Count == 0)
@@ -102,7 +102,7 @@ else if (_users.Count > 0)
                             <div class="flex flex-wrap gap-1">
                                 @if (user.IsSysAdmin)
                                 {
-                                    <AntDesign.Tag Color="@("blue")">Protected</AntDesign.Tag>
+                                    <CitusBadge Color="@("blue")">Protected</CitusBadge>
                                 }
                                 else
                                 {
@@ -164,10 +164,10 @@ else if (_users.Count > 0)
                             <div class="flex flex-wrap items-start justify-between gap-3">
                                 <div class="flex flex-col gap-1">
                                     <div class="flex flex-wrap items-center gap-2">
-                                        <AntDesign.Tag Color="@GetTimelineColor(entry.Action)">@entry.ActionLabel</AntDesign.Tag>
-                                        <AntDesign.Tag Color="@("default")">
+                                        <CitusBadge Color="@GetTimelineColor(entry.Action)">@entry.ActionLabel</CitusBadge>
+                                        <CitusBadge Color="@("default")">
                                             @(string.IsNullOrWhiteSpace(entry.ActorDisplayName) ? entry.ActorType : entry.ActorDisplayName)
-                                        </AntDesign.Tag>
+                                        </CitusBadge>
                                     </div>
                                     @if (!string.IsNullOrWhiteSpace(entry.Detail))
                                     {
@@ -228,14 +228,14 @@ else if (_users.Count > 0)
                                 <div class="text-fg-subtle text-xs">@request.Username | @request.Email</div>
                             </td>
                             <td>
-                                <AntDesign.Tag Color="@("blue")">@request.CurrentMfaModeLabel</AntDesign.Tag>
+                                <CitusBadge Color="@("blue")">@request.CurrentMfaModeLabel</CitusBadge>
                             </td>
                             <td>
-                                <AntDesign.Tag Color="@GetRecoveryStatusColor(request.Status)">@GetRecoveryStatusLabel(request.Status)</AntDesign.Tag>
+                                <CitusBadge Color="@GetRecoveryStatusColor(request.Status)">@GetRecoveryStatusLabel(request.Status)</CitusBadge>
                                 <div class="flex flex-wrap gap-1 mt-1">
-                                    <AntDesign.Tag Color="@("blue")">Requested</AntDesign.Tag>
-                                    <AntDesign.Tag Color="@GetRecoveryReviewStageColor(request.Status)">Review</AntDesign.Tag>
-                                    <AntDesign.Tag Color="@GetRecoveryExecutionStageColor(request.Status)">Execute</AntDesign.Tag>
+                                    <CitusBadge Color="@("blue")">Requested</CitusBadge>
+                                    <CitusBadge Color="@GetRecoveryReviewStageColor(request.Status)">Review</CitusBadge>
+                                    <CitusBadge Color="@GetRecoveryExecutionStageColor(request.Status)">Execute</CitusBadge>
                                 </div>
                                 @if (request.ReviewedAtUtc.HasValue)
                                 {
@@ -295,7 +295,7 @@ else if (_users.Count > 0)
             <div class="grid grid-cols-1 gap-3">
                 <article class="citus-subpanel">
                     <div class="flex items-center justify-between gap-3 mb-2">
-                        <AntDesign.Tag Color="@("blue")">1. Requested</AntDesign.Tag>
+                        <CitusBadge Color="@("blue")">1. Requested</CitusBadge>
                         <span class="text-fg-subtle text-xs">@_selectedRecoveryRequest.RequestedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
                     </div>
                     <p class="text-sm m-0">@_selectedRecoveryRequest.RequestReason</p>
@@ -304,7 +304,7 @@ else if (_users.Count > 0)
 
                 <article class="citus-subpanel">
                     <div class="flex items-center justify-between gap-3 mb-2">
-                        <AntDesign.Tag Color="@GetRecoveryReviewStageColor(_selectedRecoveryRequest.Status)">2. Review</AntDesign.Tag>
+                        <CitusBadge Color="@GetRecoveryReviewStageColor(_selectedRecoveryRequest.Status)">2. Review</CitusBadge>
                         @if (_selectedRecoveryRequest.ReviewedAtUtc.HasValue)
                         {
                             <span class="text-fg-subtle text-xs">@_selectedRecoveryRequest.ReviewedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
@@ -323,8 +323,8 @@ else if (_users.Count > 0)
 
                 <article class="citus-subpanel">
                     <div class="flex items-center justify-between gap-3 mb-2">
-                        <AntDesign.Tag Color="@GetRecoveryExecutionStageColor(_selectedRecoveryRequest.Status)">3. Execute</AntDesign.Tag>
-                        <AntDesign.Tag Color="@GetRecoveryStatusColor(_selectedRecoveryRequest.Status)">@GetRecoveryExecutionStatusChipLabel(_selectedRecoveryRequest.Status)</AntDesign.Tag>
+                        <CitusBadge Color="@GetRecoveryExecutionStageColor(_selectedRecoveryRequest.Status)">3. Execute</CitusBadge>
+                        <CitusBadge Color="@GetRecoveryStatusColor(_selectedRecoveryRequest.Status)">@GetRecoveryExecutionStatusChipLabel(_selectedRecoveryRequest.Status)</CitusBadge>
                     </div>
                     <p class="text-sm m-0">@GetRecoveryExecutionDescription(_selectedRecoveryRequest)</p>
                     <div class="flex flex-wrap gap-1 mt-2">
@@ -364,10 +364,10 @@ else if (_users.Count > 0)
                         <article class="citus-subpanel">
                             <div class="flex items-start justify-between gap-3 mb-2">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <AntDesign.Tag Color="@GetRecoveryStatusColor(history.Status)">@GetRecoveryStatusLabel(history.Status)</AntDesign.Tag>
+                                    <CitusBadge Color="@GetRecoveryStatusColor(history.Status)">@GetRecoveryStatusLabel(history.Status)</CitusBadge>
                                     @if (_selectedRecoveryRequest?.RequestId == history.RequestId)
                                     {
-                                        <AntDesign.Tag Color="@("geekblue")">Selected</AntDesign.Tag>
+                                        <CitusBadge Color="@("geekblue")">Selected</CitusBadge>
                                     }
                                 </div>
                                 <span class="text-fg-subtle text-xs">Requested @history.RequestedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
@@ -454,7 +454,7 @@ else if (_users.Count > 0)
                                 <div class="text-fg-subtle text-xs">@membership.Username | @membership.Email</div>
                             </td>
                             <td>
-                                <AntDesign.Tag Color="@(string.Equals(membership.Role, "owner", StringComparison.OrdinalIgnoreCase) ? "orange" : "default")">@membership.Role</AntDesign.Tag>
+                                <CitusBadge Color="@(string.Equals(membership.Role, "owner", StringComparison.OrdinalIgnoreCase) ? "orange" : "default")">@membership.Role</CitusBadge>
                             </td>
                             <td>
                                 @if (membership.PermissionTokens.Count == 0)
@@ -466,13 +466,13 @@ else if (_users.Count > 0)
                                     <div class="flex flex-wrap gap-1">
                                         @foreach (var permission in membership.PermissionTokens)
                                         {
-                                            <AntDesign.Tag Color="@("default")">@permission</AntDesign.Tag>
+                                            <CitusBadge Color="@("default")">@permission</CitusBadge>
                                         }
                                     </div>
                                 }
                             </td>
                             <td>
-                                <AntDesign.Tag Color="@(membership.IsActive ? "green" : "default")">@(membership.IsActive ? "Active" : "Inactive")</AntDesign.Tag>
+                                <CitusBadge Color="@(membership.IsActive ? "green" : "default")">@(membership.IsActive ? "Active" : "Inactive")</CitusBadge>
                             </td>
                             <td>@membership.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
                             <td>

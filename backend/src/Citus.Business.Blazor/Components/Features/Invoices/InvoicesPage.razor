@@ -24,7 +24,7 @@
 <section class="citus-panel">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">Recent invoices</h2>
-        <AntDesign.Tag Color="@("blue")">Read-only review</AntDesign.Tag>
+        <CitusBadge Color="@("blue")">Read-only review</CitusBadge>
     </header>
 
     <CitusAsyncBoundary IsLoading="false"
@@ -57,7 +57,7 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.Status)" Title="Status" Width="110px">
                     <Template Context="invoice">
-                        <AntDesign.Tag Color="@StatusColor(invoice.Status)">@invoice.Status</AntDesign.Tag>
+                        <CitusBadge Color="@StatusColor(invoice.Status)">@invoice.Status</CitusBadge>
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="140px">

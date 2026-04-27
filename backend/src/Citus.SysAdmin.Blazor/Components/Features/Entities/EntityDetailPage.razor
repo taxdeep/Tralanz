@@ -31,9 +31,9 @@ else if (_entity is not null)
     </CitusPageHeader>
 
     <div class="flex flex-wrap items-center gap-2 mb-6">
-        <AntDesign.Tag Color="@("blue")">@_entity.ModuleKey</AntDesign.Tag>
-        <AntDesign.Tag Color="@("geekblue")">@GetScope(_entity)</AntDesign.Tag>
-        <AntDesign.Tag Color="@("default")">@($"{_entity.Fields.Count} fields")</AntDesign.Tag>
+        <CitusBadge Color="@("blue")">@_entity.ModuleKey</CitusBadge>
+        <CitusBadge Color="@("geekblue")">@GetScope(_entity)</CitusBadge>
+        <CitusBadge Color="@("default")">@($"{_entity.Fields.Count} fields")</CitusBadge>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -63,23 +63,23 @@ else if (_entity is not null)
                                     <div class="flex flex-wrap gap-1">
                                         @if (field.Required)
                                         {
-                                            <AntDesign.Tag Color="@("default")">Required</AntDesign.Tag>
+                                            <CitusBadge Color="@("default")">Required</CitusBadge>
                                         }
                                         @if (field.Searchable)
                                         {
-                                            <AntDesign.Tag Color="@("default")">Searchable</AntDesign.Tag>
+                                            <CitusBadge Color="@("default")">Searchable</CitusBadge>
                                         }
                                         @if (field.Auditable)
                                         {
-                                            <AntDesign.Tag Color="@("default")">Auditable</AntDesign.Tag>
+                                            <CitusBadge Color="@("default")">Auditable</CitusBadge>
                                         }
                                         @if (field.System)
                                         {
-                                            <AntDesign.Tag Color="@("default")">System</AntDesign.Tag>
+                                            <CitusBadge Color="@("default")">System</CitusBadge>
                                         }
                                         @if (field.MaxLength.HasValue)
                                         {
-                                            <AntDesign.Tag Color="@("default")">Max @field.MaxLength.Value</AntDesign.Tag>
+                                            <CitusBadge Color="@("default")">Max @field.MaxLength.Value</CitusBadge>
                                         }
                                     </div>
                                 </td>
@@ -114,7 +114,7 @@ else if (_entity is not null)
                         <div class="flex flex-wrap gap-1">
                             @foreach (var principal in principals)
                             {
-                                <AntDesign.Tag Color="@("default")">@principal</AntDesign.Tag>
+                                <CitusBadge Color="@("default")">@principal</CitusBadge>
                             }
                         </div>
                     </div>

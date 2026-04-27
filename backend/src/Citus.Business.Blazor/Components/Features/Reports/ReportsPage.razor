@@ -48,7 +48,7 @@
 <section class="citus-panel mb-6">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">Trial Balance</h2>
-        <AntDesign.Tag Color="@("green")">Backend-owned report</AntDesign.Tag>
+        <CitusBadge Color="@("green")">Backend-owned report</CitusBadge>
     </header>
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -166,7 +166,7 @@
 <section class="citus-panel mb-6">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">Income Statement</h2>
-        <AntDesign.Tag Color="@("blue")">Date-range report</AntDesign.Tag>
+        <CitusBadge Color="@("blue")">Date-range report</CitusBadge>
     </header>
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -213,7 +213,7 @@
                 <article class="citus-subpanel">
                     <header class="citus-subpanel__header">
                         <h3 class="citus-subpanel__title">@reportSection.Title</h3>
-                        <AntDesign.Tag Color="@TagColor(reportSection.Tone)">@FormatAmount(reportSection.Total)</AntDesign.Tag>
+                        <CitusBadge Color="@TagColor(reportSection.Tone)">@FormatAmount(reportSection.Total)</CitusBadge>
                     </header>
 
                     @if (reportSection.Rows.Count == 0)
@@ -251,7 +251,7 @@
 <section class="citus-panel mb-6">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">Balance Sheet</h2>
-        <AntDesign.Tag Color="@("default")">As-of report</AntDesign.Tag>
+        <CitusBadge Color="@("default")">As-of report</CitusBadge>
     </header>
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -297,7 +297,7 @@
                 <article class="citus-subpanel">
                     <header class="citus-subpanel__header">
                         <h3 class="citus-subpanel__title">@reportSection.Title</h3>
-                        <AntDesign.Tag Color="@TagColor(reportSection.Tone)">@FormatAmount(reportSection.Total)</AntDesign.Tag>
+                        <CitusBadge Color="@TagColor(reportSection.Tone)">@FormatAmount(reportSection.Total)</CitusBadge>
                     </header>
 
                     @if (reportSection.Rows.Count == 0)
@@ -335,7 +335,7 @@
 <section class="citus-panel mb-6">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">A/R Aging</h2>
-        <AntDesign.Tag Color="@("orange")">Open-item report</AntDesign.Tag>
+        <CitusBadge Color="@("orange")">Open-item report</CitusBadge>
     </header>
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -512,7 +512,7 @@
 <section class="citus-panel mb-6">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">A/P Aging</h2>
-        <AntDesign.Tag Color="@("orange")">Open-item report</AntDesign.Tag>
+        <CitusBadge Color="@("orange")">Open-item report</CitusBadge>
     </header>
 
     <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -690,7 +690,7 @@
             <article class="citus-domain-card">
                 <header class="citus-domain-card__header">
                     <h4 class="citus-domain-card__title">@report.Title</h4>
-                    <AntDesign.Tag Color="@TagColor(report.Tone)">@report.Status</AntDesign.Tag>
+                    <CitusBadge Color="@TagColor(report.Tone)">@report.Status</CitusBadge>
                 </header>
                 <p class="citus-domain-card__description">@report.Description</p>
             </article>

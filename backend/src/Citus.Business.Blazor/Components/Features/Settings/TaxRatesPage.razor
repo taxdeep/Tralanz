@@ -40,9 +40,9 @@
                        @onchange="@OnToggleInactive" />
                 Show inactive
             </label>
-            <AntDesign.Tag Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
+            <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
                 @ShellState.ActiveCompany.CompanyCode
-            </AntDesign.Tag>
+            </CitusBadge>
         </div>
     </header>
 
@@ -83,9 +83,9 @@
                         <td class="text-right">@FormatRate(row.RatePercent)</td>
                         <td>@HumanizeAppliesTo(row.AppliesTo)</td>
                         <td>
-                            <AntDesign.Tag Color="@(row.IsActive ? "green" : "default")">
+                            <CitusBadge Color="@(row.IsActive ? "green" : "default")">
                                 @(row.IsActive ? "Active" : "Inactive")
-                            </AntDesign.Tag>
+                            </CitusBadge>
                         </td>
                         <td>
                             <div class="flex items-center gap-2">

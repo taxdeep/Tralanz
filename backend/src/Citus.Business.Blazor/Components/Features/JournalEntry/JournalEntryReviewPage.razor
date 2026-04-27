@@ -11,7 +11,7 @@
             <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
             <span>Back to journal entries</span>
         </a>
-        <AntDesign.Tag Color="@("blue")">Read-only review</AntDesign.Tag>
+        <CitusBadge Color="@("blue")">Read-only review</CitusBadge>
     </Actions>
 </CitusPageHeader>
 
@@ -76,7 +76,7 @@
             <section class="citus-panel">
                 <header class="citus-panel__header">
                     <h2 class="citus-panel__title">Journal lines</h2>
-                    <AntDesign.Tag Color="@("default")">@($"{_review.LineCount} lines")</AntDesign.Tag>
+                    <CitusBadge Color="@("default")">@($"{_review.LineCount} lines")</CitusBadge>
                 </header>
 
                 <table class="citus-data-table">

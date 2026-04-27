@@ -81,7 +81,7 @@ else
                 <div class="flex flex-wrap gap-1">
                     @foreach (var accountCode in _completion.StarterAccountCodes)
                     {
-                        <AntDesign.Tag Color="@("blue")">@accountCode</AntDesign.Tag>
+                        <CitusBadge Color="@("blue")">@accountCode</CitusBadge>
                     }
                 </div>
             }
@@ -98,7 +98,7 @@ else
                 <div class="flex flex-wrap gap-1">
                     @foreach (var family in _completion.ReservedFamilies)
                     {
-                        <AntDesign.Tag Color="@("default")">@family</AntDesign.Tag>
+                        <CitusBadge Color="@("default")">@family</CitusBadge>
                     }
                 </div>
             }
