@@ -2,6 +2,7 @@
 
 @inject BusinessShellState ShellState
 @inject AntDesign.IMessageService Message
+@inject Citus.Business.Blazor.Services.BusinessAuthenticationClient BusinessAuthenticationClient
 
 @*
     AccountProfilePage — the user-facing profile editor reachable from the
@@ -191,9 +192,19 @@
         _isSavingDetails = true;
         try
         {
-            // The Accounting API does not yet expose a profile-update endpoint.
-            // Surface that honestly so the user knows the change is not persisted.
-            await Message.InfoAsync("Profile updates are not yet wired to the backend; this change has not been saved.");
+            var outcome = await BusinessAuthenticationClient.UpdateDisplayNameAsync(trimmed);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(string.IsNullOrWhiteSpace(outcome.ErrorMessage)
+                    ? "Unable to save the new display name. Please try again."
+                    : outcome.ErrorMessage);
+                return;
+            }
+
+            var saved = outcome.DisplayName ?? trimmed;
+            ShellState.UpdateUserDisplayName(saved);
+            _displayName = saved;
+            await Message.SuccessAsync("Display name updated.");
         }
         finally
         {

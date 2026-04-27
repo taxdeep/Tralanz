@@ -93,6 +93,67 @@ public sealed class BusinessAuthenticationClient(
         }
     }
 
+    /// <summary>
+    /// Reads the per-user profile override (display name today). Returns
+    /// <c>null</c> if the API is unreachable or the user has no override —
+    /// the caller should fall back to whatever the auth summary says.
+    /// </summary>
+    public async Task<UserProfileSnapshot?> GetProfileOverrideAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync("auth/me/profile", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<UserProfileSnapshot>(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read user profile override.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Persists a new display name for the currently-signed-in user.
+    /// Returns <c>true</c> + the saved value on success; failure shape
+    /// carries a user-displayable message.
+    /// </summary>
+    public async Task<UpdateDisplayNameOutcome> UpdateDisplayNameAsync(
+        string displayName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return new UpdateDisplayNameOutcome(false, null, "Display name is required.");
+        }
+
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "auth/me/display-name",
+                new { displayName = displayName.Trim() },
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var message = await ReadMessageAsync(response, cancellationToken);
+                return new UpdateDisplayNameOutcome(false, null, message);
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<UserProfileSnapshot>(cancellationToken);
+            return new UpdateDisplayNameOutcome(true, payload?.DisplayName, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to update display name.");
+            return new UpdateDisplayNameOutcome(false, null, "Unable to reach the server. Please try again.");
+        }
+    }
+
     public async Task SignOutAsync(string sessionToken, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sessionToken) ||
@@ -221,3 +282,13 @@ public sealed class BusinessAuthenticationClient(
         };
     }
 }
+
+/// <summary>What the API returns from <c>GET /accounting/auth/me/profile</c>.</summary>
+public sealed class UserProfileSnapshot
+{
+    public Guid UserId { get; set; }
+    public string? DisplayName { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+}
+
+public sealed record UpdateDisplayNameOutcome(bool Succeeded, string? DisplayName, string? ErrorMessage);

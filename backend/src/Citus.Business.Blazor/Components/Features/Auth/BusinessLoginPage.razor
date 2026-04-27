@@ -121,6 +121,14 @@
             ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session, response.IsBootstrap);
             await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", response.SessionToken);
 
+            // Merge any persisted display-name override so the user sees
+            // their preferred name on the first dashboard render.
+            var profileOverride = await BusinessAuthenticationClient.GetProfileOverrideAsync();
+            if (profileOverride is not null && !string.IsNullOrWhiteSpace(profileOverride.DisplayName))
+            {
+                ShellState.UpdateUserDisplayName(profileOverride.DisplayName);
+            }
+
             if (response.IsBootstrap)
             {
                 await Message.InfoAsync("Signed in with the local bootstrap user.");

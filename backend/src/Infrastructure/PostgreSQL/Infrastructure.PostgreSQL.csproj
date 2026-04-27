@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\Modules\GL\Modules.GL.csproj" />
     <ProjectReference Include="..\..\Modules\UnityAi\Domain.Shared\Citus.Modules.UnityAi.Domain.Shared.csproj" />
     <ProjectReference Include="..\..\Modules\UnityAi\Application.Contracts\Citus.Modules.UnityAi.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\Citus.Accounting.Application\Citus.Accounting.Application.csproj" />
   </ItemGroup>
 
 </Project>

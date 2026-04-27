@@ -136,6 +136,22 @@ public sealed class BusinessShellState
             : new[] { session.ActiveCompany };
     }
 
+    /// <summary>
+    /// Replaces the signed-in user's display name without touching any
+    /// other identity fields. Used after a successful profile save so the
+    /// topbar / dropdown reflect the new name immediately, without a
+    /// full session round-trip.
+    /// </summary>
+    public void UpdateUserDisplayName(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return;
+        }
+
+        User = User with { DisplayName = displayName.Trim() };
+    }
+
     public void ClearAuthenticatedSession()
     {
         SessionToken = string.Empty;

@@ -22,6 +22,7 @@ using Citus.Modules.UnityAi.Application.Contracts;
 using Citus.Modules.UnityAi.Domain.Shared;
 using Citus.Modules.Inventory.Application.Contracts;
 using Infrastructure.PostgreSQL;
+using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.GL;
@@ -145,6 +146,10 @@ builder.Services.AddSingleton<IUnitySearchStatsStore, PostgreSqlUnitySearchStats
 // decorator below can take it as a dependency without a self-cycle.
 builder.Services.AddSingleton<UnitySearchEngine>();
 
+// Per-user profile overrides (display name today; future: avatar / locale).
+// Persists across bootstrap-session reloads so name changes stick.
+builder.Services.AddSingleton<IUserProfileOverrideStore, PostgreSqlUserProfileOverrideStore>();
+
 // ----- unityAI V1 -------------------------------------------------------
 // Authority: AI_PRODUCT_ARCHITECTURE.md
 // Defaults are conservative: gateway off, AI hints pending, traces sampled.
@@ -222,10 +227,12 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var adjustmentAccountMappingRepository = startupScope.ServiceProvider.GetRequiredService<IOpenItemAdjustmentAccountMappingRepository>();
     var unitySearchProjectionStore = startupScope.ServiceProvider.GetRequiredService<IUnitySearchProjectionStore>();
     var unityAiSchemaInitializer = startupScope.ServiceProvider.GetRequiredService<PostgreSqlUnityAiSchemaInitializer>();
+    var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
+    await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
 }
 
 var accounting = app.MapGroup("/accounting");
@@ -3134,6 +3141,72 @@ accounting.MapPost(
 // authenticated session before any store call. Errors are non-fatal —
 // usage tracking failures must not break the user's primary flow.
 // ===========================================================================
+
+// ===========================================================================
+// Per-user profile (auth/me)
+//
+// V1 surface: GET the merged profile for the current user, POST to update
+// the display-name override. Password change is intentionally not wired —
+// bootstrap sessions have no password storage. The Profile UI shows a
+// pending toast for password until a real auth backend ships.
+// ===========================================================================
+
+accounting.MapGet(
+    "/auth/me/profile",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IUserProfileOverrideStore overrides,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.UserId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var record = await overrides.GetByUserIdAsync(session.UserId, cancellationToken);
+        return Results.Ok(new
+        {
+            userId = session.UserId,
+            displayName = record?.DisplayName,
+            updatedAt = record?.UpdatedAt,
+        });
+    });
+
+accounting.MapPost(
+    "/auth/me/display-name",
+    async (
+        UpdateDisplayNameHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IUserProfileOverrideStore overrides,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.UserId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var trimmed = request.DisplayName?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return Results.BadRequest(new { message = "Display name is required." });
+        }
+
+        if (trimmed.Length > 120)
+        {
+            return Results.BadRequest(new { message = "Display name must be 120 characters or fewer." });
+        }
+
+        var saved = await overrides.UpsertDisplayNameAsync(session.UserId, trimmed, cancellationToken);
+
+        return Results.Ok(new
+        {
+            userId = saved.UserId,
+            displayName = saved.DisplayName,
+            updatedAt = saved.UpdatedAt,
+        });
+    });
 
 accounting.MapPost(
     "/unitysearch/usage",

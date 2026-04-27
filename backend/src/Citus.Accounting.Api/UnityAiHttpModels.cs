@@ -37,3 +37,8 @@ public sealed record ActionCenterSnoozeHttpRequest
 {
     public DateTimeOffset? SnoozedUntil { get; init; }
 }
+
+public sealed record UpdateDisplayNameHttpRequest
+{
+    public string? DisplayName { get; init; }
+}

@@ -181,6 +181,16 @@ else
         {
             var isBootstrap = storedToken.StartsWith("bootstrap:", StringComparison.Ordinal);
             ShellState.ApplyAuthenticatedSession(storedToken, session, isBootstrap);
+
+            // Merge the per-user display-name override so a renamed user
+            // sees their preferred name immediately on every reload.
+            // Failures are best-effort — auth summary stays as the
+            // authoritative fallback.
+            var profileOverride = await BusinessAuthenticationClient.GetProfileOverrideAsync();
+            if (profileOverride is not null && !string.IsNullOrWhiteSpace(profileOverride.DisplayName))
+            {
+                ShellState.UpdateUserDisplayName(profileOverride.DisplayName);
+            }
             return;
         }
 
