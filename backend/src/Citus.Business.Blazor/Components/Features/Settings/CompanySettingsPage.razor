@@ -1,6 +1,7 @@
 @page "/settings"
 
 @inject BusinessShellState ShellState
+@inject NavigationManager Navigation
 
 <PageTitle>Settings | Citus Business</PageTitle>
 
@@ -22,7 +23,7 @@
     <CitusStatCard
         Label="Multi-currency"
         Value="@(ShellState.ActiveCompany.MultiCurrencyEnabled ? "Enabled" : "Disabled")"
-        Description="Future FX controls should stay here, not spread across forms."
+        Description="Add currencies to seed AR/AP per currency."
         Icon="IconName.Coin"
         Tone="StatTone.Success" />
     <CitusStatCard
@@ -44,6 +45,19 @@
         Icon="IconName.Eye"
         Tone="@(ShellState.AreWritesBlocked ? StatTone.Warning : StatTone.Info)" />
 </div>
+
+<div class="flex flex-wrap gap-2 mb-6">
+    <RadzenButton Text="Manage currencies"
+                  ButtonStyle="ButtonStyle.Primary"
+                  Icon="payments"
+                  Click="OpenMultiCurrencyDrawer" />
+    <RadzenButton Text="View all currencies"
+                  ButtonStyle="ButtonStyle.Secondary"
+                  Icon="open_in_new"
+                  Click="@(() => Navigation.NavigateTo("/settings/currencies"))" />
+</div>
+
+<MultiCurrencyDrawer @ref="_currencyDrawer" />
 
 <section class="citus-panel mb-6">
     <h2 class="citus-panel__title">Company settings domains</h2>
@@ -89,12 +103,22 @@
 </div>
 
 @code {
+    private MultiCurrencyDrawer? _currencyDrawer;
+
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
         Title = "Company settings shell",
         Subtitle = "This page establishes the controlled settings domains before deeper forms are migrated."
     };
+
+    private async Task OpenMultiCurrencyDrawer()
+    {
+        if (_currencyDrawer is not null)
+        {
+            await _currencyDrawer.OpenAsync();
+        }
+    }
 
     private readonly IReadOnlyList<DomainRow> _domains =
     [

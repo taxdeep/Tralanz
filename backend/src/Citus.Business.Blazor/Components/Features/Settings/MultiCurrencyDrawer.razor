@@ -1,0 +1,217 @@
+@*
+    MultiCurrencyDrawer — slide-in right panel for managing the active
+    company's enabled currencies. Loads the profile from
+    /accounting/company/currencies on first open, lets the operator add a
+    non-base currency from the catalog, and surfaces the AR/AP control
+    accounts that the seeder allocated. Removing currencies is intentionally
+    parked (Coming soon button) until the engine knows how to retire FX
+    open items safely.
+*@
+
+@inject CompanyCurrencyClient CurrencyClient
+@inject CitusToastService Toast
+
+<div class="citus-drawer-backdrop @(IsOpen ? "is-open" : null)"
+     @onclick="OnBackdropClick"></div>
+
+<aside class="citus-drawer citus-drawer--right @(IsOpen ? "is-open" : null)"
+       aria-hidden="@(IsOpen ? "false" : "true")">
+    <header class="citus-drawer__header">
+        <div>
+            <h2 class="citus-drawer__title">Multi-currency</h2>
+            <p class="citus-drawer__subtitle">
+                Adding a currency seeds AR/AP control accounts for that currency.
+            </p>
+        </div>
+        <button type="button"
+                class="citus-drawer__close"
+                aria-label="Close"
+                @onclick="CloseAsync">
+            <CitusIcon Name="IconName.X" Size="IconSize.Action" />
+        </button>
+    </header>
+
+    <div class="citus-drawer__body">
+        @if (_loading)
+        {
+            <p class="citus-drawer__loading">Loading currencies…</p>
+        }
+        else if (_profile is null)
+        {
+            <p class="citus-drawer__error">
+                Could not load currencies. Please try again.
+            </p>
+        }
+        else
+        {
+            <section class="citus-drawer__section">
+                <h3 class="citus-drawer__section-title">Base currency</h3>
+                <div class="citus-currency-row">
+                    <span class="citus-currency-row__code">@_profile.BaseCurrencyCode</span>
+                    <span class="citus-currency-row__name">
+                        @BaseCurrencyName(_profile)
+                    </span>
+                    <CitusBadge Color="@("geekblue")">Base</CitusBadge>
+                </div>
+            </section>
+
+            <section class="citus-drawer__section">
+                <h3 class="citus-drawer__section-title">Enabled foreign currencies</h3>
+                @if (EnabledForeign(_profile).Count == 0)
+                {
+                    <p class="citus-drawer__empty">
+                        No additional currencies yet. Pick one below to enable AR/AP per currency.
+                    </p>
+                }
+                else
+                {
+                    <ul class="citus-currency-list">
+                        @foreach (var currency in EnabledForeign(_profile))
+                        {
+                            <li class="citus-currency-row">
+                                <span class="citus-currency-row__code">@currency.CurrencyCode</span>
+                                <span class="citus-currency-row__name">@currency.CurrencyName</span>
+                                <button type="button"
+                                        class="citus-currency-row__remove"
+                                        disabled
+                                        title="Removing currencies will be supported once balance checks land.">
+                                    Remove
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            <section class="citus-drawer__section">
+                <h3 class="citus-drawer__section-title">Add a currency</h3>
+                @{
+                    var available = AvailableForAdd(_profile);
+                }
+                @if (available.Count == 0)
+                {
+                    <p class="citus-drawer__empty">
+                        All catalog currencies are already enabled.
+                    </p>
+                }
+                else
+                {
+                    <div class="citus-drawer__add">
+                        <RadzenDropDown TValue="string"
+                                        Data="@available"
+                                        @bind-Value="_selectedCurrencyCode"
+                                        TextProperty="DisplayText"
+                                        ValueProperty="CurrencyCode"
+                                        Placeholder="Select a currency…"
+                                        Style="flex: 1;" />
+                        <RadzenButton Text="Add"
+                                      Disabled="@(_saving || string.IsNullOrEmpty(_selectedCurrencyCode))"
+                                      Click="AddAsync" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(_lastError))
+                    {
+                        <p class="citus-drawer__error">@_lastError</p>
+                    }
+                }
+            </section>
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter] public EventCallback<CompanyCurrencyProfileSummary> ProfileChanged { get; set; }
+
+    public bool IsOpen { get; private set; }
+
+    private CompanyCurrencyProfileSummary? _profile;
+    private bool _loading;
+    private bool _saving;
+    private string? _selectedCurrencyCode;
+    private string? _lastError;
+
+    public async Task OpenAsync()
+    {
+        IsOpen = true;
+        _lastError = null;
+        StateHasChanged();
+        await LoadAsync();
+    }
+
+    public Task CloseAsync()
+    {
+        IsOpen = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task OnBackdropClick() => CloseAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _profile = await CurrencyClient.GetAsync();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedCurrencyCode))
+        {
+            return;
+        }
+
+        _saving = true;
+        _lastError = null;
+        StateHasChanged();
+
+        try
+        {
+            var outcome = await CurrencyClient.EnableAsync(_selectedCurrencyCode);
+            if (!outcome.Succeeded)
+            {
+                _lastError = outcome.ErrorMessage ?? "Could not enable the currency.";
+                return;
+            }
+
+            var addedCode = _selectedCurrencyCode;
+            _profile = outcome.Profile ?? _profile;
+            _selectedCurrencyCode = null;
+            await Toast.SuccessAsync($"Currency {addedCode} enabled.");
+            if (_profile is not null)
+            {
+                await ProfileChanged.InvokeAsync(_profile);
+            }
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private static IReadOnlyList<CompanyCurrencyEntry> EnabledForeign(CompanyCurrencyProfileSummary profile) =>
+        profile.Currencies
+            .Where(c => c.IsEnabled && !c.IsBaseCurrency)
+            .OrderBy(c => c.CurrencyCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static IReadOnlyList<CurrencyOption> AvailableForAdd(CompanyCurrencyProfileSummary profile) =>
+        profile.Currencies
+            .Where(c => !c.IsEnabled)
+            .Select(c => new CurrencyOption(c.CurrencyCode, c.CurrencyName, $"{c.CurrencyCode} — {c.CurrencyName}"))
+            .OrderBy(c => c.CurrencyCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static string BaseCurrencyName(CompanyCurrencyProfileSummary profile) =>
+        profile.Currencies.FirstOrDefault(c => c.IsBaseCurrency)?.CurrencyName ?? string.Empty;
+
+    private sealed record class CurrencyOption(string CurrencyCode, string CurrencyName, string DisplayText);
+}
