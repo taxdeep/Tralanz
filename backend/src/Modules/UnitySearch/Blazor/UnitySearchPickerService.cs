@@ -56,4 +56,67 @@ public sealed class UnitySearchPickerService(HttpClient httpClient, ILogger<Unit
             return Array.Empty<UnitySearchPickerOption>();
         }
     }
+
+    /// <summary>
+    /// Fire-and-forget usage event for the unityAI learning loop. Failures
+    /// are swallowed and logged at warn level — search UX must never break
+    /// because tracking failed.
+    ///
+    /// The Accounting API enforces company isolation via the
+    /// X-Citus-Business-* headers added by <c>BusinessSessionHeaderHandler</c>.
+    /// Callers therefore do not need to forward credentials in the body.
+    /// </summary>
+    public async Task RecordUsageAsync(
+        UnitysearchUsageEvent payload,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "accounting/unitysearch/usage",
+                payload,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogDebug(
+                    "UnitySearch usage tracking returned non-success status {StatusCode} for context {Context} event {EventType}.",
+                    response.StatusCode, payload.Context, payload.EventType);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Caller cancelled — swallow.
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "UnitySearch usage tracking failed for context {Context} event {EventType}.",
+                payload.Context, payload.EventType);
+        }
+    }
+}
+
+/// <summary>
+/// Request payload for the Accounting API's <c>POST /accounting/unitysearch/usage</c>
+/// endpoint. Property names match the server-side
+/// <c>UnitysearchUsageHttpRequest</c> shape exactly so default System.Text.Json
+/// PascalCase serialization round-trips cleanly.
+/// </summary>
+public sealed record UnitysearchUsageEvent
+{
+    public Guid CompanyId { get; init; }
+    public string? SessionId { get; init; }
+    public string Context { get; init; } = string.Empty;
+    public string EntityType { get; init; } = string.Empty;
+    public string? Query { get; init; }
+    public string EventType { get; init; } = string.Empty;
+    public Guid? SelectedEntityId { get; init; }
+    public int? RankPosition { get; init; }
+    public int? ResultCount { get; init; }
+    public string? SourceRoute { get; init; }
+    public string? AnchorContext { get; init; }
+    public string? AnchorEntityType { get; init; }
+    public Guid? AnchorEntityId { get; init; }
+    public string? MetadataJson { get; init; }
 }

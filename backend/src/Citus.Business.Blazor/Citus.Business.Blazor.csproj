@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Citus.Ui.Shared\Citus.Ui.Shared.csproj" />
     <ProjectReference Include="..\Infrastructure\PostgreSQL\Infrastructure.PostgreSQL.csproj" />
+    <ProjectReference Include="..\Modules\UnitySearch\Blazor\Citus.Modules.UnitySearch.Blazor.csproj" />
   </ItemGroup>
 
   <Target Name="BuildCss" BeforeTargets="BeforeBuild" Condition="'$(SkipCssBuild)' != 'true'">

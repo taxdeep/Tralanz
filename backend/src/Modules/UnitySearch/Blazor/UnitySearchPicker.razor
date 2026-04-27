@@ -105,6 +105,32 @@
     [Parameter]
     public string? CreateEntityLabel { get; set; }
 
+    /// <summary>
+    /// Stable entity-type identifier (e.g. <c>vendor</c>, <c>account</c>,
+    /// <c>product_service</c>) for the unityAI learning loop. When set, the
+    /// picker emits <c>no_match</c> and <c>create_new</c> usage events; when
+    /// unset, only <c>select</c> events fire (entity type is taken from the
+    /// selected option in that case).
+    /// </summary>
+    [Parameter]
+    public string? EntityType { get; set; }
+
+    /// <summary>Optional anchor-context for pair-stat learning (e.g. the vendor picker context for a category picker).</summary>
+    [Parameter]
+    public string? AnchorContext { get; set; }
+
+    /// <summary>Optional anchor-entity type for pair-stat learning.</summary>
+    [Parameter]
+    public string? AnchorEntityType { get; set; }
+
+    /// <summary>Optional anchor-entity id for pair-stat learning.</summary>
+    [Parameter]
+    public Guid? AnchorEntityId { get; set; }
+
+    /// <summary>Optional source-route hint surfaced in usage events (e.g. /expenses/new).</summary>
+    [Parameter]
+    public string? SourceRoute { get; set; }
+
     [Parameter]
     public EventCallback<UnitySearchPickerOption> OnOptionSelected { get; set; }
 
@@ -176,6 +202,18 @@
             {
                 _options = options;
                 _showResults = true;
+                _lastSearchedQuery = query;
+                _lastSearchResultCount = options.Count;
+
+                if (options.Count == 0 && !string.IsNullOrWhiteSpace(EntityType))
+                {
+                    _ = PickerService.RecordUsageAsync(BuildUsageEvent(
+                        eventType: "no_match",
+                        entityType: EntityType!,
+                        query: query,
+                        resultCount: 0));
+                }
+
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -211,9 +249,33 @@
 
     private async Task SelectAsync(UnitySearchPickerOption option)
     {
+        // Capture rank position BEFORE we reset _options.
+        var rankPosition = -1;
+        for (var i = 0; i < _options.Count; i++)
+        {
+            if (_options[i].SourceId == option.SourceId)
+            {
+                rankPosition = i;
+                break;
+            }
+        }
+        var resultCount = _options.Count;
+
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
         _searchText = option.DisplayText;
+
+        // Fire-and-forget the unityAI usage event. Tracking failures must not
+        // surface to the user — UnitySearchPickerService.RecordUsageAsync
+        // swallows everything and logs at warn level.
+        _ = PickerService.RecordUsageAsync(BuildUsageEvent(
+            eventType: "select",
+            entityType: option.EntityType,
+            query: _lastSearchedQuery ?? string.Empty,
+            resultCount: resultCount,
+            selectedEntityId: option.SourceId,
+            rankPosition: rankPosition >= 0 ? rankPosition : null));
+
         await OnOptionSelected.InvokeAsync(option);
         await InvokeAsync(StateHasChanged);
     }
@@ -237,7 +299,42 @@
 
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
+
+        if (!string.IsNullOrWhiteSpace(EntityType))
+        {
+            _ = PickerService.RecordUsageAsync(BuildUsageEvent(
+                eventType: "create_new",
+                entityType: EntityType!,
+                query: candidate,
+                resultCount: _lastSearchResultCount));
+        }
+
         await OnCreateRequested.InvokeAsync(candidate);
         await InvokeAsync(StateHasChanged);
     }
+
+    private string? _lastSearchedQuery;
+    private int? _lastSearchResultCount;
+
+    private UnitysearchUsageEvent BuildUsageEvent(
+        string eventType,
+        string entityType,
+        string query,
+        int? resultCount,
+        Guid? selectedEntityId = null,
+        int? rankPosition = null) => new()
+    {
+        CompanyId = CompanyId,
+        Context = Context,
+        EntityType = entityType,
+        EventType = eventType,
+        Query = string.IsNullOrWhiteSpace(query) ? null : query,
+        SelectedEntityId = selectedEntityId,
+        RankPosition = rankPosition,
+        ResultCount = resultCount,
+        SourceRoute = SourceRoute,
+        AnchorContext = AnchorContext,
+        AnchorEntityType = AnchorEntityType,
+        AnchorEntityId = AnchorEntityId,
+    };
 }

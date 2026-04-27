@@ -2,6 +2,7 @@ using Citus.Business.Blazor.Components;
 using Citus.Business.Blazor.Configuration;
 using Citus.Business.Blazor.Services;
 using Citus.Business.Blazor.State;
+using Citus.Modules.UnitySearch.Blazor;
 using Citus.Ui.Shared.Theme;
 using Infrastructure.PostgreSQL;
 using Microsoft.Extensions.Options;
@@ -90,6 +91,18 @@ builder.Services.AddHttpClient<AccountingDocumentReviewClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<JournalEntryReviewClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+// UnitySearchPickerService — talks to /accounting/unity-search and the new
+// /accounting/unitysearch/usage endpoint. The session header handler attaches
+// X-Citus-Business-User-Id / X-Citus-Business-Active-Company-Id so the API
+// can enforce company isolation server-side.
+builder.Services.AddHttpClient<UnitySearchPickerService>(
         (serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
