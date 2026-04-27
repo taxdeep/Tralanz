@@ -1,6 +1,7 @@
 using Citus.Accounting.Api;
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
+using Citus.Accounting.Application.CoaTemplates;
 using Citus.Accounting.Application.Commands;
 using Citus.Accounting.Application.Queries;
 using Citus.Accounting.Application.Repositories;
@@ -164,6 +165,12 @@ builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
 // is_system rows are protected: update / activate-toggle refuse to
 // modify them so AR/AP/FX control accounts stay stable.
 builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
+
+// CoA starter templates. Static C# data (no DB tables); the seeder is
+// additive — re-applying the same template skips rows that already
+// exist by (company_id, code).
+builder.Services.AddSingleton<ICoaTemplateRegistry, StaticCoaTemplateRegistry>();
+builder.Services.AddSingleton<ICoaTemplateSeeder, CoaTemplateSeeder>();
 
 // ----- unityAI V1 -------------------------------------------------------
 // Authority: AI_PRODUCT_ARCHITECTURE.md
@@ -3569,6 +3576,69 @@ static string? ValidateAccountInput(AccountUpsertHttpRequest request)
     }
     return null;
 }
+
+// ===========================================================================
+// CoA starter templates
+//
+// V1 surface: list available templates + apply one to the active company.
+// Application is additive (existing codes are skipped, never overwritten),
+// so callers can safely retry. Templates are static C# data — the
+// "version" field exposed here lets the audit trail tag which content
+// was applied without a DB lookup.
+// ===========================================================================
+
+accounting.MapGet(
+    "/accounts/templates",
+    (
+        BusinessSessionContextAccessor sessionAccessor,
+        ICoaTemplateRegistry registry) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        return Results.Ok(registry.List().Select(t => new
+        {
+            key = t.Key,
+            version = t.Version,
+            name = t.Name,
+            description = t.Description,
+            country = t.Country,
+            accountCodeLength = t.AccountCodeLength,
+            accountCount = t.Accounts.Count,
+            accounts = t.Accounts.Select(a => new
+            {
+                code = a.Code,
+                name = a.Name,
+                rootType = a.RootType,
+                detailType = a.DetailType,
+                allowManualPosting = a.AllowManualPosting,
+                systemKey = a.SystemKey,
+                systemRole = a.SystemRole,
+            }).ToArray(),
+        }).ToArray());
+    });
+
+accounting.MapPost(
+    "/accounts/templates/{key}/apply",
+    async (
+        string key,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICoaTemplateSeeder seeder,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var summary = await seeder.SeedAsync(session.ActiveCompanyId, key, cancellationToken);
+            return Results.Ok(summary);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
 
 accounting.MapPost(
     "/unitysearch/usage",

@@ -51,6 +51,56 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
         CancellationToken cancellationToken = default)
         => await SendUpsertAsync(HttpMethod.Put, $"accounts/{id:D}", payload, cancellationToken);
 
+    /// <summary>
+    /// Lists available chart-of-accounts starter templates. Failures
+    /// degrade to an empty list so the maintenance UI can still render.
+    /// </summary>
+    public async Task<IReadOnlyList<CoaTemplateSummary>> ListTemplatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var rows = await httpClient.GetFromJsonAsync<CoaTemplateSummary[]>(
+                "accounts/templates",
+                cancellationToken);
+            return rows ?? Array.Empty<CoaTemplateSummary>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read CoA templates.");
+            return Array.Empty<CoaTemplateSummary>();
+        }
+    }
+
+    /// <summary>
+    /// Applies a starter template to the active company. The seeder is
+    /// additive: rows whose <c>code</c> already exists are skipped, so
+    /// the call is safe to retry.
+    /// </summary>
+    public async Task<CoaSeedOutcome> ApplyTemplateAsync(
+        string templateKey,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsync(
+                $"accounts/templates/{Uri.EscapeDataString(templateKey)}/apply",
+                content: null,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new CoaSeedOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+            }
+            var summary = await response.Content.ReadFromJsonAsync<CoaSeedSummaryDto>(cancellationToken);
+            return new CoaSeedOutcome(true, summary, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to apply CoA template.");
+            return new CoaSeedOutcome(false, null, "Unable to reach the server. Please try again.");
+        }
+    }
+
     public async Task<AccountMutationOutcome> SetActiveAsync(
         Guid id,
         bool isActive,
@@ -150,3 +200,38 @@ public sealed record AccountUpsertPayload(
     bool IsActive);
 
 public sealed record AccountMutationOutcome(bool Succeeded, AccountSummary? Saved, string? ErrorMessage);
+
+public sealed record CoaTemplateSummary(
+    string Key,
+    string Version,
+    string Name,
+    string Description,
+    string Country,
+    int AccountCodeLength,
+    int AccountCount,
+    IReadOnlyList<CoaTemplateAccountSummary> Accounts);
+
+public sealed record CoaTemplateAccountSummary(
+    string Code,
+    string Name,
+    string RootType,
+    string? DetailType,
+    bool AllowManualPosting,
+    string? SystemKey,
+    string? SystemRole);
+
+public sealed record CoaSeedSummaryDto(
+    string TemplateKey,
+    string TemplateVersion,
+    int CreatedCount,
+    int SkippedCount,
+    int FailedCount,
+    IReadOnlyList<CoaSeedAccountResultDto> Results);
+
+public sealed record CoaSeedAccountResultDto(
+    string Code,
+    string Name,
+    string Outcome,        // "Created" | "SkippedExisting" | "Failed"
+    string? ErrorMessage);
+
+public sealed record CoaSeedOutcome(bool Succeeded, CoaSeedSummaryDto? Summary, string? ErrorMessage);

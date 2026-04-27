@@ -207,6 +207,60 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
     }
 
+    public async Task<AccountRecord?> SeedSystemAccountAsync(
+        Guid companyId,
+        AccountSeedInput input,
+        CancellationToken cancellationToken)
+    {
+        var id = Guid.NewGuid();
+        var entityNumber = GenerateEntityNumber();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        // ON CONFLICT DO NOTHING keeps seed runs idempotent: the second
+        // application of the same template no-ops on every row instead of
+        // raising 23505 (we still need that branch on the user-facing
+        // CreateAsync where the API wants to surface the conflict).
+        command.CommandText = """
+            INSERT INTO accounts (
+                id, company_id, entity_number, code, name, root_type, detail_type,
+                currency_code, allow_manual_posting, is_active,
+                is_system, is_system_default, system_key, system_role,
+                created_at, updated_at)
+            VALUES (
+                @id, @company_id, @entity_number, @code, @name, @root_type, @detail_type,
+                @currency_code, @allow_manual_posting, @is_active,
+                @is_system, @is_system_default, @system_key, @system_role,
+                @now, @now)
+            ON CONFLICT (company_id, code) DO NOTHING
+            RETURNING id, company_id, entity_number, code, name, root_type, detail_type,
+                      is_active, is_system, is_system_default, system_key, system_role,
+                      currency_code, allow_manual_posting, created_at, updated_at;
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("entity_number", entityNumber);
+        command.Parameters.AddWithValue("code", input.Code.Trim());
+        command.Parameters.AddWithValue("name", input.Name.Trim());
+        command.Parameters.AddWithValue("root_type", input.RootType);
+        command.Parameters.AddWithValue("detail_type", input.DetailType?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("currency_code",
+            string.IsNullOrWhiteSpace(input.CurrencyCode) ? (object)DBNull.Value : input.CurrencyCode.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("allow_manual_posting", input.AllowManualPosting);
+        command.Parameters.AddWithValue("is_active", input.IsActive);
+        command.Parameters.AddWithValue("is_system", input.IsSystem);
+        command.Parameters.AddWithValue("is_system_default", input.IsSystemDefault);
+        command.Parameters.AddWithValue("system_key",
+            string.IsNullOrWhiteSpace(input.SystemKey) ? (object)DBNull.Value : input.SystemKey);
+        command.Parameters.AddWithValue("system_role",
+            string.IsNullOrWhiteSpace(input.SystemRole) ? (object)DBNull.Value : input.SystemRole);
+        command.Parameters.AddWithValue("now", now);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
+    }
+
     /// <summary>
     /// Builds an entity number that satisfies the migration-draft regex
     /// <c>^EN[0-9]{4}[0-9]{8}$</c>: <c>EN{4-digit-year}{8-digit-random}</c>.

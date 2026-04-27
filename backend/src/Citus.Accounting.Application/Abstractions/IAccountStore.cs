@@ -57,6 +57,24 @@ public sealed record AccountUpsertInput(
     bool AllowManualPosting,
     bool IsActive);
 
+/// <summary>
+/// Account-creation payload used by template seeders. Carries the
+/// system-account fields that the user-facing maintenance UI never
+/// touches (system_key, system_role, is_system, is_system_default).
+/// </summary>
+public sealed record AccountSeedInput(
+    string Code,
+    string Name,
+    string RootType,
+    string? DetailType,
+    string? CurrencyCode,
+    bool AllowManualPosting,
+    bool IsActive,
+    bool IsSystem,
+    bool IsSystemDefault,
+    string? SystemKey,
+    string? SystemRole);
+
 public interface IAccountStore
 {
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
@@ -91,5 +109,18 @@ public interface IAccountStore
         Guid companyId,
         Guid accountId,
         bool isActive,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Inserts a system / template account, including the protected
+    /// fields (<c>is_system</c>, <c>system_key</c>, <c>system_role</c>)
+    /// that the user-facing CRUD methods never touch. Returns
+    /// <c>null</c> when a row with the same <c>code</c> already exists
+    /// for the company so the caller can record a "skipped" outcome
+    /// instead of failing the whole seed.
+    /// </summary>
+    Task<AccountRecord?> SeedSystemAccountAsync(
+        Guid companyId,
+        AccountSeedInput input,
         CancellationToken cancellationToken);
 }

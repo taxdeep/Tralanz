@@ -29,8 +29,104 @@
                      OnClick="StartCreating">
             New account
         </CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     Size="CitusButtonSize.Small"
+                     Disabled="@(_isLoading || _isMutating)"
+                     OnClick="OpenSeedPanelAsync">
+            Seed from template
+        </CitusButton>
     </Actions>
 </CitusPageHeader>
+
+@if (_isSeedPanelOpen)
+{
+    <section class="citus-panel mb-6">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Apply a starter template</h2>
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Size="CitusButtonSize.Small"
+                         Disabled="@_isMutating"
+                         OnClick="CloseSeedPanel">
+                Close
+            </CitusButton>
+        </header>
+
+        <p class="text-fg-muted text-sm mb-4">
+            Templates are applied <strong>additively</strong> — accounts whose code already exists in this
+            company are skipped, never overwritten. Re-applying the same template is safe.
+        </p>
+
+        @if (_seedSummary is not null)
+        {
+            <AntDesign.Alert Type="@(_seedSummary.FailedCount > 0 ? AntDesign.AlertType.Warning : AntDesign.AlertType.Success)"
+                             ShowIcon="true"
+                             Class="mb-4">
+                <MessageTemplate>
+                    <strong>@_seedSummary.TemplateKey @_seedSummary.TemplateVersion applied.</strong>
+                    Created @_seedSummary.CreatedCount, skipped @_seedSummary.SkippedCount existing,
+                    failed @_seedSummary.FailedCount.
+                </MessageTemplate>
+            </AntDesign.Alert>
+        }
+
+        @if (_templates.Count == 0)
+        {
+            <p class="text-fg-muted text-sm">No templates available.</p>
+        }
+        else
+        {
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                @foreach (var template in _templates)
+                {
+                    <article class="citus-subpanel">
+                        <header class="citus-subpanel__header">
+                            <div>
+                                <h3 class="citus-subpanel__title">@template.Name</h3>
+                                <p class="text-fg-subtle text-xs mt-1">
+                                    @template.Country · @template.AccountCodeLength-digit codes · @template.AccountCount accounts ·
+                                    <span class="citus-inline-code">@template.Key</span>
+                                </p>
+                            </div>
+                            <CitusButton Variant="CitusButtonVariant.Primary"
+                                         Size="CitusButtonSize.Small"
+                                         Disabled="@_isMutating"
+                                         OnClick="@(() => ApplyTemplateAsync(template.Key))">
+                                @(_isMutating && _applyingTemplateKey == template.Key ? "Applying…" : "Apply")
+                            </CitusButton>
+                        </header>
+                        <p class="text-fg-muted text-sm mb-3">@template.Description</p>
+                        <details>
+                            <summary class="text-fg-muted text-xs cursor-pointer">Preview accounts (@template.AccountCount)</summary>
+                            <table class="citus-data-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 5rem">Code</th>
+                                        <th>Name</th>
+                                        <th style="width: 7rem">Root type</th>
+                                        <th style="width: 6rem">System</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var account in template.Accounts)
+                                    {
+                                        <tr>
+                                            <td><span class="citus-inline-code">@account.Code</span></td>
+                                            <td>@account.Name</td>
+                                            <td>@HumanizeRootType(account.RootType)</td>
+                                            <td class="text-fg-subtle text-xs">
+                                                @(string.IsNullOrEmpty(account.SystemRole) ? "—" : account.SystemRole)
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </details>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+}
 
 <section class="citus-panel">
     <header class="citus-panel__header">
@@ -278,6 +374,12 @@
 
     private List<AccountSummary> _rows = new();
 
+    // Seed-from-template state.
+    private bool _isSeedPanelOpen;
+    private List<CoaTemplateSummary> _templates = new();
+    private CoaSeedSummaryDto? _seedSummary;
+    private string? _applyingTemplateKey;
+
     private IReadOnlyList<AccountSummary> FilteredRows =>
         string.IsNullOrEmpty(_filterRootType)
             ? _rows
@@ -407,6 +509,55 @@
         finally
         {
             _isMutating = false;
+        }
+    }
+
+    private async Task OpenSeedPanelAsync()
+    {
+        _isSeedPanelOpen = true;
+        _seedSummary = null;
+        if (_templates.Count == 0)
+        {
+            var rows = await AccountClient.ListTemplatesAsync();
+            _templates = rows.ToList();
+        }
+    }
+
+    private void CloseSeedPanel()
+    {
+        _isSeedPanelOpen = false;
+        _seedSummary = null;
+        _applyingTemplateKey = null;
+    }
+
+    private async Task ApplyTemplateAsync(string templateKey)
+    {
+        if (_isMutating) return;
+        _isMutating = true;
+        _applyingTemplateKey = templateKey;
+        try
+        {
+            var outcome = await AccountClient.ApplyTemplateAsync(templateKey);
+            if (!outcome.Succeeded || outcome.Summary is null)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to apply template.");
+                return;
+            }
+            _seedSummary = outcome.Summary;
+            await LoadAsync();
+            if (outcome.Summary.CreatedCount > 0)
+            {
+                await Message.SuccessAsync($"Created {outcome.Summary.CreatedCount} accounts from {outcome.Summary.TemplateKey}.");
+            }
+            else if (outcome.Summary.SkippedCount > 0)
+            {
+                await Message.InfoAsync($"Template {outcome.Summary.TemplateKey} fully matched existing accounts; nothing to add.");
+            }
+        }
+        finally
+        {
+            _isMutating = false;
+            _applyingTemplateKey = null;
         }
     }
 
