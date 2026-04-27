@@ -58,7 +58,7 @@
 
         @if (_seedSummary is not null)
         {
-            <AntDesign.Alert Type="@(_seedSummary.FailedCount > 0 ? AntDesign.AlertType.Warning : AntDesign.AlertType.Success)"
+            <CitusAlert Severity="@(_seedSummary.FailedCount > 0 ? CitusAlertSeverity.Warning : CitusAlertSeverity.Success)"
                              ShowIcon="true"
                              Class="mb-4">
                 <MessageTemplate>
@@ -66,7 +66,7 @@
                     Created @_seedSummary.CreatedCount, skipped @_seedSummary.SkippedCount existing,
                     failed @_seedSummary.FailedCount.
                 </MessageTemplate>
-            </AntDesign.Alert>
+            </CitusAlert>
         }
 
         @if (_templates.Count == 0)

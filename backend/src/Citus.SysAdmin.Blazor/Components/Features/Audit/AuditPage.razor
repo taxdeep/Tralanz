@@ -14,7 +14,7 @@
     <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
 }
 
-<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+<CitusAlert Severity="CitusAlertSeverity.Info"
                  ShowIcon="true"
                  Message="This timeline is the formal governance read model for company status, platform account status, password reset requests, company membership changes, and account MFA governance."
                  Class="mb-4" />
@@ -29,7 +29,7 @@
 
     @if (_users.Count == 0)
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No managed users are available for account-scoped MFA audit review yet." ShowIcon="true" />
+        <CitusAlert Severity="CitusAlertSeverity.Info" Message="No managed users are available for account-scoped MFA audit review yet." ShowIcon="true" />
     }
     else
     {
@@ -67,7 +67,7 @@
         }
         else if (_selectedTimelineUser is not null && _selectedMfaTimeline.Count == 0)
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No MFA governance events have been recorded for this account yet." ShowIcon="true" />
+            <CitusAlert Severity="CitusAlertSeverity.Info" Message="No MFA governance events have been recorded for this account yet." ShowIcon="true" />
         }
         else if (_selectedMfaTimeline.Count > 0)
         {

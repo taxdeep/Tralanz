@@ -21,7 +21,7 @@
 
 @if (!ShellState.BusinessReady)
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+    <CitusAlert Severity="CitusAlertSeverity.Info"
                      ShowIcon="true"
                      Class="mb-6">
         <MessageTemplate>
@@ -37,7 +37,7 @@
                 </div>
             </div>
         </MessageTemplate>
-    </AntDesign.Alert>
+    </CitusAlert>
 }
 
 @if (_lastBootstrapReport is not null)

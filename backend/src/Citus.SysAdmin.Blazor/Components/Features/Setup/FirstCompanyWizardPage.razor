@@ -16,12 +16,12 @@
 
 @if (!string.IsNullOrWhiteSpace(_error))
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
 }
 
 @if (!string.IsNullOrWhiteSpace(_success))
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Success" Message="@_success" ShowIcon="true" Class="mb-4" />
+    <CitusAlert Severity="CitusAlertSeverity.Success" Message="@_success" ShowIcon="true" Class="mb-4" />
 }
 
 <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -85,13 +85,13 @@
                 <CitusInput TValue="string" @bind-Value="_baseCurrencyCode" Placeholder="Base currency" />
             </div>
 
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+            <CitusAlert Severity="CitusAlertSeverity.Info"
                              ShowIcon="true"
                              Class="mb-3">
                 <MessageTemplate>
                     Suggested template from company profile: <strong>@GetTemplateLabel(GetSuggestedTemplateKey())</strong>
                 </MessageTemplate>
-            </AntDesign.Alert>
+            </CitusAlert>
 
             <table class="citus-data-table">
                 <thead>

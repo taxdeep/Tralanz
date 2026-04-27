@@ -7,7 +7,7 @@
 
 @if (Company.IsReadOnly)
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+    <CitusAlert Severity="CitusAlertSeverity.Info"
                      ShowIcon="true"
                      Banner="true"
                      Class="citus-banner mb-4">
@@ -15,7 +15,7 @@
             Company <strong>@Company.CompanyName</strong> is currently <strong>@FormatStatus(Company.Status)</strong>.
             Business access stays available for review, but writes, posting, and governed mutations are blocked by backend authority.
         </MessageTemplate>
-    </AntDesign.Alert>
+    </CitusAlert>
 }
 
 @code {

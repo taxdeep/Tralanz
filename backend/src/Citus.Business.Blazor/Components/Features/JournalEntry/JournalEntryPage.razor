@@ -61,12 +61,12 @@
 
             @if (!string.IsNullOrWhiteSpace(_error))
             {
-                <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@_error" ShowIcon="true" Class="mb-3" />
+                <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-3" />
             }
 
             @if (_recentEntries.Count == 0 && string.IsNullOrWhiteSpace(_error) && !_isLoading)
             {
-                <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No journal entries were found yet for the active company." ShowIcon="true" />
+                <CitusAlert Severity="CitusAlertSeverity.Info" Message="No journal entries were found yet for the active company." ShowIcon="true" />
             }
             else if (_recentEntries.Count > 0)
             {

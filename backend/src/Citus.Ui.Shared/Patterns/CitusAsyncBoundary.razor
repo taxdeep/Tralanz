@@ -42,7 +42,7 @@ else if (!string.IsNullOrWhiteSpace(ErrorMessage))
     }
     else
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
                          ShowIcon="true"
                          Message="@ErrorMessage"
                          Class="mb-4" />

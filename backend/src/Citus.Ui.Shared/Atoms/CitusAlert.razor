@@ -1,0 +1,58 @@
+@*
+    CitusAlert — banner-style status panel. Phase 6 of the UI library
+    migration: wraps Radzen.RadzenAlert but keeps the AntDesign.Alert
+    surface (Severity / Message / MessageTemplate / ShowIcon / Class)
+    so the 75+ existing `<CitusAlert Type="@AntDesign.AlertType.X"
+    Message="..." />` callsites swap with a one-line tag rename plus
+    a single `Type=" -> Severity="` sed.
+
+    The Severity enum mirrors AntDesign.AlertType exactly except
+    "Error" stays "Error" on our side; the atom maps Error to
+    Radzen's BadgeStyle.Danger internally so callsites never see the
+    Radzen vocabulary.
+*@
+
+@using Radzen
+@using Radzen.Blazor
+
+<RadzenAlert AlertStyle="@MappedStyle"
+             Variant="Variant.Flat"
+             ShowIcon="ShowIcon"
+             Shade="Shade.Lighter"
+             AllowClose="false"
+             class="@(string.IsNullOrEmpty(Class) ? "citus-alert" : $"citus-alert {Class}")"
+             Style="@Style">
+    @if (MessageTemplate is not null)
+    {
+        @MessageTemplate
+    }
+    else if (!string.IsNullOrEmpty(Message))
+    {
+        @Message
+    }
+    @ChildContent
+</RadzenAlert>
+
+@code {
+    [Parameter] public CitusAlertSeverity Severity { get; set; } = CitusAlertSeverity.Info;
+
+    [Parameter] public string? Message { get; set; }
+
+    [Parameter] public RenderFragment? MessageTemplate { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public bool ShowIcon { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public string? Style { get; set; }
+
+    private AlertStyle MappedStyle => Severity switch
+    {
+        CitusAlertSeverity.Success => AlertStyle.Success,
+        CitusAlertSeverity.Warning => AlertStyle.Warning,
+        CitusAlertSeverity.Error => AlertStyle.Danger,
+        _ => AlertStyle.Info
+    };
+}

@@ -8,7 +8,7 @@
 
 @if (_completion is null)
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
                      ShowIcon="true"
                      Message="The first-company completion summary is no longer available. Returning to SysAdmin overview." />
 }
@@ -22,12 +22,12 @@ else
         </p>
     </header>
 
-    <AntDesign.Alert Type="@AntDesign.AlertType.Success" ShowIcon="true" Class="mb-6">
+    <CitusAlert Severity="CitusAlertSeverity.Success" ShowIcon="true" Class="mb-6">
         <MessageTemplate>
             <strong>@_completion.CompanyName (@_completion.CompanyEntityNumber) is ready.</strong>
             <div class="text-fg-muted text-sm mt-1">SysAdmin remains a separate platform identity. Use the business owner account below when entering the Business App.</div>
         </MessageTemplate>
-    </AntDesign.Alert>
+    </CitusAlert>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         <div class="lg:col-span-7">

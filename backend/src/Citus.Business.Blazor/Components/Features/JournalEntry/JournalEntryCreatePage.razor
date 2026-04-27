@@ -25,7 +25,7 @@
 
 @if (ShellState.AreWritesBlocked)
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
                      ShowIcon="true"
                      Message="@ShellState.WriteBlockMessage"
                      Class="mb-4" />
@@ -33,19 +33,19 @@
 
 @if (!string.IsNullOrWhiteSpace(_validationMessage))
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_validationMessage" ShowIcon="true" Class="mb-4" />
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validationMessage" ShowIcon="true" Class="mb-4" />
 }
 
 @if (_lastResult is not null)
 {
-    <AntDesign.Alert Type="@(_lastResult.Succeeded ? AntDesign.AlertType.Success : AntDesign.AlertType.Info)"
+    <CitusAlert Severity="@(_lastResult.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Info)"
                      ShowIcon="true"
                      Class="mb-4">
         <MessageTemplate>
             <strong>@_lastResult.Operation</strong>
             <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
         </MessageTemplate>
-    </AntDesign.Alert>
+    </CitusAlert>
 }
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">

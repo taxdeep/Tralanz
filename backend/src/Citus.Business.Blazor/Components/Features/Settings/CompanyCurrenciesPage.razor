@@ -10,13 +10,13 @@
     </Actions>
 </CitusPageHeader>
 
-<AntDesign.Alert Type="@AntDesign.AlertType.Info"
+<CitusAlert Severity="CitusAlertSeverity.Info"
                  ShowIcon="true"
                  Class="mb-6">
     <MessageTemplate>
         Base currency and multi-currency state are company-scoped truth. Switching the base currency requires a governed migration and is not editable from this surface.
     </MessageTemplate>
-</AntDesign.Alert>
+</CitusAlert>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
     <CitusStatCard

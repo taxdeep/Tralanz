@@ -27,7 +27,7 @@ else if (_users.Count > 0)
 {
     @if (_notificationReadiness is not null && !_notificationReadiness.IsVerificationDeliveryReady)
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
                          ShowIcon="true"
                          Message="Password reset is currently blocked because notification readiness is not verified. Open Maintenance and Notification Readiness to confirm config, test status, and verification readiness."
                          Class="mb-4" />
@@ -153,7 +153,7 @@ else if (_users.Count > 0)
             }
             else if (_selectedMfaTimeline.Count == 0)
             {
-                <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No MFA governance events have been recorded for this account yet." ShowIcon="true" />
+                <CitusAlert Severity="CitusAlertSeverity.Info" Message="No MFA governance events have been recorded for this account yet." ShowIcon="true" />
             }
             else
             {
@@ -197,14 +197,14 @@ else if (_users.Count > 0)
             <h2 class="citus-panel__title">MFA Recovery Queue</h2>
             <p class="text-fg-muted text-sm">Recovery is a governed flow: business users request, SysAdmin reviews, then executes the approved reset.</p>
         </div>
-        <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+        <CitusAlert Severity="CitusAlertSeverity.Info"
                          ShowIcon="true"
                          Message="Policy: self-service can only request recovery. Review and execution remain SysAdmin-controlled, and direct emergency reset should stay out-of-band while an open recovery request already exists for the same account."
                          Class="mb-4" />
 
         @if (_mfaRecoveryRequests.Count == 0)
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No open MFA recovery requests are pending review or execution." ShowIcon="true" />
+            <CitusAlert Severity="CitusAlertSeverity.Info" Message="No open MFA recovery requests are pending review or execution." ShowIcon="true" />
         }
         else
         {
@@ -354,7 +354,7 @@ else if (_users.Count > 0)
             }
             else if (_selectedRecoveryHistory.Count == 0)
             {
-                <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No historical recovery requests have been recorded for this account yet." ShowIcon="true" />
+                <CitusAlert Severity="CitusAlertSeverity.Info" Message="No historical recovery requests have been recorded for this account yet." ShowIcon="true" />
             }
             else
             {
@@ -426,11 +426,11 @@ else if (_users.Count > 0)
 
         @if (ShellState.ActiveCompany.IsSystemScope || !ShellState.ActiveCompany.CompanyId.HasValue)
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="Switch to a business company from the Companies page to manage owner and user memberships." ShowIcon="true" />
+            <CitusAlert Severity="CitusAlertSeverity.Info" Message="Switch to a business company from the Companies page to manage owner and user memberships." ShowIcon="true" />
         }
         else if (_memberships.Count == 0)
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="@($"No active company memberships were returned for {ShellState.ActiveCompany.CompanyName}.")" ShowIcon="true" />
+            <CitusAlert Severity="CitusAlertSeverity.Info" Message="@($"No active company memberships were returned for {ShellState.ActiveCompany.CompanyName}.")" ShowIcon="true" />
         }
         else
         {

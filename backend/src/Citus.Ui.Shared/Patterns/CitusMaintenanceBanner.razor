@@ -8,7 +8,7 @@
 
 @if (State.Enabled)
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
                      ShowIcon="true"
                      Banner="true"
                      Class="citus-banner mb-4">
@@ -19,7 +19,7 @@
                 <span> Planned until @State.ScheduledUntilUtc.Value.ToUniversalTime().ToString("u").</span>
             }
         </MessageTemplate>
-    </AntDesign.Alert>
+    </CitusAlert>
 }
 
 @code {

@@ -22,14 +22,14 @@
 
 @if (!string.IsNullOrWhiteSpace(_error))
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
 }
 
 @if (_review is not null)
 {
     @if (_review.Status is "voided" or "reversed")
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@GetLifecycleAlert(_review)" ShowIcon="true" Class="mb-4" />
+        <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@GetLifecycleAlert(_review)" ShowIcon="true" Class="mb-4" />
     }
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

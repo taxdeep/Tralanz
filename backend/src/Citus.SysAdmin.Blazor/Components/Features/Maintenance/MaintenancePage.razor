@@ -46,19 +46,19 @@
 
     @if (_notificationReadiness is not null)
     {
-        <AntDesign.Alert Type="@(_notificationReadiness.IsVerificationDeliveryReady ? AntDesign.AlertType.Success : AntDesign.AlertType.Warning)"
+        <CitusAlert Severity="@(_notificationReadiness.IsVerificationDeliveryReady ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
                          ShowIcon="true"
                          Message="@(_notificationReadiness.IsVerificationDeliveryReady ? "Verification delivery is ready." : "Verification delivery is blocked.")"
                          Class="mb-3" />
 
         @if (!string.IsNullOrWhiteSpace(_notificationReadiness.BlockingReason))
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="@_notificationReadiness.BlockingReason" ShowIcon="true" Class="mb-3" />
+            <CitusAlert Severity="CitusAlertSeverity.Info" Message="@_notificationReadiness.BlockingReason" ShowIcon="true" Class="mb-3" />
         }
 
         @if (!string.IsNullOrWhiteSpace(_notificationReadiness.ConfigurationError))
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Warning" Message="@($"Provider configuration issue: {_notificationReadiness.ConfigurationError}")" ShowIcon="true" Class="mb-3" />
+            <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@($"Provider configuration issue: {_notificationReadiness.ConfigurationError}")" ShowIcon="true" Class="mb-3" />
         }
     }
 

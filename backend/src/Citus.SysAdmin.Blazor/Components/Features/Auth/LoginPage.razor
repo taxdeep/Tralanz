@@ -37,7 +37,7 @@
                 </p>
             </div>
 
-            <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+            <CitusAlert Severity="CitusAlertSeverity.Warning"
                              ShowIcon="true"
                              Message="This is the governed first-use setup path. Keep SysAdmin separate from business users."
                              Class="mt-4" />
@@ -75,7 +75,7 @@
 
             @if (_setupStatus?.BootstrapSeedingActive == true)
             {
-                <AntDesign.Alert Type="@AntDesign.AlertType.Info"
+                <CitusAlert Severity="CitusAlertSeverity.Info"
                                  ShowIcon="true"
                                  Message="@($"Development bootstrap seeding is active for `{_setupStatus.BootstrapEmailHint}`. Use it only as a local bootstrap path and rotate the secret immediately after sign-in.")"
                                  Class="mt-4" />

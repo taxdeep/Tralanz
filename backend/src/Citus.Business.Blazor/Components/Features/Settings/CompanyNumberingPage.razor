@@ -45,7 +45,7 @@
 
 @if (_isUnavailable)
 {
-    <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
                      ShowIcon="true"
                      Message="Numbering settings need a PostgreSQL connection. Configure ConnectionStrings:AccountingCore or CITUS_ACCOUNTING_DB on the Business host."
                      Class="mb-4" />
@@ -54,17 +54,17 @@ else
 {
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_error" ShowIcon="true" Class="mb-4" />
     }
 
     @if (!string.IsNullOrWhiteSpace(_notice))
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Success" Message="@_notice" ShowIcon="true" Class="mb-4" />
+        <CitusAlert Severity="CitusAlertSeverity.Success" Message="@_notice" ShowIcon="true" Class="mb-4" />
     }
 
     @if (ShellState.AreWritesBlocked)
     {
-        <AntDesign.Alert Type="@AntDesign.AlertType.Warning"
+        <CitusAlert Severity="CitusAlertSeverity.Warning"
                          ShowIcon="true"
                          Message="@ShellState.WriteBlockMessage"
                          Class="mb-4" />
@@ -88,7 +88,7 @@ else
         }
         else if (FilteredRows.Count == 0)
         {
-            <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="No numbering rule matched the current search." ShowIcon="true" />
+            <CitusAlert Severity="CitusAlertSeverity.Info" Message="No numbering rule matched the current search." ShowIcon="true" />
         }
         else
         {
