@@ -192,6 +192,22 @@ builder.Services.AddSingleton<Citus.Platform.Core.Runtime.SysAdminPasswordHasher
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository,
     Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();
 builder.Services.AddSingleton<PlatformBootstrapFixturesInitializer>();
+
+// Business sign-in / session endpoints. The repo is the same one SysAdmin
+// has been using for first-company-wizard creds — it owns the users /
+// company_memberships / business_sessions schema, hashes passwords with
+// SysAdminPasswordHasher, and supports MFA. Wiring it here lets the Business
+// shell complete a real sign-in for owners provisioned through the wizard.
+// SmtpPlatformVerificationNotificationSender is registered for the MFA
+// branch; users with mfa_mode='none' (the default for wizard-created
+// owners) never trigger the sender, so missing SMTP config is harmless
+// until MFA is explicitly enabled.
+builder.Services.Configure<Citus.Platform.Infrastructure.Notifications.PlatformEmailDeliveryOptions>(
+    builder.Configuration.GetSection(Citus.Platform.Infrastructure.Notifications.PlatformEmailDeliveryOptions.SectionName));
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformVerificationNotificationSender,
+    Citus.Platform.Infrastructure.Notifications.SmtpPlatformVerificationNotificationSender>();
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository,
+    Citus.Platform.Infrastructure.Persistence.PostgresPlatformBusinessSessionRepository>();
 builder.Services.AddSingleton<IAiJobRunStore, PostgreSqlAiJobRunStore>();
 builder.Services.AddSingleton<IAiRequestLogStore, PostgreSqlAiRequestLogStore>();
 builder.Services.AddSingleton<IUnitysearchEventStore, PostgreSqlUnitysearchEventStore>();
@@ -268,6 +284,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
+    var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
@@ -283,7 +300,201 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await bootstrapFixtures.EnsureAsync(CancellationToken.None);
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
+    // business_sessions / mfa_challenges / mfa_enrollments tables need
+    // to exist before /auth/login can issue tokens or fetch user records.
+    await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
 }
+
+// ---------------------------------------------------------------------------
+// Business sign-in endpoints. Mounted at app root (NOT under /accounting/)
+// because the Blazor BusinessAuthenticationClient sends to "auth/login",
+// "auth/session", "auth/logout" relative to the API base URL. The shapes
+// match the SignInResponse / BusinessAuthSessionSummary contracts the
+// client already speaks; AuthenticateAsync / ValidateSessionAsync /
+// RevokeSessionAsync delegate to the Postgres-backed
+// IPlatformBusinessSessionRepository (same repo SysAdmin uses to verify
+// First-Company-Wizard owners).
+//
+// Until a real auth flow shipped, the Blazor side silently fell back to
+// a "bootstrap" Northwind/Alice session whenever /auth/login returned 404 —
+// that's why an operator who'd just provisioned a real owner kept landing
+// on Northwind. With these endpoints live, real credentials succeed and
+// the bootstrap fallback is no longer reached on this code path.
+// ---------------------------------------------------------------------------
+
+app.MapPost(
+    "/auth/login",
+    async (
+        BusinessSignInRequest request,
+        HttpContext httpContext,
+        Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository repository,
+        Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
+        IConfiguration configuration,
+        CancellationToken cancellationToken) =>
+    {
+        var sessionLifetime = ResolveBusinessSessionLifetime(configuration);
+        var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+
+        var result = await repository.AuthenticateAsync(
+            request.Email,
+            request.Password,
+            sessionLifetime,
+            remoteIp,
+            userAgent,
+            cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            return Results.Json(
+                new { message = string.IsNullOrWhiteSpace(result.FailureMessage)
+                    ? "Sign-in failed." : result.FailureMessage,
+                    code = result.FailureCode },
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        if (result.RequiresSecondFactor)
+        {
+            // First-pass only — MFA challenge issued. The Blazor client
+            // doesn't yet drive a second-factor screen, so we currently
+            // surface this as a clear error rather than partial success.
+            return Results.Json(
+                new { message = "Multi-factor authentication is required for this account; the business shell does not yet support the second-factor step." },
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        var summary = await BuildBusinessSessionSummaryAsync(
+            contextWorkflow,
+            result.UserId,
+            result.ActiveCompanyId,
+            cancellationToken);
+
+        if (summary is null)
+        {
+            return Results.Json(
+                new { message = "Sign-in succeeded but the user's company access could not be resolved." },
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        return Results.Ok(new BusinessSignInResponse
+        {
+            Succeeded = true,
+            SessionToken = result.SessionToken,
+            Session = summary,
+            Message = string.Empty,
+            IsBootstrap = false
+        });
+    });
+
+app.MapGet(
+    "/auth/session",
+    async (
+        HttpContext httpContext,
+        Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository repository,
+        Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
+        CancellationToken cancellationToken) =>
+    {
+        if (!httpContext.Request.Headers.TryGetValue(
+                Citus.Ui.Shared.Business.BusinessAuthHeaderNames.SessionToken,
+                out var tokenValues))
+        {
+            return Results.Unauthorized();
+        }
+
+        var token = tokenValues.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Results.Unauthorized();
+        }
+
+        var result = await repository.ValidateSessionAsync(token, cancellationToken);
+        if (!result.Succeeded)
+        {
+            return Results.Unauthorized();
+        }
+
+        var summary = await BuildBusinessSessionSummaryAsync(
+            contextWorkflow,
+            result.UserId,
+            result.ActiveCompanyId,
+            cancellationToken);
+        return summary is null ? Results.Unauthorized() : Results.Ok(summary);
+    });
+
+app.MapPost(
+    "/auth/logout",
+    async (
+        HttpContext httpContext,
+        Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        if (httpContext.Request.Headers.TryGetValue(
+                Citus.Ui.Shared.Business.BusinessAuthHeaderNames.SessionToken,
+                out var tokenValues))
+        {
+            var token = tokenValues.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                await repository.RevokeSessionAsync(token, cancellationToken);
+            }
+        }
+
+        return Results.NoContent();
+    });
+
+static TimeSpan ResolveBusinessSessionLifetime(IConfiguration configuration)
+{
+    var hours = configuration.GetValue<int?>("BusinessAuthentication:SessionHours") ?? 12;
+    if (hours <= 0) hours = 12;
+    return TimeSpan.FromHours(hours);
+}
+
+static async Task<Citus.Ui.Shared.Business.BusinessAuthSessionSummary?> BuildBusinessSessionSummaryAsync(
+    Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
+    Guid userId,
+    Guid activeCompanyId,
+    CancellationToken cancellationToken)
+{
+    var context = await contextWorkflow.GetAsync(userId, activeCompanyId, cancellationToken);
+    if (context is null)
+    {
+        return null;
+    }
+
+    var active = context.AvailableCompanies.FirstOrDefault(c => c.Id == activeCompanyId)
+        ?? context.AvailableCompanies.FirstOrDefault();
+    if (active is null)
+    {
+        return null;
+    }
+
+    return new Citus.Ui.Shared.Business.BusinessAuthSessionSummary
+    {
+        User = new Citus.Ui.Shared.Business.BusinessUserSummary
+        {
+            Id = context.User.Id,
+            DisplayName = context.User.DisplayName,
+            Email = context.User.Email,
+            Username = context.User.Username,
+            Roles = context.User.Roles.ToArray()
+        },
+        ActiveCompany = ToBusinessCompanySummary(active),
+        AvailableCompanies = context.AvailableCompanies.Select(ToBusinessCompanySummary).ToArray()
+    };
+}
+
+static Citus.Ui.Shared.Business.BusinessCompanySummary ToBusinessCompanySummary(
+    SharedKernel.CompanyAccess.CompanyAccessCompanySummary company) =>
+    new()
+    {
+        Id = company.Id,
+        CompanyCode = company.CompanyCode,
+        CompanyName = company.CompanyName,
+        BaseCurrencyCode = company.BaseCurrencyCode,
+        MultiCurrencyEnabled = company.MultiCurrencyEnabled,
+        Status = string.IsNullOrWhiteSpace(company.Status) ? "active" : company.Status,
+        IsReadOnly = company.IsReadOnly
+    };
 
 var accounting = app.MapGroup("/accounting");
 

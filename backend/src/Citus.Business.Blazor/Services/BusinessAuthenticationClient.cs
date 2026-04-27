@@ -39,16 +39,23 @@ public sealed class BusinessAuthenticationClient(
                 return SignInResponse.Failed("The Accounting API returned an empty session response.");
             }
 
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                return BuildBootstrapResponse();
-            }
-
+            // Past behaviour: fall back to a bootstrap (Northwind/Alice) session
+            // on 404 so the dev experience worked before /auth/login shipped.
+            // That fallback now hides a real misconfiguration — operators who
+            // had just provisioned a real owner via the SysAdmin First-Company
+            // Wizard kept landing on "Northwind" because /auth/login was 404'ing
+            // and the silent fallback masked it. /auth/login is wired now;
+            // a 404 here means the API is genuinely missing the endpoint, and
+            // a clear error is more useful than a misleading "Welcome, Alice".
             var message = await ReadMessageAsync(response, cancellationToken);
             return SignInResponse.Failed(message);
         }
         catch (HttpRequestException ex)
         {
+            // Network-level unreachable (DNS, refused connection, TLS handshake).
+            // Keep the bootstrap fallback only here so a fully offline dev box
+            // can still demo the shell. Once a real session is needed, the
+            // operator will need the API up.
             logger.LogWarning(ex, "Accounting API unreachable; falling back to bootstrap session.");
             return BuildBootstrapResponse();
         }
