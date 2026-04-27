@@ -1544,3 +1544,47 @@ select.citus-journal-lines__cell-input {
     cursor: not-allowed;
     opacity: 0.6;
 }
+
+/* ---------- Inline FX rate editor ---------- */
+
+.citus-fx-inline {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--citus-space-2);
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-fx-inline__leading,
+.citus-fx-inline__trailing {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-1);
+    font-weight: 500;
+}
+
+.citus-fx-inline__equals {
+    color: var(--citus-color-fg-muted);
+    margin: 0 var(--citus-space-1);
+}
+
+.citus-fx-inline__flag {
+    font-size: 1.05em;
+    line-height: 1;
+}
+
+.citus-fx-inline__hint {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    flex-basis: 100%;
+}
+
+.citus-fx-inline__hint--warn {
+    color: var(--citus-color-warning, #b26a00);
+}
+
+.citus-fx-inline--identity {
+    color: var(--citus-color-fg-muted);
+    font-style: italic;
+}

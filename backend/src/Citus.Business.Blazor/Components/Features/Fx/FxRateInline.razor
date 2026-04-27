@@ -1,0 +1,155 @@
+@*
+    FxRateInline — "1 USD 🇺🇸 = [1.363336] CAD 🇨🇦" inline editor for
+    document forms. Pre-fills with the recommended D-1 close rate
+    fetched from /accounting/fx-rates/recommended on first render and
+    on date / currency change. The value is two-way bound; whatever
+    the user submits is what posts.
+
+    Empty / null Rate is intentional when no recommendation is
+    available (frankfurter unreachable, no cached fallback). Forms must
+    treat empty as "user must enter a rate before posting".
+*@
+
+@inject FxRateClient FxRateClient
+
+@if (BaseCurrencyCode is null || QuoteCurrencyCode is null)
+{
+    <span class="citus-fx-inline citus-fx-inline--placeholder"></span>
+}
+else if (string.Equals(BaseCurrencyCode, QuoteCurrencyCode, StringComparison.OrdinalIgnoreCase))
+{
+    <span class="citus-fx-inline citus-fx-inline--identity">
+        Base currency — no FX rate needed
+    </span>
+}
+else
+{
+    <div class="citus-fx-inline">
+        <span class="citus-fx-inline__leading">
+            1 @BaseCurrencyCode <span class="citus-fx-inline__flag">@BaseFlag</span>
+            <span class="citus-fx-inline__equals">=</span>
+        </span>
+        <RadzenNumeric TValue="decimal?"
+                       Value="@Rate"
+                       ValueChanged="OnRateChanged"
+                       Format="0.000000"
+                       Min="0"
+                       Step="0.000001"
+                       ShowUpDown="false"
+                       Style="width: 9rem;" />
+        <span class="citus-fx-inline__trailing">
+            @QuoteCurrencyCode <span class="citus-fx-inline__flag">@QuoteFlag</span>
+        </span>
+        @if (_loading)
+        {
+            <span class="citus-fx-inline__hint">Fetching recommended rate…</span>
+        }
+        else if (_lastRecommendation is not null)
+        {
+            <span class="citus-fx-inline__hint" title="@HintTooltip()">
+                @if (_lastRecommendation.IsStale)
+                {
+                    <text>Stale — published @_lastRecommendation.RateDate.ToString("yyyy-MM-dd")</text>
+                }
+                else
+                {
+                    <text>@_lastRecommendation.Source close @_lastRecommendation.RateDate.ToString("yyyy-MM-dd")</text>
+                }
+            </span>
+        }
+        else if (_recommendationFailed)
+        {
+            <span class="citus-fx-inline__hint citus-fx-inline__hint--warn">
+                No recommended rate — please enter the actual rate used for this transaction.
+            </span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public DateOnly? DocumentDate { get; set; }
+    [Parameter] public string? BaseCurrencyCode { get; set; }
+    [Parameter] public string? QuoteCurrencyCode { get; set; }
+    [Parameter] public decimal? Rate { get; set; }
+    [Parameter] public EventCallback<decimal?> RateChanged { get; set; }
+
+    private RecommendedFxRateSummary? _lastRecommendation;
+    private bool _loading;
+    private bool _recommendationFailed;
+    private string? _lastFetchKey;
+
+    private string? BaseFlag => CurrencyFlagHelper.GetFlagEmoji(BaseCurrencyCode ?? string.Empty);
+    private string? QuoteFlag => CurrencyFlagHelper.GetFlagEmoji(QuoteCurrencyCode ?? string.Empty);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (DocumentDate is null ||
+            string.IsNullOrEmpty(BaseCurrencyCode) ||
+            string.IsNullOrEmpty(QuoteCurrencyCode) ||
+            string.Equals(BaseCurrencyCode, QuoteCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var key = $"{DocumentDate:yyyy-MM-dd}|{BaseCurrencyCode}|{QuoteCurrencyCode}";
+        if (key == _lastFetchKey)
+        {
+            return;
+        }
+        _lastFetchKey = key;
+
+        await FetchAsync();
+    }
+
+    private async Task FetchAsync()
+    {
+        _loading = true;
+        _recommendationFailed = false;
+        StateHasChanged();
+
+        try
+        {
+            var result = await FxRateClient.GetRecommendedAsync(
+                DocumentDate!.Value,
+                BaseCurrencyCode!,
+                QuoteCurrencyCode!);
+            _lastRecommendation = result;
+
+            if (result is null)
+            {
+                _recommendationFailed = true;
+            }
+            else if (Rate is null || Rate == 0m)
+            {
+                // Only auto-fill when the form hasn't already been
+                // populated. If the user has manually entered a rate,
+                // don't trample it just because we re-fetched.
+                Rate = result.Rate;
+                if (RateChanged.HasDelegate)
+                {
+                    await RateChanged.InvokeAsync(Rate);
+                }
+            }
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRateChanged(decimal? value)
+    {
+        Rate = value;
+        if (RateChanged.HasDelegate)
+        {
+            await RateChanged.InvokeAsync(value);
+        }
+    }
+
+    private string HintTooltip()
+    {
+        if (_lastRecommendation is null) return string.Empty;
+        return $"Recommended rate from {_lastRecommendation.Source}, {_lastRecommendation.BaseCurrencyCode}->{_lastRecommendation.QuoteCurrencyCode} close on {_lastRecommendation.RateDate:yyyy-MM-dd}.";
+    }
+}
