@@ -570,69 +570,110 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             canonicalChart);
     }
 
+    // -----------------------------------------------------------------------
+    // Canonical chart of accounts — generic / universal small-business edition.
+    //
+    // Source: cleaned 2026-04-27 from QuickBooks-derived reference + a Canadian
+    // tax-mapped reference, with company / industry / region-specific rows
+    // pruned. ~46 user-visible accounts plus 6 hidden system rows (5 FX +
+    // 2 sub-currency reserves).
+    //
+    // Removed (vs. the prior 64-account variant):
+    //   - Specific bank names (10010/10020/10999) — users add their own.
+    //   - Logistics-only fixed assets (16300 tractors, 16500 warehouse).
+    //   - Intercompany rows (18010, 24010) — niche, users add as needed.
+    //   - Canada-specific tax payables (25500/25530/25550) — replaced by
+    //     a generic 25000 Sales Tax Payable.
+    //   - Region-named payroll row (26100 Worker's Comp Premiums - Admin)
+    //     — replaced by a generic 26000 Payroll Liabilities.
+    //   - Shareholder Distributions (31400) — overlaps with Dividends.
+    //   - Shipping income (48900), Merchant Account Fees (51800) — channel
+    //     and industry-specific.
+    //
+    // Added (universal items the prior chart was missing):
+    //   - 10100 Bank Operating Account (generic placeholder).
+    //   - 12500 Short-Term Investments.
+    //   - 14000 Inventory (relocated from a misclassified 18100 "other asset"
+    //     position to the conventional 14000 current-asset family).
+    //   - 21000 Credit Card Payable (universal).
+    //   - 25500 Income Tax Payable, 26000 Payroll Liabilities, 28000
+    //     Long-Term Debt — standard SMB liability coverage.
+    //   - 48000 Service Revenue (for service businesses).
+    //   - 64500 Bad Debt Expense, 65000 Wages and Salaries, 65100 Employee
+    //     Benefits, 65500 Professional Development — payroll was the most
+    //     glaring miss before; major correction.
+    //   - 78000 Gain (Loss) on Sale of Assets, 90000 Income Tax Expense.
+    //
+    // Renamed for clarity / breadth:
+    //   - 13100 Prepaid Insurance → Prepaid Expenses
+    //   - 15400 Custom Software → Computer Equipment
+    //   - 30200 Dividends Paid → Dividends Declared
+    //   - 51000 Purchase Cost → Cost of Goods Sold
+    //   - 68000 Taxes - Property → Taxes & Licenses
+    // -----------------------------------------------------------------------
     private static IReadOnlyList<StarterAccountDefinition> BuildCanonicalChart() =>
     [
-        // ---- Banks (10000-10999) ----
+        // ---- Bank / Cash (10000-10999) ----
         new StarterAccountDefinition("10000", "Cash on Hand", "asset", "bank", false, true, null, null, true),
-        new StarterAccountDefinition("10010", "JP CAD Chequing", "asset", "bank", false, false, null, null, true),
-        new StarterAccountDefinition("10020", "JPM-USD-4419", "asset", "bank", false, false, null, null, true),
-        new StarterAccountDefinition("10999", "CLEARING ACCT-USD", "asset", "clearing", false, false, null, null, true),
+        new StarterAccountDefinition("10100", "Bank Operating Account", "asset", "bank", false, true, null, null, true),
 
-        // ---- Accounts Receivable (11000 base + 11001 USD subcurrency) ----
+        // ---- Accounts Receivable (11000 base + 11001 sub-currency reserve) ----
         new StarterAccountDefinition("11000", "Accounts Receivable", "asset", "accounts_receivable", true, true, "control_account:accounts_receivable:base", "accounts_receivable", false),
-        new StarterAccountDefinition("11001", "Accounts Receivable - USD", "asset", "accounts_receivable_subcurrency", true, false, "control_account:accounts_receivable:usd", null, false),
+        new StarterAccountDefinition("11001", "Accounts Receivable - Foreign Currency", "asset", "accounts_receivable_subcurrency", true, false, "control_account:accounts_receivable:foreign", null, false),
 
-        // ---- Other Current Asset (12000-13100, 18100) ----
+        // ---- Other Current Asset (12000-13999) ----
         new StarterAccountDefinition("12000", "Undeposited Funds", "asset", "undeposited_funds", false, true, null, null, true),
+        new StarterAccountDefinition("12500", "Short-Term Investments", "asset", "short_term_investments", false, false, null, null, true),
         new StarterAccountDefinition("12800", "Employee Advances", "asset", "employee_advances", false, false, null, null, true),
-        new StarterAccountDefinition("13100", "Prepaid Insurance", "asset", "prepaids", false, false, null, null, true),
-        new StarterAccountDefinition("18100", "Inventory", "asset", "inventory", false, false, null, null, true),
+        new StarterAccountDefinition("13100", "Prepaid Expenses", "asset", "prepaids", false, true, null, null, true),
+
+        // ---- Inventory (14000) ----
+        new StarterAccountDefinition("14000", "Inventory", "asset", "inventory", false, true, null, null, true),
 
         // ---- Fixed Asset (15000-17000) ----
         new StarterAccountDefinition("15000", "Furniture and Equipment", "asset", "fixed_asset", false, false, null, null, true),
         new StarterAccountDefinition("15200", "Buildings and Improvements", "asset", "fixed_asset", false, false, null, null, true),
-        new StarterAccountDefinition("15400", "Custom Software", "asset", "fixed_asset", false, false, null, null, true),
+        new StarterAccountDefinition("15400", "Computer Equipment", "asset", "fixed_asset", false, false, null, null, true),
         new StarterAccountDefinition("15600", "Land", "asset", "fixed_asset", false, false, null, null, true),
         new StarterAccountDefinition("15900", "Leasehold Improvements", "asset", "fixed_asset", false, false, null, null, true),
-        new StarterAccountDefinition("16300", "Tractors and Trailers", "asset", "fixed_asset", false, false, null, null, true),
         new StarterAccountDefinition("16400", "Vehicles", "asset", "fixed_asset", false, false, null, null, true),
-        new StarterAccountDefinition("16500", "Warehouse Equipment", "asset", "fixed_asset", false, false, null, null, true),
-        new StarterAccountDefinition("17000", "Accumulated Depreciation", "asset", "contra_asset", false, false, null, null, true),
+        new StarterAccountDefinition("17000", "Accumulated Depreciation", "asset", "contra_asset", false, true, null, null, true),
 
-        // ---- Other Asset (18010-18700) ----
-        new StarterAccountDefinition("18010", "Due from Affiliates", "asset", "other_asset", false, false, null, null, true),
+        // ---- Other Asset (18700) ----
         new StarterAccountDefinition("18700", "Security Deposits Asset", "asset", "other_asset", false, false, null, null, true),
 
-        // ---- Accounts Payable (20000 base + 20001 USD subcurrency) ----
+        // ---- Accounts Payable (20000 base + 20001 sub-currency reserve) ----
         new StarterAccountDefinition("20000", "Accounts Payable", "liability", "accounts_payable", true, true, "control_account:accounts_payable:base", "accounts_payable", false),
-        new StarterAccountDefinition("20001", "Accounts Payable - USD", "liability", "accounts_payable_subcurrency", true, false, "control_account:accounts_payable:usd", null, false),
+        new StarterAccountDefinition("20001", "Accounts Payable - Foreign Currency", "liability", "accounts_payable_subcurrency", true, false, "control_account:accounts_payable:foreign", null, false),
 
-        // ---- Other Current Liability (24000-26100) ----
+        // ---- Credit Card Payable (21000) ----
+        new StarterAccountDefinition("21000", "Credit Card Payable", "liability", "credit_card", false, true, null, null, true),
+
+        // ---- Other Current Liability (24000-26999) ----
         new StarterAccountDefinition("24000", "Shareholder Loan", "liability", "shareholder_loan", false, false, null, null, true),
-        new StarterAccountDefinition("24010", "Loan to Affiliates", "liability", "intercompany_loan", false, false, null, null, true),
         new StarterAccountDefinition("24700", "Customer Deposits", "liability", "customer_deposits", false, false, null, null, true),
-        new StarterAccountDefinition("25500", "GST/HST Payable", "liability", "tax", false, true, null, null, true),
-        new StarterAccountDefinition("25530", "GST/QST Payable", "liability", "tax", false, false, null, null, true),
-        new StarterAccountDefinition("25550", "PST Payable (BC)", "liability", "tax", false, false, null, null, true),
-        new StarterAccountDefinition("26100", "Worker's Comp Premiums - Admin", "liability", "payroll_liability", false, false, null, null, true),
+        new StarterAccountDefinition("25000", "Sales Tax Payable", "liability", "tax", false, true, null, null, true),
+        new StarterAccountDefinition("25500", "Income Tax Payable", "liability", "tax", false, false, null, null, true),
+        new StarterAccountDefinition("26000", "Payroll Liabilities", "liability", "payroll_liability", false, false, null, null, true),
+
+        // ---- Long-Term Debt (28000) ----
+        new StarterAccountDefinition("28000", "Long-Term Debt", "liability", "long_term_debt", false, false, null, null, true),
 
         // ---- Equity (30000-32000) ----
         new StarterAccountDefinition("30000", "Opening Balance Equity", "equity", "opening_balance", true, true, "equity:opening_balance", null, true),
         new StarterAccountDefinition("30100", "Capital Stock", "equity", "capital_stock", false, false, null, null, true),
-        new StarterAccountDefinition("30200", "Dividends Paid", "equity", "dividends", false, false, null, null, true),
-        new StarterAccountDefinition("30800", "Owners Draw", "equity", "owners_draw", false, false, null, null, true),
-        new StarterAccountDefinition("31400", "Shareholder Distributions", "equity", "shareholder_distributions", false, false, null, null, true),
+        new StarterAccountDefinition("30200", "Dividends Declared", "equity", "dividends", false, false, null, null, true),
+        new StarterAccountDefinition("30800", "Owner's Draw", "equity", "owners_draw", false, false, null, null, true),
         new StarterAccountDefinition("32000", "Retained Earnings", "equity", "retained_earnings", true, true, "equity:retained_earnings", "retained_earnings", false),
 
         // ---- Income (47900-49900) ----
-        new StarterAccountDefinition("47900", "Sales", "revenue", "sales", false, true, null, null, true),
-        new StarterAccountDefinition("48900", "Shipping and Delivery Income", "revenue", "shipping_revenue", false, false, null, null, true),
+        new StarterAccountDefinition("47900", "Sales Revenue", "revenue", "sales", false, true, null, null, true),
+        new StarterAccountDefinition("48000", "Service Revenue", "revenue", "service_revenue", false, true, null, null, true),
         new StarterAccountDefinition("49900", "Uncategorized Income", "revenue", "uncategorized", false, false, null, null, true),
 
-        // ---- Cost of Goods Sold (51000-51800) ----
-        new StarterAccountDefinition("51000", "Purchase Cost", "cost_of_sales", "purchase_cost", false, true, null, null, true),
+        // ---- Cost of Goods Sold (51000-51200) ----
+        new StarterAccountDefinition("51000", "Cost of Goods Sold", "cost_of_sales", "cogs", false, true, null, null, true),
         new StarterAccountDefinition("51200", "Freight Costs", "cost_of_sales", "freight", false, false, null, null, true),
-        new StarterAccountDefinition("51800", "Merchant Account Fees", "cost_of_sales", "merchant_fees", false, false, null, null, true),
 
         // ---- Operating Expense (60000-69800) ----
         new StarterAccountDefinition("60000", "Advertising and Promotion", "expense", "advertising", false, false, null, null, true),
@@ -643,33 +684,41 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         new StarterAccountDefinition("63300", "Insurance Expense", "expense", "insurance", false, false, null, null, true),
         new StarterAccountDefinition("63400", "Interest Expense", "expense", "interest", false, false, null, null, true),
         new StarterAccountDefinition("64300", "Meals and Entertainment", "expense", "meals", false, false, null, null, true),
+        new StarterAccountDefinition("64500", "Bad Debt Expense", "expense", "bad_debt", false, false, null, null, true),
         new StarterAccountDefinition("64900", "Office Supplies", "expense", "office", false, false, null, null, true),
+        new StarterAccountDefinition("65000", "Wages and Salaries", "expense", "payroll", false, true, null, null, true),
+        new StarterAccountDefinition("65100", "Employee Benefits", "expense", "payroll", false, false, null, null, true),
+        new StarterAccountDefinition("65500", "Professional Development", "expense", "training", false, false, null, null, true),
         new StarterAccountDefinition("66600", "Printing and Reproduction", "expense", "printing", false, false, null, null, true),
-        new StarterAccountDefinition("66700", "Professional Fees", "expense", "professional_fees", false, false, null, null, true),
+        new StarterAccountDefinition("66700", "Professional Fees", "expense", "professional_fees", false, true, null, null, true),
         new StarterAccountDefinition("67100", "Rent Expense", "expense", "rent", false, false, null, null, true),
         new StarterAccountDefinition("67200", "Repairs and Maintenance", "expense", "repairs", false, false, null, null, true),
-        new StarterAccountDefinition("68000", "Taxes - Property", "expense", "property_tax", false, false, null, null, true),
+        new StarterAccountDefinition("68000", "Taxes & Licenses", "expense", "taxes_licenses", false, false, null, null, true),
         new StarterAccountDefinition("68100", "Telephone Expense", "expense", "telephone", false, false, null, null, true),
         new StarterAccountDefinition("68400", "Travel Expense", "expense", "travel", false, false, null, null, true),
         new StarterAccountDefinition("68600", "Utilities", "expense", "utilities", false, false, null, null, true),
         new StarterAccountDefinition("69800", "Uncategorized Expenses", "expense", "uncategorized", false, false, null, null, true),
 
-        // ---- FX family (77000-77400) ----
-        // 77000 is the user-visible "Exchange Gain or Loss" from the
-        // canonical chart — flagged as the realized_fx_gain destination.
-        // 77100-77400 are engine-required system rows hidden behind
-        // is_system=true so the Posting Engine has distinct accounts for
-        // realized_fx_loss, unrealized_fx_gain / loss, and translation
-        // adjustment. They're authored with all-zero tails so the 4-digit
-        // truncation produces 7710 / 7720 / 7730 / 7740 cleanly.
+        // ---- FX family (77000 visible + 77100-77400 hidden system) ----
+        // 77000 is the user-visible "Exchange Gain or Loss" — flagged as the
+        // realized_fx_gain destination. 77100-77400 are engine-required
+        // system rows hidden behind is_system=true so the Posting Engine
+        // has distinct accounts for realized_fx_loss, unrealized_fx_gain
+        // / loss, and translation adjustment. All authored with all-zero
+        // tails so the 4-digit truncation produces 7710 / 7720 / 7730 /
+        // 7740 cleanly.
         new StarterAccountDefinition("77000", "Exchange Gain or Loss", "expense", "fx", false, true, "fx:realized_gain", "realized_fx_gain", true),
         new StarterAccountDefinition("77100", "Realized FX Loss", "expense", "fx", true, true, "fx:realized_loss", "realized_fx_loss", false),
         new StarterAccountDefinition("77200", "Unrealized FX Gain", "revenue", "fx", true, true, "fx:unrealized_gain", "unrealized_fx_gain", false),
         new StarterAccountDefinition("77300", "Unrealized FX Loss", "expense", "fx", true, true, "fx:unrealized_loss", "unrealized_fx_loss", false),
         new StarterAccountDefinition("77400", "Translation Adjustment Reserve", "equity", "fx", true, true, "fx:translation_adjustment", "translation_adjustment", false),
 
-        // ---- Other Expense (80000) ----
+        // ---- Other Expense (78000-80000) ----
+        new StarterAccountDefinition("78000", "Gain (Loss) on Sale of Assets", "expense", "asset_disposal", false, false, null, null, true),
         new StarterAccountDefinition("80000", "Ask My Accountant", "expense", "other_expense", false, false, null, null, true),
+
+        // ---- Income Tax (90000) ----
+        new StarterAccountDefinition("90000", "Income Tax Expense", "expense", "income_tax", false, false, null, null, true),
     ];
 
     private static IReadOnlyList<ReservedFamily> DefaultReservedFamilies { get; } =

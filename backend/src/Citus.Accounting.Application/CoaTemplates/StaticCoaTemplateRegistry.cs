@@ -38,13 +38,14 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
         };
 
     /// <summary>
-    /// Canonical 5-digit starter chart, derived from the user-supplied
-    /// "QuickBooks Online" reference (account list.pdf, 2026-04-27).
-    /// 64 user-visible accounts plus 4 hidden FX system rows so the
-    /// Posting Engine has distinct accounts for realized loss /
-    /// unrealized gain / unrealized loss / translation adjustment even
-    /// when the income statement face shows the single "Exchange Gain
-    /// or Loss" row.
+    /// Generic small-business chart at 5-digit canonical length. Cleaned up
+    /// 2026-04-27: prior 64-account variant included company-specific bank
+    /// names, region-specific tax payables, and industry-specific fixed
+    /// assets (logistics tractors / warehouse equipment). This version
+    /// targets ~46 user-visible universal accounts plus 6 hidden system
+    /// rows (5 FX + 2 sub-currency reserves), with payroll / bad-debt /
+    /// long-term-debt / income-tax coverage that the previous chart
+    /// missed.
     ///
     /// All canonical codes are exactly 5 digits. The Wizard's account
     /// code length picker (4–10) reformats them on apply: trailing zeros
@@ -54,96 +55,96 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
     /// </summary>
     private static CoaTemplate BuildCanonical5Digit() => new(
         Key: "ca_general_small_business",
-        Version: "2",
+        Version: "3",
         Name: "General business (5-digit canonical)",
-        Description: "Default chart of accounts seeded by the First-Company Wizard. 64 visible accounts covering bank, AR/AP control, current/fixed/other assets, current liabilities, equity, income, COGS, operating expense, and FX, plus engine-required hidden FX system rows (realized loss / unrealized gain / unrealized loss / translation adjustment). Codes are stored at 5 digits and shifted to the company's chosen length (4–10).",
+        Description: "Generic universal chart of accounts for SMBs. Covers cash, AR/AP control, current/fixed assets, current and long-term liabilities (incl. credit card, payroll, sales/income tax), equity, income, COGS, operating expense (incl. payroll), FX, asset disposal, and income tax expense, plus engine-required hidden FX system rows. Codes are stored at 5 digits and shifted to the company's chosen length (4–10).",
         Country: "Generic",
         AccountCodeLength: 5,
         Accounts: new CoaTemplateAccount[]
         {
-            // ---- Banks (10000-10999) ----
+            // ---- Bank / Cash (10000-10999) ----
             new("10000", "Cash on Hand", "asset", DetailType: "bank"),
-            new("10010", "JP CAD Chequing", "asset", DetailType: "bank"),
-            new("10020", "JPM-USD-4419", "asset", DetailType: "bank"),
-            new("10999", "CLEARING ACCT-USD", "asset", DetailType: "clearing"),
+            new("10100", "Bank Operating Account", "asset", DetailType: "bank"),
 
-            // ---- Accounts Receivable (11000 base + 11001 USD subcurrency) ----
+            // ---- Accounts Receivable (11000 base + 11001 sub-currency) ----
             new("11000", "Accounts Receivable", "asset",
                 DetailType: "accounts_receivable",
                 AllowManualPosting: false,
                 SystemKey: "control_account:accounts_receivable:base",
                 SystemRole: "accounts_receivable"),
-            new("11001", "Accounts Receivable - USD", "asset",
+            new("11001", "Accounts Receivable - Foreign Currency", "asset",
                 DetailType: "accounts_receivable_subcurrency",
                 AllowManualPosting: false,
-                SystemKey: "control_account:accounts_receivable:usd"),
+                SystemKey: "control_account:accounts_receivable:foreign"),
 
-            // ---- Other Current Asset ----
+            // ---- Other Current Asset (12000-13999) ----
             new("12000", "Undeposited Funds", "asset", DetailType: "undeposited_funds"),
+            new("12500", "Short-Term Investments", "asset", DetailType: "short_term_investments"),
             new("12800", "Employee Advances", "asset", DetailType: "employee_advances"),
-            new("13100", "Prepaid Insurance", "asset", DetailType: "prepaids"),
-            new("18100", "Inventory", "asset", DetailType: "inventory"),
+            new("13100", "Prepaid Expenses", "asset", DetailType: "prepaids"),
 
-            // ---- Fixed Asset ----
+            // ---- Inventory (14000) ----
+            new("14000", "Inventory", "asset", DetailType: "inventory"),
+
+            // ---- Fixed Asset (15000-17000) ----
             new("15000", "Furniture and Equipment", "asset", DetailType: "fixed_asset"),
             new("15200", "Buildings and Improvements", "asset", DetailType: "fixed_asset"),
-            new("15400", "Custom Software", "asset", DetailType: "fixed_asset"),
+            new("15400", "Computer Equipment", "asset", DetailType: "fixed_asset"),
             new("15600", "Land", "asset", DetailType: "fixed_asset"),
             new("15900", "Leasehold Improvements", "asset", DetailType: "fixed_asset"),
-            new("16300", "Tractors and Trailers", "asset", DetailType: "fixed_asset"),
             new("16400", "Vehicles", "asset", DetailType: "fixed_asset"),
-            new("16500", "Warehouse Equipment", "asset", DetailType: "fixed_asset"),
             new("17000", "Accumulated Depreciation", "asset", DetailType: "contra_asset"),
 
-            // ---- Other Asset ----
-            new("18010", "Due from Affiliates", "asset", DetailType: "other_asset"),
+            // ---- Other Asset (18700) ----
             new("18700", "Security Deposits Asset", "asset", DetailType: "other_asset"),
 
-            // ---- Accounts Payable (20000 base + 20001 USD subcurrency) ----
+            // ---- Accounts Payable (20000 base + 20001 sub-currency) ----
             new("20000", "Accounts Payable", "liability",
                 DetailType: "accounts_payable",
                 AllowManualPosting: false,
                 SystemKey: "control_account:accounts_payable:base",
                 SystemRole: "accounts_payable"),
-            new("20001", "Accounts Payable - USD", "liability",
+            new("20001", "Accounts Payable - Foreign Currency", "liability",
                 DetailType: "accounts_payable_subcurrency",
                 AllowManualPosting: false,
-                SystemKey: "control_account:accounts_payable:usd"),
+                SystemKey: "control_account:accounts_payable:foreign"),
 
-            // ---- Other Current Liability ----
+            // ---- Credit Card Payable (21000) ----
+            new("21000", "Credit Card Payable", "liability", DetailType: "credit_card"),
+
+            // ---- Other Current Liability (24000-26999) ----
             new("24000", "Shareholder Loan", "liability", DetailType: "shareholder_loan"),
-            new("24010", "Loan to Affiliates", "liability", DetailType: "intercompany_loan"),
             new("24700", "Customer Deposits", "liability", DetailType: "customer_deposits"),
-            new("25500", "GST/HST Payable", "liability", DetailType: "tax"),
-            new("25530", "GST/QST Payable", "liability", DetailType: "tax"),
-            new("25550", "PST Payable (BC)", "liability", DetailType: "tax"),
-            new("26100", "Worker's Comp Premiums - Admin", "liability", DetailType: "payroll_liability"),
+            new("25000", "Sales Tax Payable", "liability", DetailType: "tax"),
+            new("25500", "Income Tax Payable", "liability", DetailType: "tax"),
+            new("26000", "Payroll Liabilities", "liability", DetailType: "payroll_liability"),
 
-            // ---- Equity ----
+            // ---- Long-Term Debt (28000) ----
+            new("28000", "Long-Term Debt", "liability", DetailType: "long_term_debt"),
+
+            // ---- Equity (30000-32000) ----
             new("30000", "Opening Balance Equity", "equity",
                 DetailType: "opening_balance",
                 SystemKey: "equity:opening_balance"),
             new("30100", "Capital Stock", "equity", DetailType: "capital_stock"),
-            new("30200", "Dividends Paid", "equity", DetailType: "dividends"),
-            new("30800", "Owners Draw", "equity", DetailType: "owners_draw"),
-            new("31400", "Shareholder Distributions", "equity", DetailType: "shareholder_distributions"),
+            new("30200", "Dividends Declared", "equity", DetailType: "dividends"),
+            new("30800", "Owner's Draw", "equity", DetailType: "owners_draw"),
             new("32000", "Retained Earnings", "equity",
                 DetailType: "retained_earnings",
                 AllowManualPosting: false,
                 SystemKey: "equity:retained_earnings",
                 SystemRole: "retained_earnings"),
 
-            // ---- Income ----
-            new("47900", "Sales", "revenue", DetailType: "sales"),
-            new("48900", "Shipping and Delivery Income", "revenue", DetailType: "shipping_revenue"),
+            // ---- Income (47900-49900) ----
+            new("47900", "Sales Revenue", "revenue", DetailType: "sales"),
+            new("48000", "Service Revenue", "revenue", DetailType: "service_revenue"),
             new("49900", "Uncategorized Income", "revenue", DetailType: "uncategorized"),
 
-            // ---- Cost of Goods Sold ----
-            new("51000", "Purchase Cost", "cost_of_sales", DetailType: "purchase_cost"),
+            // ---- Cost of Goods Sold (51000-51200) ----
+            new("51000", "Cost of Goods Sold", "cost_of_sales", DetailType: "cogs"),
             new("51200", "Freight Costs", "cost_of_sales", DetailType: "freight"),
-            new("51800", "Merchant Account Fees", "cost_of_sales", DetailType: "merchant_fees"),
 
-            // ---- Operating Expense ----
+            // ---- Operating Expense (60000-69800) ----
             new("60000", "Advertising and Promotion", "expense", DetailType: "advertising"),
             new("60100", "Auto and Truck Expenses", "expense", DetailType: "auto"),
             new("60400", "Bank Service Charges", "expense", DetailType: "bank_fees"),
@@ -152,12 +153,16 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             new("63300", "Insurance Expense", "expense", DetailType: "insurance"),
             new("63400", "Interest Expense", "expense", DetailType: "interest"),
             new("64300", "Meals and Entertainment", "expense", DetailType: "meals"),
+            new("64500", "Bad Debt Expense", "expense", DetailType: "bad_debt"),
             new("64900", "Office Supplies", "expense", DetailType: "office"),
+            new("65000", "Wages and Salaries", "expense", DetailType: "payroll"),
+            new("65100", "Employee Benefits", "expense", DetailType: "payroll"),
+            new("65500", "Professional Development", "expense", DetailType: "training"),
             new("66600", "Printing and Reproduction", "expense", DetailType: "printing"),
             new("66700", "Professional Fees", "expense", DetailType: "professional_fees"),
             new("67100", "Rent Expense", "expense", DetailType: "rent"),
             new("67200", "Repairs and Maintenance", "expense", DetailType: "repairs"),
-            new("68000", "Taxes - Property", "expense", DetailType: "property_tax"),
+            new("68000", "Taxes & Licenses", "expense", DetailType: "taxes_licenses"),
             new("68100", "Telephone Expense", "expense", DetailType: "telephone"),
             new("68400", "Travel Expense", "expense", DetailType: "travel"),
             new("68600", "Utilities", "expense", DetailType: "utilities"),
@@ -189,7 +194,11 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
                 SystemKey: "fx:translation_adjustment",
                 SystemRole: "translation_adjustment"),
 
-            // ---- Other Expense ----
+            // ---- Other Expense (78000-80000) ----
+            new("78000", "Gain (Loss) on Sale of Assets", "expense", DetailType: "asset_disposal"),
             new("80000", "Ask My Accountant", "expense", DetailType: "other_expense"),
+
+            // ---- Income Tax (90000) ----
+            new("90000", "Income Tax Expense", "expense", DetailType: "income_tax"),
         });
 }
