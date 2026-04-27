@@ -980,3 +980,75 @@ select.citus-journal-lines__cell-input {
     padding: var(--citus-space-2) var(--citus-space-2);
     font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Radzen DataGrid → Citus tokens bridge ----------
+   Radzen ships its own CSS (`default-base.css` is the unstyled base).
+   Bridging a few class names to our --citus-color-* tokens makes the
+   spike grid feel native in both light and dark modes without pulling
+   the full Radzen theme. Limited to .citus-radzen-grid so the rest of
+   the page is untouched. */
+
+.citus-radzen-grid.rz-data-grid,
+.citus-radzen-grid .rz-data-grid {
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-radzen-grid .rz-grid-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.citus-radzen-grid .rz-grid-table thead th {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+    padding: var(--citus-space-2) var(--citus-space-3);
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-radzen-grid .rz-grid-table tbody td {
+    padding: var(--citus-space-2) var(--citus-space-3);
+    border-bottom: 1px solid var(--citus-color-border);
+    color: var(--citus-color-fg);
+}
+
+.citus-radzen-grid .rz-grid-table tbody tr:hover td {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-radzen-grid .rz-pager,
+.citus-radzen-grid .rz-paginator {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+    border-top: 1px solid var(--citus-color-border);
+    padding: var(--citus-space-2) var(--citus-space-3);
+}
+
+.citus-radzen-grid input,
+.citus-radzen-grid select {
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    padding: 0.2rem 0.5rem;
+}
+
+.citus-radzen-grid input:focus,
+.citus-radzen-grid select:focus {
+    outline: none;
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 2px var(--citus-color-primary-bg);
+}
+
+.citus-radzen-grid .rz-sortable-column:hover {
+    color: var(--citus-color-primary);
+    cursor: pointer;
+}

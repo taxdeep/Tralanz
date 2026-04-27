@@ -10,6 +10,7 @@
     <base href="@AppHostOptions.NormalizeBaseHref(HostOptions.Value.PathBase)" />
     <ResourcePreloader />
     <link rel="stylesheet" href="_content/AntDesign/css/ant-design-blazor.css" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/default-base.css" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Citus.Business.Blazor.styles.css"]" />
     <ImportMap />
@@ -18,6 +19,7 @@
 
 <body>
     <Routes @rendermode="InteractiveServer" />
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
     <script src="@Assets["js/business-auth.js"]"></script>
     <script src="@Assets["js/citus-downloads.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>

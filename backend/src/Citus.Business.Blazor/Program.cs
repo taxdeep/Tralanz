@@ -6,12 +6,19 @@ using Citus.Modules.UnitySearch.Blazor;
 using Citus.Ui.Shared.Theme;
 using Infrastructure.PostgreSQL;
 using Microsoft.Extensions.Options;
+using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddAntDesign();
+
+// Radzen.Blazor — coexists with AntDesign. Used for high-volume report
+// grids (Trial Balance first; charts and Aging tables next if the
+// spike pans out). Different namespaces, scoped CSS, no global style
+// collision expected.
+builder.Services.AddRadzenComponents();
 builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<BusinessShellState>();

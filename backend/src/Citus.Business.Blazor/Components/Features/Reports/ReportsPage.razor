@@ -1,5 +1,9 @@
 @page "/reports"
 
+@using Citus.Ui.Shared.Reports
+@using Radzen
+@using Radzen.Blazor
+
 @inject BusinessShellState ShellState
 @inject AccountingHealthClient AccountingHealthClient
 @inject TrialBalanceClient TrialBalanceClient
@@ -85,40 +89,75 @@
         }
         else
         {
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Account</th>
-                        <th>Root type</th>
-                        <th>Status</th>
-                        <th class="text-right">Debit balance</th>
-                        <th class="text-right">Credit balance</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in _trialBalance.Rows)
-                    {
-                        <tr>
-                            <td><span class="citus-inline-code">@row.Code</span></td>
-                            <td>
-                                <div>@row.Name</div>
+            @* SPIKE: Radzen DataGrid replaces the plain HTML table for the
+               Trial Balance. Goal — evaluate sort / filter / paging /
+               column resize / virtualization quality on a real report
+               that ships in Citus, before deciding whether to broaden
+               Radzen's footprint. The rest of the page (P&L, Balance
+               Sheet, etc.) stays on the existing AntDesign+HTML stack
+               for an apples-to-apples visual diff. *@
+            <RadzenDataGrid TItem="TrialBalanceAccountSummary"
+                            Data="@_trialBalance.Rows"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            AllowColumnResize="true"
+                            AllowPaging="true"
+                            PageSize="50"
+                            FilterMode="FilterMode.Simple"
+                            class="citus-radzen-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
+                                          Property="@nameof(TrialBalanceAccountSummary.Code)"
+                                          Title="Code"
+                                          Width="110px">
+                        <Template Context="row">
+                            <span class="citus-inline-code">@row.Code</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
+                                          Property="@nameof(TrialBalanceAccountSummary.Name)"
+                                          Title="Account">
+                        <Template Context="row">
+                            <div>@row.Name</div>
+                            @if (!string.IsNullOrWhiteSpace(row.DetailType))
+                            {
                                 <div class="text-fg-subtle text-xs">@row.DetailType</div>
-                            </td>
-                            <td>@row.RootType</td>
-                            <td>
-                                @(row.IsActive ? "Active" : "Inactive")
-                                @if (row.IsSystem)
-                                {
-                                    <span class="text-fg-subtle text-xs"> · System</span>
-                                }
-                            </td>
-                            <td class="text-right">@FormatAmount(row.BalanceDebit)</td>
-                            <td class="text-right">@FormatAmount(row.BalanceCredit)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
+                                          Property="@nameof(TrialBalanceAccountSummary.RootType)"
+                                          Title="Root type"
+                                          Width="140px" />
+                    <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
+                                          Title="Status"
+                                          Width="120px"
+                                          Sortable="false"
+                                          Filterable="false">
+                        <Template Context="row">
+                            @(row.IsActive ? "Active" : "Inactive")
+                            @if (row.IsSystem)
+                            {
+                                <span class="text-fg-subtle text-xs"> · System</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
+                                          Property="@nameof(TrialBalanceAccountSummary.BalanceDebit)"
+                                          Title="Debit balance"
+                                          TextAlign="TextAlign.Right"
+                                          Width="160px">
+                        <Template Context="row">@FormatAmount(row.BalanceDebit)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TrialBalanceAccountSummary"
+                                          Property="@nameof(TrialBalanceAccountSummary.BalanceCredit)"
+                                          Title="Credit balance"
+                                          TextAlign="TextAlign.Right"
+                                          Width="160px">
+                        <Template Context="row">@FormatAmount(row.BalanceCredit)</Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
         }
     }
 </section>
