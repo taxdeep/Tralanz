@@ -21,6 +21,6 @@
 
     private string Color =>
         string.Equals(Status?.Status, "ok", StringComparison.OrdinalIgnoreCase)
-            ? AntDesign.PresetColor.Green.ToString().ToLowerInvariant()
-            : AntDesign.PresetColor.Orange.ToString().ToLowerInvariant();
+            ? "green"
+            : "orange";
 }

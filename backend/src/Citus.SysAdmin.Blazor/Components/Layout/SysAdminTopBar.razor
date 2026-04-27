@@ -54,39 +54,33 @@
         <div class="citus-topbar__actions">
             <ThemeToggle />
 
-            <AntDesign.Dropdown Trigger="@(new[] { AntDesign.Trigger.Click })">
-                <Overlay>
-                    <AntDesign.Menu>
-                        <AntDesign.MenuItem Disabled="true">
-                            <strong>@ShellState.Operator.DisplayName</strong>
-                            <div class="citus-topbar__user-meta">@ShellState.Operator.Email</div>
-                        </AntDesign.MenuItem>
-                        <AntDesign.MenuDivider />
-                        <AntDesign.MenuItem RouterLink="./security">
-                            <span class="citus-topbar__menu-row">
-                                <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Inline" />
-                                <span>Security</span>
-                            </span>
-                        </AntDesign.MenuItem>
-                        <AntDesign.MenuItem OnClick="SignOutAsync">
-                            <span class="citus-topbar__menu-row">
-                                <CitusIcon Name="IconName.Logout" Size="IconSize.Inline" />
-                                <span>Log out</span>
-                            </span>
-                        </AntDesign.MenuItem>
-                    </AntDesign.Menu>
-                </Overlay>
-                <ChildContent>
-                    <button type="button" class="citus-topbar__user">
-                        <span class="citus-topbar__avatar">@AvatarInitials</span>
-                        <span class="citus-topbar__user-text">
-                            <span class="citus-topbar__user-name">@ShellState.Operator.DisplayName</span>
-                            <span class="citus-topbar__user-role">@PrimaryRole</span>
-                        </span>
-                        <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+            <details class="citus-user-menu">
+                <summary class="citus-topbar__user">
+                    <span class="citus-topbar__avatar">@AvatarInitials</span>
+                    <span class="citus-topbar__user-text">
+                        <span class="citus-topbar__user-name">@ShellState.Operator.DisplayName</span>
+                        <span class="citus-topbar__user-role">@PrimaryRole</span>
+                    </span>
+                    <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+                </summary>
+                <div class="citus-user-menu__panel">
+                    <div class="citus-user-menu__head">
+                        <strong>@ShellState.Operator.DisplayName</strong>
+                        <div class="citus-topbar__user-meta">@ShellState.Operator.Email</div>
+                    </div>
+                    <a class="citus-user-menu__item" href="security">
+                        <CitusIcon Name="IconName.ShieldLock" Size="IconSize.Inline" />
+                        <span>Security</span>
+                    </a>
+                    <div class="citus-user-menu__divider"></div>
+                    <button type="button"
+                            class="citus-user-menu__item citus-user-menu__item--danger"
+                            @onclick="SignOutAsync">
+                        <CitusIcon Name="IconName.Logout" Size="IconSize.Inline" />
+                        <span>Log out</span>
                     </button>
-                </ChildContent>
-            </AntDesign.Dropdown>
+                </div>
+            </details>
         </div>
     </div>
 }

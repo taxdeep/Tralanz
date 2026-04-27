@@ -17,7 +17,6 @@
 *@
 
 <IconSpriteHost />
-<AntDesign.AntContainer />
 <RadzenComponents />
 
 @if (!_isShellReady)
@@ -41,15 +40,8 @@ else if (!ShellState.IsAuthenticated)
 }
 else
 {
-    <AntDesign.Layout Class="citus-shell">
-        <AntDesign.Sider Collapsible="true"
-                         Collapsed="@_collapsed"
-                         CollapsedChanged="OnCollapsedChanged"
-                         Breakpoint="@AntDesign.BreakpointType.Lg"
-                         Width="240"
-                         CollapsedWidth="64"
-                         Class="citus-shell__sider"
-                         Theme="@AntDesign.SiderTheme.Light">
+    <div class="citus-shell @(_collapsed ? "citus-shell--collapsed" : null)">
+        <aside class="citus-shell__sider">
             <div class="citus-shell__brand">
                 <CitusIcon Name="IconName.ShieldLock" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
                 @if (!_collapsed)
@@ -58,14 +50,14 @@ else
                 }
             </div>
             <SysAdminNavMenu Collapsed="@_collapsed" />
-        </AntDesign.Sider>
+        </aside>
 
-        <AntDesign.Layout>
-            <AntDesign.Header Class="citus-shell__header">
+        <div class="citus-shell__main">
+            <header class="citus-shell__header">
                 <SysAdminTopBar Collapsed="@_collapsed" OnToggle="ToggleCollapsed" />
-            </AntDesign.Header>
+            </header>
 
-            <AntDesign.Content Class="citus-shell__content">
+            <main class="citus-shell__content">
                 @if (_isContextLoading)
                 {
                     <div class="citus-shell__loading">
@@ -75,9 +67,9 @@ else
 
                 <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
                 @Body
-            </AntDesign.Content>
-        </AntDesign.Layout>
-    </AntDesign.Layout>
+            </main>
+        </div>
+    </div>
 }
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -163,8 +155,6 @@ else
     }
 
     private void ToggleCollapsed() => _collapsed = !_collapsed;
-
-    private void OnCollapsedChanged(bool collapsed) => _collapsed = collapsed;
 
     private async Task LoadControlContextAsync()
     {

@@ -65,58 +65,79 @@
     background: var(--citus-color-bg);
 }
 
-/* ---------- Nav menu ---------- */
+/* ---------- Nav menu (Phase 8: plain <nav> structure, no AntDesign) ---------- */
 
 .citus-nav-menu {
-    border-right: 0 !important;
-    background: transparent !important;
+    background: transparent;
     padding: var(--citus-space-2) 0;
     flex: 1;
     overflow-y: auto;
-    /* AntDesign Menu's default rule occasionally introduces a horizontal
-       scroll when the inner <ul> picks up a 2px focus outline; clamp it. */
     overflow-x: hidden;
 }
 
-.citus-nav-menu .ant-menu-item-group-title {
-    padding-left: var(--citus-space-5) !important;
-    color: var(--citus-color-fg-subtle) !important;
-    font-size: var(--citus-text-xs) !important;
+.citus-nav-menu__group {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 var(--citus-space-2) 0;
+}
+
+.citus-nav-menu__group + .citus-nav-menu__group {
+    border-top: 1px solid var(--citus-color-border);
+    padding-top: var(--citus-space-2);
+    margin-top: var(--citus-space-2);
+}
+
+.citus-nav-menu__group-title {
+    padding: var(--citus-space-2) var(--citus-space-5);
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
 
-.citus-nav-menu .ant-menu-item {
-    height: 36px !important;
-    line-height: 36px !important;
-    margin: 2px var(--citus-space-2) !important;
-    padding-inline: var(--citus-space-3) !important;
-    border-radius: var(--citus-radius-md) !important;
-    color: var(--citus-color-fg-muted) !important;
+.citus-nav-menu__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
 
-.citus-nav-menu .ant-menu-item-selected {
-    background: var(--citus-color-primary-bg) !important;
-    color: var(--citus-color-primary) !important;
-    font-weight: 500;
-}
-
-.citus-nav-menu .ant-menu-item:hover {
-    color: var(--citus-color-fg) !important;
-    background: var(--citus-color-bg-muted) !important;
-}
-
-.citus-nav-menu__item {
+.citus-nav-menu__link {
     display: flex;
     align-items: center;
     gap: var(--citus-space-3);
-    width: 100%;
+    height: 36px;
+    margin: 2px var(--citus-space-2);
+    padding: 0 var(--citus-space-3);
+    border-radius: var(--citus-radius-md);
+    color: var(--citus-color-fg-muted);
+    text-decoration: none;
+}
+
+.citus-nav-menu__link:hover {
+    color: var(--citus-color-fg);
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-nav-menu__link.active {
+    background: var(--citus-color-primary-bg);
+    color: var(--citus-color-primary);
+    font-weight: 500;
 }
 
 .citus-nav-menu__label {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+.citus-nav-menu--collapsed .citus-nav-menu__group-title,
+.citus-nav-menu--collapsed .citus-nav-menu__label {
+    display: none;
+}
+
+.citus-nav-menu--collapsed .citus-nav-menu__link {
+    justify-content: center;
+    padding: 0;
 }
 
 /* ---------- Top bar ---------- */
@@ -229,6 +250,74 @@
     display: inline-flex;
     align-items: center;
     gap: var(--citus-space-2);
+}
+
+/* Phase 8: replaced AntDesign.Dropdown with a <details>-driven popover
+   so the user menu has zero JS / library dependency. The menu floats
+   below the trigger; clicking the avatar toggles it. */
+.citus-user-menu {
+    position: relative;
+}
+
+.citus-user-menu > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.citus-user-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.citus-user-menu__panel {
+    position: absolute;
+    top: calc(100% + var(--citus-space-2));
+    right: 0;
+    min-width: 220px;
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    padding: var(--citus-space-2) 0;
+    z-index: 50;
+}
+
+.citus-user-menu__head {
+    padding: var(--citus-space-2) var(--citus-space-4) var(--citus-space-3);
+    border-bottom: 1px solid var(--citus-color-border);
+    margin-bottom: var(--citus-space-1);
+}
+
+.citus-user-menu__divider {
+    height: 1px;
+    background: var(--citus-color-border);
+    margin: var(--citus-space-1) 0;
+}
+
+.citus-user-menu__item {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    padding: var(--citus-space-2) var(--citus-space-4);
+    color: var(--citus-color-fg);
+    text-decoration: none;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
+.citus-user-menu__item:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-user-menu__item--danger {
+    color: var(--citus-color-fg);
+}
+
+.citus-user-menu__item--danger:hover {
+    color: #d4351c;
 }
 
 /* ---------- Page-level patterns ---------- */

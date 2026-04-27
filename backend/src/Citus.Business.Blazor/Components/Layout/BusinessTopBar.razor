@@ -41,7 +41,7 @@
 
         @if (ShellState.IsCompanyReadOnly)
         {
-            <CitusBadge Color="@AntDesign.PresetColor.Orange.ToString().ToLower()" Class="citus-topbar__readonly">
+            <CitusBadge Color="@("orange")" Class="citus-topbar__readonly">
                 Read-only
             </CitusBadge>
         }
@@ -60,46 +60,37 @@
     <div class="citus-topbar__actions">
         <ThemeToggle />
 
-        <AntDesign.Dropdown Trigger="@(new[] { AntDesign.Trigger.Click })">
-            <Overlay>
-                <AntDesign.Menu>
-                    <AntDesign.MenuItem Disabled="true">
-                        <strong>@ShellState.User.DisplayName</strong>
-                        <div class="citus-topbar__user-meta">@ShellState.User.Email</div>
-                    </AntDesign.MenuItem>
-                    <AntDesign.MenuDivider />
-                    <AntDesign.MenuItem RouterLink="./account/profile">
-                        <span class="citus-topbar__menu-row">
-                            <CitusIcon Name="IconName.User" Size="IconSize.Inline" />
-                            <span>Profile</span>
-                        </span>
-                    </AntDesign.MenuItem>
-                    <AntDesign.MenuItem RouterLink="./session">
-                        <span class="citus-topbar__menu-row">
-                            <CitusIcon Name="IconName.Activity" Size="IconSize.Inline" />
-                            <span>Session</span>
-                        </span>
-                    </AntDesign.MenuItem>
-                    <AntDesign.MenuDivider />
-                    <AntDesign.MenuItem OnClick="OnSignOutAsync">
-                        <span class="citus-topbar__menu-row citus-topbar__menu-row--danger">
-                            <CitusIcon Name="IconName.Logout" Size="IconSize.Inline" />
-                            <span>Sign out</span>
-                        </span>
-                    </AntDesign.MenuItem>
-                </AntDesign.Menu>
-            </Overlay>
-            <ChildContent>
-                <button type="button" class="citus-topbar__user">
-                    <span class="citus-topbar__avatar">@AvatarInitials</span>
-                    <span class="citus-topbar__user-text">
-                        <span class="citus-topbar__user-name">@ShellState.User.DisplayName</span>
-                        <span class="citus-topbar__user-role">@PrimaryRole</span>
-                    </span>
-                    <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+        <details class="citus-user-menu">
+            <summary class="citus-topbar__user">
+                <span class="citus-topbar__avatar">@AvatarInitials</span>
+                <span class="citus-topbar__user-text">
+                    <span class="citus-topbar__user-name">@ShellState.User.DisplayName</span>
+                    <span class="citus-topbar__user-role">@PrimaryRole</span>
+                </span>
+                <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
+            </summary>
+            <div class="citus-user-menu__panel">
+                <div class="citus-user-menu__head">
+                    <strong>@ShellState.User.DisplayName</strong>
+                    <div class="citus-topbar__user-meta">@ShellState.User.Email</div>
+                </div>
+                <a class="citus-user-menu__item" href="account/profile">
+                    <CitusIcon Name="IconName.User" Size="IconSize.Inline" />
+                    <span>Profile</span>
+                </a>
+                <a class="citus-user-menu__item" href="session">
+                    <CitusIcon Name="IconName.Activity" Size="IconSize.Inline" />
+                    <span>Session</span>
+                </a>
+                <div class="citus-user-menu__divider"></div>
+                <button type="button"
+                        class="citus-user-menu__item citus-user-menu__item--danger"
+                        @onclick="OnSignOutAsync">
+                    <CitusIcon Name="IconName.Logout" Size="IconSize.Inline" />
+                    <span>Sign out</span>
                 </button>
-            </ChildContent>
-        </AntDesign.Dropdown>
+            </div>
+        </details>
     </div>
 </div>
 

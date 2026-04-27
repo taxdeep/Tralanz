@@ -1,75 +1,33 @@
 @*
-    SysAdminNavMenu — AntDesign Menu rendered from AppShellState's
-    NavigationSections. The navSection list switches between Setup and
-    BusinessReady automatically based on shell state.
+    SysAdminNavMenu — plain <nav> + Blazor NavLink, rendered from
+    AppShellState's NavigationSections. Phase 8 of the UI library
+    migration: AntDesign Menu / MenuItemGroup / MenuItem are gone.
 *@
 
-@inject NavigationManager NavigationManager
 @inject Citus.SysAdmin.Blazor.State.AppShellState ShellState
-@implements IDisposable
 
-<AntDesign.Menu Mode="@AntDesign.MenuMode.Inline"
-                Theme="@AntDesign.MenuTheme.Light"
-                SelectedKeys="@SelectedKeys"
-                DefaultOpenKeys="@OpenKeys"
-                InlineCollapsed="Collapsed"
-                Class="citus-nav-menu">
+<nav class="citus-nav-menu @(Collapsed ? "citus-nav-menu--collapsed" : null)">
     @foreach (var navSection in ShellState.NavigationSections)
     {
-        <AntDesign.MenuItemGroup Title="@navSection.Title" Key="@($"group-{navSection.Title}")">
-            @foreach (var item in navSection.Items)
-            {
-                <AntDesign.MenuItem Key="@item.Href" RouterLink="@($"./{item.Href}")" RouterMatch="@NavLinkMatch.Prefix">
-                    <span class="citus-nav-menu__item">
-                        <CitusIcon Name="item.Icon" Size="IconSize.Action" />
-                        <span class="citus-nav-menu__label">@item.Title</span>
-                    </span>
-                </AntDesign.MenuItem>
-            }
-        </AntDesign.MenuItemGroup>
+        <div class="citus-nav-menu__group">
+            <div class="citus-nav-menu__group-title">@navSection.Title</div>
+            <ul class="citus-nav-menu__items">
+                @foreach (var item in navSection.Items)
+                {
+                    <li>
+                        <NavLink class="citus-nav-menu__link"
+                                 href="@item.Href"
+                                 Match="NavLinkMatch.Prefix">
+                            <CitusIcon Name="item.Icon" Size="IconSize.Action" />
+                            <span class="citus-nav-menu__label">@item.Title</span>
+                        </NavLink>
+                    </li>
+                }
+            </ul>
+        </div>
     }
-</AntDesign.Menu>
+</nav>
 
 @code {
     [Parameter] public bool Collapsed { get; set; }
-
-    private string[] SelectedKeys { get; set; } = Array.Empty<string>();
-
-    private string[] OpenKeys =>
-        ShellState.NavigationSections.Select(s => $"group-{s.Title}").ToArray();
-
-    protected override void OnInitialized()
-    {
-        NavigationManager.LocationChanged += HandleLocationChanged;
-        UpdateSelectedKeys();
-    }
-
-    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
-    {
-        UpdateSelectedKeys();
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void UpdateSelectedKeys()
-    {
-        var path = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Trim('/');
-        if (string.IsNullOrEmpty(path))
-        {
-            SelectedKeys = ["overview"];
-            return;
-        }
-
-        var matched = ShellState.NavigationSections
-            .SelectMany(s => s.Items)
-            .Where(item => path.StartsWith(item.Href, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(item => item.Href.Length)
-            .FirstOrDefault();
-
-        SelectedKeys = matched is null ? Array.Empty<string>() : [matched.Href];
-    }
-
-    public void Dispose()
-    {
-        NavigationManager.LocationChanged -= HandleLocationChanged;
-    }
 }
