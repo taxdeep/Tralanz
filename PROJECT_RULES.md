@@ -24,6 +24,7 @@ Related subordinate design documents currently include:
 - [PRODUCT_PLAN.md](./PRODUCT_PLAN.md)
 - [ACCOUNTING_MVP_PLANNING.md](./ACCOUNTING_MVP_PLANNING.md)
 - [AI_PRODUCT_ARCHITECTURE.md](./AI_PRODUCT_ARCHITECTURE.md)
+- [UI_LIBRARY_MIGRATION_PLAN.md](./UI_LIBRARY_MIGRATION_PLAN.md)
 
 ## Lightweight Working Rules
 
