@@ -939,6 +939,17 @@
     cursor: not-allowed;
 }
 
+/* Same autofill defense as .citus-input__field. See note there. */
+.citus-form-field__input:-webkit-autofill,
+.citus-form-field__input:-webkit-autofill:hover,
+.citus-form-field__input:-webkit-autofill:focus,
+.citus-form-field__input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--citus-color-bg-elevated) inset !important;
+    -webkit-text-fill-color: var(--citus-color-fg) !important;
+    caret-color: var(--citus-color-fg);
+    transition: background-color 5000s ease-in-out 0s;
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);
@@ -1266,6 +1277,23 @@ select.citus-journal-lines__cell-input {
     width: 100%;
 }
 
+.citus-input {
+    /* Override the Radzen-side input tokens at the Citus wrapper boundary
+       so the inner .rz-textbox inherits our color system instead of
+       Radzen's defaults. Without this, Radzen's --rz-input-background-color
+       (defaults to --rz-white = #ffffff) wins in some specificity races
+       and the input doesn't follow .dark. */
+    --rz-input-background-color: transparent;
+    --rz-input-value-color: var(--citus-color-fg);
+    --rz-input-placeholder-color: var(--citus-color-fg-subtle);
+    --rz-input-shadow: none;
+    --rz-input-hover-shadow: none;
+    --rz-input-focus-shadow: none;
+    --rz-input-border: 0;
+    --rz-input-hover-border: 0;
+    --rz-input-focus-border: 0;
+}
+
 .citus-input__row {
     display: flex;
     align-items: center;
@@ -1310,6 +1338,26 @@ select.citus-journal-lines__cell-input {
 
 .citus-input__field::placeholder {
     color: var(--citus-color-fg-subtle);
+}
+
+/* Chrome / Edge / Brave autofill defense.
+   When the browser autofills an email or password it injects its own
+   yellow-or-dark background that ignores normal `background-color`
+   declarations. The only reliable workaround is filling the input
+   with an inset box-shadow that masks the autofill rectangle, plus
+   pinning the text colour via -webkit-text-fill-color (the autofill
+   text colour is also browser-controlled). The shadow uses our
+   bg-elevated token so light-mode autofills stay white and dark-mode
+   autofills stay dark — matching the surrounding row instead of
+   producing a black-input-on-white-card inversion. */
+.citus-input__field:-webkit-autofill,
+.citus-input__field:-webkit-autofill:hover,
+.citus-input__field:-webkit-autofill:focus,
+.citus-input__field:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--citus-color-bg-elevated) inset !important;
+    -webkit-text-fill-color: var(--citus-color-fg) !important;
+    caret-color: var(--citus-color-fg);
+    transition: background-color 5000s ease-in-out 0s;
 }
 
 .citus-input__clear,

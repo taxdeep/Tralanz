@@ -112,3 +112,21 @@
 .sys-login__switch-link:hover {
     text-decoration: underline;
 }
+
+/* Login page autofill defense — applies to every input element inside
+   the card (CitusInput-wrapped and bare RadzenPassword alike).
+   Browsers inject their own dark / yellow autofill background that
+   ignores normal background-color declarations; the only reliable
+   workaround is masking with an inset box-shadow and pinning the
+   text fill colour. Without this, autofilled email fields render
+   black-on-white while empty password fields stay light, creating
+   the inverted look reported on the SysAdmin first-time-setup screen. */
+::deep input:-webkit-autofill,
+::deep input:-webkit-autofill:hover,
+::deep input:-webkit-autofill:focus,
+::deep input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--citus-color-bg-elevated) inset !important;
+    -webkit-text-fill-color: var(--citus-color-fg) !important;
+    caret-color: var(--citus-color-fg);
+    transition: background-color 5000s ease-in-out 0s;
+}
