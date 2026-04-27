@@ -2015,8 +2015,13 @@ Citus must feel:
 - business-first
 - professional
 - restrained
+- **information-dense and compact** — closer to a modern enterprise / financial workstation than a consumer SaaS
 
 No flashy, noisy, or game-like UI direction.
+
+**Information density is a positive design value, not an accident.** Tables, forms, and dashboards should pack as much actionable accounting context per viewport as a real bookkeeper / accountant needs over a long workday — a journal entry editor, an aging report, a reconciliation panel, an AR/AP list should each surface meaningfully more rows / fields / status hints than a typical "consumer SaaS" layout would. The aesthetic stays modern (clean typography, restrained color, consistent spacing rhythm via `--citus-space-*` tokens), but defaults lean compact: row heights, button heights, padding, and gap tokens prefer the smaller end of their scale unless an accessibility / hit-target requirement says otherwise.
+
+Compactness must not be achieved by sacrificing legibility, color contrast (light & dark), or minimum hit-target size. It is achieved by trimming non-essential padding, avoiding decorative framing, keeping primary actions inline rather than hidden in collapsed accordions, and preferring tabular numbers + tight row spacing on operator-facing surfaces.
 
 ### 20.2 Core UX Rules
 
