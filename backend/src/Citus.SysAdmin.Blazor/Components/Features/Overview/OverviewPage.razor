@@ -59,7 +59,7 @@
 
 @if (_isLoading)
 {
-    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+    <div class="mb-4"><CitusLoadingBar /></div>
 }
 
 @if (_overview is null && _modules.Count == 0 && _entities.Count == 0 && !_isLoading)

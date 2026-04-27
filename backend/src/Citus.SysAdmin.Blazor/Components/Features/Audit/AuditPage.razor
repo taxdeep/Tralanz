@@ -11,7 +11,7 @@
 
 @if (_isLoading)
 {
-    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+    <div class="mb-4"><CitusLoadingBar /></div>
 }
 
 <CitusAlert Severity="CitusAlertSeverity.Info"
@@ -63,7 +63,7 @@
 
         @if (_isTimelineLoading)
         {
-            <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+            <CitusLoadingBar />
         }
         else if (_selectedTimelineUser is not null && _selectedMfaTimeline.Count == 0)
         {

@@ -13,13 +13,13 @@
 
     <div class="flex flex-col gap-3">
         <div class="flex items-center gap-3">
-            <AntDesign.Switch @bind-Value="_enabled" />
+            <RadzenSwitch @bind-Value="_enabled" />
             <span class="text-sm">@(_enabled ? "Maintenance enabled" : "Maintenance disabled")</span>
         </div>
 
         <div class="flex flex-col gap-1">
             <span class="text-sm font-medium">Operator message</span>
-            <AntDesign.TextArea @bind-Value="_message" Rows="3" />
+            <RadzenTextArea @bind-Value="_message" Rows="3" />
             <span class="text-fg-subtle text-xs">This message is shown across the SysAdmin shell when maintenance mode is active.</span>
         </div>
 
@@ -64,7 +64,7 @@
 
     <div class="flex flex-col gap-3">
         <div class="flex items-center gap-3">
-            <AntDesign.Switch @bind-Value="_notificationConfigPresent" />
+            <RadzenSwitch @bind-Value="_notificationConfigPresent" />
             <span class="text-sm">@(_notificationConfigPresent ? "Notification config present" : "Notification config missing")</span>
         </div>
 
@@ -82,7 +82,7 @@
                     HelperText="Use an ISO-like value such as 2026-04-14 02:00:00Z." />
 
         <div class="flex items-center gap-3">
-            <AntDesign.Switch @bind-Value="_notificationVerificationReady" />
+            <RadzenSwitch @bind-Value="_notificationVerificationReady" />
             <span class="text-sm">@(_notificationVerificationReady ? "Verification ready" : "Verification not ready")</span>
         </div>
 

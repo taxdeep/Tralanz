@@ -54,7 +54,7 @@
     <div class="flex flex-wrap items-center gap-3 mb-4">
         <RadzenDatePicker TValue="DateTime?" @bind-Value="_asOfDate" Placeholder="@("As of date")" />
         <label class="inline-flex items-center gap-2 text-sm">
-            <AntDesign.Checkbox @bind-Checked="_includeZeroBalances" /> Include zero-balance accounts
+            <RadzenCheckBox @bind-Value="_includeZeroBalances" /> Include zero-balance accounts
         </label>
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isTrialBalanceLoading" OnClick="LoadTrialBalanceAsync">
             Run Trial Balance
@@ -66,7 +66,7 @@
 
     @if (_isTrialBalanceLoading)
     {
-        <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+        <div class="mb-4"><CitusLoadingBar /></div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_trialBalanceError))
@@ -173,7 +173,7 @@
         <RadzenDatePicker TValue="DateTime?" @bind-Value="_incomeStatementDateFrom" Placeholder="@("From")" />
         <RadzenDatePicker TValue="DateTime?" @bind-Value="_incomeStatementDateTo" Placeholder="@("To")" />
         <label class="inline-flex items-center gap-2 text-sm">
-            <AntDesign.Checkbox @bind-Checked="_includeZeroIncomeStatementRows" /> Include zero-balance accounts
+            <RadzenCheckBox @bind-Value="_includeZeroIncomeStatementRows" /> Include zero-balance accounts
         </label>
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isIncomeStatementLoading" OnClick="LoadIncomeStatementAsync">
             Run Income Statement
@@ -185,7 +185,7 @@
 
     @if (_isIncomeStatementLoading)
     {
-        <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+        <div class="mb-4"><CitusLoadingBar /></div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_incomeStatementError))
@@ -257,7 +257,7 @@
     <div class="flex flex-wrap items-center gap-3 mb-4">
         <RadzenDatePicker TValue="DateTime?" @bind-Value="_balanceSheetAsOfDate" Placeholder="@("As of date")" />
         <label class="inline-flex items-center gap-2 text-sm">
-            <AntDesign.Checkbox @bind-Checked="_includeZeroBalanceSheetRows" /> Include zero-balance accounts
+            <RadzenCheckBox @bind-Value="_includeZeroBalanceSheetRows" /> Include zero-balance accounts
         </label>
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isBalanceSheetLoading" OnClick="LoadBalanceSheetAsync">
             Run Balance Sheet
@@ -269,7 +269,7 @@
 
     @if (_isBalanceSheetLoading)
     {
-        <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+        <div class="mb-4"><CitusLoadingBar /></div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_balanceSheetError))
@@ -350,7 +350,7 @@
 
     @if (_isArAgingLoading)
     {
-        <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+        <div class="mb-4"><CitusLoadingBar /></div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_arAgingError))
@@ -527,7 +527,7 @@
 
     @if (_isApAgingLoading)
     {
-        <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+        <div class="mb-4"><CitusLoadingBar /></div>
     }
 
     @if (!string.IsNullOrWhiteSpace(_apAgingError))

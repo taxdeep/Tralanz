@@ -20,7 +20,7 @@
 
     @if (_isLoadingSetup)
     {
-        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+        <CitusLoadingBar />
     }
 
     <div class="sys-login__body">
@@ -53,8 +53,8 @@
                             Placeholder="Email"
                             LeadingIcon="IconName.User"
                             Size="CitusButtonSize.Large" />
-                <AntDesign.InputPassword @bind-Value="_setupPassword" Placeholder="@("Password")" Size="@AntDesign.InputSize.Large" />
-                <AntDesign.InputPassword @bind-Value="_setupPasswordConfirm" Placeholder="@("Confirm password")" Size="@AntDesign.InputSize.Large" />
+                <RadzenPassword @bind-Value="_setupPassword" Placeholder="@("Password")" />
+                <RadzenPassword @bind-Value="_setupPasswordConfirm" Placeholder="@("Confirm password")" />
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              Size="CitusButtonSize.Large"
                              Block="true"
@@ -88,7 +88,7 @@
                             Placeholder="Email"
                             LeadingIcon="IconName.User"
                             Size="CitusButtonSize.Large" />
-                <AntDesign.InputPassword @bind-Value="_password" Placeholder="@("Password")" Size="@AntDesign.InputSize.Large" />
+                <RadzenPassword @bind-Value="_password" Placeholder="@("Password")" />
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              Size="CitusButtonSize.Large"
                              Block="true"

@@ -156,10 +156,7 @@
 
     @if (_isLoading)
     {
-        <AntDesign.Progress Type="@AntDesign.ProgressType.Line"
-                           Percent="100"
-                           Status="@AntDesign.ProgressStatus.Active"
-                           ShowInfo="false" />
+        <CitusLoadingBar />
     }
     else if (FilteredRows.Count == 0)
     {

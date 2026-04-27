@@ -66,7 +66,7 @@
                             <td><RadzenDatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
                             <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_inflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_inflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><AntDesign.Switch Value="@row.Cleared" ValueChanged="@(v => Update(_inflows, i, r => r with { Cleared = v }))" /></td>
+                            <td><RadzenSwitch Value="@row.Cleared" ValueChanged="@(v => Update(_inflows, i, r => r with { Cleared = v }))" /></td>
                             <td>
                                 <button type="button" class="citus-icon-button" @onclick="() => Remove(_inflows, i)">
                                     <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
@@ -107,7 +107,7 @@
                             <td><RadzenDatePicker TValue="DateTime?" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
                             <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_outflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_outflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><AntDesign.Switch Value="@row.Cleared" ValueChanged="@(v => Update(_outflows, i, r => r with { Cleared = v }))" /></td>
+                            <td><RadzenSwitch Value="@row.Cleared" ValueChanged="@(v => Update(_outflows, i, r => r with { Cleared = v }))" /></td>
                             <td>
                                 <button type="button" class="citus-icon-button" @onclick="() => Remove(_outflows, i)">
                                     <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />

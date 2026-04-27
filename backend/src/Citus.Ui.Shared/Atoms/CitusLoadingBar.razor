@@ -1,0 +1,27 @@
+@*
+    CitusLoadingBar — indeterminate horizontal loading line. Phase 6
+    of the UI library migration: replaces the ubiquitous AntDesign
+    incantation
+        <AntDesign.Progress Type="ProgressType.Line"
+                            Percent="100"
+                            Status="ProgressStatus.Active"
+                            ShowInfo="false" />
+    that appears 28+ times across the app, always with the same
+    "indeterminate, no number" shape.
+
+    Wraps Radzen.RadzenProgressBar in indeterminate mode. The Class
+    parameter passes through so existing wrapping like
+        <div class="mb-4"><AntDesign.Progress ... /></div>
+    can be flattened later if desired.
+*@
+
+@using Radzen
+@using Radzen.Blazor
+
+<RadzenProgressBar Mode="ProgressBarMode.Indeterminate"
+                   ShowValue="false"
+                   Class="@(string.IsNullOrEmpty(Class) ? "citus-loading-bar" : $"citus-loading-bar {Class}")" />
+
+@code {
+    [Parameter] public string? Class { get; set; }
+}

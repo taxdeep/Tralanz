@@ -21,7 +21,7 @@
 @if (!_isShellReady)
 {
     <div class="citus-shell__bootstrap">
-        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+        <CitusLoadingBar />
     </div>
 }
 else if (!ShellState.IsAuthenticated)
@@ -33,7 +33,7 @@ else if (!ShellState.IsAuthenticated)
         }
         else
         {
-            <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+            <CitusLoadingBar />
         }
     </div>
 }
@@ -67,7 +67,7 @@ else
                 @if (_isContextLoading)
                 {
                     <div class="citus-shell__loading">
-                        <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+                        <CitusLoadingBar />
                     </div>
                 }
 

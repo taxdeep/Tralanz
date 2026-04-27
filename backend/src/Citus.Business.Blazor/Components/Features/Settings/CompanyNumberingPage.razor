@@ -84,7 +84,7 @@ else
 
         @if (_isLoading)
         {
-            <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+            <div class="mb-4"><CitusLoadingBar /></div>
         }
         else if (FilteredRows.Count == 0)
         {
@@ -126,7 +126,7 @@ else
                             <td><span class="citus-inline-code">@BuildPreview(row)</span></td>
                             <td>
                                 <div class="flex items-center gap-2">
-                                    <AntDesign.Switch @bind-Value="row.Enabled" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" />
+                                    <RadzenSwitch @bind-Value="row.Enabled" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" />
                                     <span class="text-xs">@(row.Enabled ? "Enabled" : "Disabled")</span>
                                 </div>
                                 <CitusBadge Color="@(row.IsRuntimeConnected ? "green" : "default")" Class="mt-1">@row.RuntimeStatus</CitusBadge>

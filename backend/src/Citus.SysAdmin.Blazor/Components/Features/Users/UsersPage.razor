@@ -11,7 +11,7 @@
 
 @if (_isLoading)
 {
-    <div class="mb-4"><AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" /></div>
+    <div class="mb-4"><CitusLoadingBar /></div>
 }
 
 @if (_users.Count == 0 && !_isLoading)
@@ -149,7 +149,7 @@ else if (_users.Count > 0)
 
             @if (_isSelectedTimelineLoading)
             {
-                <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+                <CitusLoadingBar />
             }
             else if (_selectedMfaTimeline.Count == 0)
             {
@@ -350,7 +350,7 @@ else if (_users.Count > 0)
 
             @if (_isSelectedRecoveryHistoryLoading)
             {
-                <AntDesign.Progress Type="@AntDesign.ProgressType.Line" Percent="100" Status="@AntDesign.ProgressStatus.Active" ShowInfo="false" />
+                <CitusLoadingBar />
             }
             else if (_selectedRecoveryHistory.Count == 0)
             {

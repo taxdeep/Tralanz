@@ -26,9 +26,9 @@
     <div class="flex flex-col gap-3">
         <CitusInput TValue="string" Value="@ShellState.Operator.DisplayName" Disabled="true" Placeholder="@("Operator")" />
         <CitusInput TValue="string" Value="@ShellState.Operator.Email" Disabled="true" Placeholder="@("Email")" />
-        <AntDesign.InputPassword @bind-Value="_currentPassword" Placeholder="@("Current password")" Size="@AntDesign.InputSize.Default" />
-        <AntDesign.InputPassword @bind-Value="_newPassword" Placeholder="@("New password")" Size="@AntDesign.InputSize.Default" />
-        <AntDesign.InputPassword @bind-Value="_confirmPassword" Placeholder="@("Confirm new password")" Size="@AntDesign.InputSize.Default" />
+        <RadzenPassword @bind-Value="_currentPassword" Placeholder="@("Current password")" />
+        <RadzenPassword @bind-Value="_newPassword" Placeholder="@("New password")" />
+        <RadzenPassword @bind-Value="_confirmPassword" Placeholder="@("Confirm new password")" />
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="RotateSecretAsync">
             @(_isSubmitting ? "Rotating..." : "Rotate secret")
         </CitusButton>
