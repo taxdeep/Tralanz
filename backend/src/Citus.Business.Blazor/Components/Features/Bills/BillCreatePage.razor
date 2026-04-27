@@ -43,11 +43,11 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Document date</label>
-                    <RadzenDatePicker TValue="DateTime?" @bind-Value="_documentDate" Style="width: 100%;" />
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Style="width: 100%;" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Due date</label>
-                    <RadzenDatePicker TValue="DateTime?" @bind-Value="_dueDate" Style="width: 100%;" />
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Style="width: 100%;" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Vendor (id)</label>
