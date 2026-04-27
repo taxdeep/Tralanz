@@ -179,9 +179,15 @@ builder.Services.AddSingleton<ICoaTemplateSeeder, CoaTemplateSeeder>();
 builder.Services.AddSingleton<UnityAiFeatureFlagAccessor>();
 builder.Services.AddSingleton<PostgreSqlUnityAiSchemaInitializer>();
 
-// Platform bootstrap fixtures: ensure currency_catalog / companies / users /
-// company_memberships exist and are seeded with the dev/bootstrap rows.
-// See PlatformBootstrapFixturesInitializer for the why.
+// Platform schema setup + dev bootstrap fixtures gating.
+// The schema setup runs unconditionally (creates platform tables + seeds
+// the ISO 4217 currency catalog — real reference data needed in every
+// environment). The dev fixtures (Alice / Ben / Northwind / Blue Harbor)
+// are gated behind BusinessBootstrap:Fixtures:Enabled, defaulting to
+// "Development only" so a fresh production install stays clean.
+// See PlatformBootstrapFixturesInitializer for the full breakdown.
+builder.Services.Configure<BusinessBootstrapOptions>(
+    builder.Configuration.GetSection(BusinessBootstrapOptions.SectionName));
 builder.Services.AddSingleton<Citus.Platform.Core.Runtime.SysAdminPasswordHasher>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository,
     Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();

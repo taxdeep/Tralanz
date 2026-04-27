@@ -1,38 +1,34 @@
 using Citus.Platform.Core.Abstractions;
 using Citus.Platform.Infrastructure.Persistence;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Citus.Accounting.Api.Initialization;
 
 /// <summary>
-/// Idempotent platform-tables + bootstrap-fixtures initializer.
+/// Idempotent platform-tables initializer with environment-gated dev fixtures.
 ///
-/// Backstory: the Accounting API's account / tax-code / journal-entry / FX
-/// inserts FK into platform tables (currency_catalog, companies, users,
-/// company_memberships) created by
-/// <see cref="PostgresPlatformFirstCompanyProvisioningRepository"/>. That
-/// repository runs only when the SysAdmin First-Company Wizard fires — so
-/// deployments using the dev "bootstrap" session shortcut never had those
-/// tables created or seeded, and the very first Account write would fail
-/// with a 23503 FK violation surfaced as
-/// "Currency 'USD' is not in the platform currency catalog."
+/// Two distinct concerns, intentionally split:
 ///
-/// This initializer fixes that for every Accounting API startup:
+///   1. <b>Platform schema + reference data</b> — runs UNCONDITIONALLY in
+///      every environment, because the Accounting API's account / tax-code
+///      / journal-entry / FX inserts FK into <c>currency_catalog</c>,
+///      <c>companies</c>, <c>users</c>, <c>company_memberships</c>. Without
+///      these tables (and the ISO 4217 currency rows), every business
+///      write fails with 23503. Calls
+///      <see cref="PostgresPlatformFirstCompanyProvisioningRepository.EnsureSchemaAsync"/>,
+///      which is idempotent — every CREATE TABLE / INSERT in that path uses
+///      IF NOT EXISTS / ON CONFLICT DO NOTHING.
 ///
-///   1. Calls the existing platform-schema setup (idempotent
-///      CREATE TABLE IF NOT EXISTS + seed currency_catalog) so the platform
-///      tables exist with their FK constraints regardless of whether the
-///      SysAdmin wizard has ever run on this database.
+///   2. <b>Dev bootstrap fixtures</b> (Northwind / Blue Harbor companies +
+///      Alice / Ben users + their memberships) — gated behind
+///      <see cref="BusinessBootstrapOptions"/>. By default these seed only
+///      when running in <c>Development</c>, so a fresh production install
+///      stays clean of demo data. Operators can opt in for staging / preview
+///      with <c>BusinessBootstrap:Fixtures:AllowInNonDevelopment=true</c>.
 ///
-///   2. Idempotently INSERTs the bootstrap fixtures
-///      (Northwind / Blue Harbor companies + Alice / Ben users + their
-///      memberships) so the Guids hard-coded in
-///      <c>Citus.Accounting.Api.BusinessSessionDirectory.GetDefaults*</c>
-///      and in the Blazor shell's bootstrap-session payload resolve to
-///      real persisted rows. Real owner-provisioned rows (created by the
-///      SysAdmin wizard later) coexist via <c>ON CONFLICT DO NOTHING</c>.
-///
-/// Bootstrap users carry an obviously-fake password hash that no real
-/// auth flow would ever match. They are dev-only fixtures.
+/// Bootstrap users carry an obviously-fake password hash that no real auth
+/// flow would ever match. They are dev-only fixtures.
 /// </summary>
 public sealed class PlatformBootstrapFixturesInitializer
 {
@@ -85,33 +81,56 @@ public sealed class PlatformBootstrapFixturesInitializer
 
     private readonly IPlatformFirstCompanyProvisioningRepository _provisioningRepository;
     private readonly PlatformPostgresConnectionFactory _connections;
+    private readonly IHostEnvironment _hostEnvironment;
+    private readonly BusinessBootstrapOptions _options;
     private readonly ILogger<PlatformBootstrapFixturesInitializer> _logger;
 
     public PlatformBootstrapFixturesInitializer(
         IPlatformFirstCompanyProvisioningRepository provisioningRepository,
         PlatformPostgresConnectionFactory connections,
+        IHostEnvironment hostEnvironment,
+        IOptions<BusinessBootstrapOptions> options,
         ILogger<PlatformBootstrapFixturesInitializer> logger)
     {
         _provisioningRepository = provisioningRepository;
         _connections = connections;
+        _hostEnvironment = hostEnvironment;
+        _options = options.Value;
         _logger = logger;
     }
 
     public async Task EnsureAsync(CancellationToken cancellationToken)
     {
-        // Step 1: idempotent platform schema (currency_catalog + seed,
-        // companies, users, company_memberships, company_books, etc.)
+        // Step 1: idempotent platform schema (currency_catalog + USD/CAD/etc.
+        // seed, companies, users, company_memberships, company_books, …).
+        // ALWAYS runs — these are real platform reference data, not demo
+        // fixtures. Production needs the tables and the currency rows to
+        // satisfy FK targets on every business write.
         await _provisioningRepository.EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
 
-        // Step 2: bootstrap fixtures, ON CONFLICT DO NOTHING so we never
-        // overwrite real owner-provisioned data.
+        // Step 2: dev fixtures (Alice / Ben / Northwind / Blue Harbor +
+        // memberships). Gated behind BusinessBootstrap:Fixtures:Enabled
+        // and the IsDevelopment / AllowInNonDevelopment switch, so a fresh
+        // production install stays clean of demo identities.
+        var isDevelopment = _hostEnvironment.IsDevelopment();
+        if (!_options.Fixtures.IsActive(isDevelopment))
+        {
+            _logger.LogInformation(
+                "Platform schema verified; bootstrap fixtures skipped (Environment={Environment}, Fixtures.Enabled={Enabled}, Fixtures.AllowInNonDevelopment={AllowInNonDev}).",
+                _hostEnvironment.EnvironmentName,
+                _options.Fixtures.Enabled,
+                _options.Fixtures.AllowInNonDevelopment);
+            return;
+        }
+
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = FixturesSql;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Platform bootstrap fixtures verified: currencies, companies (Northwind {Northwind}, Blue Harbor {BlueHarbor}), users (Alice {Alice}, Ben {Ben}), memberships.",
+            "Platform bootstrap fixtures seeded (Environment={Environment}): currencies, companies (Northwind {Northwind}, Blue Harbor {BlueHarbor}), users (Alice {Alice}, Ben {Ben}), memberships.",
+            _hostEnvironment.EnvironmentName,
             NorthwindId, BlueHarborId, AliceId, BenId);
     }
 }
