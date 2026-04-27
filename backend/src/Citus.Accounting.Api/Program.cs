@@ -1,4 +1,5 @@
 using Citus.Accounting.Api;
+using static Citus.Accounting.Api.CompanyCurrencyResponseMapper;
 using Citus.Accounting.Api.Initialization;
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
@@ -37,6 +38,7 @@ using Infrastructure.PostgreSQL.UnityAi;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.SessionContext;
 using Modules.Company.MultiBook;
+using Modules.Company.MultiCurrency;
 using System.Text;
 using JournalEntryNumberLookup = Engines.Numbering.JournalEntry.IJournalEntryNumberLookup;
 using GlIJournalEntryLifecycleStore = Modules.GL.JournalEntry.IJournalEntryLifecycleStore;
@@ -105,6 +107,8 @@ builder.Services.AddSingleton<GlIJournalEntryLifecycleWorkflow, GlJournalEntryLi
 builder.Services.AddScoped<IFxSnapshotRepository, PostgresFxSnapshotRepository>();
 builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyStore>();
 builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
+builder.Services.AddScoped<ICompanyCurrencyProvisioningStore, PostgreSqlCompanyCurrencyProvisioningStore>();
+builder.Services.AddScoped<ICompanyCurrencyGovernanceWorkflow, CompanyCurrencyGovernanceWorkflow>();
 builder.Services.AddScoped<IArOpenItemRepository, PostgresArOpenItemRepository>();
 builder.Services.AddScoped<IApOpenItemRepository, PostgresApOpenItemRepository>();
 builder.Services.AddScoped<IOpenItemAdjustmentAccountMappingRepository, PostgresOpenItemAdjustmentAccountMappingRepository>();
@@ -572,6 +576,75 @@ app.MapGet("/architecture", () => Results.Ok(new
     postingRule = "All formal accounting must go through the Posting Engine.",
     moduleRegistration = "accounting module is governed by Citus.Platform.Core metadata"
 }));
+
+// -----------------------------------------------------------------------
+// Company currencies (multi-currency governance).
+//
+// Backed by ICompanyCurrencyGovernanceWorkflow which delegates to
+// PostgreSqlCompanyCurrencyProvisioningStore. Adding a non-base currency
+// flips the company's multi_currency_enabled flag and seeds AR/AP control
+// accounts at the next free 11xxx / 20xxx code (per the canonical chart's
+// reserve families). The base currency cannot be added, removed, or
+// disabled through this surface.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/company/currencies",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyCurrencyGovernanceWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var profile = await workflow.GetProfileAsync(session.ActiveCompanyId, cancellationToken);
+        return Results.Ok(MapCurrencyProfile(profile));
+    });
+
+accounting.MapPost(
+    "/company/currencies",
+    async (
+        EnableCompanyCurrencyHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICompanyCurrencyGovernanceWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.CurrencyCode))
+        {
+            return Results.BadRequest(new { message = "currencyCode is required." });
+        }
+
+        var actorId = session.UserId;
+
+        try
+        {
+            var result = await workflow.EnableCurrencyAsync(
+                session.ActiveCompanyId,
+                request.CurrencyCode,
+                actorId,
+                cancellationToken);
+            return Results.Ok(new
+            {
+                Profile = MapCurrencyProfile(result.Profile),
+                ProvisionedControlAccounts = result.ProvisionedControlAccounts.Select(static account => new
+                {
+                    account.AccountId,
+                    account.Code,
+                    account.Name,
+                    account.CurrencyCode,
+                    account.SystemRole,
+                    account.WasCreated
+                })
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
 
 accounting.MapGet(
     "/company-books",
