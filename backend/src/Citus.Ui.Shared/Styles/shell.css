@@ -1588,3 +1588,297 @@ select.citus-journal-lines__cell-input {
     color: var(--citus-color-fg-muted);
     font-style: italic;
 }
+
+/* ---------- Radzen dark-mode token bridge ----------
+   Radzen.Blazor's default-base.css ships with light-mode hardcoded text
+   colours on its inputs / dropdowns / datepickers / data grids. Without
+   these overrides those controls render with near-black text on our
+   dark surfaces (or near-white on light, but that side already works
+   because Radzen's defaults match our light tokens close enough). The
+   overrides below remap every Radzen text colour to a Citus token so
+   it follows the .dark flip automatically.
+
+   Selectors target the rendered DOM Radzen produces (.rz-dropdown,
+   .rz-textbox, .rz-numeric, .rz-datepicker, .rz-datagrid). They aren't
+   meant to override Radzen's structural styling — only colour. */
+
+html.dark .rz-dropdown,
+html.dark .rz-dropdown .rz-dropdown-label,
+html.dark .rz-dropdown-item,
+html.dark .rz-listbox,
+html.dark .rz-listbox-item,
+html.dark .rz-textbox,
+html.dark .rz-inputtext,
+html.dark .rz-numeric .rz-spinner-input,
+html.dark .rz-datepicker .rz-inputtext,
+html.dark .rz-calendar,
+html.dark .rz-datagrid,
+html.dark .rz-data-grid,
+html.dark .rz-grid-table,
+html.dark .rz-grid-table thead th,
+html.dark .rz-grid-table tbody td {
+    color: var(--citus-color-fg);
+}
+
+html.dark .rz-dropdown,
+html.dark .rz-textbox,
+html.dark .rz-inputtext,
+html.dark .rz-numeric,
+html.dark .rz-datepicker {
+    background: var(--citus-color-bg-elevated);
+    border-color: var(--citus-color-border);
+}
+
+html.dark .rz-dropdown-panel,
+html.dark .rz-listbox,
+html.dark .rz-calendar-popup,
+html.dark .rz-overlaypanel-content {
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    color: var(--citus-color-fg);
+}
+
+html.dark .rz-dropdown-item:hover,
+html.dark .rz-listbox-item:hover,
+html.dark .rz-calendar .rz-datepicker-cell:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+html.dark .rz-dropdown-item.rz-state-highlight,
+html.dark .rz-listbox-item.rz-state-highlight,
+html.dark .rz-calendar .rz-state-active {
+    background: var(--citus-color-primary, #1677ff);
+    color: var(--citus-color-fg-on-primary);
+}
+
+html.dark .rz-textbox::placeholder,
+html.dark .rz-inputtext::placeholder,
+html.dark .rz-datepicker .rz-inputtext::placeholder {
+    color: var(--citus-color-fg-subtle);
+}
+
+/* Dropdown chevron + clear icons render via Radzen's icon font; force
+   them to track the muted fg token so they don't show as light grey
+   on dark mode. */
+html.dark .rz-dropdown .rz-dropdown-trigger,
+html.dark .rz-numeric .rz-spinner-button,
+html.dark .rz-datepicker .rz-datepicker-trigger {
+    color: var(--citus-color-fg-muted);
+}
+
+/* ---------- Inline AccountPicker (chart-of-accounts dropdown) ---------- */
+
+.citus-account-picker {
+    position: relative;
+    width: 100%;
+}
+
+.citus-account-picker--disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.citus-account-picker__control {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-1);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    padding: 0 var(--citus-space-1) 0 var(--citus-space-2);
+    min-height: 30px;
+    cursor: text;
+}
+
+.citus-account-picker__control:focus-within {
+    border-color: var(--citus-color-primary, #1677ff);
+    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+}
+
+.citus-account-picker__input {
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--citus-color-fg);
+    font: inherit;
+    padding: var(--citus-space-1) 0;
+    min-width: 0;
+}
+
+.citus-account-picker__input::placeholder {
+    color: var(--citus-color-fg-subtle);
+}
+
+.citus-account-picker__chevron {
+    color: var(--citus-color-fg-muted);
+    font-size: 0.75rem;
+    pointer-events: none;
+    user-select: none;
+}
+
+.citus-account-picker__clear {
+    background: transparent;
+    border: 0;
+    color: var(--citus-color-fg-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 var(--citus-space-1);
+}
+
+.citus-account-picker__panel {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 90;
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.citus-account-picker__create {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--citus-color-border);
+    color: var(--citus-color-primary, #1677ff);
+    padding: var(--citus-space-2) var(--citus-space-3);
+    cursor: pointer;
+    font-size: var(--citus-text-sm);
+    text-align: left;
+}
+
+.citus-account-picker__create:hover {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-account-picker__create-plus {
+    font-weight: 600;
+}
+
+.citus-account-picker__option {
+    display: grid;
+    grid-template-columns: minmax(80px, auto) 1fr minmax(120px, auto);
+    align-items: baseline;
+    gap: var(--citus-space-3);
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: var(--citus-color-fg);
+    padding: var(--citus-space-2) var(--citus-space-3);
+    cursor: pointer;
+    font-size: var(--citus-text-sm);
+    text-align: left;
+}
+
+.citus-account-picker__option:hover,
+.citus-account-picker__option.is-active {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-account-picker__option-code {
+    font-variant-numeric: var(--citus-tabular-nums);
+    color: var(--citus-color-fg);
+    font-weight: 500;
+}
+
+.citus-account-picker__option-name {
+    color: var(--citus-color-fg);
+}
+
+.citus-account-picker__option-ccy {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+}
+
+.citus-account-picker__option-meta {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    text-align: right;
+}
+
+.citus-account-picker__match {
+    color: var(--citus-color-primary, #1677ff);
+    font-weight: 600;
+}
+
+.citus-account-picker__empty {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    padding: var(--citus-space-2) var(--citus-space-3);
+}
+
+.citus-account-picker__create-panel {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 91;
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    padding: var(--citus-space-3);
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--citus-space-2);
+}
+
+.citus-account-picker__create-row {
+    display: flex;
+    flex-direction: column;
+}
+
+.citus-account-picker__create-input {
+    background: var(--citus-color-bg);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    color: var(--citus-color-fg);
+    padding: var(--citus-space-1) var(--citus-space-2);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-account-picker__create-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--citus-space-2);
+    margin-top: var(--citus-space-1);
+}
+
+.citus-account-picker__create-cancel,
+.citus-account-picker__create-save {
+    border: 1px solid var(--citus-color-border);
+    background: var(--citus-color-bg);
+    color: var(--citus-color-fg);
+    border-radius: var(--citus-radius-sm);
+    padding: var(--citus-space-1) var(--citus-space-3);
+    font-size: var(--citus-text-sm);
+    cursor: pointer;
+}
+
+.citus-account-picker__create-save {
+    background: var(--citus-color-primary, #1677ff);
+    color: var(--citus-color-fg-on-primary);
+    border-color: var(--citus-color-primary, #1677ff);
+}
+
+.citus-account-picker__create-save[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.citus-account-picker__create-error {
+    grid-column: 1 / -1;
+    color: var(--citus-color-danger, #d32f2f);
+    font-size: var(--citus-text-xs);
+    margin: 0;
+}
