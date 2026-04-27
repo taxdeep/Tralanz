@@ -23,4 +23,12 @@ public static class SearchScopeContext
     public const string InvoiceItemPicker = "invoice.item_picker";
     public const string BillVendorPicker = "bill.vendor_picker";
     public const string JournalEntryAccountPicker = "journal_entry.account_picker";
+
+    /// <summary>
+    /// Per-line counterparty picker on the journal-entry surface. Spans
+    /// both customers and vendors so a journal line can reference either
+    /// a payable or a receivable counterparty without the user picking
+    /// the document type up front.
+    /// </summary>
+    public const string JournalEntryNamePicker = "journal_entry.name_picker";
 }

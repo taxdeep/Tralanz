@@ -113,6 +113,16 @@
     font-size: 0.78rem;
 }
 
+/* Highlight the matched query substring inside a suggestion. Token-driven
+   so it stays readable in both light and dark modes. */
+.unity-picker__match {
+    color: var(--citus-color-primary);
+    font-weight: 700;
+    background: var(--citus-color-primary-bg);
+    padding: 0 1px;
+    border-radius: 2px;
+}
+
 .unity-picker__create {
     display: flex;
     align-items: center;

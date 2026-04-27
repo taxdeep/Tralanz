@@ -1,5 +1,8 @@
 @page "/journal-entry/new"
 
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject NavigationManager NavigationManager
@@ -45,10 +48,10 @@
 }
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
+    <div class="lg:col-span-9 flex flex-col gap-6">
         <section class="citus-panel">
             <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Date</label>
                     <AntDesign.DatePicker TValue="DateTime?" @bind-Value="_date" Style="width: 100%;" />
@@ -57,38 +60,39 @@
                     <label class="text-sm font-medium block mb-1">Transaction currency</label>
                     <CitusInput TValue="string" @bind-Value="_currency" Placeholder="USD" />
                 </div>
-                <div class="md:col-span-2">
+                <div>
+                    @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
+                         !string.IsNullOrWhiteSpace(_currency.Trim()))
+                    {
+                        <label class="text-sm font-medium block mb-1">FX rate (advisory)</label>
+                        <AntDesign.InputNumber TValue="decimal?" @bind-Value="_exchangeRate" Min="0.000001m" Style="width: 100%;" />
+                    }
+                </div>
+                <div class="md:col-span-3">
                     <label class="text-sm font-medium block mb-1">Description</label>
                     <CitusInput TValue="string" @bind-Value="_description" Placeholder="What is this journal recording?" />
                 </div>
-                @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
-                     !string.IsNullOrWhiteSpace(_currency.Trim()))
-                {
-                    <div>
-                        <label class="text-sm font-medium block mb-1">FX rate (advisory)</label>
-                        <AntDesign.InputNumber TValue="decimal?" @bind-Value="_exchangeRate" Min="0.000001m" Style="width: 100%;" />
-                        <p class="text-fg-subtle text-xs mt-1">
-                            Backend will reserve the official FX snapshot at post time. This is your editorial preview.
-                        </p>
-                    </div>
-                }
             </div>
         </section>
 
         <section class="citus-panel">
             <header class="citus-panel__header">
                 <h2 class="citus-panel__title">Lines</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
+                <span class="text-fg-muted text-sm">Press Tab through cells; a new row appears as you fill the last one.</span>
             </header>
 
-            <table class="citus-data-table">
+            <table class="citus-data-table citus-journal-lines">
                 <thead>
                     <tr>
-                        <th style="width: 8rem">Account</th>
-                        <th>Description</th>
-                        <th class="text-right" style="width: 10rem">Debit</th>
-                        <th class="text-right" style="width: 10rem">Credit</th>
-                        <th style="width: 3rem"></th>
+                        <th class="citus-journal-lines__num"></th>
+                        <th class="citus-journal-lines__gutter"></th>
+                        <th>ACCOUNT</th>
+                        <th class="citus-journal-lines__name">NAME</th>
+                        <th class="citus-journal-lines__desc">DESCRIPTION</th>
+                        <th class="text-right citus-journal-lines__amount">DEBIT</th>
+                        <th class="text-right citus-journal-lines__amount">CREDIT</th>
+                        <th class="citus-journal-lines__tax">SALES TAX</th>
+                        <th class="citus-journal-lines__action"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -96,37 +100,106 @@
                     {
                         var i = index;
                         var line = _lines[i];
-                        <tr>
-                            <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => UpdateLine(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="1100" /></td>
-                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => UpdateLine(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Line memo" /></td>
-                            <td><AntDesign.InputNumber TValue="decimal" Value="@line.Debit" ValueChanged="@(v => UpdateLine(i, l => l with { Debit = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><AntDesign.InputNumber TValue="decimal" Value="@line.Credit" ValueChanged="@(v => UpdateLine(i, l => l with { Credit = v }))" Min="0" Style="width: 100%;" /></td>
+                        <tr class="citus-journal-lines__row">
+                            <td class="citus-journal-lines__num">@(i + 1)</td>
+                            <td class="citus-journal-lines__gutter">
+                                <button type="button"
+                                        class="citus-icon-button citus-journal-lines__insert"
+                                        title="Insert a line below this one"
+                                        @onclick="() => InsertLineAfter(i)">
+                                    <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                                </button>
+                            </td>
                             <td>
-                                <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
+                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   Context="@SearchScopeContext.JournalEntryAccountPicker"
+                                                   EntityType="account"
+                                                   Take="8"
+                                                   Placeholder="Account"
+                                                   SourceRoute="/journal-entry/new"
+                                                   SelectedDisplayText="@line.AccountDisplay"
+                                                   OnOptionSelected="@(option => OnAccountSelected(i, option))"
+                                                   OnCleared="@(() => ClearAccount(i))" />
+                            </td>
+                            <td>
+                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   Context="@SearchScopeContext.JournalEntryNamePicker"
+                                                   Take="6"
+                                                   Placeholder="Customer / vendor"
+                                                   SourceRoute="/journal-entry/new"
+                                                   SelectedDisplayText="@line.NameDisplay"
+                                                   OnOptionSelected="@(option => OnNameSelected(i, option))"
+                                                   OnCleared="@(() => ClearName(i))" />
+                            </td>
+                            <td>
+                                <input type="text"
+                                       class="citus-journal-lines__cell-input"
+                                       value="@line.Description"
+                                       @oninput="@(e => UpdateLine(i, l => l with { Description = e.Value?.ToString() ?? string.Empty }))"
+                                       placeholder="Memo" />
+                            </td>
+                            <td>
+                                <input type="number"
+                                       step="0.01"
+                                       min="0"
+                                       class="citus-journal-lines__cell-input citus-journal-lines__amount-input"
+                                       value="@FormatDecimalForInput(line.Debit)"
+                                       @oninput="@(e => UpdateDebit(i, e.Value?.ToString()))" />
+                            </td>
+                            <td>
+                                <input type="number"
+                                       step="0.01"
+                                       min="0"
+                                       class="citus-journal-lines__cell-input citus-journal-lines__amount-input"
+                                       value="@FormatDecimalForInput(line.Credit)"
+                                       @oninput="@(e => UpdateCredit(i, e.Value?.ToString()))" />
+                            </td>
+                            <td>
+                                <select class="citus-journal-lines__cell-input"
+                                        value="@line.TaxCode"
+                                        @onchange="@(e => UpdateLine(i, l => l with { TaxCode = e.Value?.ToString() ?? string.Empty }))">
+                                    <option value=""></option>
+                                    @foreach (var tax in TaxCodeOptions)
+                                    {
+                                        <option value="@tax.Code">@tax.Label</option>
+                                    }
+                                </select>
+                            </td>
+                            <td class="citus-journal-lines__action">
+                                <button type="button"
+                                        class="citus-icon-button"
+                                        title="Remove line"
+                                        @onclick="() => RemoveLine(i)">
                                     <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
                                 </button>
                             </td>
                         </tr>
                     }
-                    <tr class="citus-data-table__total">
-                        <td colspan="2" class="text-right font-medium">Totals</td>
+                    <tr class="citus-journal-lines__total">
+                        <td colspan="5" class="text-right font-medium">Totals</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalDebit)</td>
                         <td class="text-right font-semibold">@FormatAmount(_totalCredit)</td>
-                        <td></td>
+                        <td colspan="2"></td>
                     </tr>
                 </tbody>
             </table>
 
-            @if (!_isBalanced)
-            {
-                <p class="text-warning text-sm mt-3">
-                    Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>. Posting requires debit and credit totals to match.
-                </p>
-            }
+            <div class="flex items-center gap-3 mt-3">
+                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearAllLines">Clear all lines</CitusButton>
+                @if (!_isBalanced)
+                {
+                    <span class="text-warning text-sm ml-auto">
+                        Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>
+                    </span>
+                }
+            </div>
         </section>
     </div>
 
-    <div class="lg:col-span-4 flex flex-col gap-6">
+    <div class="lg:col-span-3 flex flex-col gap-6">
         <section class="citus-panel">
             <h2 class="citus-panel__title">Posting summary</h2>
             <table class="citus-keyvalue">
@@ -146,6 +219,9 @@
             <h2 class="citus-panel__title">Post</h2>
             <p class="text-fg-muted text-sm mb-3">
                 Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
+            </p>
+            <p class="text-fg-subtle text-xs mb-3">
+                Note: per-line counterparty (NAME) and tax-code values are captured for the upcoming backend integration. They are not yet sent on post — only debit / credit / account / description make the wire today.
             </p>
 
             <div class="flex flex-col gap-2">
@@ -169,15 +245,41 @@
         Subtitle = "Create the manual journal posting that flows through the backend Posting Engine. Debit and credit totals must match before submit unlocks."
     };
 
+    /// <summary>
+    /// UI-side line model. Carries the columns the user enters today
+    /// (account / name / description / debit / credit / tax). The wire
+    /// shape (<see cref="ManualJournalLineDraft"/>) only forwards the
+    /// fields the Posting Engine currently consumes; counterparty + tax
+    /// values are captured for the upcoming backend integration.
+    /// </summary>
+    private sealed record JournalLineEditState(
+        string AccountCode = "",
+        string AccountDisplay = "",
+        Guid? AccountId = null,
+        string NameDisplay = "",
+        Guid? NameEntityId = null,
+        string NameEntityType = "",
+        string Description = "",
+        decimal Debit = 0m,
+        decimal Credit = 0m,
+        string TaxCode = "");
+
+    private static readonly (string Code, string Label)[] TaxCodeOptions =
+    {
+        ("GST", "GST 5%"),
+        ("HST", "HST"),
+        ("PST", "PST"),
+        ("QST", "QST"),
+        ("ZERO_RATED", "Zero rated"),
+        ("EXEMPT", "Exempt"),
+        ("OUT_OF_SCOPE", "Out of scope"),
+    };
+
     private DateTime? _date = DateTime.Today;
     private string _description = string.Empty;
     private string _currency = string.Empty;
     private decimal? _exchangeRate;
-    private readonly List<ManualJournalLineDraft> _lines = new()
-    {
-        new ManualJournalLineDraft(),
-        new ManualJournalLineDraft()
-    };
+    private readonly List<JournalLineEditState> _lines = new();
     private bool _isSubmitting;
     private string? _validationMessage;
     private WriteFlowResult? _lastResult;
@@ -189,11 +291,18 @@
     protected override void OnInitialized()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        for (var i = 0; i < 4; i++)
+        {
+            _lines.Add(new JournalLineEditState());
+        }
     }
 
-    private void AddLine()
+    private void AddLine() => _lines.Add(new JournalLineEditState());
+
+    private void InsertLineAfter(int index)
     {
-        _lines.Add(new ManualJournalLineDraft());
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.Insert(index + 1, new JournalLineEditState());
     }
 
     private void RemoveLine(int index)
@@ -202,13 +311,96 @@
         {
             _lines.RemoveAt(index);
         }
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new JournalLineEditState());
+        }
     }
 
-    private void UpdateLine(int index, Func<ManualJournalLineDraft, ManualJournalLineDraft> mutate)
+    private void ClearAllLines()
+    {
+        _lines.Clear();
+        _lines.Add(new JournalLineEditState());
+    }
+
+    private void UpdateLine(int index, Func<JournalLineEditState, JournalLineEditState> mutate)
     {
         if (index < 0 || index >= _lines.Count) return;
         _lines[index] = mutate(_lines[index]);
+        EnsureTrailingEmptyLine(index);
     }
+
+    private void UpdateDebit(int index, string? raw)
+    {
+        var parsed = ParseDecimal(raw);
+        UpdateLine(index, l => l with { Debit = parsed });
+    }
+
+    private void UpdateCredit(int index, string? raw)
+    {
+        var parsed = ParseDecimal(raw);
+        UpdateLine(index, l => l with { Credit = parsed });
+    }
+
+    private void OnAccountSelected(int index, UnitySearchPickerOption option)
+    {
+        UpdateLine(index, l => l with
+        {
+            AccountId = option.SourceId,
+            AccountCode = option.PrimaryText,
+            AccountDisplay = string.IsNullOrWhiteSpace(option.SecondaryText)
+                ? option.PrimaryText
+                : $"{option.PrimaryText} - {option.SecondaryText}",
+        });
+    }
+
+    private void ClearAccount(int index) => UpdateLine(index, l => l with
+    {
+        AccountId = null,
+        AccountCode = string.Empty,
+        AccountDisplay = string.Empty,
+    });
+
+    private void OnNameSelected(int index, UnitySearchPickerOption option)
+    {
+        UpdateLine(index, l => l with
+        {
+            NameEntityId = option.SourceId,
+            NameEntityType = option.EntityType,
+            NameDisplay = string.IsNullOrWhiteSpace(option.SecondaryText)
+                ? option.PrimaryText
+                : $"{option.PrimaryText} - {option.SecondaryText}",
+        });
+    }
+
+    private void ClearName(int index) => UpdateLine(index, l => l with
+    {
+        NameEntityId = null,
+        NameEntityType = string.Empty,
+        NameDisplay = string.Empty,
+    });
+
+    /// <summary>
+    /// When the user fills any field of the last row, append a fresh empty
+    /// row so they can keep typing without reaching for "Add line". A row
+    /// is considered "filled" if any of account / description / debit /
+    /// credit carries content.
+    /// </summary>
+    private void EnsureTrailingEmptyLine(int touchedIndex)
+    {
+        if (touchedIndex != _lines.Count - 1) return;
+        var last = _lines[^1];
+        if (IsEmpty(last)) return;
+        _lines.Add(new JournalLineEditState());
+    }
+
+    private static bool IsEmpty(JournalLineEditState line) =>
+        string.IsNullOrWhiteSpace(line.AccountCode) &&
+        string.IsNullOrWhiteSpace(line.Description) &&
+        line.Debit == 0m &&
+        line.Credit == 0m &&
+        line.NameEntityId is null &&
+        string.IsNullOrWhiteSpace(line.TaxCode);
 
     private async Task PostAsync()
     {
@@ -220,17 +412,19 @@
             _validationMessage = "Description is required.";
             return;
         }
-        if (_lines.Count == 0)
+
+        var meaningful = _lines.Where(l => !IsEmpty(l)).ToArray();
+        if (meaningful.Length == 0)
         {
             _validationMessage = "Add at least one journal line.";
             return;
         }
-        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.AccountCode)))
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode)))
         {
-            _validationMessage = "Every line needs an account code.";
+            _validationMessage = "Every line needs an account.";
             return;
         }
-        if (_lines.Any(l => l.Debit > 0 && l.Credit > 0))
+        if (meaningful.Any(l => l.Debit > 0 && l.Credit > 0))
         {
             _validationMessage = "Each line records either a debit or a credit, not both.";
             return;
@@ -250,7 +444,13 @@
                 Description = _description.Trim(),
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
                 ExchangeRate = _exchangeRate,
-                Lines = _lines.Select(l => l with { AccountCode = l.AccountCode.Trim() }).ToArray()
+                Lines = meaningful.Select(l => new ManualJournalLineDraft
+                {
+                    AccountCode = l.AccountCode.Trim(),
+                    Description = l.Description,
+                    Debit = l.Debit,
+                    Credit = l.Credit,
+                }).ToArray()
             };
 
             _lastResult = await WriteFlow.PostManualJournalAsync(draft);
@@ -273,8 +473,10 @@
     private Task ResetAsync()
     {
         _lines.Clear();
-        _lines.Add(new ManualJournalLineDraft());
-        _lines.Add(new ManualJournalLineDraft());
+        for (var i = 0; i < 4; i++)
+        {
+            _lines.Add(new JournalLineEditState());
+        }
         _description = string.Empty;
         _date = DateTime.Today;
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
@@ -283,6 +485,17 @@
         _lastResult = null;
         return Task.CompletedTask;
     }
+
+    private static decimal ParseDecimal(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return 0m;
+        return decimal.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0m;
+    }
+
+    private static string FormatDecimalForInput(decimal amount) =>
+        amount == 0m ? string.Empty : amount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
 }

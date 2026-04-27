@@ -831,3 +831,152 @@ html[data-theme="dark"] .citus-nav-menu .ant-menu-item:hover .citus-nav-menu__la
  * (UnitySearchPicker.razor.css) already drives every colour through
  * --citus-color-* tokens, which flip automatically on <html class="dark">.
  */
+
+/* ---------- Compact journal-entry lines table ----------
+   Density-tuned variant of .citus-data-table for surfaces that need
+   high-throughput data entry. Rows shrink to ~32px; cell inputs lose
+   their boxes so the table reads as a continuous grid; header is a
+   thin subdued row. Pickers slot in via .unity-picker without
+   wrappers — they already drive their own colours through tokens. */
+
+.citus-journal-lines {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.citus-journal-lines thead th {
+    font-size: var(--citus-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--citus-color-fg-subtle);
+    font-weight: 500;
+    padding: var(--citus-space-2) var(--citus-space-2);
+    background: var(--citus-color-bg-muted);
+    border-bottom: 1px solid var(--citus-color-border);
+    white-space: nowrap;
+}
+
+.citus-journal-lines__num {
+    width: 2.25rem;
+    text-align: right;
+    color: var(--citus-color-fg-subtle);
+    font-variant-numeric: tabular-nums;
+}
+
+.citus-journal-lines__gutter {
+    width: 2rem;
+    text-align: center;
+}
+
+.citus-journal-lines__name {
+    width: 14rem;
+}
+
+.citus-journal-lines__desc {
+    /* fluid */
+}
+
+.citus-journal-lines__amount {
+    width: 7.5rem;
+}
+
+.citus-journal-lines__tax {
+    width: 9rem;
+}
+
+.citus-journal-lines__action {
+    width: 2.25rem;
+}
+
+.citus-journal-lines__row td {
+    padding: 2px 4px;
+    height: 2rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-journal-lines__row:hover td {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-journal-lines__row td > .unity-picker {
+    width: 100%;
+}
+
+.citus-journal-lines__row td > .unity-picker .unity-picker__input {
+    min-height: 1.85rem;
+    padding: 0.25rem 1.85rem 0.25rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--citus-radius-sm);
+    background: transparent;
+    font-size: var(--citus-text-sm);
+}
+
+.citus-journal-lines__row td > .unity-picker .unity-picker__icon {
+    display: none;
+}
+
+.citus-journal-lines__row td > .unity-picker .unity-picker__input:focus {
+    background: var(--citus-color-bg-elevated);
+    border-color: var(--citus-color-primary);
+}
+
+.citus-journal-lines__row:hover td > .unity-picker .unity-picker__input {
+    border-color: var(--citus-color-border);
+}
+
+.citus-journal-lines__cell-input {
+    width: 100%;
+    height: 1.85rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--citus-radius-sm);
+    background: transparent;
+    color: var(--citus-color-fg);
+    font: inherit;
+    font-size: var(--citus-text-sm);
+    outline: none;
+}
+
+.citus-journal-lines__row:hover .citus-journal-lines__cell-input {
+    border-color: var(--citus-color-border);
+}
+
+.citus-journal-lines__cell-input:focus {
+    background: var(--citus-color-bg-elevated);
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 2px var(--citus-color-primary-bg);
+}
+
+select.citus-journal-lines__cell-input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--citus-color-fg-subtle) 50%),
+                      linear-gradient(135deg, var(--citus-color-fg-subtle) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 12px, calc(100% - 9px) 12px;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 1.5rem;
+}
+
+.citus-journal-lines__amount-input {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.citus-journal-lines__insert {
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+
+.citus-journal-lines__row:hover .citus-journal-lines__insert,
+.citus-journal-lines__insert:focus {
+    opacity: 1;
+}
+
+.citus-journal-lines__total td {
+    background: var(--citus-color-bg-muted);
+    border-top: 1px solid var(--citus-color-border);
+    padding: var(--citus-space-2) var(--citus-space-2);
+    font-variant-numeric: tabular-nums;
+}

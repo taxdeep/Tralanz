@@ -35,10 +35,10 @@
                         class="unity-picker__option"
                         @onmousedown:preventDefault
                         @onclick="@(() => SelectAsync(option))">
-                    <span class="unity-picker__option-primary">@option.PrimaryText</span>
+                    <span class="unity-picker__option-primary">@RenderHighlighted(option.PrimaryText)</span>
                     @if (!string.IsNullOrWhiteSpace(option.SecondaryText))
                     {
-                        <span class="unity-picker__option-secondary">@option.SecondaryText</span>
+                        <span class="unity-picker__option-secondary">@RenderHighlighted(option.SecondaryText)</span>
                     }
                 </button>
             }
@@ -315,6 +315,48 @@
 
     private string? _lastSearchedQuery;
     private int? _lastSearchResultCount;
+
+    /// <summary>
+    /// Wraps the matched substring in a highlight span so users can see
+    /// what their query matched. Match is case-insensitive against the
+    /// current trimmed query; if the query is empty or absent, the text
+    /// is returned verbatim.
+    /// </summary>
+    private RenderFragment RenderHighlighted(string text) => builder =>
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        var query = _searchText?.Trim();
+        if (string.IsNullOrEmpty(query))
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+
+        var matchIndex = text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+        if (matchIndex < 0)
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+
+        if (matchIndex > 0)
+        {
+            builder.AddContent(1, text.Substring(0, matchIndex));
+        }
+        builder.OpenElement(2, "strong");
+        builder.AddAttribute(3, "class", "unity-picker__match");
+        builder.AddContent(4, text.Substring(matchIndex, query.Length));
+        builder.CloseElement();
+        var tail = matchIndex + query.Length;
+        if (tail < text.Length)
+        {
+            builder.AddContent(5, text.Substring(tail));
+        }
+    };
 
     private UnitysearchUsageEvent BuildUsageEvent(
         string eventType,
