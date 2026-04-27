@@ -384,98 +384,113 @@
         {
             <article class="citus-subpanel">
                 <h3 class="citus-subpanel__title">Customer summary</h3>
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th>Customer</th>
-                            <th>Status</th>
-                            <th class="text-right">Current</th>
-                            <th class="text-right">1-30</th>
-                            <th class="text-right">31-60</th>
-                            <th class="text-right">61-90</th>
-                            <th class="text-right">&gt; 90</th>
-                            <th class="text-right">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var row in _arAging.CustomerRows)
-                        {
-                            <tr>
-                                <td>
-                                    <div>@row.CustomerDisplayName</div>
-                                    <div class="text-fg-subtle text-xs">
-                                        <span class="citus-inline-code">@row.CustomerEntityNumber</span>
-                                        @if (row.OldestDueDate is not null)
-                                        {
-                                            <span> · oldest due @row.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
-                                        }
-                                    </div>
-                                </td>
-                                <td>@(row.CustomerIsActive ? "Active" : "Inactive")</td>
-                                <td class="text-right">@FormatAmount(row.CurrentAmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.Days1To30AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.Days31To60AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.Days61To90AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.DaysOver90AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.TotalOutstandingAmountBase)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <RadzenDataGrid TItem="ArAgingCustomerSummary"
+                                Data="@_arAging.CustomerRows"
+                                AllowSorting="true"
+                                AllowFiltering="true"
+                                AllowColumnResize="true"
+                                AllowPaging="true"
+                                PageSize="50"
+                                FilterMode="FilterMode.Simple"
+                                class="citus-radzen-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary"
+                                              Property="@nameof(ArAgingCustomerSummary.CustomerDisplayName)"
+                                              Title="Customer">
+                            <Template Context="row">
+                                <div>@row.CustomerDisplayName</div>
+                                <div class="text-fg-subtle text-xs">
+                                    <span class="citus-inline-code">@row.CustomerEntityNumber</span>
+                                    @if (row.OldestDueDate is not null)
+                                    {
+                                        <span> · oldest due @row.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
+                                    }
+                                </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary"
+                                              Property="@nameof(ArAgingCustomerSummary.CustomerIsActive)"
+                                              Title="Status" Width="100px">
+                            <Template Context="row">@(row.CustomerIsActive ? "Active" : "Inactive")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary" Property="@nameof(ArAgingCustomerSummary.CurrentAmountBase)" Title="Current" TextAlign="TextAlign.Right" Width="120px">
+                            <Template Context="row">@FormatAmount(row.CurrentAmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary" Property="@nameof(ArAgingCustomerSummary.Days1To30AmountBase)" Title="1-30" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.Days1To30AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary" Property="@nameof(ArAgingCustomerSummary.Days31To60AmountBase)" Title="31-60" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.Days31To60AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary" Property="@nameof(ArAgingCustomerSummary.Days61To90AmountBase)" Title="61-90" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.Days61To90AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary" Property="@nameof(ArAgingCustomerSummary.DaysOver90AmountBase)" Title="> 90" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.DaysOver90AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingCustomerSummary" Property="@nameof(ArAgingCustomerSummary.TotalOutstandingAmountBase)" Title="Total" TextAlign="TextAlign.Right" Width="130px">
+                            <Template Context="row"><strong>@FormatAmount(row.TotalOutstandingAmountBase)</strong></Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
             </article>
 
             <article class="citus-subpanel">
                 <h3 class="citus-subpanel__title">Open-item detail</h3>
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th>Customer</th>
-                            <th>Document</th>
-                            <th>Due date</th>
-                            <th>Bucket</th>
-                            <th class="text-right">Open amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var row in _arAging.DetailRows)
-                        {
-                            <tr>
-                                <td>
-                                    <div>@row.CustomerDisplayName</div>
-                                    <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.CustomerEntityNumber</span></div>
-                                </td>
-                                <td>
-                                    @{ var arHref = TryBuildDocumentHref(row.SourceType, row.SourceDocumentId); }
-                                    @if (arHref is not null)
-                                    {
-                                        <a class="citus-link" href="@arHref">@row.DisplayNumber</a>
-                                    }
-                                    else
-                                    {
-                                        <span>@row.DisplayNumber</span>
-                                    }
-                                    <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
-                                </td>
-                                <td>
-                                    @if (row.DueDate is null)
-                                    {
-                                        <span>No due date</span>
-                                    }
-                                    else
-                                    {
-                                        <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
-                                        <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
-                                    }
-                                </td>
-                                <td>@FormatAgingBucket(row.AgingBucket)</td>
-                                <td class="text-right">
-                                    <div>@FormatAmount(row.SignedOpenAmountBase)</div>
-                                    <div class="text-fg-subtle text-xs">@FormatAmount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <RadzenDataGrid TItem="ArAgingOpenItemSummary"
+                                Data="@_arAging.DetailRows"
+                                AllowSorting="true"
+                                AllowFiltering="true"
+                                AllowColumnResize="true"
+                                AllowPaging="true"
+                                PageSize="100"
+                                FilterMode="FilterMode.Simple"
+                                class="citus-radzen-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ArAgingOpenItemSummary" Property="@nameof(ArAgingOpenItemSummary.CustomerDisplayName)" Title="Customer">
+                            <Template Context="row">
+                                <div>@row.CustomerDisplayName</div>
+                                <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.CustomerEntityNumber</span></div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingOpenItemSummary" Property="@nameof(ArAgingOpenItemSummary.DisplayNumber)" Title="Document" Width="200px">
+                            <Template Context="row">
+                                @{ var arHref = TryBuildDocumentHref(row.SourceType, row.SourceDocumentId); }
+                                @if (arHref is not null)
+                                {
+                                    <a class="citus-link" href="@arHref">@row.DisplayNumber</a>
+                                }
+                                else
+                                {
+                                    <span>@row.DisplayNumber</span>
+                                }
+                                <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingOpenItemSummary" Property="@nameof(ArAgingOpenItemSummary.DueDate)" Title="Due date" Width="150px">
+                            <Template Context="row">
+                                @if (row.DueDate is null)
+                                {
+                                    <span>No due date</span>
+                                }
+                                else
+                                {
+                                    <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
+                                    <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingOpenItemSummary" Property="@nameof(ArAgingOpenItemSummary.AgingBucket)" Title="Bucket" Width="110px">
+                            <Template Context="row">@FormatAgingBucket(row.AgingBucket)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ArAgingOpenItemSummary" Property="@nameof(ArAgingOpenItemSummary.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="160px">
+                            <Template Context="row">
+                                <div>@FormatAmount(row.SignedOpenAmountBase)</div>
+                                <div class="text-fg-subtle text-xs">@FormatAmount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
             </article>
         }
     }
@@ -534,98 +549,109 @@
         {
             <article class="citus-subpanel">
                 <h3 class="citus-subpanel__title">Vendor summary</h3>
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th>Vendor</th>
-                            <th>Status</th>
-                            <th class="text-right">Current</th>
-                            <th class="text-right">1-30</th>
-                            <th class="text-right">31-60</th>
-                            <th class="text-right">61-90</th>
-                            <th class="text-right">&gt; 90</th>
-                            <th class="text-right">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var row in _apAging.VendorRows)
-                        {
-                            <tr>
-                                <td>
-                                    <div>@row.VendorDisplayName</div>
-                                    <div class="text-fg-subtle text-xs">
-                                        <span class="citus-inline-code">@row.VendorEntityNumber</span>
-                                        @if (row.OldestDueDate is not null)
-                                        {
-                                            <span> · oldest due @row.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
-                                        }
-                                    </div>
-                                </td>
-                                <td>@(row.VendorIsActive ? "Active" : "Inactive")</td>
-                                <td class="text-right">@FormatAmount(row.CurrentAmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.Days1To30AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.Days31To60AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.Days61To90AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.DaysOver90AmountBase)</td>
-                                <td class="text-right">@FormatAmount(row.TotalOutstandingAmountBase)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <RadzenDataGrid TItem="ApAgingVendorSummary"
+                                Data="@_apAging.VendorRows"
+                                AllowSorting="true"
+                                AllowFiltering="true"
+                                AllowColumnResize="true"
+                                AllowPaging="true"
+                                PageSize="50"
+                                FilterMode="FilterMode.Simple"
+                                class="citus-radzen-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.VendorDisplayName)" Title="Vendor">
+                            <Template Context="row">
+                                <div>@row.VendorDisplayName</div>
+                                <div class="text-fg-subtle text-xs">
+                                    <span class="citus-inline-code">@row.VendorEntityNumber</span>
+                                    @if (row.OldestDueDate is not null)
+                                    {
+                                        <span> · oldest due @row.OldestDueDate.Value.ToString("yyyy-MM-dd")</span>
+                                    }
+                                </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.VendorIsActive)" Title="Status" Width="100px">
+                            <Template Context="row">@(row.VendorIsActive ? "Active" : "Inactive")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.CurrentAmountBase)" Title="Current" TextAlign="TextAlign.Right" Width="120px">
+                            <Template Context="row">@FormatAmount(row.CurrentAmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.Days1To30AmountBase)" Title="1-30" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.Days1To30AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.Days31To60AmountBase)" Title="31-60" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.Days31To60AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.Days61To90AmountBase)" Title="61-90" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.Days61To90AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.DaysOver90AmountBase)" Title="> 90" TextAlign="TextAlign.Right" Width="110px">
+                            <Template Context="row">@FormatAmount(row.DaysOver90AmountBase)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingVendorSummary" Property="@nameof(ApAgingVendorSummary.TotalOutstandingAmountBase)" Title="Total" TextAlign="TextAlign.Right" Width="130px">
+                            <Template Context="row"><strong>@FormatAmount(row.TotalOutstandingAmountBase)</strong></Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
             </article>
 
             <article class="citus-subpanel">
                 <h3 class="citus-subpanel__title">Open-item detail</h3>
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th>Vendor</th>
-                            <th>Document</th>
-                            <th>Due date</th>
-                            <th>Bucket</th>
-                            <th class="text-right">Open amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var row in _apAging.DetailRows)
-                        {
-                            <tr>
-                                <td>
-                                    <div>@row.VendorDisplayName</div>
-                                    <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.VendorEntityNumber</span></div>
-                                </td>
-                                <td>
-                                    @{ var apHref = TryBuildDocumentHref(row.SourceType, row.SourceDocumentId); }
-                                    @if (apHref is not null)
-                                    {
-                                        <a class="citus-link" href="@apHref">@row.DisplayNumber</a>
-                                    }
-                                    else
-                                    {
-                                        <span>@row.DisplayNumber</span>
-                                    }
-                                    <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
-                                </td>
-                                <td>
-                                    @if (row.DueDate is null)
-                                    {
-                                        <span>No due date</span>
-                                    }
-                                    else
-                                    {
-                                        <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
-                                        <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
-                                    }
-                                </td>
-                                <td>@FormatAgingBucket(row.AgingBucket)</td>
-                                <td class="text-right">
-                                    <div>@FormatAmount(row.SignedOpenAmountBase)</div>
-                                    <div class="text-fg-subtle text-xs">@FormatAmount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <RadzenDataGrid TItem="ApAgingOpenItemSummary"
+                                Data="@_apAging.DetailRows"
+                                AllowSorting="true"
+                                AllowFiltering="true"
+                                AllowColumnResize="true"
+                                AllowPaging="true"
+                                PageSize="100"
+                                FilterMode="FilterMode.Simple"
+                                class="citus-radzen-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.VendorDisplayName)" Title="Vendor">
+                            <Template Context="row">
+                                <div>@row.VendorDisplayName</div>
+                                <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.VendorEntityNumber</span></div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.DisplayNumber)" Title="Document" Width="200px">
+                            <Template Context="row">
+                                @{ var apHref = TryBuildDocumentHref(row.SourceType, row.SourceDocumentId); }
+                                @if (apHref is not null)
+                                {
+                                    <a class="citus-link" href="@apHref">@row.DisplayNumber</a>
+                                }
+                                else
+                                {
+                                    <span>@row.DisplayNumber</span>
+                                }
+                                <div class="text-fg-subtle text-xs">@row.SourceType · @row.DocumentDate.ToString("yyyy-MM-dd")</div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.DueDate)" Title="Due date" Width="150px">
+                            <Template Context="row">
+                                @if (row.DueDate is null)
+                                {
+                                    <span>No due date</span>
+                                }
+                                else
+                                {
+                                    <div>@row.DueDate.Value.ToString("yyyy-MM-dd")</div>
+                                    <div class="text-fg-subtle text-xs">@($"{row.DaysPastDue} days past due")</div>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.AgingBucket)" Title="Bucket" Width="110px">
+                            <Template Context="row">@FormatAgingBucket(row.AgingBucket)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ApAgingOpenItemSummary" Property="@nameof(ApAgingOpenItemSummary.SignedOpenAmountBase)" Title="Open amount" TextAlign="TextAlign.Right" Width="160px">
+                            <Template Context="row">
+                                <div>@FormatAmount(row.SignedOpenAmountBase)</div>
+                                <div class="text-fg-subtle text-xs">@FormatAmount(row.SignedOpenAmountTx) @row.DocumentCurrencyCode</div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
             </article>
         }
     }
