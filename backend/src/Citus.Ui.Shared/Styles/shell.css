@@ -1068,3 +1068,85 @@ select.citus-journal-lines__cell-input {
     color: var(--citus-color-primary);
     cursor: pointer;
 }
+
+/* ---------- CitusInput (RadzenTextBox-backed) ---------- */
+
+.citus-input {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+    width: 100%;
+}
+
+.citus-input__row {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    padding: 0.25rem 0.5rem;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.citus-input__row:focus-within {
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-primary-bg);
+}
+
+.citus-input--sm .citus-input__row { min-height: 1.85rem; padding: 0.15rem 0.5rem; }
+.citus-input--md .citus-input__row { min-height: 2.25rem; }
+.citus-input--lg .citus-input__row { min-height: 2.6rem; padding: 0.4rem 0.6rem; }
+
+.citus-input__leading {
+    display: inline-flex;
+    align-items: center;
+    color: var(--citus-color-fg-subtle);
+    flex-shrink: 0;
+}
+
+.citus-input__field {
+    flex: 1;
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    color: var(--citus-color-fg) !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    font: inherit !important;
+}
+
+.citus-input__field:focus {
+    box-shadow: none !important;
+}
+
+.citus-input__field::placeholder {
+    color: var(--citus-color-fg-subtle);
+}
+
+.citus-input__clear,
+.citus-input__suffix {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.citus-input__clear {
+    border: 0;
+    background: transparent;
+    color: var(--citus-color-fg-subtle);
+    cursor: pointer;
+    padding: 0 0.25rem;
+    border-radius: var(--citus-radius-sm);
+}
+
+.citus-input__clear:hover {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+}
+
+.citus-input__helper {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    margin: 0;
+}

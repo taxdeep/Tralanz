@@ -1,22 +1,49 @@
 @*
-    CitusInput — single-line text input. Adds a leading icon slot and
-    a Clearable affordance that AntDesign supports out of the box.
+    CitusInput — single-line text input. Phase 5a of the UI library
+    migration: now wraps RadzenTextBox instead of AntDesign.Input<T>.
+    Public API stays string-typed (every existing callsite uses
+    TValue="string"); the @typeparam stays declared for backwards
+    compat with the 60+ existing TValue="string" callsites and is
+    intentionally unused inside the body — the value type is fixed
+    to string.
+
+    The generic Input<T> JIT path that triggered the .NET 11 → 10
+    retarget incident is gone with this change.
 *@
 
 @typeparam TValue
+@using Radzen
+@using Radzen.Blazor
 
-<div class="citus-input @(string.IsNullOrEmpty(Class) ? string.Empty : Class)">
-    <Input TValue="TValue"
-           Value="@Value"
-           ValueChanged="HandleValueChanged"
-           Placeholder="@Placeholder"
-           Disabled="Disabled"
-           ReadOnly="ReadOnly"
-           AllowClear="AllowClear"
-           Size="@AntSize"
-           MaxLength="MaxLength"
-           Prefix="@PrefixSlot"
-           Suffix="@Suffix" />
+<div class="citus-input citus-input--@(SizeClass) @(string.IsNullOrEmpty(Class) ? string.Empty : Class)">
+    <div class="citus-input__row">
+        @if (LeadingIcon is not null)
+        {
+            <span class="citus-input__leading">
+                <CitusIcon Name="LeadingIcon.Value" Size="IconSize.Inline" />
+            </span>
+        }
+        <RadzenTextBox Value="@(Value ?? string.Empty)"
+                       Change="HandleValueChanged"
+                       Placeholder="@Placeholder"
+                       Disabled="Disabled"
+                       ReadOnly="ReadOnly"
+                       MaxLength="@(MaxLength > 0 ? MaxLength : 524288)"
+                       Class="citus-input__field" />
+        @if (AllowClear && !Disabled && !ReadOnly && !string.IsNullOrEmpty(Value))
+        {
+            <button type="button"
+                    class="citus-input__clear"
+                    title="Clear"
+                    @onclick="() => HandleValueChanged(string.Empty)">
+                <CitusIcon Name="IconName.X" Size="IconSize.Inline" />
+            </button>
+        }
+        @if (Suffix is not null)
+        {
+            <span class="citus-input__suffix">@Suffix</span>
+        }
+    </div>
     @if (!string.IsNullOrEmpty(HelperText))
     {
         <p class="citus-input__helper">@HelperText</p>
@@ -24,9 +51,9 @@
 </div>
 
 @code {
-    [Parameter] public TValue? Value { get; set; }
+    [Parameter] public string? Value { get; set; }
 
-    [Parameter] public EventCallback<TValue?> ValueChanged { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
 
     [Parameter] public string? Placeholder { get; set; }
 
@@ -48,23 +75,13 @@
 
     [Parameter] public string? Class { get; set; }
 
-    private InputSize AntSize => Size switch
+    private string SizeClass => Size switch
     {
-        CitusButtonSize.Small => InputSize.Small,
-        CitusButtonSize.Large => InputSize.Large,
-        _ => InputSize.Default
+        CitusButtonSize.Small => "sm",
+        CitusButtonSize.Large => "lg",
+        _ => "md"
     };
 
-    private RenderFragment? PrefixSlot => LeadingIcon is null
-        ? null
-        : builder =>
-        {
-            builder.OpenComponent<CitusIcon>(0);
-            builder.AddAttribute(1, nameof(CitusIcon.Name), LeadingIcon.Value);
-            builder.AddAttribute(2, nameof(CitusIcon.Size), IconSize.Inline);
-            builder.CloseComponent();
-        };
-
-    private Task HandleValueChanged(TValue? next) =>
+    private Task HandleValueChanged(string? next) =>
         ValueChanged.HasDelegate ? ValueChanged.InvokeAsync(next) : Task.CompletedTask;
 }
