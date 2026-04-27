@@ -21,6 +21,105 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
         return await GetProfileAsync(connection, transaction: null, companyId, cancellationToken);
     }
 
+    public async Task<CompanyControlAccountSlots> AllocateControlAccountSlotsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        var accountCodeLength = await GetAccountCodeLengthAsync(connection, transaction: null, companyId, cancellationToken);
+
+        var arCode = await AllocateNextFamilyCodeAsync(connection, transaction: null, companyId, "11", accountCodeLength, cancellationToken);
+        var apCode = await AllocateNextFamilyCodeAsync(connection, transaction: null, companyId, "20", accountCodeLength, cancellationToken);
+        return new CompanyControlAccountSlots(arCode, apCode);
+    }
+
+    private static async Task<int> GetAccountCodeLengthAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select account_code_length
+            from companies
+            where id = @company_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        var raw = await command.ExecuteScalarAsync(cancellationToken);
+        if (raw is null || raw is DBNull)
+        {
+            throw new InvalidOperationException($"Company {companyId:D} was not found.");
+        }
+        return Convert.ToInt32(raw);
+    }
+
+    /// <summary>
+    /// Computes the next free numeric code in a chart-of-accounts family
+    /// (e.g. "11" for AR, "20" for AP) at the company's account_code_length.
+    /// Skips the family base (e.g. 11000 / 1100 / 110000), then picks
+    /// max(existing tail) + 1, where the tail is the last
+    /// (accountCodeLength - 2) characters of the code.
+    /// </summary>
+    private static async Task<string> AllocateNextFamilyCodeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        Guid companyId,
+        string familyPrefix,
+        int accountCodeLength,
+        CancellationToken cancellationToken)
+    {
+        if (familyPrefix.Length != 2)
+        {
+            throw new InvalidOperationException($"Family prefix '{familyPrefix}' must be exactly 2 characters.");
+        }
+        if (accountCodeLength < 4)
+        {
+            throw new InvalidOperationException($"Account code length {accountCodeLength} is below the minimum of 4.");
+        }
+
+        var tailWidth = accountCodeLength - familyPrefix.Length;
+        var baseCode = familyPrefix + new string('0', tailWidth);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select coalesce(
+                max(
+                    case
+                        when substring(code from @prefix_len + 1) ~ '^[0-9]+$'
+                            then cast(substring(code from @prefix_len + 1) as integer)
+                        else 0
+                    end
+                ),
+                0
+            )
+            from accounts
+            where company_id = @company_id
+              and length(code) = @code_length
+              and code like @prefix_pattern
+              and code <> @base_code;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("prefix_len", familyPrefix.Length);
+        command.Parameters.AddWithValue("code_length", accountCodeLength);
+        command.Parameters.AddWithValue("prefix_pattern", familyPrefix + "%");
+        command.Parameters.AddWithValue("base_code", baseCode);
+        var maxTail = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
+        var nextTail = maxTail + 1;
+        var maxTailExclusive = (int)Math.Pow(10, tailWidth);
+        if (nextTail >= maxTailExclusive)
+        {
+            throw new InvalidOperationException(
+                $"No free codes left in family '{familyPrefix}' for company {companyId:D} at account_code_length={accountCodeLength}.");
+        }
+        return familyPrefix + nextTail.ToString().PadLeft(tailWidth, '0');
+    }
+
     public async Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
         Guid companyId,
         string currencyCode,

@@ -57,6 +57,11 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
                 false,
                 [new CompanyCurrencyOption("USD", "US Dollar", true, true)]));
 
+        public Task<CompanyControlAccountSlots> AllocateControlAccountSlotsAsync(
+            Guid companyId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new CompanyControlAccountSlots("11001", "20001"));
+
         public Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
             Guid companyId,
             string currencyCode,

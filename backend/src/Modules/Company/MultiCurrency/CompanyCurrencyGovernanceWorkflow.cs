@@ -32,7 +32,11 @@ public sealed class CompanyCurrencyGovernanceWorkflow : ICompanyCurrencyGovernan
             return new CompanyCurrencyGovernanceResult(profile, []);
         }
 
-        var controlAccounts = BuildControlAccounts(profile.BaseCurrencyCode, normalizedCurrencyCode);
+        var controlAccounts = await BuildControlAccountsAsync(
+            companyId,
+            profile.BaseCurrencyCode,
+            normalizedCurrencyCode,
+            cancellationToken);
         return await _store.EnableCurrencyAsync(
             companyId,
             normalizedCurrencyCode,
@@ -50,20 +54,24 @@ public sealed class CompanyCurrencyGovernanceWorkflow : ICompanyCurrencyGovernan
         return currencyCode.Trim().ToUpperInvariant();
     }
 
-    private static IReadOnlyList<ControlAccountProvisioningRequest> BuildControlAccounts(
+    private async Task<IReadOnlyList<ControlAccountProvisioningRequest>> BuildControlAccountsAsync(
+        Guid companyId,
         string baseCurrencyCode,
-        string currencyCode)
+        string currencyCode,
+        CancellationToken cancellationToken)
     {
         if (string.Equals(baseCurrencyCode, currencyCode, StringComparison.OrdinalIgnoreCase))
         {
             return [];
         }
 
+        var slots = await _store.AllocateControlAccountSlotsAsync(companyId, cancellationToken);
+
         return
         [
             new ControlAccountProvisioningRequest(
-                Code: $"AR-{currencyCode}",
-                Name: $"Accounts Receivable (A/R) - {currencyCode}",
+                Code: slots.ArCode,
+                Name: $"Accounts Receivable - {currencyCode}",
                 RootType: "asset",
                 DetailType: "accounts_receivable",
                 CurrencyCode: currencyCode,
@@ -71,8 +79,8 @@ public sealed class CompanyCurrencyGovernanceWorkflow : ICompanyCurrencyGovernan
                 SystemRole: $"accounts_receivable:{currencyCode}",
                 AllowManualPosting: false),
             new ControlAccountProvisioningRequest(
-                Code: $"AP-{currencyCode}",
-                Name: $"Accounts Payable (A/P) - {currencyCode}",
+                Code: slots.ApCode,
+                Name: $"Accounts Payable - {currencyCode}",
                 RootType: "liability",
                 DetailType: "accounts_payable",
                 CurrencyCode: currencyCode,
