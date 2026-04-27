@@ -28,7 +28,7 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
             {
                 query.Add("includeInactive=true");
             }
-            var url = query.Count == 0 ? "accounts" : $"accounts?{string.Join('&', query)}";
+            var url = query.Count == 0 ? "accounting/accounts" : $"accounting/accounts?{string.Join('&', query)}";
 
             var rows = await httpClient.GetFromJsonAsync<AccountSummary[]>(url, cancellationToken);
             return rows ?? Array.Empty<AccountSummary>();
@@ -43,13 +43,13 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
     public async Task<AccountMutationOutcome> CreateAsync(
         AccountUpsertPayload payload,
         CancellationToken cancellationToken = default)
-        => await SendUpsertAsync(HttpMethod.Post, "accounts", payload, cancellationToken);
+        => await SendUpsertAsync(HttpMethod.Post, "accounting/accounts", payload, cancellationToken);
 
     public async Task<AccountMutationOutcome> UpdateAsync(
         Guid id,
         AccountUpsertPayload payload,
         CancellationToken cancellationToken = default)
-        => await SendUpsertAsync(HttpMethod.Put, $"accounts/{id:D}", payload, cancellationToken);
+        => await SendUpsertAsync(HttpMethod.Put, $"accounting/accounts/{id:D}", payload, cancellationToken);
 
     /// <summary>
     /// Lists available chart-of-accounts starter templates. Failures
@@ -61,7 +61,7 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
         try
         {
             var rows = await httpClient.GetFromJsonAsync<CoaTemplateSummary[]>(
-                "accounts/templates",
+                "accounting/accounts/templates",
                 cancellationToken);
             return rows ?? Array.Empty<CoaTemplateSummary>();
         }
@@ -84,7 +84,7 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
         try
         {
             using var response = await httpClient.PostAsync(
-                $"accounts/templates/{Uri.EscapeDataString(templateKey)}/apply",
+                $"accounting/accounts/templates/{Uri.EscapeDataString(templateKey)}/apply",
                 content: null,
                 cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -106,7 +106,7 @@ public sealed class AccountClient(HttpClient httpClient, ILogger<AccountClient> 
         bool isActive,
         CancellationToken cancellationToken = default)
     {
-        var path = isActive ? $"accounts/{id:D}/activate" : $"accounts/{id:D}/deactivate";
+        var path = isActive ? $"accounting/accounts/{id:D}/activate" : $"accounting/accounts/{id:D}/deactivate";
         try
         {
             using var response = await httpClient.PostAsync(path, content: null, cancellationToken);

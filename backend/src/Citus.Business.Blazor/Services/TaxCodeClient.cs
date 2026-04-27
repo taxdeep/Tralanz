@@ -32,7 +32,7 @@ public sealed class TaxCodeClient(HttpClient httpClient, ILogger<TaxCodeClient> 
             {
                 query.Add("includeInactive=true");
             }
-            var url = query.Count == 0 ? "tax-codes" : $"tax-codes?{string.Join('&', query)}";
+            var url = query.Count == 0 ? "accounting/tax-codes" : $"accounting/tax-codes?{string.Join('&', query)}";
 
             var rows = await httpClient.GetFromJsonAsync<TaxCodeSummary[]>(url, cancellationToken);
             return rows ?? Array.Empty<TaxCodeSummary>();
@@ -47,20 +47,20 @@ public sealed class TaxCodeClient(HttpClient httpClient, ILogger<TaxCodeClient> 
     public async Task<TaxCodeMutationOutcome> CreateAsync(
         TaxCodeUpsertPayload payload,
         CancellationToken cancellationToken = default)
-        => await SendUpsertAsync(HttpMethod.Post, "tax-codes", payload, cancellationToken);
+        => await SendUpsertAsync(HttpMethod.Post, "accounting/tax-codes", payload, cancellationToken);
 
     public async Task<TaxCodeMutationOutcome> UpdateAsync(
         Guid id,
         TaxCodeUpsertPayload payload,
         CancellationToken cancellationToken = default)
-        => await SendUpsertAsync(HttpMethod.Put, $"tax-codes/{id:D}", payload, cancellationToken);
+        => await SendUpsertAsync(HttpMethod.Put, $"accounting/tax-codes/{id:D}", payload, cancellationToken);
 
     public async Task<TaxCodeMutationOutcome> SetActiveAsync(
         Guid id,
         bool isActive,
         CancellationToken cancellationToken = default)
     {
-        var path = isActive ? $"tax-codes/{id:D}/activate" : $"tax-codes/{id:D}/deactivate";
+        var path = isActive ? $"accounting/tax-codes/{id:D}/activate" : $"accounting/tax-codes/{id:D}/deactivate";
         try
         {
             using var response = await httpClient.PostAsync(path, content: null, cancellationToken);
