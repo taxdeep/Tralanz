@@ -48,15 +48,55 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               is_active boolean not null default true
             );
 
+            -- Seeded list mirrors the currencies frankfurter.dev publishes
+            -- (ECB-derived). Currencies not in this list cannot get an
+            -- automatic recommended FX rate, so we deliberately don't ship
+            -- them in the picker. KWD lived here briefly but isn't ECB-
+            -- published; the UPDATE below deactivates it on already-
+            -- provisioned databases.
             insert into currency_catalog (code, name, minor_unit, is_active)
             values
+              ('AUD', 'Australian Dollar', 2, true),
+              ('BGN', 'Bulgarian Lev', 2, true),
+              ('BRL', 'Brazilian Real', 2, true),
               ('CAD', 'Canadian Dollar', 2, true),
-              ('USD', 'US Dollar', 2, true),
-              ('EUR', 'Euro', 2, true),
+              ('CHF', 'Swiss Franc', 2, true),
               ('CNY', 'Chinese Yuan', 2, true),
+              ('CZK', 'Czech Koruna', 2, true),
+              ('DKK', 'Danish Krone', 2, true),
+              ('EUR', 'Euro', 2, true),
+              ('GBP', 'Pound Sterling', 2, true),
+              ('HKD', 'Hong Kong Dollar', 2, true),
+              ('HUF', 'Hungarian Forint', 2, true),
+              ('IDR', 'Indonesian Rupiah', 2, true),
+              ('ILS', 'Israeli New Shekel', 2, true),
+              ('INR', 'Indian Rupee', 2, true),
+              ('ISK', 'Icelandic Krona', 0, true),
               ('JPY', 'Japanese Yen', 0, true),
-              ('KWD', 'Kuwaiti Dinar', 3, true)
+              ('KRW', 'South Korean Won', 0, true),
+              ('MXN', 'Mexican Peso', 2, true),
+              ('MYR', 'Malaysian Ringgit', 2, true),
+              ('NOK', 'Norwegian Krone', 2, true),
+              ('NZD', 'New Zealand Dollar', 2, true),
+              ('PHP', 'Philippine Peso', 2, true),
+              ('PLN', 'Polish Zloty', 2, true),
+              ('RON', 'Romanian Leu', 2, true),
+              ('SEK', 'Swedish Krona', 2, true),
+              ('SGD', 'Singapore Dollar', 2, true),
+              ('THB', 'Thai Baht', 2, true),
+              ('TRY', 'Turkish Lira', 2, true),
+              ('USD', 'US Dollar', 2, true),
+              ('ZAR', 'South African Rand', 2, true)
             on conflict (code) do nothing;
+
+            -- Deactivate currencies we no longer surface (frankfurter
+            -- doesn't publish KWD, so we can't auto-recommend a rate for
+            -- it). Existing rows aren't deleted because a base_currency_code
+            -- FK may still point at them — but is_active=false hides the
+            -- row from the multi-currency picker.
+            update currency_catalog
+            set is_active = false
+            where code = 'KWD';
 
             create table if not exists companies (
               id uuid primary key default gen_random_uuid(),
