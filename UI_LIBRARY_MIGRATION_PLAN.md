@@ -142,25 +142,30 @@ Each phase has: scope, deliverables, exit criteria, rollback, and effort estimat
 
 **Rollback:** flip the flag off. Code stays for the next attempt.
 
-### Phase 5 — Form primitives, atom-by-atom (≈3 days)
+### Phase 5 — Form primitives, atom-by-atom (≈3 days) ✅
 
 **Scope:** the `Citus.Ui.Shared/Atoms/` wrappers — `CitusInput`, the implicit `<AntDesign.DatePicker>` / `<AntDesign.Select>` / `<AntDesign.InputNumber>` / `<AntDesign.Tag>` usages — flip to Radzen primitives one at a time.
 
 **Order of operations** (each is its own commit, each independently revertable):
 
-1. `CitusInput` — wraps `<RadzenTextBox>`. The `Input<T>` JIT incident that triggered the .NET 10 retarget is now a non-issue because the underlying primitive is gone.
-2. Native `<AntDesign.DatePicker>` → `<RadzenDatePicker>`. Most pages already use the Ant version directly; convert page-by-page.
-3. `<AntDesign.Select>` → `<RadzenDropDown>`. Two flavours: simple value-select and multi-select. The company-switcher in `BusinessTopBar` lands in this batch.
-4. `<AntDesign.InputNumber>` → `<RadzenNumeric>`. Tabular alignment behaviour matches; revisit any inline numeric input in journal-entry / invoice forms that already moved to native `<input type="number">` (those stay native).
-5. `<AntDesign.Tag>` → `<RadzenBadge>`. Simple substitution.
+1. ✅ **5a** `CitusInput` rewritten to wrap `<RadzenTextBox>` while keeping the `@typeparam TValue` declared (unused) for back-compat with the 60+ `TValue="string"` callsites. The `Input<T>` JIT incident that triggered the .NET 10 retarget is now a non-issue because the underlying primitive is gone.
+2. ✅ **5b** `<AntDesign.DatePicker>` → `<RadzenDatePicker>` across 8 razor pages (16 occurrences). Bulk sed; both libraries accept the same `TValue` / `Value` / `@bind-Value` shape. Required adding `@using Radzen` + `@using Radzen.Blazor` to both Blazor app `_Imports.razor` so component resolution succeeds without per-file imports.
+3. ✅ **5c** `<AntDesign.Select>` → `<RadzenDropDown>` across 5 files (8 dropdowns). Two shape changes per callsite: `DataSource`→`Data`, `ItemValue` lambda → `ValueProperty="<name>"` (Radzen takes property-name strings, not lambdas), and `ItemLabel` lambda → `<Template Context="ctx">@Format((T)ctx)</Template>` for derived labels. Raw string/int lists drop the label hook entirely (Radzen falls back to ToString).
+4. ✅ **5d** `<AntDesign.InputNumber>` → `<RadzenNumeric>` across 7 files (15 occurrences). Bulk sed; the API surface used here is identical (`TValue`, `Value`/`ValueChanged`/`@bind-Value`, `Min`, `Max`, `Disabled`, `Style`).
+5. ✅ **5e** `<AntDesign.Tag>` → `<CitusBadge>` (Radzen-backed) across 26 razor files (~80 occurrences). Introduced a `CitusBadge` atom that keeps AntDesign's color-string vocabulary so dynamic `Color="@(...)"` expressions carry over unchanged; the atom maps internally to `Radzen.BadgeStyle`.
 
 **Exit criteria:**
 
-1. All five primitives migrated.
-2. The `CitusInput` wrapper file has no AntDesign reference left.
-3. Journal Entry, Invoice / Bill create, Account form, Tax Rates form, Profile form all work in both modes.
+1. ✅ All five primitives migrated.
+2. ✅ The `CitusInput` wrapper file has no AntDesign reference left.
+3. Journal Entry, Invoice / Bill create, Account form, Tax Rates form, Profile form all work in both modes. *(Build green; manual UI smoke test still owed before Phase 6 kicks off.)*
 
 **Rollback:** atom-level. Each atom commit reverts independently.
+
+**Notes carried into Phase 6:**
+
+- `Bordered="@false"` and `Size="@AntDesign.InputSize.Small"` on the company switchers were dropped during the Phase 5c port. If the topbar dropdowns look heavy, the fix is a `.citus-radzen-dropdown--inline` CSS bridge in `shell.css`, not adding props back.
+- The `CitusBadge` atom is the only Citus-side wrapper introduced in Phase 5. Phases 6+ should not add new wrappers; raw Radzen primitives in pages are fine now that the namespace is globally imported.
 
 ### Phase 6 — Heavy form layouts (≈1 day)
 
