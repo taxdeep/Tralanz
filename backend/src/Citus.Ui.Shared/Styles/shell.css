@@ -789,15 +789,8 @@
     max-width: 480px;
 }
 
-[data-theme="dark"] .citus-topbar__search .unity-picker__control {
-    background: oklch(22% 0.014 254);
-    border-color: oklch(34% 0.016 254);
-}
-
-[data-theme="dark"] .citus-topbar__search .unity-picker__input {
-    color: oklch(92% 0 0);
-}
-
-[data-theme="dark"] .citus-topbar__search .unity-picker__input::placeholder {
-    color: oklch(60% 0.012 254);
-}
+/*
+ * No dark-mode overrides needed for the picker itself: its scoped CSS
+ * (UnitySearchPicker.razor.css) already drives every colour through
+ * --citus-color-* tokens, which flip automatically on <html class="dark">.
+ */

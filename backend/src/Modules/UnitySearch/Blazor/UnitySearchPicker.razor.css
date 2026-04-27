@@ -1,3 +1,9 @@
+/*
+ * UnitySearchPicker — theme-aware via --citus-color-* tokens defined in
+ * tokens.css. Colours flip automatically when <html class="dark"> is set;
+ * no hard-coded slate values, no per-mode overrides needed in shell.css.
+ */
+
 .unity-picker {
     position: relative;
     width: 100%;
@@ -12,7 +18,7 @@
 .unity-picker__icon {
     position: absolute;
     left: 0.8rem;
-    color: #7c8aa5;
+    color: var(--citus-color-fg-subtle);
     font-size: 0.95rem;
     pointer-events: none;
 }
@@ -21,22 +27,22 @@
     width: 100%;
     min-height: 2.5rem;
     padding: 0.62rem 2.25rem 0.62rem 2.25rem;
-    border: 1px solid rgba(148, 163, 184, 0.18);
+    border: 1px solid var(--citus-color-border);
     border-radius: 10px;
-    background: rgba(15, 23, 42, 0.78);
-    color: #e2e8f0;
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
     font-size: 0.92rem;
     outline: none;
-    transition: border-color 120ms ease, box-shadow 120ms ease;
+    transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
 .unity-picker__input::placeholder {
-    color: #6b7a95;
+    color: var(--citus-color-fg-subtle);
 }
 
 .unity-picker__input:focus {
-    border-color: rgba(22, 119, 255, 0.55);
-    box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.12);
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 4px var(--citus-color-primary-bg);
 }
 
 .unity-picker__clear {
@@ -50,13 +56,13 @@
     border: 0;
     border-radius: 999px;
     background: transparent;
-    color: #94a3b8;
+    color: var(--citus-color-fg-subtle);
     cursor: pointer;
 }
 
 .unity-picker__clear:hover {
-    background: rgba(148, 163, 184, 0.12);
-    color: #e2e8f0;
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
 }
 
 .unity-picker__panel {
@@ -66,15 +72,15 @@
     right: 0;
     z-index: 35;
     padding: 0.45rem;
-    border: 1px solid rgba(148, 163, 184, 0.18);
+    border: 1px solid var(--citus-color-border);
     border-radius: 12px;
-    background: rgba(9, 15, 28, 0.98);
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.45);
+    background: var(--citus-color-bg-elevated);
+    box-shadow: var(--citus-shadow-3);
 }
 
 .unity-picker__empty {
     padding: 0.78rem 0.8rem 0.72rem;
-    color: #94a3b8;
+    color: var(--citus-color-fg-muted);
     font-size: 0.86rem;
     text-align: center;
 }
@@ -93,17 +99,17 @@
 }
 
 .unity-picker__option:hover {
-    background: rgba(22, 119, 255, 0.12);
+    background: var(--citus-color-primary-bg);
 }
 
 .unity-picker__option-primary {
-    color: #f8fafc;
+    color: var(--citus-color-fg);
     font-size: 0.9rem;
     font-weight: 700;
 }
 
 .unity-picker__option-secondary {
-    color: #94a3b8;
+    color: var(--citus-color-fg-muted);
     font-size: 0.78rem;
 }
 
@@ -115,9 +121,9 @@
     margin-top: 0.3rem;
     padding: 0.78rem 0.8rem 0.72rem;
     border: 0;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    border-top: 1px solid var(--citus-color-border);
     background: transparent;
-    color: #dbeafe;
+    color: var(--citus-color-primary);
     text-align: left;
     font-size: 0.86rem;
     font-weight: 700;
@@ -125,12 +131,12 @@
 }
 
 .unity-picker__create:hover {
-    color: #93c5fd;
-    background: rgba(22, 119, 255, 0.08);
+    color: var(--citus-color-primary-hover);
+    background: var(--citus-color-primary-bg);
 }
 
 .unity-picker__create-icon {
-    color: #60a5fa;
+    color: var(--citus-color-primary);
     font-size: 0.95rem;
 }
 
