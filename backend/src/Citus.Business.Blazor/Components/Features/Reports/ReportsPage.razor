@@ -376,6 +376,18 @@
             <CitusStatCard Label="Total" Value="@FormatAmount(_arAging.TotalOutstandingAmountBase)" Description="Net open receivables" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
         </div>
 
+        @if (_arAging.TotalOutstandingAmountBase > 0)
+        {
+            <div class="citus-radzen-chart mb-4" style="height: 240px">
+                <RadzenChart>
+                    <RadzenColumnSeries Data="@BuildArBuckets(_arAging)" CategoryProperty="Label" ValueProperty="Amount" Title="Open AR" />
+                    <RadzenColumnOptions Radius="3" />
+                    <RadzenCategoryAxis />
+                    <RadzenValueAxis Formatter="@FormatChartAmount" />
+                </RadzenChart>
+            </div>
+        }
+
         @if (_arAging.OpenItemCount == 0)
         {
             <AntDesign.Alert Type="@AntDesign.AlertType.Info" Message="@($"No open receivable items were found for this company as of {_arAging.AsOfDate:yyyy-MM-dd}.")" ShowIcon="true" />
@@ -540,6 +552,18 @@
             <CitusStatCard Label="> 90" Value="@FormatAmount(_apAging.DaysOver90AmountBase)" Description="Past due" Icon="IconName.AlertTriangle" Tone="StatTone.Danger" />
             <CitusStatCard Label="Total" Value="@FormatAmount(_apAging.TotalOutstandingAmountBase)" Description="Net open payables" Icon="IconName.ReportAnalytics" Tone="StatTone.Info" />
         </div>
+
+        @if (_apAging.TotalOutstandingAmountBase > 0)
+        {
+            <div class="citus-radzen-chart mb-4" style="height: 240px">
+                <RadzenChart>
+                    <RadzenColumnSeries Data="@BuildApBuckets(_apAging)" CategoryProperty="Label" ValueProperty="Amount" Title="Open AP" />
+                    <RadzenColumnOptions Radius="3" />
+                    <RadzenCategoryAxis />
+                    <RadzenValueAxis Formatter="@FormatChartAmount" />
+                </RadzenChart>
+            </div>
+        }
 
         @if (_apAging.OpenItemCount == 0)
         {
@@ -1058,6 +1082,39 @@
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    /// <summary>
+    /// Aging-bucket point used by the Phase 3 RadzenChart on the AR / AP
+    /// sections. Five points each, ordered by bucket age. Builders run on
+    /// every render — cheap (5 inserts) and lets the chart pick up theme
+    /// colour swaps without a re-fetch.
+    /// </summary>
+    private sealed record class AgingBucketPoint(string Label, decimal Amount);
+
+    private static IReadOnlyList<AgingBucketPoint> BuildArBuckets(ArAgingReportSummary report) =>
+        new[]
+        {
+            new AgingBucketPoint("Current", report.CurrentAmountBase),
+            new AgingBucketPoint("1-30", report.Days1To30AmountBase),
+            new AgingBucketPoint("31-60", report.Days31To60AmountBase),
+            new AgingBucketPoint("61-90", report.Days61To90AmountBase),
+            new AgingBucketPoint("> 90", report.DaysOver90AmountBase),
+        };
+
+    private static IReadOnlyList<AgingBucketPoint> BuildApBuckets(ApAgingReportSummary report) =>
+        new[]
+        {
+            new AgingBucketPoint("Current", report.CurrentAmountBase),
+            new AgingBucketPoint("1-30", report.Days1To30AmountBase),
+            new AgingBucketPoint("31-60", report.Days31To60AmountBase),
+            new AgingBucketPoint("61-90", report.Days61To90AmountBase),
+            new AgingBucketPoint("> 90", report.DaysOver90AmountBase),
+        };
+
+    private static string FormatChartAmount(object value) =>
+        value is IConvertible convertible
+            ? Convert.ToDecimal(convertible).ToString("N0")
+            : value?.ToString() ?? string.Empty;
 
     private static string? TryBuildDocumentHref(string sourceType, Guid documentId) =>
         AccountingDocumentReviewRouteCatalog.TryBuildReviewHref(sourceType, documentId, out var href)
