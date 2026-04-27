@@ -90,8 +90,8 @@
                         var line = _lines[i];
                         <tr>
                             <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="What's being purchased?" /></td>
-                            <td><AntDesign.InputNumber TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><AntDesign.InputNumber TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Style="width: 100%;" /></td>
                             <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => Update(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="6000" /></td>
                             <td><CitusInput TValue="string" Value="@line.TaxCode" ValueChanged="@(v => Update(i, l => l with { TaxCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="HST" /></td>
                             <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>

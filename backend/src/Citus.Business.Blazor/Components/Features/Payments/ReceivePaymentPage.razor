@@ -48,7 +48,7 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Amount received</label>
-                    <AntDesign.InputNumber TValue="decimal" @bind-Value="_amount" Min="0" Style="width: 100%;" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_amount" Min="0" Style="width: 100%;" />
                 </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Memo</label>
@@ -84,7 +84,7 @@
                         <tr>
                             <td><CitusInput TValue="string" Value="@app.DocumentDisplayNumber" ValueChanged="@(v => Update(i, a => a with { DocumentDisplayNumber = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="INV-000123" /></td>
                             <td><CitusInput TValue="string" Value="@(app.OpenItemId == Guid.Empty ? string.Empty : app.OpenItemId.ToString("D"))" ValueChanged="@(v => Update(i, a => a with { OpenItemId = ParseGuid(v) }))" Size="CitusButtonSize.Small" Placeholder="@("uuid")" /></td>
-                            <td><AntDesign.InputNumber TValue="decimal" Value="@app.AppliedAmount" ValueChanged="@(v => Update(i, a => a with { AppliedAmount = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@app.AppliedAmount" ValueChanged="@(v => Update(i, a => a with { AppliedAmount = v }))" Min="0" Style="width: 100%;" /></td>
                             <td>
                                 <button type="button" class="citus-icon-button" title="Remove" @onclick="() => RemoveApplication(i)">
                                     <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
