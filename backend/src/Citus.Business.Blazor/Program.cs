@@ -6,6 +6,7 @@ using Citus.Modules.UnitySearch.Blazor;
 using Citus.Ui.Shared.Services;
 using Citus.Ui.Shared.Theme;
 using Infrastructure.PostgreSQL;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.Options;
 using Radzen;
 
@@ -18,6 +19,14 @@ builder.Services.AddScoped<CitusToastService>();
 builder.Services.AddCitusTheme();
 builder.Services.Configure<AppHostOptions>(builder.Configuration.GetSection(AppHostOptions.SectionName));
 builder.Services.AddScoped<BusinessShellState>();
+
+// Bridge the circuit's IServiceProvider into HttpClientFactory's handler
+// pool. Without this, BusinessSessionHeaderHandler captures a default-
+// constructed BusinessShellState from the factory's own scope and every
+// outgoing API call carries Guid.Empty for UserId / ActiveCompanyId.
+// See CircuitServicesAccessor.cs for the longer explanation.
+builder.Services.AddSingleton<CircuitServicesAccessor>();
+builder.Services.AddScoped<CircuitHandler, CircuitServicesAccessorCircuitHandler>();
 builder.Services.AddTransient<BusinessSessionHeaderHandler>();
 
 var businessDbConnectionString =

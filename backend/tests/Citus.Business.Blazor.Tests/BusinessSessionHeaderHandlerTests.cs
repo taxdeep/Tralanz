@@ -4,6 +4,7 @@ using Citus.Business.Blazor.Services;
 using Citus.Business.Blazor.State;
 using Citus.Ui.Shared.Business;
 using Citus.Ui.Shared.Shell;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Citus.Business.Blazor.Tests;
 
@@ -13,11 +14,8 @@ public sealed class BusinessSessionHeaderHandlerTests
     public async Task SendAsync_AppendsBootstrapHeaders()
     {
         var state = CreateState();
-        var capture = new CapturingHandler();
-        using var invoker = new HttpMessageInvoker(new BusinessSessionHeaderHandler(state)
-        {
-            InnerHandler = capture
-        });
+        var (handler, capture) = BuildHandler(state);
+        using var invoker = new HttpMessageInvoker(handler);
 
         await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost/health"), CancellationToken.None);
 
@@ -54,11 +52,8 @@ public sealed class BusinessSessionHeaderHandlerTests
 
         Assert.True(state.TrySetActiveCompany(blueHarbor.Id));
 
-        var capture = new CapturingHandler();
-        using var invoker = new HttpMessageInvoker(new BusinessSessionHeaderHandler(state)
-        {
-            InnerHandler = capture
-        });
+        var (handler, capture) = BuildHandler(state);
+        using var invoker = new HttpMessageInvoker(handler);
 
         await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost/accounting/session/context"), CancellationToken.None);
 
@@ -66,6 +61,42 @@ public sealed class BusinessSessionHeaderHandlerTests
         Assert.Equal(
             blueHarbor.Id.ToString(),
             capture.Request!.Headers.GetValues(BusinessSessionHeaderNames.ActiveCompanyId).Single());
+    }
+
+    [Fact]
+    public async Task SendAsync_OmitsHeaders_WhenNoCircuitScopeIsActive()
+    {
+        // Reproduces the production captive-dependency scenario: handler is
+        // constructed and invoked without a Blazor circuit ever setting
+        // CircuitServicesAccessor.Services. Headers must be omitted entirely
+        // (not sent as Guid.Empty), so the receiving guard responds with a
+        // clean 401 "missing required header" instead of a misleading
+        // "no membership for company 00000000-..." rejection.
+        var accessor = new CircuitServicesAccessor();
+        var capture = new CapturingHandler();
+        var handler = new BusinessSessionHeaderHandler(accessor) { InnerHandler = capture };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://localhost/anything"), CancellationToken.None);
+
+        Assert.NotNull(capture.Request);
+        Assert.False(capture.Request!.Headers.Contains(BusinessSessionHeaderNames.UserId));
+        Assert.False(capture.Request.Headers.Contains(BusinessSessionHeaderNames.ActiveCompanyId));
+    }
+
+    private static (BusinessSessionHeaderHandler Handler, CapturingHandler Capture) BuildHandler(BusinessShellState state)
+    {
+        // Fake the circuit's IServiceProvider with a tiny container holding
+        // just the state we need; mirrors what CircuitServicesAccessorCircuitHandler
+        // does at runtime when a real Blazor circuit is active.
+        var services = new ServiceCollection();
+        services.AddSingleton(state);
+        var provider = services.BuildServiceProvider();
+        var accessor = new CircuitServicesAccessor { Services = provider };
+
+        var capture = new CapturingHandler();
+        var handler = new BusinessSessionHeaderHandler(accessor) { InnerHandler = capture };
+        return (handler, capture);
     }
 
     private static BusinessShellState CreateState()
