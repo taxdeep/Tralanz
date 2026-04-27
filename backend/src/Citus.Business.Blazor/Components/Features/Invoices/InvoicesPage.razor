@@ -1,5 +1,8 @@
 @page "/invoices"
 
+@using Radzen
+@using Radzen.Blazor
+
 @inject BusinessShellState ShellState
 
 <PageTitle>Invoices | Citus Business</PageTitle>
@@ -29,34 +32,39 @@
                         EmptyIcon="IconName.FileInvoice"
                         EmptyTitle="No invoices for this company yet"
                         EmptyMessage="Use 'New invoice' to compose one. Posted invoices appear here ordered by document date.">
-        <table class="citus-data-table">
-            <thead>
-                <tr>
-                    <th>Invoice</th>
-                    <th>Customer</th>
-                    <th>Document date</th>
-                    <th>Due date</th>
-                    <th>Status</th>
-                    <th class="text-right">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var invoice in _invoices)
-                {
-                    <tr>
-                        <td>
-                            <a class="citus-link" href="@($"documents/invoice/{invoice.Id:D}")">@invoice.DisplayNumber</a>
-                            <div class="text-fg-subtle text-xs">@invoice.Memo</div>
-                        </td>
-                        <td>@invoice.CustomerName</td>
-                        <td>@invoice.DocumentDate.ToString("yyyy-MM-dd")</td>
-                        <td>@(invoice.DueDate?.ToString("yyyy-MM-dd") ?? "-")</td>
-                        <td><AntDesign.Tag Color="@StatusColor(invoice.Status)">@invoice.Status</AntDesign.Tag></td>
-                        <td class="text-right">@invoice.TotalAmount.ToString("N2") @invoice.Currency</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <RadzenDataGrid TItem="InvoiceListRow"
+                        Data="@_invoices"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        FilterMode="FilterMode.Simple"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.DisplayNumber)" Title="Invoice" Width="180px">
+                    <Template Context="invoice">
+                        <a class="citus-link" href="@($"documents/invoice/{invoice.Id:D}")">@invoice.DisplayNumber</a>
+                        <div class="text-fg-subtle text-xs">@invoice.Memo</div>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.CustomerName)" Title="Customer" />
+                <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.DocumentDate)" Title="Document date" Width="140px">
+                    <Template Context="invoice">@invoice.DocumentDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.DueDate)" Title="Due date" Width="120px">
+                    <Template Context="invoice">@(invoice.DueDate?.ToString("yyyy-MM-dd") ?? "-")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.Status)" Title="Status" Width="110px">
+                    <Template Context="invoice">
+                        <AntDesign.Tag Color="@StatusColor(invoice.Status)">@invoice.Status</AntDesign.Tag>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="140px">
+                    <Template Context="invoice">@invoice.TotalAmount.ToString("N2") @invoice.Currency</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
     </CitusAsyncBoundary>
 </section>
 

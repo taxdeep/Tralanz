@@ -1,5 +1,9 @@
 @page "/journal-entry"
 
+@using Citus.Ui.Shared.Journal
+@using Radzen
+@using Radzen.Blazor
+
 @inject BusinessShellState ShellState
 @inject AccountingHealthClient AccountingHealthClient
 @inject JournalEntryReviewClient JournalEntryReviewClient
@@ -66,39 +70,56 @@
             }
             else if (_recentEntries.Count > 0)
             {
-                <table class="citus-data-table">
-                    <thead>
-                        <tr>
-                            <th>Journal entry</th>
-                            <th>Source</th>
-                            <th>Posted at</th>
-                            <th class="text-right">Debit</th>
-                            <th class="text-right">Credit</th>
-                            <th class="text-right">Lines</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in _recentEntries)
-                        {
-                            <tr>
-                                <td>
-                                    <a class="citus-link" href="@($"journal-entry/review/{item.Id:D}")">@item.DisplayNumber</a>
-                                    <div class="text-fg-subtle text-xs">
-                                        <span class="citus-inline-code">@item.EntityNumber</span> | @GetLifecycleSummary(item)
-                                    </div>
-                                </td>
-                                <td>
-                                    <div>@item.SourceTypeLabel</div>
-                                    <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@item.SourceId</span></div>
-                                </td>
-                                <td>@(item.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Pending")</td>
-                                <td class="text-right">@FormatAmount(item.TotalDebit)</td>
-                                <td class="text-right">@FormatAmount(item.TotalCredit)</td>
-                                <td class="text-right">@item.LineCount</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <RadzenDataGrid TItem="JournalEntryReviewListItemSummary"
+                                Data="@_recentEntries"
+                                AllowSorting="true"
+                                AllowFiltering="true"
+                                AllowColumnResize="true"
+                                AllowPaging="true"
+                                PageSize="25"
+                                FilterMode="FilterMode.Simple"
+                                class="citus-radzen-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.DisplayNumber)"
+                                              Title="Journal entry"
+                                              Width="200px">
+                            <Template Context="item">
+                                <a class="citus-link" href="@($"journal-entry/review/{item.Id:D}")">@item.DisplayNumber</a>
+                                <div class="text-fg-subtle text-xs">
+                                    <span class="citus-inline-code">@item.EntityNumber</span> | @GetLifecycleSummary(item)
+                                </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.SourceTypeLabel)"
+                                              Title="Source">
+                            <Template Context="item">
+                                <div>@item.SourceTypeLabel</div>
+                                <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@item.SourceId</span></div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.PostedAt)"
+                                              Title="Posted at"
+                                              Width="180px">
+                            <Template Context="item">@(item.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Pending")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.TotalDebit)"
+                                              Title="Debit" TextAlign="TextAlign.Right" Width="130px">
+                            <Template Context="item">@FormatAmount(item.TotalDebit)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.TotalCredit)"
+                                              Title="Credit" TextAlign="TextAlign.Right" Width="130px">
+                            <Template Context="item">@FormatAmount(item.TotalCredit)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
+                                              Property="@nameof(JournalEntryReviewListItemSummary.LineCount)"
+                                              Title="Lines" TextAlign="TextAlign.Right" Width="90px" />
+                    </Columns>
+                </RadzenDataGrid>
             }
         </section>
 

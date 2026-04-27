@@ -1,5 +1,8 @@
 @page "/bills"
 
+@using Radzen
+@using Radzen.Blazor
+
 @inject BusinessShellState ShellState
 
 <PageTitle>Bills | Citus Business</PageTitle>
@@ -29,34 +32,39 @@
                         EmptyIcon="IconName.Receipt"
                         EmptyTitle="No bills for this company yet"
                         EmptyMessage="Use 'New bill' to record one. Posted bills appear here ordered by document date.">
-        <table class="citus-data-table">
-            <thead>
-                <tr>
-                    <th>Bill</th>
-                    <th>Vendor</th>
-                    <th>Document date</th>
-                    <th>Due date</th>
-                    <th>Status</th>
-                    <th class="text-right">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var bill in _bills)
-                {
-                    <tr>
-                        <td>
-                            <a class="citus-link" href="@($"documents/bill/{bill.Id:D}")">@bill.DisplayNumber</a>
-                            <div class="text-fg-subtle text-xs">@bill.Memo</div>
-                        </td>
-                        <td>@bill.VendorName</td>
-                        <td>@bill.DocumentDate.ToString("yyyy-MM-dd")</td>
-                        <td>@(bill.DueDate?.ToString("yyyy-MM-dd") ?? "-")</td>
-                        <td><AntDesign.Tag Color="@StatusColor(bill.Status)">@bill.Status</AntDesign.Tag></td>
-                        <td class="text-right">@bill.TotalAmount.ToString("N2") @bill.Currency</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <RadzenDataGrid TItem="BillListRow"
+                        Data="@_bills"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        FilterMode="FilterMode.Simple"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.DisplayNumber)" Title="Bill" Width="180px">
+                    <Template Context="bill">
+                        <a class="citus-link" href="@($"documents/bill/{bill.Id:D}")">@bill.DisplayNumber</a>
+                        <div class="text-fg-subtle text-xs">@bill.Memo</div>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.VendorName)" Title="Vendor" />
+                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.DocumentDate)" Title="Document date" Width="140px">
+                    <Template Context="bill">@bill.DocumentDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.DueDate)" Title="Due date" Width="120px">
+                    <Template Context="bill">@(bill.DueDate?.ToString("yyyy-MM-dd") ?? "-")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.Status)" Title="Status" Width="110px">
+                    <Template Context="bill">
+                        <AntDesign.Tag Color="@StatusColor(bill.Status)">@bill.Status</AntDesign.Tag>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="140px">
+                    <Template Context="bill">@bill.TotalAmount.ToString("N2") @bill.Currency</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
     </CitusAsyncBoundary>
 </section>
 
