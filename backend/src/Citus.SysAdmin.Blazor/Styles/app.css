@@ -59,9 +59,11 @@
     align-items: center;
     justify-content: center;
     gap: var(--citus-space-2);
-    padding: var(--citus-space-12) var(--citus-space-6);
+    /* §20.1 information-density — see Business.Blazor's app.css for the why. */
+    padding: var(--citus-space-5) var(--citus-space-4);
     color: var(--citus-color-fg-muted);
     text-align: center;
+    font-size: var(--citus-text-sm);
 }
 
 .citus-empty__icon {
@@ -70,7 +72,7 @@
 
 .citus-empty__title {
     color: var(--citus-color-fg);
-    font-size: var(--citus-text-lg);
+    font-size: var(--citus-text-base);
     margin: 0;
 }
 

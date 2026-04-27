@@ -60,9 +60,14 @@
     align-items: center;
     justify-content: center;
     gap: var(--citus-space-2);
-    padding: var(--citus-space-12) var(--citus-space-6);
+    /* §20.1 information-density: the empty-state used to push the row of
+       icons + message into the middle of a tall panel. Pulled vertical
+       padding back so a viewport's worth of empty CoA / Tax Rates / Bills
+       does not feel like wasted space. */
+    padding: var(--citus-space-5) var(--citus-space-4);
     color: var(--citus-color-fg-muted);
     text-align: center;
+    font-size: var(--citus-text-sm);
 }
 
 .citus-empty__icon {
@@ -71,7 +76,7 @@
 
 .citus-empty__title {
     color: var(--citus-color-fg);
-    font-size: var(--citus-text-lg);
+    font-size: var(--citus-text-base);
     margin: 0;
 }
 

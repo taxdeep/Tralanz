@@ -471,8 +471,8 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--citus-space-4);
-    margin-bottom: var(--citus-space-6);
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-4);
 }
 
 .citus-page-header__text {
@@ -589,11 +589,11 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--citus-space-3);
-    padding: var(--citus-space-12) var(--citus-space-8);
+    gap: var(--citus-space-2);
+    padding: var(--citus-space-6) var(--citus-space-5);
     background: var(--citus-color-bg-elevated);
     border: 1px dashed var(--citus-color-border);
-    border-radius: var(--citus-radius-lg);
+    border-radius: var(--citus-radius-md);
 }
 
 .citus-empty-state__icon {
@@ -638,23 +638,27 @@
 .citus-panel {
     background: var(--citus-color-bg-elevated);
     border: 1px solid var(--citus-color-border);
-    border-radius: var(--citus-radius-lg);
-    padding: var(--citus-space-5);
+    border-radius: var(--citus-radius-md);
+    padding: var(--citus-space-4);
     box-shadow: var(--citus-shadow-1);
+}
+
+.citus-panel + .citus-panel {
+    margin-top: var(--citus-space-4);
 }
 
 .citus-panel__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--citus-space-3);
-    margin-bottom: var(--citus-space-4);
+    gap: var(--citus-space-2);
+    margin-bottom: var(--citus-space-3);
 }
 
 .citus-panel__title {
-    margin: 0 0 var(--citus-space-3);
+    margin: 0 0 var(--citus-space-2);
     color: var(--citus-color-fg);
-    font-size: var(--citus-text-lg);
+    font-size: var(--citus-text-base);
     font-weight: 600;
 }
 
@@ -770,13 +774,13 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: var(--citus-text-xs);
-    padding: var(--citus-space-2) var(--citus-space-3);
+    padding: 0.375rem var(--citus-space-3);
     border-bottom: 1px solid var(--citus-color-border);
     background: var(--citus-color-bg-muted);
 }
 
 .citus-data-table td {
-    padding: var(--citus-space-2) var(--citus-space-3);
+    padding: 0.375rem var(--citus-space-3);
     border-bottom: 1px solid var(--citus-color-border);
     color: var(--citus-color-fg);
     font-variant-numeric: var(--citus-tabular-nums);
@@ -903,15 +907,19 @@
 }
 
 .citus-form-field__label {
-    font-size: var(--citus-text-sm);
+    font-size: var(--citus-text-xs);
     font-weight: 500;
     color: var(--citus-color-fg-muted);
 }
 
 .citus-form-field__input {
     width: 100%;
-    padding: 0.625rem 0.875rem;
+    /* 32px effective height to match .citus-button --md and Radzen primitives,
+       so a row of input + button reads as a single dense bar instead of
+       inputs being noticeably taller than buttons. */
+    padding: 0.4375rem 0.625rem;
     font: inherit;
+    font-size: var(--citus-text-sm);
     color: var(--citus-color-fg);
     background: var(--citus-color-bg-elevated);
     border: 1px solid var(--citus-color-border);
