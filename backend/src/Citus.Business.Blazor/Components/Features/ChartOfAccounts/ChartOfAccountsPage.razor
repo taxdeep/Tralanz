@@ -29,12 +29,19 @@
                      OnClick="StartCreating">
             New account
         </CitusButton>
-        <CitusButton Variant="CitusButtonVariant.Ghost"
-                     Size="CitusButtonSize.Small"
-                     Disabled="@(_isLoading || _isMutating)"
-                     OnClick="OpenSeedPanelAsync">
-            Seed from template
-        </CitusButton>
+        @* Seed-from-template only renders for an empty chart. Once any
+           account exists in the company (active or inactive), the chart
+           is owned by the user and re-seeding is forbidden; the backend
+           also rejects the call with 409 Conflict. *@
+        @if (!_isLoading && _rows.Count == 0)
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Size="CitusButtonSize.Small"
+                         Disabled="@_isMutating"
+                         OnClick="OpenSeedPanelAsync">
+                Seed from template
+            </CitusButton>
+        }
     </Actions>
 </CitusPageHeader>
 
@@ -377,10 +384,22 @@
     private CoaSeedSummaryDto? _seedSummary;
     private string? _applyingTemplateKey;
 
-    private IReadOnlyList<AccountSummary> FilteredRows =>
-        string.IsNullOrEmpty(_filterRootType)
-            ? _rows
-            : _rows.Where(r => string.Equals(r.RootType, _filterRootType, StringComparison.OrdinalIgnoreCase)).ToList();
+    private IReadOnlyList<AccountSummary> FilteredRows
+    {
+        get
+        {
+            IEnumerable<AccountSummary> rows = _rows;
+            if (!_includeInactive)
+            {
+                rows = rows.Where(r => r.IsActive);
+            }
+            if (!string.IsNullOrEmpty(_filterRootType))
+            {
+                rows = rows.Where(r => string.Equals(r.RootType, _filterRootType, StringComparison.OrdinalIgnoreCase));
+            }
+            return rows as IReadOnlyList<AccountSummary> ?? rows.ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -392,7 +411,11 @@
         _isLoading = true;
         try
         {
-            var rows = await AccountClient.ListAsync(includeInactive: _includeInactive);
+            // Always pull the full set (incl. inactive) so the seed-button
+            // gate and the empty-state copy reflect the company's true state
+            // regardless of the "Show inactive" toggle. The toggle filters
+            // client-side via FilteredRows.
+            var rows = await AccountClient.ListAsync(includeInactive: true);
             _rows = rows
                 .OrderBy(r => RootTypeRank(r.RootType))
                 .ThenBy(r => r.Code, StringComparer.Ordinal)
@@ -404,10 +427,9 @@
         }
     }
 
-    private async Task OnToggleInactive(ChangeEventArgs args)
+    private void OnToggleInactive(ChangeEventArgs args)
     {
         _includeInactive = (bool)(args.Value ?? false);
-        await LoadAsync();
     }
 
     private void OnFilterRootTypeChanged(ChangeEventArgs args)

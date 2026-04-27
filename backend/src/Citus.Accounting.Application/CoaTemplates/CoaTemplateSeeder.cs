@@ -21,6 +21,22 @@ public sealed class CoaTemplateSeeder(
         var template = registry.Get(templateKey)
             ?? throw new ArgumentException($"Unknown CoA template '{templateKey}'.", nameof(templateKey));
 
+        // Templates may only seed an empty chart of accounts. Once a company
+        // has any accounts (active or inactive, system or user-created), the
+        // chart is owned by the company and re-seeding is forbidden — even
+        // though the underlying upsert is additive. This protects users from
+        // accidentally re-introducing system rows after they have curated
+        // the catalog and gives the UI a hard rule to hide the affordance
+        // against. The first-company provisioning flow seeds before any
+        // accounts exist, so it is unaffected.
+        var existing = await accountStore.ListAsync(companyId, includeInactive: true, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Chart of accounts is not empty; templates can only be applied to a company with no accounts. Add or edit accounts individually instead.");
+        }
+
         var results = new List<CoaSeedAccountResult>(template.Accounts.Count);
         var created = 0;
         var skipped = 0;

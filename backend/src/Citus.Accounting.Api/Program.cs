@@ -3638,6 +3638,11 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            // Chart of accounts already seeded — re-applying is forbidden.
+            return Results.Conflict(new { message = ex.Message });
+        }
     });
 
 accounting.MapPost(
