@@ -29,13 +29,51 @@ public sealed class CustomerClient(HttpClient httpClient, ILogger<CustomerClient
         }
     }
 
-    public async Task<CustomerMutationOutcome> CreateAsync(
-        CustomerUpsertPayload payload,
+    public async Task<CustomerSummary?> GetByIdAsync(
+        Guid customerId,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            using var response = await httpClient.PostAsJsonAsync("accounting/customers", payload, cancellationToken);
+            return await httpClient.GetFromJsonAsync<CustomerSummary>(
+                $"accounting/customers/{customerId:D}",
+                cancellationToken);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read customer {CustomerId}.", customerId);
+            return null;
+        }
+    }
+
+    public Task<CustomerMutationOutcome> CreateAsync(
+        CustomerUpsertPayload payload,
+        CancellationToken cancellationToken = default)
+        => SendUpsertAsync(HttpMethod.Post, "accounting/customers", payload, cancellationToken);
+
+    public Task<CustomerMutationOutcome> UpdateAsync(
+        Guid id,
+        CustomerUpsertPayload payload,
+        CancellationToken cancellationToken = default)
+        => SendUpsertAsync(HttpMethod.Put, $"accounting/customers/{id:D}", payload, cancellationToken);
+
+    private async Task<CustomerMutationOutcome> SendUpsertAsync(
+        HttpMethod method,
+        string path,
+        CustomerUpsertPayload payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(method, path)
+            {
+                Content = JsonContent.Create(payload),
+            };
+            using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return new CustomerMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
@@ -45,7 +83,7 @@ public sealed class CustomerClient(HttpClient httpClient, ILogger<CustomerClient
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Unable to create customer.");
+            logger.LogWarning(ex, "Unable to upsert customer.");
             return new CustomerMutationOutcome(false, null, "Unable to reach the server. Please try again.");
         }
     }
@@ -86,6 +124,7 @@ public sealed record CustomerSummary(
     string? Country,
     string? TaxId,
     string? Notes,
+    Guid? PaymentTermId,
     bool IsActive,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -101,7 +140,8 @@ public sealed record CustomerUpsertPayload(
     string? PostalCode,
     string? Country,
     string? TaxId,
-    string? Notes);
+    string? Notes,
+    Guid? PaymentTermId);
 
 public sealed record CustomerMutationOutcome(
     bool Succeeded,

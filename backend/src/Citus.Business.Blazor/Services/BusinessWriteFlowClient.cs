@@ -47,20 +47,23 @@ public sealed class BusinessWriteFlowClient
 
     public async Task<WriteFlowResult> SaveCustomerAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default)
     {
-        var outcome = await _customers.CreateAsync(
-            new CustomerUpsertPayload(
-                DisplayName: draft.DisplayName,
-                DefaultCurrencyCode: draft.PreferredCurrencyCode,
-                Email: draft.Email,
-                Phone: draft.Phone,
-                AddressLine: draft.AddressLine,
-                City: draft.City,
-                ProvinceState: draft.ProvinceState,
-                PostalCode: draft.PostalCode,
-                Country: draft.Country,
-                TaxId: draft.TaxId,
-                Notes: draft.Notes),
-            cancellationToken);
+        var payload = new CustomerUpsertPayload(
+            DisplayName: draft.DisplayName,
+            DefaultCurrencyCode: draft.PreferredCurrencyCode,
+            Email: draft.Email,
+            Phone: draft.Phone,
+            AddressLine: draft.AddressLine,
+            City: draft.City,
+            ProvinceState: draft.ProvinceState,
+            PostalCode: draft.PostalCode,
+            Country: draft.Country,
+            TaxId: draft.TaxId,
+            Notes: draft.Notes,
+            PaymentTermId: draft.PaymentTermId);
+
+        var outcome = draft.CustomerId is { } existingId
+            ? await _customers.UpdateAsync(existingId, payload, cancellationToken)
+            : await _customers.CreateAsync(payload, cancellationToken);
 
         return outcome.Succeeded
             ? new WriteFlowResult(
@@ -77,20 +80,23 @@ public sealed class BusinessWriteFlowClient
 
     public async Task<WriteFlowResult> SaveVendorAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default)
     {
-        var outcome = await _vendors.CreateAsync(
-            new VendorUpsertPayload(
-                DisplayName: draft.DisplayName,
-                DefaultCurrencyCode: draft.PreferredCurrencyCode,
-                Email: draft.Email,
-                Phone: draft.Phone,
-                AddressLine: draft.AddressLine,
-                City: draft.City,
-                ProvinceState: draft.ProvinceState,
-                PostalCode: draft.PostalCode,
-                Country: draft.Country,
-                TaxId: draft.TaxId,
-                Notes: draft.Notes),
-            cancellationToken);
+        var payload = new VendorUpsertPayload(
+            DisplayName: draft.DisplayName,
+            DefaultCurrencyCode: draft.PreferredCurrencyCode,
+            Email: draft.Email,
+            Phone: draft.Phone,
+            AddressLine: draft.AddressLine,
+            City: draft.City,
+            ProvinceState: draft.ProvinceState,
+            PostalCode: draft.PostalCode,
+            Country: draft.Country,
+            TaxId: draft.TaxId,
+            Notes: draft.Notes,
+            PaymentTermId: draft.PaymentTermId);
+
+        var outcome = draft.VendorId is { } existingId
+            ? await _vendors.UpdateAsync(existingId, payload, cancellationToken)
+            : await _vendors.CreateAsync(payload, cancellationToken);
 
         return outcome.Succeeded
             ? new WriteFlowResult(
@@ -220,4 +226,23 @@ public sealed record CounterpartyDraft
     public string TaxId { get; init; } = string.Empty;
     public string PreferredCurrencyCode { get; init; } = string.Empty;
     public string Notes { get; init; } = string.Empty;
+    /// <summary>
+    /// Selected payment term (vendor side only — customer side ignores it
+    /// for now). <c>null</c> means "no preferred term"; the bill flow
+    /// falls back to the company default.
+    /// </summary>
+    public Guid? PaymentTermId { get; init; }
+    /// <summary>
+    /// When set, <see cref="BusinessWriteFlowClient.SaveVendorAsync"/>
+    /// routes to PUT /accounting/vendors/{id} instead of POST. The Vendor
+    /// profile page passes the existing vendor id when saving edits;
+    /// the create form leaves this <c>null</c>.
+    /// </summary>
+    public Guid? VendorId { get; init; }
+    /// <summary>
+    /// Customer-side equivalent of <see cref="VendorId"/>. When set,
+    /// <see cref="BusinessWriteFlowClient.SaveCustomerAsync"/> routes to
+    /// PUT /accounting/customers/{id}.
+    /// </summary>
+    public Guid? CustomerId { get; init; }
 }

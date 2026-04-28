@@ -1,0 +1,128 @@
+@page "/sales-orders"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject SalesOrderClient SalesOrderClient
+
+<PageTitle>Sales Orders | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="sales-orders/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New sales order</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Sales orders</h2>
+    </header>
+
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
+                        EmptyIcon="IconName.Receipt"
+                        EmptyTitle="No sales orders yet"
+                        EmptyMessage="Sales Orders are usually created by accepting a Quote, but you can also create one directly here.">
+        <RadzenDataGrid TItem="SalesOrderRow"
+                        Data="@_rows"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        FilterMode="FilterMode.Simple"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.SalesOrderNumber)" Title="SO ID" Width="180px">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"sales-orders/{row.Id:D}")">
+                            <span class="citus-inline-code">@row.SalesOrderNumber</span>
+                        </a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.CustomerName)" Title="Customer">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"sales-orders/{row.Id:D}")">@row.CustomerName</a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.DocumentDate)" Title="Date" Width="120px">
+                    <Template Context="row">@row.DocumentDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.Status)" Title="Status" Width="120px">
+                    <Template Context="row">
+                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.InvoiceNumber)" Title="Invoice #" Width="160px">
+                    <Template Context="row">@(string.IsNullOrEmpty(row.InvoiceNumber) ? "—" : row.InvoiceNumber)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </CitusAsyncBoundary>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Sales & Get Paid",
+        Title = "Sales orders",
+        Subtitle = "Open commitments to deliver. Mark them invoiced when billed."
+    };
+
+    private List<SalesOrderRow> _rows = new();
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await SalesOrderClient.ListAsync();
+            _rows = rows.Select(r => new SalesOrderRow(
+                Id: r.Id,
+                SalesOrderNumber: r.SalesOrderNumber,
+                CustomerName: string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName,
+                DocumentDate: r.DocumentDate,
+                Status: r.Status,
+                InvoiceNumber: r.InvoiceNumber,
+                TotalAmount: r.TotalAmount,
+                Currency: r.TransactionCurrencyCode)).ToList();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "open" => "blue",
+        "invoiced" => "green",
+        "cancelled" => "default",
+        _ => "default"
+    };
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "open" => "Open",
+        "invoiced" => "Invoiced",
+        "cancelled" => "Cancelled",
+        _ => status
+    };
+
+    private sealed record SalesOrderRow(
+        Guid Id,
+        string SalesOrderNumber,
+        string CustomerName,
+        DateOnly DocumentDate,
+        string Status,
+        string? InvoiceNumber,
+        decimal TotalAmount,
+        string Currency);
+}

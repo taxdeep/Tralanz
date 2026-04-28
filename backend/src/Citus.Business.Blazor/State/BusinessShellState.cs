@@ -62,6 +62,8 @@ public sealed class BusinessShellState
             Items =
             [
                 new NavMenuItem { Title = "Customers", Href = "customers", Icon = IconName.Users },
+                new NavMenuItem { Title = "Quotes", Href = "quotes", Icon = IconName.FileText },
+                new NavMenuItem { Title = "Sales Orders", Href = "sales-orders", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash }
             ]
         },
@@ -102,6 +104,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Currencies", Href = "settings/currencies", Icon = IconName.Coin },
                 new NavMenuItem { Title = "Fiscal Year", Href = "settings/fiscal-year", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
+                new NavMenuItem { Title = "Payment Terms", Href = "settings/payment-terms", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Numbering", Href = "settings/numbering", Icon = IconName.FileInvoice },
                 new NavMenuItem { Title = "Session", Href = "session", Icon = IconName.User }
             ]

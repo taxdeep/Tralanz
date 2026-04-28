@@ -17,8 +17,19 @@ public interface ICustomerStore
         bool includeInactive,
         CancellationToken cancellationToken);
 
+    Task<CustomerRecord?> GetByIdAsync(
+        Guid companyId,
+        Guid customerId,
+        CancellationToken cancellationToken);
+
     Task<CustomerRecord> CreateAsync(
         Guid companyId,
+        CustomerUpsertRequest request,
+        CancellationToken cancellationToken);
+
+    Task<CustomerRecord?> UpdateAsync(
+        Guid companyId,
+        Guid customerId,
         CustomerUpsertRequest request,
         CancellationToken cancellationToken);
 }
@@ -38,6 +49,7 @@ public sealed record CustomerRecord(
     string? Country,
     string? TaxId,
     string? Notes,
+    Guid? PaymentTermId,
     bool IsActive,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -53,4 +65,5 @@ public sealed record CustomerUpsertRequest(
     string? PostalCode,
     string? Country,
     string? TaxId,
-    string? Notes);
+    string? Notes,
+    Guid? PaymentTermId);

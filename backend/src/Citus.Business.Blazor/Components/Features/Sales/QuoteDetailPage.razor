@@ -1,0 +1,319 @@
+@page "/quotes/{QuoteId:guid}"
+
+@inject BusinessShellState ShellState
+@inject QuoteClient QuoteClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+<PageTitle>@($"{_pageTitle} | Citus Business")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="quotes">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to quotes</span>
+        </a>
+        @if (_quote is not null && IsEditable(_quote.Status))
+        {
+            <a class="citus-button" href="@($"quotes/{_quote.Id:D}/edit")">
+                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
+                <span>Edit</span>
+            </a>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else if (_quote is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                Message="Quote not found in this company."
+                ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Quote ID" Value="@_quote.QuoteNumber" Description="@_quote.CustomerName"
+                       Icon="IconName.FileText" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_quote.Status)"
+                       Description="@StatusHint(_quote.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_quote.Status)" />
+        <CitusStatCard Label="Total" Value="@($"{_quote.TotalAmount:N2} {_quote.TransactionCurrencyCode}")"
+                       Description="@($"Subtotal {_quote.SubtotalAmount:N2} − discount {_quote.DiscountAmount:N2}")"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+        <CitusStatCard Label="Expires"
+                       Value="@(_quote.ExpirationDate?.ToString("yyyy-MM-dd") ?? "—")"
+                       Description="@($"Issued {_quote.DocumentDate:yyyy-MM-dd}")"
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+    </div>
+
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Actions</h2>
+        <div class="flex flex-wrap gap-2">
+            @if (_quote.Status == "draft")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("pending", "Quote sent."))">Send</CitusButton>
+            }
+            @if (_quote.Status == "pending")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("accepted", "Marked as accepted."))">Mark Accepted</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("rejected", "Marked as rejected."))">Mark Rejected</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("expired", "Marked as expired."))">Mark Expired</CitusButton>
+            }
+            @if (_quote.Status == "accepted")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertAsync">
+                    Convert to Sales Order
+                </CitusButton>
+            }
+            @if (_quote.Status == "converted" && _quote.ConvertedSalesOrderId is { } soId)
+            {
+                <a class="citus-button" href="@($"sales-orders/{soId:D}")">Open Sales Order</a>
+            }
+            @if (!IsTerminal(_quote.Status))
+            {
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("void", "Quote voided."))">Void</CitusButton>
+            }
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th style="width: 7rem">Service</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 5rem">Qty</th>
+                            <th class="text-right" style="width: 7rem">Rate</th>
+                            <th class="text-right" style="width: 8rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _quote.Lines)
+                        {
+                            <tr>
+                                <td>@line.Sequence</td>
+                                <td>@(line.ServiceDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                <td class="text-right">@line.UnitPrice.ToString("0.0000")</td>
+                                <td class="text-right">@line.LineTotal.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_quote.MemoToCustomer) || !string.IsNullOrWhiteSpace(_quote.InternalNote))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Notes</h2>
+                    <table class="citus-keyvalue">
+                        <tbody>
+                            @if (!string.IsNullOrWhiteSpace(_quote.MemoToCustomer))
+                            {
+                                <tr><th>Customer message</th><td>@_quote.MemoToCustomer</td></tr>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_quote.InternalNote))
+                            {
+                                <tr><th>Internal note</th><td>@_quote.InternalNote</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Customer</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Name</th><td>@_quote.CustomerName</td></tr>
+                        @if (HasAddress(_quote))
+                        {
+                            <tr><th>Billing address</th><td>@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</td></tr>
+                            @if (!string.IsNullOrWhiteSpace(_quote.ShippingAddressLine))
+                            {
+                                <tr><th>Shipping address</th><td>@FormatAddress(_quote.ShippingAddressLine, _quote.ShippingCity, _quote.ShippingProvinceState, _quote.ShippingPostalCode, _quote.ShippingCountry)</td></tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@_quote.SubtotalAmount.ToString("N2")</td></tr>
+                        <tr><th>Discount</th><td class="text-right">−@_quote.DiscountAmount.ToString("N2")</td></tr>
+                        <tr><th>Shipping</th><td class="text-right">@((_quote.ShippingAmount ?? 0m).ToString("N2"))</td></tr>
+                        <tr><th>Tax</th><td class="text-right">@_quote.TaxAmount.ToString("N2")</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@_quote.TotalAmount.ToString("N2") @_quote.TransactionCurrencyCode</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid QuoteId { get; set; }
+
+    private QuoteRecordDto? _quote;
+    private bool _isLoading = true;
+    private bool _isMutating;
+    private string? _error;
+
+    private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "Quote", Subtitle = "Quote detail" };
+    private string _pageTitle = "Quote";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_quote is not null && _quote.Id != QuoteId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _quote = await QuoteClient.GetByIdAsync(QuoteId);
+            ApplyHeader();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_quote is null)
+        {
+            _pageTitle = "Quote";
+            _header = new PageHeaderModel { Eyebrow = "Sales & Get Paid", Title = "Quote", Subtitle = "Quote detail" };
+            return;
+        }
+        _pageTitle = _quote.QuoteNumber;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Sales & Get Paid",
+            Title = _quote.QuoteNumber,
+            Subtitle = $"{_quote.CustomerName} · {HumanizeStatus(_quote.Status)}"
+        };
+    }
+
+    private async Task SetStatusAsync(string newStatus, string successMessage)
+    {
+        if (_quote is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await QuoteClient.SetStatusAsync(_quote.Id, newStatus);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Status change failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _quote = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync(successMessage);
+        }
+        finally { _isMutating = false; }
+    }
+
+    private async Task ConvertAsync()
+    {
+        if (_quote is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await QuoteClient.ConvertToSalesOrderAsync(_quote.Id);
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _error = outcome.ErrorMessage ?? "Convert failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            await Message.SuccessAsync($"Sales Order {outcome.Saved.SalesOrderNumber} created.");
+            Navigation.NavigateTo($"sales-orders/{outcome.Saved.Id:D}");
+        }
+        finally { _isMutating = false; }
+    }
+
+    private static bool IsEditable(string status) => status is "draft" or "pending";
+    private static bool IsTerminal(string status) => status is "rejected" or "converted" or "void";
+
+    private static bool HasAddress(QuoteRecordDto quote) =>
+        !string.IsNullOrWhiteSpace(quote.BillingAddressLine) || !string.IsNullOrWhiteSpace(quote.BillingCity);
+
+    private static string FormatAddress(string? line, string? city, string? prov, string? postal, string? country)
+    {
+        var parts = new List<string>(5);
+        if (!string.IsNullOrWhiteSpace(line)) parts.Add(line);
+        if (!string.IsNullOrWhiteSpace(city)) parts.Add(city);
+        if (!string.IsNullOrWhiteSpace(prov)) parts.Add(prov);
+        if (!string.IsNullOrWhiteSpace(postal)) parts.Add(postal);
+        if (!string.IsNullOrWhiteSpace(country)) parts.Add(country);
+        return parts.Count == 0 ? "—" : string.Join(", ", parts);
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "pending" => "Pending",
+        "accepted" => "Accepted",
+        "rejected" => "Rejected",
+        "expired" => "Expired",
+        "converted" => "Converted",
+        "void" => "Void",
+        _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "draft" => "Not sent yet.",
+        "pending" => "Awaiting customer.",
+        "accepted" => "Ready to convert.",
+        "rejected" => "Customer declined.",
+        "expired" => "Past expiration date.",
+        "converted" => "Converted to a Sales Order.",
+        "void" => "Voided.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "draft" => StatTone.Neutral,
+        "pending" => StatTone.Info,
+        "accepted" => StatTone.Success,
+        "rejected" => StatTone.Danger,
+        "expired" => StatTone.Warning,
+        "converted" => StatTone.Primary,
+        "void" => StatTone.Neutral,
+        _ => StatTone.Neutral
+    };
+}

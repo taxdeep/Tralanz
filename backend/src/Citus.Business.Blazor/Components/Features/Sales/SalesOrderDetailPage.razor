@@ -1,0 +1,276 @@
+@page "/sales-orders/{SalesOrderId:guid}"
+
+@inject BusinessShellState ShellState
+@inject SalesOrderClient SalesOrderClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+<PageTitle>@($"{_pageTitle} | Citus Business")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="sales-orders">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to sales orders</span>
+        </a>
+        @if (_so is not null && IsEditable(_so.Status))
+        {
+            <a class="citus-button" href="@($"sales-orders/{_so.Id:D}/edit")">
+                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
+                <span>Edit</span>
+            </a>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else if (_so is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Sales order not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Sales Order" Value="@_so.SalesOrderNumber" Description="@_so.CustomerName"
+                       Icon="IconName.Receipt" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_so.Status)" Description="@StatusHint(_so.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_so.Status)" />
+        <CitusStatCard Label="Total" Value="@($"{_so.TotalAmount:N2} {_so.TransactionCurrencyCode}")"
+                       Description="@($"Subtotal {_so.SubtotalAmount:N2}")"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+        <CitusStatCard Label="Source"
+                       Value="@(_so.SourceQuoteNumber ?? "Direct")"
+                       Description="@(_so.SourceQuoteId is null ? "Created directly." : "Converted from quote.")"
+                       Icon="IconName.FileText" Tone="StatTone.Neutral" />
+    </div>
+
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Actions</h2>
+        <div class="flex flex-wrap gap-2 items-center">
+            @if (_so.Status == "open")
+            {
+                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="Invoice number…" />
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                    Mark Invoiced
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("cancelled", "Sales order cancelled."))">
+                    Cancel
+                </CitusButton>
+            }
+            else if (_so.Status == "invoiced")
+            {
+                <span class="text-fg-muted text-sm">Invoiced as <strong>@_so.InvoiceNumber</strong>.</span>
+            }
+            @if (_so.SourceQuoteId is { } quoteId)
+            {
+                <a class="citus-button citus-button--ghost" href="@($"quotes/{quoteId:D}")">View source quote</a>
+            }
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 5rem">Qty</th>
+                            <th class="text-right" style="width: 7rem">Rate</th>
+                            <th class="text-right" style="width: 8rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _so.Lines)
+                        {
+                            <tr>
+                                <td>@line.Sequence</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                <td class="text-right">@line.UnitPrice.ToString("0.0000")</td>
+                                <td class="text-right">@line.LineTotal.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Customer</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Name</th><td>@_so.CustomerName</td></tr>
+                        @if (HasAddress(_so))
+                        {
+                            <tr><th>Billing address</th><td>@FormatAddress(_so.BillingAddressLine, _so.BillingCity, _so.BillingProvinceState, _so.BillingPostalCode, _so.BillingCountry)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@_so.SubtotalAmount.ToString("N2")</td></tr>
+                        <tr><th>Discount</th><td class="text-right">−@_so.DiscountAmount.ToString("N2")</td></tr>
+                        <tr><th>Shipping</th><td class="text-right">@((_so.ShippingAmount ?? 0m).ToString("N2"))</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@_so.TotalAmount.ToString("N2") @_so.TransactionCurrencyCode</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid SalesOrderId { get; set; }
+
+    private SalesOrderRecordDto? _so;
+    private string _invoiceNumberInput = string.Empty;
+    private bool _isLoading = true;
+    private bool _isMutating;
+    private string? _error;
+
+    private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "Sales order", Subtitle = "Sales order detail" };
+    private string _pageTitle = "Sales order";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_so is not null && _so.Id != SalesOrderId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _so = await SalesOrderClient.GetByIdAsync(SalesOrderId);
+            ApplyHeader();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_so is null)
+        {
+            _pageTitle = "Sales order";
+            _header = new PageHeaderModel { Eyebrow = "Sales & Get Paid", Title = "Sales order", Subtitle = "Sales order detail" };
+            return;
+        }
+        _pageTitle = _so.SalesOrderNumber;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Sales & Get Paid",
+            Title = _so.SalesOrderNumber,
+            Subtitle = $"{_so.CustomerName} · {HumanizeStatus(_so.Status)}"
+        };
+    }
+
+    private async Task SetStatusAsync(string newStatus, string successMessage)
+    {
+        if (_so is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await SalesOrderClient.SetStatusAsync(_so.Id, newStatus);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Status change failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _so = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync(successMessage);
+        }
+        finally { _isMutating = false; }
+    }
+
+    private async Task MarkInvoicedAsync()
+    {
+        if (_so is null || _isMutating) return;
+        if (string.IsNullOrWhiteSpace(_invoiceNumberInput))
+        {
+            _error = "Enter the invoice number first.";
+            await Message.WarningAsync(_error);
+            return;
+        }
+        _isMutating = true;
+        try
+        {
+            var outcome = await SalesOrderClient.MarkInvoicedAsync(_so.Id, _invoiceNumberInput.Trim());
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Could not mark invoiced.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _so = outcome.Saved;
+            ApplyHeader();
+            _invoiceNumberInput = string.Empty;
+            await Message.SuccessAsync($"Sales Order marked as invoiced.");
+        }
+        finally { _isMutating = false; }
+    }
+
+    private static bool IsEditable(string status) => status is "open";
+
+    private static bool HasAddress(SalesOrderRecordDto so) =>
+        !string.IsNullOrWhiteSpace(so.BillingAddressLine) || !string.IsNullOrWhiteSpace(so.BillingCity);
+
+    private static string FormatAddress(string? line, string? city, string? prov, string? postal, string? country)
+    {
+        var parts = new List<string>(5);
+        if (!string.IsNullOrWhiteSpace(line)) parts.Add(line);
+        if (!string.IsNullOrWhiteSpace(city)) parts.Add(city);
+        if (!string.IsNullOrWhiteSpace(prov)) parts.Add(prov);
+        if (!string.IsNullOrWhiteSpace(postal)) parts.Add(postal);
+        if (!string.IsNullOrWhiteSpace(country)) parts.Add(country);
+        return parts.Count == 0 ? "—" : string.Join(", ", parts);
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "open" => "Open",
+        "invoiced" => "Invoiced",
+        "cancelled" => "Cancelled",
+        _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "open" => "Awaiting fulfillment / billing.",
+        "invoiced" => "Customer has been billed.",
+        "cancelled" => "Cancelled.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "open" => StatTone.Info,
+        "invoiced" => StatTone.Success,
+        "cancelled" => StatTone.Neutral,
+        _ => StatTone.Neutral
+    };
+}

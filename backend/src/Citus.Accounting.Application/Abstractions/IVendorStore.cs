@@ -16,8 +16,19 @@ public interface IVendorStore
         bool includeInactive,
         CancellationToken cancellationToken);
 
+    Task<VendorRecord?> GetByIdAsync(
+        Guid companyId,
+        Guid vendorId,
+        CancellationToken cancellationToken);
+
     Task<VendorRecord> CreateAsync(
         Guid companyId,
+        VendorUpsertRequest request,
+        CancellationToken cancellationToken);
+
+    Task<VendorRecord?> UpdateAsync(
+        Guid companyId,
+        Guid vendorId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken);
 }
@@ -37,6 +48,7 @@ public sealed record VendorRecord(
     string? Country,
     string? TaxId,
     string? Notes,
+    Guid? PaymentTermId,
     bool IsActive,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -52,4 +64,5 @@ public sealed record VendorUpsertRequest(
     string? PostalCode,
     string? Country,
     string? TaxId,
-    string? Notes);
+    string? Notes,
+    Guid? PaymentTermId);

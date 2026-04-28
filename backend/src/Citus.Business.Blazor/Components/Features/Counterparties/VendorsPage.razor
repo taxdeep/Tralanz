@@ -1,8 +1,12 @@
 @page "/vendors"
 
+@using Radzen
+@using Radzen.Blazor
+
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject VendorClient VendorClient
+@inject PaymentTermClient PaymentTermClient
 @inject CitusToastService Message
 
 <PageTitle>Vendors | Citus Business</PageTitle>
@@ -33,7 +37,8 @@
     }
     <CounterpartyForm Draft="_draft"
                       DraftChanged="@(v => _draft = v)"
-                      EntityNumberPlaceholder="VEN-000001" />
+                      EntityNumberPlaceholder="VEN-000001"
+                      PaymentTerms="_paymentTerms" />
     <div class="flex gap-2 mt-4">
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
             @(_isSubmitting ? "Saving..." : "Save vendor")
@@ -49,29 +54,46 @@ else
                             EmptyIcon="IconName.BuildingStore"
                             EmptyTitle="No vendors yet"
                             EmptyMessage="Create one with the New vendor button. Vendor master data unblocks bills, expenses, and AP aging.">
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Vendor</th>
-                        <th>Entity number</th>
-                        <th>Email</th>
-                        <th>Country</th>
-                        <th>Currency</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var v in _vendors)
-                    {
-                        <tr>
-                            <td>@v.DisplayName</td>
-                            <td><span class="citus-inline-code">@v.EntityNumber</span></td>
-                            <td>@v.Email</td>
-                            <td>@v.Country</td>
-                            <td>@v.DefaultCurrencyCode</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <RadzenDataGrid TItem="VendorRow"
+                            Data="@_rows"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            AllowColumnResize="true"
+                            AllowPaging="true"
+                            PageSize="50"
+                            FilterMode="FilterMode.Simple"
+                            class="citus-radzen-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.VendorId)" Title="Vendor ID" Width="180px">
+                        <Template Context="row">
+                            <a class="citus-link" href="@($"vendors/{row.Id:D}")">
+                                <span class="citus-inline-code">@row.VendorId</span>
+                            </a>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.Name)" Title="Name">
+                        <Template Context="row">
+                            <a class="citus-link" href="@($"vendors/{row.Id:D}")">@row.Name</a>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.Currency)" Title="Currency" Width="110px" />
+                    <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.PaymentTerm)" Title="Payment Term" Width="170px">
+                        <Template Context="row">
+                            @(string.IsNullOrEmpty(row.PaymentTerm) ? "—" : row.PaymentTerm)
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.Email)" Title="Email">
+                        <Template Context="row">
+                            @(string.IsNullOrEmpty(row.Email) ? "—" : row.Email)
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VendorRow" Property="@nameof(VendorRow.Address)" Title="Address">
+                        <Template Context="row">
+                            @(string.IsNullOrEmpty(row.Address) ? "—" : row.Address)
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
         </CitusAsyncBoundary>
     </section>
 }
@@ -85,6 +107,8 @@ else
     };
 
     private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
+    private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+    private List<VendorRow> _rows = new();
     private CounterpartyDraft _draft = new();
     private bool _isCreating;
     private bool _isSubmitting;
@@ -102,12 +126,42 @@ else
         _isLoading = true;
         try
         {
-            _vendors = await VendorClient.ListAsync();
+            var vendorsTask = VendorClient.ListAsync();
+            var termsTask = PaymentTermClient.ListAsync(includeInactive: true);
+            await Task.WhenAll(vendorsTask, termsTask);
+            _vendors = vendorsTask.Result;
+            _paymentTerms = termsTask.Result;
+            _rows = _vendors.Select(v => new VendorRow(
+                Id: v.Id,
+                VendorId: v.EntityNumber,
+                Name: v.DisplayName,
+                Currency: v.DefaultCurrencyCode,
+                PaymentTerm: ResolveTermLabel(v.PaymentTermId),
+                Email: v.Email ?? string.Empty,
+                Address: FormatAddress(v))).ToList();
         }
         finally
         {
             _isLoading = false;
         }
+    }
+
+    private string ResolveTermLabel(Guid? paymentTermId)
+    {
+        if (paymentTermId is null) return string.Empty;
+        var term = _paymentTerms.FirstOrDefault(t => t.Id == paymentTermId.Value);
+        return term is null ? string.Empty : $"{term.Name} (Net {term.NetDays})";
+    }
+
+    private static string FormatAddress(VendorSummary v)
+    {
+        var parts = new List<string>(5);
+        if (!string.IsNullOrWhiteSpace(v.AddressLine)) parts.Add(v.AddressLine);
+        if (!string.IsNullOrWhiteSpace(v.City)) parts.Add(v.City);
+        if (!string.IsNullOrWhiteSpace(v.ProvinceState)) parts.Add(v.ProvinceState);
+        if (!string.IsNullOrWhiteSpace(v.PostalCode)) parts.Add(v.PostalCode);
+        if (!string.IsNullOrWhiteSpace(v.Country)) parts.Add(v.Country);
+        return string.Join(", ", parts);
     }
 
     private void StartCreate()
@@ -142,4 +196,13 @@ else
         }
         finally { _isSubmitting = false; }
     }
+
+    private sealed record VendorRow(
+        Guid Id,
+        string VendorId,
+        string Name,
+        string Currency,
+        string PaymentTerm,
+        string Email,
+        string Address);
 }

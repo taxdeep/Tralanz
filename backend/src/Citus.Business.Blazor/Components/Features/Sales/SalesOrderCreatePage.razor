@@ -1,0 +1,547 @@
+@page "/sales-orders/new"
+@page "/sales-orders/{SalesOrderId:guid}/edit"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject CustomerClient CustomerClient
+@inject ItemClient ItemClient
+@inject TaxCodeClient TaxCodeClient
+@inject SalesOrderClient SalesOrderClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+@*
+    Sales Order create / edit. Mirrors QuoteCreatePage minus the
+    expiration-date field (SOs don't expire) plus an immutable
+    "Source quote" link when the SO came from a Quote conversion.
+    Save persists the SO; SOs don't have a Draft state.
+*@
+
+<PageTitle>@(_salesOrderId is null ? "New sales order" : $"Edit {_soNumber}") | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="sales-orders">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to sales orders</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (ShellState.AreWritesBlocked)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Customer</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Customer</label>
+                        <RadzenDropDown TValue="Guid?"
+                                        Data="@_customers"
+                                        @bind-Value="_customerId"
+                                        TextProperty="DisplayName"
+                                        ValueProperty="Id"
+                                        Placeholder="Select a customer…"
+                                        AllowFiltering="true"
+                                        Style="width: 100%;"
+                                        Change="@(_ => OnCustomerChanged())" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Source quote</label>
+                        <div class="text-fg-muted text-sm">
+                            @(string.IsNullOrEmpty(_sourceQuoteNumber) ? "Created directly (no source quote)" : $"From quote {_sourceQuoteNumber}")
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Address</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Billing address</label>
+                        <CitusInput TValue="string" @bind-Value="_billingAddressLine" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Shipping address</label>
+                        <CitusInput TValue="string" @bind-Value="_shippingAddressLine" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_billingCity" Placeholder="City" />
+                        <CitusInput TValue="string" @bind-Value="_billingProvinceState" Placeholder="Province / State" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_shippingCity" Placeholder="City" />
+                        <CitusInput TValue="string" @bind-Value="_shippingProvinceState" Placeholder="Province / State" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_billingPostalCode" Placeholder="Postal" />
+                        <CitusInput TValue="string" @bind-Value="_billingCountry" Placeholder="Country" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_shippingPostalCode" Placeholder="Postal" />
+                        <CitusInput TValue="string" @bind-Value="_shippingCountry" Placeholder="Country" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <header class="citus-panel__header">
+                    <h2 class="citus-panel__title">Lines</h2>
+                    <select class="citus-form-field__input" style="width: auto" value="@_taxMode" @onchange="OnTaxModeChanged">
+                        <option value="exclusive">Tax exclusive</option>
+                        <option value="inclusive">Tax inclusive</option>
+                    </select>
+                </header>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th style="width: 14rem">Product / Service</th>
+                            <th>Description</th>
+                            <th style="width: 6rem" class="text-right">Qty</th>
+                            <th style="width: 8rem" class="text-right">Rate</th>
+                            <th style="width: 9rem">Tax</th>
+                            <th style="width: 8rem" class="text-right">Amount</th>
+                            <th style="width: 3rem"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < _lines.Count; i++)
+                        {
+                            var index = i;
+                            var line = _lines[index];
+                            <tr>
+                                <td>@(index + 1)</td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_items"
+                                                    Value="@line.ItemId"
+                                                    Change="@(v => OnLineItemChanged(index, v as Guid?))"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    AllowFiltering="true"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <CitusInput TValue="string"
+                                                Value="@line.Description"
+                                                ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.Quantity"
+                                                   Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
+                                                   Format="0.##" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.UnitPrice"
+                                                   Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
+                                                   Format="0.0000" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_taxCodes"
+                                                    Value="@line.TaxCodeId"
+                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                                    TextProperty="Code"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                                <td>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="flex gap-2 mt-3">
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Notes</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Message displayed on sales order</label>
+                        <CitusInput TValue="string" @bind-Value="_memoToCustomer" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Internal note</label>
+                        <CitusInput TValue="string" @bind-Value="_internalNote" />
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    @if (!string.IsNullOrWhiteSpace(_soNumber))
+                    {
+                        <div>
+                            <label class="text-sm font-medium block mb-1">Sales order no.</label>
+                            <div class="citus-inline-code">@_soNumber</div>
+                        </div>
+                    }
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Document date</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_documentDate" Style="width: 100%;" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Discount + shipping</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Discount</label>
+                        <div class="flex gap-2">
+                            <select class="citus-form-field__input" style="width: 8rem"
+                                    value="@(_discountKind ?? "")"
+                                    @onchange="OnDiscountKindChanged">
+                                <option value="">None</option>
+                                <option value="percent">Percent</option>
+                                <option value="amount">Amount</option>
+                            </select>
+                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Style="flex: 1;" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Shipping amount</label>
+                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Style="width: 100%;" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal)</td></tr>
+                        <tr><th>Discount</th><td class="text-right">−@FormatAmount(DiscountAmount)</td></tr>
+                        <tr><th>Shipping</th><td class="text-right">@FormatAmount(_shippingAmount ?? 0m)</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <div class="flex flex-wrap gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
+                    @(_isSaving ? "Saving…" : "Save")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid? SalesOrderId { get; set; }
+
+    private Guid? _salesOrderId;
+    private string? _soNumber;
+    private string? _sourceQuoteNumber;
+    private Guid? _sourceQuoteId;
+
+    private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
+    private IReadOnlyList<ItemSummary> _items = Array.Empty<ItemSummary>();
+    private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+
+    private Guid? _customerId;
+    private string _billingAddressLine = string.Empty;
+    private string _billingCity = string.Empty;
+    private string _billingProvinceState = string.Empty;
+    private string _billingPostalCode = string.Empty;
+    private string _billingCountry = string.Empty;
+    private string _shippingAddressLine = string.Empty;
+    private string _shippingCity = string.Empty;
+    private string _shippingProvinceState = string.Empty;
+    private string _shippingPostalCode = string.Empty;
+    private string _shippingCountry = string.Empty;
+    private DateTime? _documentDate = DateTime.Today;
+    private string _currency = string.Empty;
+    private decimal? _fxRate;
+    private string _taxMode = "exclusive";
+    private string? _discountKind;
+    private decimal? _discountValue;
+    private decimal? _shippingAmount;
+    private string _memoToCustomer = string.Empty;
+    private string _internalNote = string.Empty;
+
+    private List<LineDraft> _lines = new() { new LineDraft() };
+
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _validation;
+    private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "New sales order", Subtitle = "Open commitment to deliver." };
+
+    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
+    private decimal DiscountAmount =>
+        _discountKind == "percent" && _discountValue is { } pct ? Math.Round(Subtotal * pct / 100m, 4)
+        : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
+        : 0m;
+    private decimal Total => Math.Round(Subtotal - DiscountAmount + (_shippingAmount ?? 0m), 4);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (SalesOrderId.HasValue && _salesOrderId != SalesOrderId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var customersTask = CustomerClient.ListAsync();
+            var itemsTask = ItemClient.ListAsync();
+            var taxTask = TaxCodeClient.ListAsync(appliesTo: "sales");
+            await Task.WhenAll(customersTask, itemsTask, taxTask);
+            _customers = customersTask.Result;
+            _items = itemsTask.Result;
+            _taxCodes = taxTask.Result;
+
+            _salesOrderId = SalesOrderId;
+            if (SalesOrderId is { } id)
+            {
+                var so = await SalesOrderClient.GetByIdAsync(id);
+                if (so is null) { _validation = "Sales order not found."; return; }
+                ApplyExisting(so);
+            }
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyExisting(SalesOrderRecordDto so)
+    {
+        _soNumber = so.SalesOrderNumber;
+        _sourceQuoteNumber = so.SourceQuoteNumber;
+        _sourceQuoteId = so.SourceQuoteId;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Sales & Get Paid",
+            Title = $"Edit {so.SalesOrderNumber}",
+            Subtitle = $"Status: {so.Status}"
+        };
+        _customerId = so.CustomerId;
+        _billingAddressLine = so.BillingAddressLine ?? string.Empty;
+        _billingCity = so.BillingCity ?? string.Empty;
+        _billingProvinceState = so.BillingProvinceState ?? string.Empty;
+        _billingPostalCode = so.BillingPostalCode ?? string.Empty;
+        _billingCountry = so.BillingCountry ?? string.Empty;
+        _shippingAddressLine = so.ShippingAddressLine ?? string.Empty;
+        _shippingCity = so.ShippingCity ?? string.Empty;
+        _shippingProvinceState = so.ShippingProvinceState ?? string.Empty;
+        _shippingPostalCode = so.ShippingPostalCode ?? string.Empty;
+        _shippingCountry = so.ShippingCountry ?? string.Empty;
+        _documentDate = so.DocumentDate.ToDateTime(TimeOnly.MinValue);
+        _currency = so.TransactionCurrencyCode;
+        _fxRate = so.FxRate;
+        _taxMode = so.TaxMode;
+        _discountKind = so.DiscountKind;
+        _discountValue = so.DiscountValue;
+        _shippingAmount = so.ShippingAmount;
+        _memoToCustomer = so.MemoToCustomer ?? string.Empty;
+        _internalNote = so.InternalNote ?? string.Empty;
+        _lines = so.Lines.Select(l => new LineDraft
+        {
+            ItemId = l.ItemId,
+            Description = l.Description,
+            Quantity = l.Quantity,
+            UnitPrice = l.UnitPrice,
+            TaxCodeId = l.TaxCodeId,
+            AccountCode = l.AccountCode
+        }).ToList();
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void OnCustomerChanged()
+    {
+        if (_customerId is null) return;
+        var customer = _customers.FirstOrDefault(c => c.Id == _customerId.Value);
+        if (customer is null) return;
+        if (string.IsNullOrWhiteSpace(_billingAddressLine)) _billingAddressLine = customer.AddressLine ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingCity)) _billingCity = customer.City ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingProvinceState)) _billingProvinceState = customer.ProvinceState ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingPostalCode)) _billingPostalCode = customer.PostalCode ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingCountry)) _billingCountry = customer.Country ?? string.Empty;
+        _currency = customer.DefaultCurrencyCode;
+    }
+
+    private void OnLineItemChanged(int index, Guid? itemId)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        var line = _lines[index];
+        line.ItemId = itemId;
+        if (itemId is null) return;
+        var item = _items.FirstOrDefault(i => i.Id == itemId.Value);
+        if (item is null) return;
+        if (string.IsNullOrWhiteSpace(line.Description)) line.Description = item.Name;
+        if (line.UnitPrice == 0m) line.UnitPrice = item.DefaultSalesPrice ?? 0m;
+        if (line.TaxCodeId is null) line.TaxCodeId = item.DefaultSalesTaxCodeId;
+    }
+
+    private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        var current = _lines[index];
+        var updated = mutate(current);
+        current.ItemId = updated.ItemId;
+        current.Description = updated.Description;
+        current.Quantity = updated.Quantity;
+        current.UnitPrice = updated.UnitPrice;
+        current.TaxCodeId = updated.TaxCodeId;
+        current.AccountCode = updated.AccountCode;
+    }
+
+    private void AddLine() => _lines.Add(new LineDraft());
+
+    private void RemoveLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.RemoveAt(index);
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
+
+    private void OnTaxModeChanged(ChangeEventArgs args) =>
+        _taxMode = args.Value?.ToString() ?? "exclusive";
+
+    private void OnDiscountKindChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _discountKind = string.IsNullOrWhiteSpace(raw) ? null : raw;
+    }
+
+    private async Task SaveAsync()
+    {
+        _validation = null;
+        if (_customerId is null) { _validation = "Please pick a customer."; return; }
+        if (_lines.All(l => l.Quantity == 0 && l.UnitPrice == 0 && string.IsNullOrWhiteSpace(l.Description)))
+        {
+            _validation = "Add at least one line with quantity / rate.";
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var payload = new SalesOrderUpsertPayload(
+                CustomerId: _customerId.Value,
+                DocumentDate: DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
+                TransactionCurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
+                FxRate: _fxRate,
+                BillingAddressLine: NullIfEmpty(_billingAddressLine),
+                BillingCity: NullIfEmpty(_billingCity),
+                BillingProvinceState: NullIfEmpty(_billingProvinceState),
+                BillingPostalCode: NullIfEmpty(_billingPostalCode),
+                BillingCountry: NullIfEmpty(_billingCountry),
+                ShippingAddressLine: NullIfEmpty(_shippingAddressLine),
+                ShippingCity: NullIfEmpty(_shippingCity),
+                ShippingProvinceState: NullIfEmpty(_shippingProvinceState),
+                ShippingPostalCode: NullIfEmpty(_shippingPostalCode),
+                ShippingCountry: NullIfEmpty(_shippingCountry),
+                ShipVia: null,
+                ShippingDate: null,
+                TrackingNo: null,
+                TaxMode: _taxMode,
+                DiscountKind: _discountKind,
+                DiscountValue: _discountValue,
+                ShippingAmount: _shippingAmount,
+                ShippingTaxCodeId: null,
+                MemoToCustomer: NullIfEmpty(_memoToCustomer),
+                InternalNote: NullIfEmpty(_internalNote),
+                SourceQuoteId: _sourceQuoteId,
+                Lines: _lines
+                    .Where(l => l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description) || l.ItemId is not null)
+                    .Select((l, i) => new SalesOrderLinePayload(
+                        Sequence: i + 1,
+                        ServiceDate: null,
+                        ItemId: l.ItemId,
+                        Description: l.Description ?? string.Empty,
+                        Quantity: l.Quantity,
+                        UnitPrice: l.UnitPrice,
+                        TaxCodeId: l.TaxCodeId,
+                        AccountCode: l.AccountCode))
+                    .ToArray());
+
+            SalesOrderMutationOutcome outcome = _salesOrderId is null
+                ? await SalesOrderClient.CreateAsync(payload)
+                : await SalesOrderClient.UpdateAsync(_salesOrderId.Value, payload);
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not save the sales order.";
+                return;
+            }
+            await Message.SuccessAsync($"Sales Order {outcome.Saved.SalesOrderNumber} saved.");
+            Navigation.NavigateTo($"sales-orders/{outcome.Saved.Id:D}");
+        }
+        finally { _isSaving = false; }
+    }
+
+    private void Cancel() => Navigation.NavigateTo(_salesOrderId is null ? "sales-orders" : $"sales-orders/{_salesOrderId:D}");
+
+    private static string FormatAmount(decimal value) =>
+        value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record LineDraft
+    {
+        public Guid? ItemId { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public Guid? TaxCodeId { get; set; }
+        public string? AccountCode { get; set; }
+    }
+}

@@ -28,13 +28,51 @@ public sealed class VendorClient(HttpClient httpClient, ILogger<VendorClient> lo
         }
     }
 
-    public async Task<VendorMutationOutcome> CreateAsync(
-        VendorUpsertPayload payload,
+    public async Task<VendorSummary?> GetByIdAsync(
+        Guid vendorId,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            using var response = await httpClient.PostAsJsonAsync("accounting/vendors", payload, cancellationToken);
+            return await httpClient.GetFromJsonAsync<VendorSummary>(
+                $"accounting/vendors/{vendorId:D}",
+                cancellationToken);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read vendor {VendorId}.", vendorId);
+            return null;
+        }
+    }
+
+    public Task<VendorMutationOutcome> CreateAsync(
+        VendorUpsertPayload payload,
+        CancellationToken cancellationToken = default)
+        => SendUpsertAsync(HttpMethod.Post, "accounting/vendors", payload, cancellationToken);
+
+    public Task<VendorMutationOutcome> UpdateAsync(
+        Guid id,
+        VendorUpsertPayload payload,
+        CancellationToken cancellationToken = default)
+        => SendUpsertAsync(HttpMethod.Put, $"accounting/vendors/{id:D}", payload, cancellationToken);
+
+    private async Task<VendorMutationOutcome> SendUpsertAsync(
+        HttpMethod method,
+        string path,
+        VendorUpsertPayload payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(method, path)
+            {
+                Content = JsonContent.Create(payload),
+            };
+            using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return new VendorMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
@@ -44,7 +82,7 @@ public sealed class VendorClient(HttpClient httpClient, ILogger<VendorClient> lo
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Unable to create vendor.");
+            logger.LogWarning(ex, "Unable to upsert vendor.");
             return new VendorMutationOutcome(false, null, "Unable to reach the server. Please try again.");
         }
     }
@@ -85,6 +123,7 @@ public sealed record VendorSummary(
     string? Country,
     string? TaxId,
     string? Notes,
+    Guid? PaymentTermId,
     bool IsActive,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -100,7 +139,8 @@ public sealed record VendorUpsertPayload(
     string? PostalCode,
     string? Country,
     string? TaxId,
-    string? Notes);
+    string? Notes,
+    Guid? PaymentTermId);
 
 public sealed record VendorMutationOutcome(
     bool Succeeded,

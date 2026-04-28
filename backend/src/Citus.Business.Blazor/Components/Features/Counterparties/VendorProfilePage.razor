@@ -1,0 +1,273 @@
+@page "/vendors/{VendorId:guid}"
+
+@inject BusinessShellState ShellState
+@inject BusinessWriteFlowClient WriteFlow
+@inject VendorClient VendorClient
+@inject PaymentTermClient PaymentTermClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+@*
+    Vendor profile — read-only summary plus an Edit toggle that reuses
+    CounterpartyForm. Save routes through BusinessWriteFlowClient, which
+    detects CounterpartyDraft.VendorId and PUTs the existing record.
+*@
+
+<PageTitle>@($"{_pageTitle} | Citus Business")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="vendors">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to vendors</span>
+        </a>
+        @if (_vendor is not null && !_isEditing)
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         LeadingIcon="IconName.Pencil"
+                         OnClick="StartEditing">Edit</CitusButton>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else if (_vendor is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                Message="Vendor not found in this company."
+                ShowIcon="true" />
+}
+else if (_isEditing)
+{
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+    <CounterpartyForm Draft="_draft"
+                      DraftChanged="@(v => _draft = v)"
+                      EntityNumberPlaceholder="@_vendor.EntityNumber"
+                      PaymentTerms="_paymentTerms" />
+    <div class="flex gap-2 mt-4">
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
+            @(_isSubmitting ? "Saving..." : "Save changes")
+        </CitusButton>
+        <CitusButton OnClick="CancelEditing">Cancel</CitusButton>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <CitusStatCard
+            Label="Vendor ID"
+            Value="@_vendor.EntityNumber"
+            Description="@_vendor.DisplayName"
+            Icon="IconName.BuildingStore"
+            Tone="StatTone.Primary" />
+        <CitusStatCard
+            Label="Currency"
+            Value="@_vendor.DefaultCurrencyCode"
+            Description="Default transaction currency for new bills."
+            Icon="IconName.Coin"
+            Tone="StatTone.Info" />
+        <CitusStatCard
+            Label="Payment term"
+            Value="@_paymentTermLabel"
+            Description="@(_paymentTermDescription)"
+            Icon="IconName.Calendar"
+            Tone="@(_vendor.PaymentTermId is null ? StatTone.Neutral : StatTone.Success)" />
+    </div>
+
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Identity</h2>
+        <table class="citus-keyvalue">
+            <tbody>
+                <tr><th>Display name</th><td>@_vendor.DisplayName</td></tr>
+                <tr><th>Vendor ID</th><td><span class="citus-inline-code">@_vendor.EntityNumber</span></td></tr>
+                <tr><th>Email</th><td>@(string.IsNullOrEmpty(_vendor.Email) ? "—" : _vendor.Email)</td></tr>
+                <tr><th>Phone</th><td>@(string.IsNullOrEmpty(_vendor.Phone) ? "—" : _vendor.Phone)</td></tr>
+                <tr><th>Tax ID</th><td>@(string.IsNullOrEmpty(_vendor.TaxId) ? "—" : _vendor.TaxId)</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="citus-panel mt-6">
+        <h2 class="citus-panel__title">Address</h2>
+        <table class="citus-keyvalue">
+            <tbody>
+                <tr><th>Address line</th><td>@(string.IsNullOrEmpty(_vendor.AddressLine) ? "—" : _vendor.AddressLine)</td></tr>
+                <tr><th>City</th><td>@(string.IsNullOrEmpty(_vendor.City) ? "—" : _vendor.City)</td></tr>
+                <tr><th>Province / State</th><td>@(string.IsNullOrEmpty(_vendor.ProvinceState) ? "—" : _vendor.ProvinceState)</td></tr>
+                <tr><th>Postal code</th><td>@(string.IsNullOrEmpty(_vendor.PostalCode) ? "—" : _vendor.PostalCode)</td></tr>
+                <tr><th>Country</th><td>@(string.IsNullOrEmpty(_vendor.Country) ? "—" : _vendor.Country)</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="citus-panel mt-6">
+        <h2 class="citus-panel__title">Other</h2>
+        <table class="citus-keyvalue">
+            <tbody>
+                <tr><th>Notes</th><td>@(string.IsNullOrEmpty(_vendor.Notes) ? "—" : _vendor.Notes)</td></tr>
+                <tr><th>Status</th><td>
+                    <CitusBadge Color="@(_vendor.IsActive ? "green" : "default")">
+                        @(_vendor.IsActive ? "Active" : "Inactive")
+                    </CitusBadge>
+                </td></tr>
+                <tr><th>Created</th><td>@_vendor.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
+                <tr><th>Updated</th><td>@_vendor.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid VendorId { get; set; }
+
+    private VendorSummary? _vendor;
+    private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+    private CounterpartyDraft _draft = new();
+    private bool _isLoading = true;
+    private bool _isEditing;
+    private bool _isSubmitting;
+    private string? _validation;
+
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "Vendor",
+        Subtitle = "Vendor master record."
+    };
+
+    private string _pageTitle = "Vendor";
+    private string _paymentTermLabel = "—";
+    private string _paymentTermDescription = "No preferred term set.";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_vendor is not null && _vendor.Id != VendorId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _isEditing = false;
+        _validation = null;
+        try
+        {
+            var vendorTask = VendorClient.GetByIdAsync(VendorId);
+            var termsTask = PaymentTermClient.ListAsync(includeInactive: true);
+            await Task.WhenAll(vendorTask, termsTask);
+            _vendor = vendorTask.Result;
+            _paymentTerms = termsTask.Result;
+            ApplyHeader();
+            ApplyPaymentTermLabels();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_vendor is null)
+        {
+            _pageTitle = "Vendor";
+            _header = new PageHeaderModel
+            {
+                Eyebrow = "Expense & Bills",
+                Title = "Vendor",
+                Subtitle = "Vendor master record."
+            };
+            return;
+        }
+        _pageTitle = _vendor.DisplayName;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Expense & Bills",
+            Title = _vendor.DisplayName,
+            Subtitle = $"Vendor ID {_vendor.EntityNumber}"
+        };
+    }
+
+    private void ApplyPaymentTermLabels()
+    {
+        if (_vendor?.PaymentTermId is null)
+        {
+            _paymentTermLabel = "—";
+            _paymentTermDescription = "No preferred term set.";
+            return;
+        }
+
+        var term = _paymentTerms.FirstOrDefault(t => t.Id == _vendor.PaymentTermId.Value);
+        if (term is null)
+        {
+            _paymentTermLabel = "Unknown";
+            _paymentTermDescription = "Selected term no longer exists in this company.";
+            return;
+        }
+        _paymentTermLabel = term.Name;
+        _paymentTermDescription = $"Net {term.NetDays} days · code {term.Code}";
+    }
+
+    private void StartEditing()
+    {
+        if (_vendor is null) return;
+        _draft = new CounterpartyDraft
+        {
+            VendorId = _vendor.Id,
+            DisplayName = _vendor.DisplayName,
+            EntityNumber = _vendor.EntityNumber,
+            Email = _vendor.Email ?? string.Empty,
+            Phone = _vendor.Phone ?? string.Empty,
+            AddressLine = _vendor.AddressLine ?? string.Empty,
+            City = _vendor.City ?? string.Empty,
+            ProvinceState = _vendor.ProvinceState ?? string.Empty,
+            PostalCode = _vendor.PostalCode ?? string.Empty,
+            Country = _vendor.Country ?? string.Empty,
+            TaxId = _vendor.TaxId ?? string.Empty,
+            PreferredCurrencyCode = _vendor.DefaultCurrencyCode,
+            Notes = _vendor.Notes ?? string.Empty,
+            PaymentTermId = _vendor.PaymentTermId
+        };
+        _isEditing = true;
+        _validation = null;
+    }
+
+    private void CancelEditing()
+    {
+        _isEditing = false;
+        _validation = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _validation = null;
+        if (string.IsNullOrWhiteSpace(_draft.DisplayName)) { _validation = "Display name is required."; return; }
+
+        _isSubmitting = true;
+        try
+        {
+            var result = await WriteFlow.SaveVendorAsync(_draft);
+            if (result.Succeeded)
+            {
+                await Message.SuccessAsync("Vendor updated.");
+                await LoadAsync();
+            }
+            else
+            {
+                _validation = result.Message;
+                await Message.InfoAsync(result.Message);
+            }
+        }
+        finally { _isSubmitting = false; }
+    }
+}

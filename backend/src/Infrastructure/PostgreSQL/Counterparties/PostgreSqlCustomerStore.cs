@@ -7,8 +7,8 @@ namespace Infrastructure.PostgreSQL.Counterparties;
 /// PostgreSQL backing for <see cref="ICustomerStore"/>. The base
 /// <c>customers</c> table comes from the migration draft (line 673);
 /// EnsureSchemaAsync layers on the address-decomposition / tax_id /
-/// notes columns this UI needs without disturbing rows already in
-/// production. Idempotent so a redeploy is safe.
+/// notes / payment_term columns this UI needs without disturbing rows
+/// already in production. Idempotent so a redeploy is safe.
 /// </summary>
 public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connections) : ICustomerStore
 {
@@ -31,13 +31,14 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
                 created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_line   TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS city           TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS province_state TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS postal_code    TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS country        TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_id         TEXT NULL;
-            ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes          TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_line     TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS city             TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS province_state   TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS postal_code      TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS country          TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_id           TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes            TEXT NULL;
+            ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_term_id  UUID NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_entity_number ON customers (entity_number);
             CREATE INDEX IF NOT EXISTS idx_customers_company_active ON customers (company_id, is_active);
             CREATE INDEX IF NOT EXISTS idx_customers_company_name ON customers (company_id, display_name);
@@ -66,6 +67,21 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         return rows;
     }
 
+    public async Task<CustomerRecord?> GetByIdAsync(
+        Guid companyId,
+        Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = SelectColumns + " WHERE company_id = @company_id AND id = @id LIMIT 1;";
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("id", customerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
+    }
+
     public async Task<CustomerRecord> CreateAsync(
         Guid companyId,
         CustomerUpsertRequest request,
@@ -77,16 +93,16 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
             INSERT INTO customers (
                 company_id, entity_number, display_name, default_currency_code,
                 email, phone, address_line, city, province_state, postal_code, country,
-                tax_id, notes, is_active
+                tax_id, notes, payment_term_id, is_active
             )
             VALUES (
                 @company_id, @entity_number, @display_name, @default_currency_code,
                 @email, @phone, @address_line, @city, @province_state, @postal_code, @country,
-                @tax_id, @notes, TRUE
+                @tax_id, @notes, @payment_term_id, TRUE
             )
             RETURNING id, company_id, entity_number, display_name, default_currency_code,
                       email, phone, address_line, city, province_state, postal_code, country,
-                      tax_id, notes, is_active, created_at, updated_at;
+                      tax_id, notes, payment_term_id, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("entity_number", GenerateEntityNumber());
@@ -101,6 +117,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         command.Parameters.AddWithValue("country", (object?)NormalizeOptional(request.Country) ?? DBNull.Value);
         command.Parameters.AddWithValue("tax_id", (object?)NormalizeOptional(request.TaxId) ?? DBNull.Value);
         command.Parameters.AddWithValue("notes", (object?)NormalizeOptional(request.Notes) ?? DBNull.Value);
+        command.Parameters.AddWithValue("payment_term_id", (object?)request.PaymentTermId ?? DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -110,15 +127,58 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         return Map(reader);
     }
 
+    public async Task<CustomerRecord?> UpdateAsync(
+        Guid companyId,
+        Guid customerId,
+        CustomerUpsertRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE customers
+               SET display_name          = @display_name,
+                   default_currency_code = @default_currency_code,
+                   email                 = @email,
+                   phone                 = @phone,
+                   address_line          = @address_line,
+                   city                  = @city,
+                   province_state        = @province_state,
+                   postal_code           = @postal_code,
+                   country               = @country,
+                   tax_id                = @tax_id,
+                   notes                 = @notes,
+                   payment_term_id       = @payment_term_id,
+                   updated_at            = NOW()
+             WHERE company_id = @company_id AND id = @id
+            RETURNING id, company_id, entity_number, display_name, default_currency_code,
+                      email, phone, address_line, city, province_state, postal_code, country,
+                      tax_id, notes, payment_term_id, is_active, created_at, updated_at;
+            """;
+        command.Parameters.AddWithValue("id", customerId);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("display_name", request.DisplayName.Trim());
+        command.Parameters.AddWithValue("default_currency_code", request.DefaultCurrencyCode.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("email", (object?)NormalizeOptional(request.Email) ?? DBNull.Value);
+        command.Parameters.AddWithValue("phone", (object?)NormalizeOptional(request.Phone) ?? DBNull.Value);
+        command.Parameters.AddWithValue("address_line", (object?)NormalizeOptional(request.AddressLine) ?? DBNull.Value);
+        command.Parameters.AddWithValue("city", (object?)NormalizeOptional(request.City) ?? DBNull.Value);
+        command.Parameters.AddWithValue("province_state", (object?)NormalizeOptional(request.ProvinceState) ?? DBNull.Value);
+        command.Parameters.AddWithValue("postal_code", (object?)NormalizeOptional(request.PostalCode) ?? DBNull.Value);
+        command.Parameters.AddWithValue("country", (object?)NormalizeOptional(request.Country) ?? DBNull.Value);
+        command.Parameters.AddWithValue("tax_id", (object?)NormalizeOptional(request.TaxId) ?? DBNull.Value);
+        command.Parameters.AddWithValue("notes", (object?)NormalizeOptional(request.Notes) ?? DBNull.Value);
+        command.Parameters.AddWithValue("payment_term_id", (object?)request.PaymentTermId ?? DBNull.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
+    }
+
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string GenerateEntityNumber()
     {
-        // Same shape PostgreSqlAccountStore uses — ENYYYYxxxxxxxx, where
-        // the trailing 8 digits are random. The unique index on
-        // entity_number catches the rare collision; callers retry by
-        // re-submitting the form.
         var year = DateTime.UtcNow.Year;
         var seed = Random.Shared.Next(0, 100_000_000);
         return $"EN{year:0000}{seed:00000000}";
@@ -127,7 +187,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     private const string SelectColumns = """
         SELECT id, company_id, entity_number, display_name, default_currency_code,
                email, phone, address_line, city, province_state, postal_code, country,
-               tax_id, notes, is_active, created_at, updated_at
+               tax_id, notes, payment_term_id, is_active, created_at, updated_at
           FROM customers
         """;
 
@@ -146,6 +206,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         ReadNullable(reader, "country"),
         ReadNullable(reader, "tax_id"),
         ReadNullable(reader, "notes"),
+        ReadNullableGuid(reader, "payment_term_id"),
         reader.GetBoolean(reader.GetOrdinal("is_active")),
         reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
         reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")));
@@ -154,5 +215,11 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     {
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static Guid? ReadNullableGuid(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetGuid(ordinal);
     }
 }

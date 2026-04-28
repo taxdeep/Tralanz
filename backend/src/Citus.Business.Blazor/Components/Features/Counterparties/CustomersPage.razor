@@ -3,6 +3,7 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
+@inject PaymentTermClient PaymentTermClient
 @inject CitusToastService Message
 
 <PageTitle>Customers | Citus Business</PageTitle>
@@ -33,7 +34,8 @@
     }
     <CounterpartyForm Draft="_draft"
                       DraftChanged="@(v => _draft = v)"
-                      EntityNumberPlaceholder="CUS-000001" />
+                      EntityNumberPlaceholder="CUS-000001"
+                      PaymentTerms="_paymentTerms" />
     <div class="flex gap-2 mt-4">
         <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
             @(_isSubmitting ? "Saving..." : "Save customer")
@@ -63,8 +65,12 @@ else
                     @foreach (var c in _customers)
                     {
                         <tr>
-                            <td>@c.DisplayName</td>
-                            <td><span class="citus-inline-code">@c.EntityNumber</span></td>
+                            <td><a class="citus-link" href="@($"customers/{c.Id:D}")">@c.DisplayName</a></td>
+                            <td>
+                                <a class="citus-link" href="@($"customers/{c.Id:D}")">
+                                    <span class="citus-inline-code">@c.EntityNumber</span>
+                                </a>
+                            </td>
                             <td>@c.Email</td>
                             <td>@c.Country</td>
                             <td>@c.DefaultCurrencyCode</td>
@@ -85,6 +91,7 @@ else
     };
 
     private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
+    private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
     private CounterpartyDraft _draft = new();
     private bool _isCreating;
     private bool _isSubmitting;
@@ -102,7 +109,11 @@ else
         _isLoading = true;
         try
         {
-            _customers = await CustomerClient.ListAsync();
+            var customersTask = CustomerClient.ListAsync();
+            var termsTask = PaymentTermClient.ListAsync(includeInactive: false);
+            await Task.WhenAll(customersTask, termsTask);
+            _customers = customersTask.Result;
+            _paymentTerms = termsTask.Result;
         }
         finally
         {

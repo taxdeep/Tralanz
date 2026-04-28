@@ -1,0 +1,320 @@
+@page "/settings/payment-terms"
+
+@inject BusinessShellState ShellState
+@inject PaymentTermClient PaymentTermClient
+@inject CitusToastService Message
+
+@*
+    Payment Terms — per-company catalog. Drives the per-vendor Payment
+    Term picker today; bill-due-date auto-calc consumes net_days in a
+    later batch. Mirrors the Tax Rates page shape (list / create / edit /
+    activate-toggle) so the two settings surfaces stay consistent.
+*@
+
+<PageTitle>Payment Terms | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton LeadingIcon="IconName.Plus"
+                     Variant="CitusButtonVariant.Primary"
+                     Size="CitusButtonSize.Small"
+                     Disabled="@_isLoading"
+                     OnClick="StartCreating">
+            New payment term
+        </CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Payment terms</h2>
+        <div class="flex items-center gap-3">
+            <label class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_includeInactive"
+                       @onchange="@OnToggleInactive" />
+                Show inactive
+            </label>
+            <CitusBadge Color="@(ShellState.IsCompanyReadOnly ? "orange" : "blue")">
+                @ShellState.ActiveCompany.CompanyCode
+            </CitusBadge>
+        </div>
+    </header>
+
+    @if (_isLoading)
+    {
+        <CitusLoadingBar />
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="citus-empty">
+            <p class="text-fg-muted text-sm">
+                No payment terms yet. Click <strong>New payment term</strong> to create your first one
+                (e.g. <em>Net 30</em>, <em>Due on receipt</em>).
+            </p>
+        </div>
+    }
+    else
+    {
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th style="width: 10rem">Code</th>
+                    <th>Name</th>
+                    <th class="text-right" style="width: 8rem">Net days</th>
+                    <th style="width: 6rem">Status</th>
+                    <th style="width: 9rem"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr class="@(row.IsActive ? null : "citus-data-table__row--muted")">
+                        <td><span class="citus-inline-code">@row.Code</span></td>
+                        <td>@row.Name</td>
+                        <td class="text-right">@row.NetDays</td>
+                        <td>
+                            <CitusBadge Color="@(row.IsActive ? "green" : "default")">
+                                @(row.IsActive ? "Active" : "Inactive")
+                            </CitusBadge>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-2">
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             Disabled="@_isMutating"
+                                             OnClick="@(() => StartEditing(row))">
+                                    Edit
+                                </CitusButton>
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             Disabled="@_isMutating"
+                                             OnClick="@(() => ToggleActiveAsync(row))">
+                                    @(row.IsActive ? "Deactivate" : "Activate")
+                                </CitusButton>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@if (_isFormOpen)
+{
+    <section class="citus-panel mt-6">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">@(_editingId is null ? "New payment term" : "Edit payment term")</h2>
+        </header>
+
+        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
+              @onsubmit="OnSaveAsync"
+              @onsubmit:preventDefault>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Code</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formCode"
+                       @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="32"
+                       placeholder="NET30, DOR, COD, …"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Name</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formName"
+                       @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="120"
+                       placeholder="Net 30 days"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Net days</span>
+                <input type="number"
+                       class="citus-form-field__input"
+                       step="1"
+                       min="0"
+                       max="3650"
+                       value="@_formNetDays"
+                       @oninput="@(e => _formNetDays = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isMutating" />
+            </label>
+
+            <label class="citus-form-field md:col-span-2">
+                <span class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox"
+                           checked="@_formIsActive"
+                           @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
+                           disabled="@_isMutating" />
+                    Active (available for selection on new vendors)
+                </span>
+            </label>
+
+            <div class="md:col-span-2 flex items-center gap-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             HtmlType="@("submit")"
+                             Disabled="@_isMutating"
+                             OnClick="OnSaveAsync">
+                    @(_isMutating ? "Saving…" : "Save")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             Disabled="@_isMutating"
+                             OnClick="CancelForm">
+                    Cancel
+                </CitusButton>
+            </div>
+        </form>
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Payment terms",
+        Subtitle = "Per-company catalog of payment terms. Used by vendor master data; bill due dates derive from net days."
+    };
+
+    private bool _isLoading = true;
+    private bool _isMutating;
+    private bool _isFormOpen;
+    private bool _includeInactive;
+    private Guid? _editingId;
+    private string _formCode = string.Empty;
+    private string _formName = string.Empty;
+    private string _formNetDays = "30";
+    private bool _formIsActive = true;
+
+    private List<PaymentTermSummary> _rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await PaymentTermClient.ListAsync(includeInactive: _includeInactive);
+            _rows = rows.OrderByDescending(r => r.IsActive).ThenBy(r => r.NetDays).ThenBy(r => r.Code).ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnToggleInactive(ChangeEventArgs args)
+    {
+        _includeInactive = (bool)(args.Value ?? false);
+        await LoadAsync();
+    }
+
+    private void StartCreating()
+    {
+        _editingId = null;
+        _formCode = string.Empty;
+        _formName = string.Empty;
+        _formNetDays = "30";
+        _formIsActive = true;
+        _isFormOpen = true;
+    }
+
+    private void StartEditing(PaymentTermSummary row)
+    {
+        _editingId = row.Id;
+        _formCode = row.Code;
+        _formName = row.Name;
+        _formNetDays = row.NetDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _formIsActive = row.IsActive;
+        _isFormOpen = true;
+    }
+
+    private void CancelForm()
+    {
+        _isFormOpen = false;
+        _editingId = null;
+    }
+
+    private async Task OnSaveAsync()
+    {
+        if (_isMutating) return;
+
+        if (string.IsNullOrWhiteSpace(_formCode))
+        {
+            await Message.WarningAsync("Code is required.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_formName))
+        {
+            await Message.WarningAsync("Name is required.");
+            return;
+        }
+        if (!int.TryParse(_formNetDays, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var netDays) ||
+            netDays < 0 || netDays > 3650)
+        {
+            await Message.WarningAsync("Net days must be between 0 and 3650.");
+            return;
+        }
+
+        _isMutating = true;
+        try
+        {
+            var payload = new PaymentTermUpsertPayload(
+                Code: _formCode.Trim(),
+                Name: _formName.Trim(),
+                NetDays: netDays,
+                IsActive: _formIsActive);
+
+            PaymentTermMutationOutcome outcome = _editingId is null
+                ? await PaymentTermClient.CreateAsync(payload)
+                : await PaymentTermClient.UpdateAsync(_editingId.Value, payload);
+
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(string.IsNullOrWhiteSpace(outcome.ErrorMessage)
+                    ? "Unable to save payment term."
+                    : outcome.ErrorMessage);
+                return;
+            }
+
+            var wasEditing = _editingId is not null;
+            _isFormOpen = false;
+            _editingId = null;
+            await LoadAsync();
+            await Message.SuccessAsync(wasEditing ? "Payment term updated." : "Payment term created.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+
+    private async Task ToggleActiveAsync(PaymentTermSummary row)
+    {
+        if (_isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await PaymentTermClient.SetActiveAsync(row.Id, !row.IsActive);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Unable to update payment term status.");
+                return;
+            }
+            await LoadAsync();
+            await Message.SuccessAsync(row.IsActive ? "Payment term deactivated." : "Payment term activated.");
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
+}

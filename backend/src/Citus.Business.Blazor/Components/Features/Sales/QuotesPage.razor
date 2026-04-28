@@ -1,0 +1,153 @@
+@page "/quotes"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject QuoteClient QuoteClient
+@inject NavigationManager Navigation
+
+<PageTitle>Quotes | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="quotes/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New quote</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Quotes</h2>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox"
+                   checked="@_showDrafts"
+                   @onchange="OnToggleDrafts" />
+            Show drafts
+        </label>
+    </header>
+
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
+                        EmptyIcon="IconName.FileText"
+                        EmptyTitle="No quotes yet"
+                        EmptyMessage="Click New quote to draft your first one. Drafts stay private until you Send them.">
+        <RadzenDataGrid TItem="QuoteRow"
+                        Data="@_rows"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        FilterMode="FilterMode.Simple"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.QuoteNumber)" Title="Quote ID" Width="200px">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"quotes/{row.Id:D}")">
+                            <span class="citus-inline-code">@row.QuoteNumber</span>
+                        </a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.CustomerName)" Title="Customer">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"quotes/{row.Id:D}")">@row.CustomerName</a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.DocumentDate)" Title="Date" Width="120px">
+                    <Template Context="row">@row.DocumentDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.ExpirationDate)" Title="Expires" Width="120px">
+                    <Template Context="row">@(row.ExpirationDate?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.Status)" Title="Status" Width="120px">
+                    <Template Context="row">
+                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="QuoteRow" Property="@nameof(QuoteRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </CitusAsyncBoundary>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Sales & Get Paid",
+        Title = "Quotes",
+        Subtitle = "Pre-sales estimates. Convert accepted quotes into Sales Orders."
+    };
+
+    private List<QuoteRow> _rows = new();
+    private bool _isLoading = true;
+    private bool _showDrafts = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await QuoteClient.ListAsync(includeDrafts: _showDrafts);
+            _rows = rows.Select(r => new QuoteRow(
+                Id: r.Id,
+                QuoteNumber: r.QuoteNumber,
+                CustomerName: string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName,
+                DocumentDate: r.DocumentDate,
+                ExpirationDate: r.ExpirationDate,
+                Status: r.Status,
+                TotalAmount: r.TotalAmount,
+                Currency: r.TransactionCurrencyCode)).ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnToggleDrafts(ChangeEventArgs args)
+    {
+        _showDrafts = (bool)(args.Value ?? true);
+        await LoadAsync();
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "draft" => "default",
+        "pending" => "blue",
+        "accepted" => "green",
+        "rejected" => "red",
+        "expired" => "orange",
+        "converted" => "geekblue",
+        "void" => "default",
+        _ => "default"
+    };
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "pending" => "Pending",
+        "accepted" => "Accepted",
+        "rejected" => "Rejected",
+        "expired" => "Expired",
+        "converted" => "Converted",
+        "void" => "Void",
+        _ => status
+    };
+
+    private sealed record QuoteRow(
+        Guid Id,
+        string QuoteNumber,
+        string CustomerName,
+        DateOnly DocumentDate,
+        DateOnly? ExpirationDate,
+        string Status,
+        decimal TotalAmount,
+        string Currency);
+}

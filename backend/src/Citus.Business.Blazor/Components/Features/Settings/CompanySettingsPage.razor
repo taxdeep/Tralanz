@@ -55,6 +55,14 @@
                   ButtonStyle="ButtonStyle.Secondary"
                   Icon="open_in_new"
                   Click="@(() => Navigation.NavigateTo("/settings/currencies"))" />
+    <RadzenButton Text="Payment terms"
+                  ButtonStyle="ButtonStyle.Secondary"
+                  Icon="schedule"
+                  Click="@(() => Navigation.NavigateTo("/settings/payment-terms"))" />
+    <RadzenButton Text="Tax rates"
+                  ButtonStyle="ButtonStyle.Secondary"
+                  Icon="receipt_long"
+                  Click="@(() => Navigation.NavigateTo("/settings/tax-rates"))" />
 </div>
 
 <MultiCurrencyDrawer @ref="_currencyDrawer" />
@@ -123,6 +131,7 @@
     private readonly IReadOnlyList<DomainRow> _domains =
     [
         new("Profile", "Next", "Company identity, address, and fiscal profile should live together.", StatTone.Success),
+        new("Payment Terms", "Core", "Per-company payment terms anchor vendor master data and bill due dates.", StatTone.Success),
         new("Templates", "Planned", "Document template controls belong under company-owned settings.", StatTone.Info),
         new("Sales Tax", "Planned", "Tax controls should connect back to the backend tax engine, not ad hoc form logic.", StatTone.Info),
         new("Numbering", "Planned", "Entity numbering rules are company-scoped and backend-generated.", StatTone.Info),

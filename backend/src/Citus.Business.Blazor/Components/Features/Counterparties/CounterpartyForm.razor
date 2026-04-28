@@ -50,6 +50,21 @@
             <label class="text-sm font-medium block mb-1">Preferred currency</label>
             <CitusInput TValue="string" Value="@Draft.PreferredCurrencyCode" ValueChanged="@(v => Mutate(d => d with { PreferredCurrencyCode = v ?? string.Empty }))" Placeholder="USD" />
         </div>
+        @if (PaymentTerms is { Count: > 0 })
+        {
+            <div>
+                <label class="text-sm font-medium block mb-1">Payment term</label>
+                <select class="citus-form-field__input"
+                        value="@(Draft.PaymentTermId?.ToString() ?? string.Empty)"
+                        @onchange="OnPaymentTermChanged">
+                    <option value="">None</option>
+                    @foreach (var term in PaymentTerms)
+                    {
+                        <option value="@term.Id">@term.Name (Net @term.NetDays)</option>
+                    }
+                </select>
+            </div>
+        }
         <div class="md:col-span-2">
             <label class="text-sm font-medium block mb-1">Notes</label>
             <CitusInput TValue="string" Value="@Draft.Notes" ValueChanged="@(v => Mutate(d => d with { Notes = v ?? string.Empty }))" Placeholder="Internal notes" />
@@ -64,6 +79,20 @@
 
     [Parameter] public string EntityNumberPlaceholder { get; set; } = "CUS-000001";
 
+    /// <summary>
+    /// Optional. When supplied (vendor side), renders a Payment Term
+    /// picker between Preferred currency and Notes. Customer side leaves
+    /// this null and the picker stays hidden.
+    /// </summary>
+    [Parameter] public IReadOnlyList<PaymentTermSummary>? PaymentTerms { get; set; }
+
     private Task Mutate(Func<CounterpartyDraft, CounterpartyDraft> mutate) =>
         DraftChanged.InvokeAsync(mutate(Draft));
+
+    private Task OnPaymentTermChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        Guid? next = Guid.TryParse(raw, out var parsed) ? parsed : null;
+        return Mutate(d => d with { PaymentTermId = next });
+    }
 }

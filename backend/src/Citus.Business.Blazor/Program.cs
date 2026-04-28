@@ -178,6 +178,30 @@ builder.Services.AddHttpClient<ItemClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+builder.Services.AddHttpClient<PaymentTermClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<QuoteClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<SalesOrderClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 var app = builder.Build();
 var hostOptions = app.Services.GetRequiredService<IOptions<AppHostOptions>>().Value;
 

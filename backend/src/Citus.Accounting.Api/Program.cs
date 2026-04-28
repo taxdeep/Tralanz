@@ -32,6 +32,7 @@ using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.Counterparties;
+using Infrastructure.PostgreSQL.Sales;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
@@ -192,6 +193,18 @@ builder.Services.AddSingleton<ICustomerStore, PostgreSqlCustomerStore>();
 // anchors bills, pay-bill settlement, and AP aging.
 builder.Services.AddSingleton<IVendorStore, PostgreSqlVendorStore>();
 
+// Payment terms catalog (per-company). Backs Settings → Payment Terms
+// and the per-vendor Payment Term picker. net_days drives bill due
+// dates downstream; the catalog is intentionally minimal for V1.
+builder.Services.AddSingleton<IPaymentTermStore, PostgreSqlPaymentTermStore>();
+
+// Sales-side pre-billing documents: Quotes (a.k.a. estimates) and the
+// Sales Orders they convert into. Neither hits the GL — they live as
+// informational documents until invoiced through the existing Invoice
+// flow.
+builder.Services.AddSingleton<IQuoteStore, PostgreSqlQuoteStore>();
+builder.Services.AddSingleton<ISalesOrderStore, PostgreSqlSalesOrderStore>();
+
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
 // exist by (company_id, code).
@@ -310,6 +323,9 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
     var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
     var vendorStore = startupScope.ServiceProvider.GetRequiredService<IVendorStore>();
+    var paymentTermStore = startupScope.ServiceProvider.GetRequiredService<IPaymentTermStore>();
+    var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
+    var salesOrderStore = startupScope.ServiceProvider.GetRequiredService<ISalesOrderStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
@@ -330,6 +346,9 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
     await customerStore.EnsureSchemaAsync(CancellationToken.None);
     await vendorStore.EnsureSchemaAsync(CancellationToken.None);
+    await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
+    await quoteStore.EnsureSchemaAsync(CancellationToken.None);
+    await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
@@ -744,6 +763,21 @@ accounting.MapGet(
         return Results.Ok(rows);
     });
 
+accounting.MapGet(
+    "/customers/{customerId:guid}",
+    async (
+        Guid customerId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var customer = await store.GetByIdAsync(session.ActiveCompanyId, customerId, cancellationToken);
+        return customer is null ? Results.NotFound() : Results.Ok(customer);
+    });
+
 accounting.MapPost(
     "/customers",
     async (
@@ -779,7 +813,8 @@ accounting.MapPost(
                     PostalCode: request.PostalCode,
                     Country: request.Country,
                     TaxId: request.TaxId,
-                    Notes: request.Notes),
+                    Notes: request.Notes,
+                    PaymentTermId: request.PaymentTermId),
                 cancellationToken);
             return Results.Ok(saved);
         }
@@ -789,6 +824,54 @@ accounting.MapPost(
             // case — random 8-digit seeds collide rarely but it's possible).
             // Surface as a friendly retry hint rather than a 500.
             return Results.Conflict(new { message = "Could not allocate a unique entity number. Please try saving again." });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
+        }
+    });
+
+accounting.MapPut(
+    "/customers/{customerId:guid}",
+    async (
+        Guid customerId,
+        CustomerUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            return Results.BadRequest(new { message = "Display name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.DefaultCurrencyCode))
+        {
+            return Results.BadRequest(new { message = "Default currency code is required." });
+        }
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                customerId,
+                new CustomerUpsertRequest(
+                    DisplayName: request.DisplayName,
+                    DefaultCurrencyCode: request.DefaultCurrencyCode,
+                    Email: request.Email,
+                    Phone: request.Phone,
+                    AddressLine: request.AddressLine,
+                    City: request.City,
+                    ProvinceState: request.ProvinceState,
+                    PostalCode: request.PostalCode,
+                    Country: request.Country,
+                    TaxId: request.TaxId,
+                    Notes: request.Notes,
+                    PaymentTermId: request.PaymentTermId),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23503")
         {
@@ -812,6 +895,21 @@ accounting.MapGet(
 
         var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
         return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/vendors/{vendorId:guid}",
+    async (
+        Guid vendorId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var vendor = await store.GetByIdAsync(session.ActiveCompanyId, vendorId, cancellationToken);
+        return vendor is null ? Results.NotFound() : Results.Ok(vendor);
     });
 
 accounting.MapPost(
@@ -849,13 +947,62 @@ accounting.MapPost(
                     PostalCode: request.PostalCode,
                     Country: request.Country,
                     TaxId: request.TaxId,
-                    Notes: request.Notes),
+                    Notes: request.Notes,
+                    PaymentTermId: request.PaymentTermId),
                 cancellationToken);
             return Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
         {
             return Results.Conflict(new { message = "Could not allocate a unique entity number. Please try saving again." });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
+        }
+    });
+
+accounting.MapPut(
+    "/vendors/{vendorId:guid}",
+    async (
+        Guid vendorId,
+        VendorUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            return Results.BadRequest(new { message = "Display name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.DefaultCurrencyCode))
+        {
+            return Results.BadRequest(new { message = "Default currency code is required." });
+        }
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                vendorId,
+                new VendorUpsertRequest(
+                    DisplayName: request.DisplayName,
+                    DefaultCurrencyCode: request.DefaultCurrencyCode,
+                    Email: request.Email,
+                    Phone: request.Phone,
+                    AddressLine: request.AddressLine,
+                    City: request.City,
+                    ProvinceState: request.ProvinceState,
+                    PostalCode: request.PostalCode,
+                    Country: request.Country,
+                    TaxId: request.TaxId,
+                    Notes: request.Notes,
+                    PaymentTermId: request.PaymentTermId),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23503")
         {
@@ -4060,6 +4207,600 @@ static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
     }
     return null;
 }
+
+// ===========================================================================
+// Payment terms catalog (per-company)
+//
+// V1 surface: list / create / update / activate-toggle. Backs the
+// Settings → Payment Terms page and the per-vendor Payment Term picker.
+// ===========================================================================
+
+accounting.MapGet(
+    "/payment-terms",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IPaymentTermStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/payment-terms",
+    async (
+        PaymentTermUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPaymentTermStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidatePaymentTermInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                new PaymentTermUpsertInput(
+                    Code: request.Code!.Trim(),
+                    Name: request.Name!.Trim(),
+                    NetDays: request.NetDays ?? 0,
+                    IsActive: request.IsActive ?? true),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Payment term '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPut(
+    "/payment-terms/{id:guid}",
+    async (
+        Guid id,
+        PaymentTermUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPaymentTermStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidatePaymentTermInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                id,
+                new PaymentTermUpsertInput(
+                    Code: request.Code!.Trim(),
+                    Name: request.Name!.Trim(),
+                    NetDays: request.NetDays ?? 0,
+                    IsActive: request.IsActive ?? true),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Payment term '{request.Code}' already exists for this company." });
+        }
+    });
+
+accounting.MapPost(
+    "/payment-terms/{id:guid}/activate",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPaymentTermStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, true, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapPost(
+    "/payment-terms/{id:guid}/deactivate",
+    async (
+        Guid id,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPaymentTermStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var updated = await store.SetActiveAsync(session.ActiveCompanyId, id, false, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+static string? ValidatePaymentTermInput(PaymentTermUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.Code)) return "Code is required.";
+    if (request.Code.Length > 32) return "Code must be 32 characters or fewer.";
+    if (string.IsNullOrWhiteSpace(request.Name)) return "Name is required.";
+    if (request.Name.Length > 120) return "Name must be 120 characters or fewer.";
+    if (request.NetDays is null || request.NetDays < 0) return "Net days must be 0 or greater.";
+    if (request.NetDays > 3650) return "Net days must be 3650 or fewer.";
+    return null;
+}
+
+// ===========================================================================
+// Sales-side pre-billing documents: Quotes (estimates) + Sales Orders.
+// No GL impact. Quote → Sales Order via convert-to-sales-order; Sales
+// Order → Invoice is V1-decoupled (the SO records a free-text invoice
+// number when the user marks it invoiced; actual invoice posting stays
+// in the existing Invoice flow).
+// ===========================================================================
+
+accounting.MapGet(
+    "/quotes",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IQuoteStore store,
+        bool? includeDrafts,
+        string? status,
+        Guid? customerId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var filter = new QuoteListFilter(
+            IncludeDrafts: includeDrafts ?? true,
+            Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
+            CustomerId: customerId,
+            FromDate: from,
+            ToDate: to);
+        var rows = await store.ListAsync(session.ActiveCompanyId, filter, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/quotes/{quoteId:guid}",
+    async (
+        Guid quoteId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IQuoteStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var quote = await store.GetByIdAsync(session.ActiveCompanyId, quoteId, cancellationToken);
+        return quote is null ? Results.NotFound() : Results.Ok(quote);
+    });
+
+accounting.MapPost(
+    "/quotes",
+    async (
+        QuoteUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IQuoteStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateQuoteInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                MapQuoteInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.Conflict(new { message = "Could not allocate a unique quote number. Please try saving again." });
+        }
+    });
+
+accounting.MapPut(
+    "/quotes/{quoteId:guid}",
+    async (
+        Guid quoteId,
+        QuoteUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IQuoteStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateQuoteInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                quoteId,
+                MapQuoteInput(request),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/quotes/{quoteId:guid}/status",
+    async (
+        Guid quoteId,
+        QuoteStatusHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IQuoteStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var newStatus = request.Status?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(newStatus) || !QuoteStatus.IsValid(newStatus))
+        {
+            return Results.BadRequest(new { message = "Status is required and must be one of: draft, pending, accepted, rejected, expired, void." });
+        }
+        if (newStatus == QuoteStatus.Converted)
+        {
+            return Results.BadRequest(new { message = "Use POST /quotes/{id}/convert-to-sales-order to mark a quote as converted." });
+        }
+
+        try
+        {
+            var saved = await store.SetStatusAsync(session.ActiveCompanyId, quoteId, newStatus, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/quotes/{quoteId:guid}/convert-to-sales-order",
+    async (
+        Guid quoteId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IQuoteStore quotes,
+        ISalesOrderStore salesOrders,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var quote = await quotes.GetByIdAsync(session.ActiveCompanyId, quoteId, cancellationToken);
+        if (quote is null) return Results.NotFound();
+        if (quote.Status == QuoteStatus.Converted)
+        {
+            return Results.BadRequest(new { message = "Quote has already been converted." });
+        }
+        if (quote.Status != QuoteStatus.Accepted)
+        {
+            return Results.BadRequest(new { message = "Only Accepted quotes can be converted to a Sales Order." });
+        }
+
+        var soInput = new SalesOrderUpsertInput(
+            CustomerId: quote.CustomerId,
+            DocumentDate: DateOnly.FromDateTime(DateTime.UtcNow),
+            TransactionCurrencyCode: quote.TransactionCurrencyCode,
+            FxRate: quote.FxRate,
+            BillingAddressLine: quote.BillingAddressLine,
+            BillingCity: quote.BillingCity,
+            BillingProvinceState: quote.BillingProvinceState,
+            BillingPostalCode: quote.BillingPostalCode,
+            BillingCountry: quote.BillingCountry,
+            ShippingAddressLine: quote.ShippingAddressLine,
+            ShippingCity: quote.ShippingCity,
+            ShippingProvinceState: quote.ShippingProvinceState,
+            ShippingPostalCode: quote.ShippingPostalCode,
+            ShippingCountry: quote.ShippingCountry,
+            ShipVia: quote.ShipVia,
+            ShippingDate: quote.ShippingDate,
+            TrackingNo: quote.TrackingNo,
+            TaxMode: quote.TaxMode,
+            DiscountKind: quote.DiscountKind,
+            DiscountValue: quote.DiscountValue,
+            ShippingAmount: quote.ShippingAmount,
+            ShippingTaxCodeId: quote.ShippingTaxCodeId,
+            MemoToCustomer: quote.MemoToCustomer,
+            InternalNote: quote.InternalNote,
+            SourceQuoteId: quote.Id,
+            Lines: quote.Lines
+                .Select(l => new SalesOrderLineInput(
+                    Sequence: l.Sequence,
+                    ServiceDate: l.ServiceDate,
+                    ItemId: l.ItemId,
+                    Description: l.Description,
+                    Quantity: l.Quantity,
+                    UnitPrice: l.UnitPrice,
+                    TaxCodeId: l.TaxCodeId,
+                    AccountCode: l.AccountCode))
+                .ToArray());
+
+        var so = await salesOrders.CreateAsync(session.ActiveCompanyId, soInput, cancellationToken);
+        await quotes.MarkConvertedAsync(session.ActiveCompanyId, quote.Id, so.Id, cancellationToken);
+
+        return Results.Ok(so);
+    });
+
+accounting.MapGet(
+    "/sales-orders",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        string? status,
+        Guid? customerId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var filter = new SalesOrderListFilter(
+            Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
+            CustomerId: customerId,
+            FromDate: from,
+            ToDate: to);
+        var rows = await store.ListAsync(session.ActiveCompanyId, filter, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/sales-orders/{salesOrderId:guid}",
+    async (
+        Guid salesOrderId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var so = await store.GetByIdAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
+        return so is null ? Results.NotFound() : Results.Ok(so);
+    });
+
+accounting.MapPost(
+    "/sales-orders",
+    async (
+        SalesOrderUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateSalesOrderInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                MapSalesOrderInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.Conflict(new { message = "Could not allocate a unique sales order number. Please try saving again." });
+        }
+    });
+
+accounting.MapPut(
+    "/sales-orders/{salesOrderId:guid}",
+    async (
+        Guid salesOrderId,
+        SalesOrderUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateSalesOrderInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                salesOrderId,
+                MapSalesOrderInput(request),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/sales-orders/{salesOrderId:guid}/status",
+    async (
+        Guid salesOrderId,
+        SalesOrderStatusHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var newStatus = request.Status?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(newStatus) || !SalesOrderStatus.IsValid(newStatus))
+        {
+            return Results.BadRequest(new { message = "Status is required and must be one of: open, invoiced, cancelled." });
+        }
+        if (newStatus == SalesOrderStatus.Invoiced)
+        {
+            return Results.BadRequest(new { message = "Use POST /sales-orders/{id}/mark-invoiced with an invoice number." });
+        }
+
+        try
+        {
+            var saved = await store.SetStatusAsync(session.ActiveCompanyId, salesOrderId, newStatus, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/sales-orders/{salesOrderId:guid}/mark-invoiced",
+    async (
+        Guid salesOrderId,
+        SalesOrderInvoicedHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.InvoiceNumber))
+        {
+            return Results.BadRequest(new { message = "Invoice number is required." });
+        }
+        if (request.InvoiceNumber.Length > 64)
+        {
+            return Results.BadRequest(new { message = "Invoice number must be 64 characters or fewer." });
+        }
+
+        var saved = await store.MarkInvoicedAsync(session.ActiveCompanyId, salesOrderId, request.InvoiceNumber, cancellationToken);
+        return saved is null ? Results.NotFound() : Results.Ok(saved);
+    });
+
+static string? ValidateQuoteInput(QuoteUpsertHttpRequest request)
+{
+    if (request.CustomerId == Guid.Empty) return "Customer is required.";
+    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
+    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
+    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
+    if (!QuoteTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
+    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
+    foreach (var line in request.Lines)
+    {
+        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
+        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
+    }
+    return null;
+}
+
+static QuoteUpsertInput MapQuoteInput(QuoteUpsertHttpRequest request) => new(
+    CustomerId: request.CustomerId,
+    DocumentDate: request.DocumentDate,
+    ExpirationDate: request.ExpirationDate,
+    TransactionCurrencyCode: request.TransactionCurrencyCode,
+    FxRate: request.FxRate,
+    BillingAddressLine: request.BillingAddressLine,
+    BillingCity: request.BillingCity,
+    BillingProvinceState: request.BillingProvinceState,
+    BillingPostalCode: request.BillingPostalCode,
+    BillingCountry: request.BillingCountry,
+    ShippingAddressLine: request.ShippingAddressLine,
+    ShippingCity: request.ShippingCity,
+    ShippingProvinceState: request.ShippingProvinceState,
+    ShippingPostalCode: request.ShippingPostalCode,
+    ShippingCountry: request.ShippingCountry,
+    ShipVia: request.ShipVia,
+    ShippingDate: request.ShippingDate,
+    TrackingNo: request.TrackingNo,
+    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
+    DiscountKind: request.DiscountKind,
+    DiscountValue: request.DiscountValue,
+    ShippingAmount: request.ShippingAmount,
+    ShippingTaxCodeId: request.ShippingTaxCodeId,
+    MemoToCustomer: request.MemoToCustomer,
+    InternalNote: request.InternalNote,
+    Lines: (request.Lines ?? Array.Empty<QuoteLineHttpRequest>())
+        .Select(l => new QuoteLineInput(
+            Sequence: l.Sequence,
+            ServiceDate: l.ServiceDate,
+            ItemId: l.ItemId,
+            Description: l.Description ?? string.Empty,
+            Quantity: l.Quantity,
+            UnitPrice: l.UnitPrice,
+            TaxCodeId: l.TaxCodeId,
+            AccountCode: l.AccountCode))
+        .ToArray());
+
+static string? ValidateSalesOrderInput(SalesOrderUpsertHttpRequest request)
+{
+    if (request.CustomerId == Guid.Empty) return "Customer is required.";
+    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
+    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
+    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
+    if (!QuoteTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
+    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
+    foreach (var line in request.Lines)
+    {
+        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
+        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
+    }
+    return null;
+}
+
+static SalesOrderUpsertInput MapSalesOrderInput(SalesOrderUpsertHttpRequest request) => new(
+    CustomerId: request.CustomerId,
+    DocumentDate: request.DocumentDate,
+    TransactionCurrencyCode: request.TransactionCurrencyCode,
+    FxRate: request.FxRate,
+    BillingAddressLine: request.BillingAddressLine,
+    BillingCity: request.BillingCity,
+    BillingProvinceState: request.BillingProvinceState,
+    BillingPostalCode: request.BillingPostalCode,
+    BillingCountry: request.BillingCountry,
+    ShippingAddressLine: request.ShippingAddressLine,
+    ShippingCity: request.ShippingCity,
+    ShippingProvinceState: request.ShippingProvinceState,
+    ShippingPostalCode: request.ShippingPostalCode,
+    ShippingCountry: request.ShippingCountry,
+    ShipVia: request.ShipVia,
+    ShippingDate: request.ShippingDate,
+    TrackingNo: request.TrackingNo,
+    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? QuoteTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
+    DiscountKind: request.DiscountKind,
+    DiscountValue: request.DiscountValue,
+    ShippingAmount: request.ShippingAmount,
+    ShippingTaxCodeId: request.ShippingTaxCodeId,
+    MemoToCustomer: request.MemoToCustomer,
+    InternalNote: request.InternalNote,
+    SourceQuoteId: request.SourceQuoteId,
+    Lines: (request.Lines ?? Array.Empty<SalesOrderLineHttpRequest>())
+        .Select(l => new SalesOrderLineInput(
+            Sequence: l.Sequence,
+            ServiceDate: l.ServiceDate,
+            ItemId: l.ItemId,
+            Description: l.Description ?? string.Empty,
+            Quantity: l.Quantity,
+            UnitPrice: l.UnitPrice,
+            TaxCodeId: l.TaxCodeId,
+            AccountCode: l.AccountCode))
+        .ToArray());
 
 // ===========================================================================
 // Chart of Accounts (per-company)
