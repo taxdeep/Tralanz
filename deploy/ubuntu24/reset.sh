@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Citus reset — wipes the Accounting database back to "first run" state and
-# restarts every Citus service. After this completes, the deploy looks exactly
+# Tralanz Books reset — wipes the Accounting database back to "first run" state
+# and restarts every Tralanz Books service. After this completes, the deploy looks exactly
 # like a brand-new install: SysAdmin login lands on "Create first SysAdmin",
 # Business login is gated behind real auth, no companies / users / accounts /
 # tax codes / journal entries / inventory rows exist anywhere.
 #
 # What this DOES touch:
-#   - Drops every table in the public schema of the Citus accounting database
+#   - Drops every table in the public schema of the Tralanz Books accounting database
 #     (companies, users, accounts, journal_entries, ledger_entries, tax_codes,
 #     unitysearch tables, audit, runtime state — everything).
 #   - Recreates the schema empty. The Accounting + SysAdmin APIs re-EnsureSchema
 #     on the next startup, restoring the platform tables + ISO 4217 currency
 #     catalog.
-#   - systemctl restart on the four Citus services.
+#   - systemctl restart on the four Tralanz Books services.
 #
 # What this does NOT touch:
 #   - Postgres role / password / pg_hba.conf — only the database content.
@@ -53,8 +53,8 @@ while [[ $# -gt 0 ]]; do
       cat <<'EOF'
 Usage: sudo ./reset.sh [--yes|-y]
 
-Drops the Citus accounting database back to "first run" empty state and
-restarts every Citus service. Asks for confirmation unless --yes is passed.
+Drops the Tralanz Books accounting database back to "first run" empty state and
+restarts every Tralanz Books service. Asks for confirmation unless --yes is passed.
 EOF
       exit 0
       ;;
@@ -100,7 +100,7 @@ DB_PORT="${DB_PORT:-5432}"
 
 cat <<EOF
 ====================================================================
-  Citus reset — DESTRUCTIVE
+  Tralanz Books reset — DESTRUCTIVE
 --------------------------------------------------------------------
   Database host    : ${DB_HOST}:${DB_PORT}
   Database name    : ${DB_NAME}
@@ -125,7 +125,7 @@ if [[ "${ASSUME_YES}" -ne 1 ]]; then
   fi
 fi
 
-log "Stopping Citus application services."
+log "Stopping Tralanz Books services."
 stop_application_services
 
 # psql may live at the Postgres-version-specific path on Ubuntu (the apt
@@ -175,7 +175,7 @@ log "Public schema dropped and recreated. Database is empty."
 # bootstrap fixtures (Northwind / Blue Harbor / Alice / Ben) are seeded;
 # in Production they are skipped, leaving the database genuinely empty
 # until the SysAdmin First-Company Wizard runs.
-log "Restarting Citus services so they re-create their schema."
+log "Restarting Tralanz Books services so they re-create their schema."
 restart_application_services
 
 ACCOUNTING_HEALTH_URL="${CITUS_ACCOUNTING_HEALTH_URL:-http://127.0.0.1:5088/health}"

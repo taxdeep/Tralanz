@@ -78,8 +78,8 @@ Options:
   --certbot-email ADDRESS    Alias for --email.
   --redirect-http            Redirect HTTP to HTTPS after a certificate exists.
   --no-redirect-http         Keep HTTP proxying enabled after SSL is active.
-  --start                    Start/restart Citus services after deployment.
-  --no-start                 Leave Citus services stopped after deployment.
+  --start                    Start/restart Tralanz Books services after deployment.
+  --no-start                 Leave Tralanz Books services stopped after deployment.
   -h, --help                 Show this help.
 
 Examples:
@@ -517,7 +517,7 @@ configure_runtime_preferences() {
         local prompted_server_name
         prompted_server_name="$(
           prompt_optional_value \
-            "Public domain for Citus; leave blank for HTTP/IP-only deployment:" \
+            "Public domain for Tralanz Books; leave blank for HTTP/IP-only deployment:" \
             ""
         )"
         if [[ -n "${prompted_server_name}" ]]; then
@@ -553,7 +553,7 @@ configure_runtime_preferences() {
       fi
     fi
 
-    if prompt_yes_no "Start the Citus application services when deployment finishes?" "$(default_prompt_choice "${auto_start}")"; then
+    if prompt_yes_no "Start the Tralanz Books services when deployment finishes?" "$(default_prompt_choice "${auto_start}")"; then
       auto_start="1"
     else
       auto_start="0"
@@ -1140,7 +1140,7 @@ write_systemd_units() {
 
   cat > "${SYSTEMD_DIR}/citus-web.service" <<EOF
 [Unit]
-Description=Citus Business Blazor frontend
+Description=Tralanz Books — Business shell
 After=network.target citus-accounting-api.service
 Wants=network.target
 Wants=citus-accounting-api.service
@@ -1167,7 +1167,7 @@ EOF
 
   cat > "${SYSTEMD_DIR}/citus-sysadmin-web.service" <<EOF
 [Unit]
-Description=Citus SysAdmin Blazor frontend
+Description=Tralanz Books — SysAdmin shell
 After=network.target citus-sysadmin-api.service
 Wants=network.target
 Wants=citus-sysadmin-api.service
@@ -1195,7 +1195,7 @@ EOF
 
   cat > "${SYSTEMD_DIR}/citus-accounting-api.service" <<EOF
 [Unit]
-Description=Citus Accounting API
+Description=Tralanz Books — Accounting API
 After=network.target postgresql.service
 Wants=network.target
 Requires=postgresql.service
@@ -1219,7 +1219,7 @@ EOF
 
   cat > "${SYSTEMD_DIR}/citus-sysadmin-api.service" <<EOF
 [Unit]
-Description=Citus SysAdmin API
+Description=Tralanz Books — SysAdmin API
 After=network.target postgresql.service
 Wants=network.target
 Requires=postgresql.service
@@ -1523,7 +1523,7 @@ print_install_summary() {
 
 Deployment complete.
 
-Citus.Business.Blazor:
+Tralanz Books (Business shell):
   ${frontend_url}
 
 SysAdmin:
@@ -1552,8 +1552,7 @@ Runtime files:
 
 Important note:
   The backend PostgreSQL draft baseline is only applied automatically to an empty database.
-  Citus.Business.Blazor currently uses CompanyAccess/bootstrap shell context; production identity hardening is still pending.
-  Citus services auto-start: ${CITUS_AUTO_START}
+  Tralanz Books services auto-start: ${CITUS_AUTO_START}
   HTTPS enabled:             ${CITUS_ENABLE_HTTPS}
   Deployed version:          ${CITUS_APP_VERSION:-unknown}
 EOF
