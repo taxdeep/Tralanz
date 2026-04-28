@@ -215,6 +215,17 @@ append_env_if_missing() {
   grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null || printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
 }
 
+read_env_value() {
+  local key="$1"
+  [[ -f "${ENV_FILE}" ]] || return 0
+  local line=""
+  line="$(grep -E "^${key}=" "${ENV_FILE}" 2>/dev/null | tail -n1)" || true
+  if [[ -n "${line}" ]]; then
+    printf '%s' "${line#*=}"
+  fi
+  return 0
+}
+
 set_env_value() {
   local key="$1"
   local value="$2"
@@ -270,10 +281,43 @@ ensure_env_defaults() {
   append_env_if_missing "ASPNETCORE_FORWARDEDHEADERS_ENABLED" "true"
   append_env_if_missing "DOTNET_CLI_TELEMETRY_OPTOUT" "1"
   append_env_if_missing "DOTNET_PRINT_TELEMETRY_MESSAGE" "false"
+  ensure_db_connection_string
   # PathBase is set explicitly per-service (sysadmin → /sysadmin, business → empty).
   # Strip any legacy shared value so it cannot leak into the Business app.
   remove_env_key "AppHost__PathBase"
   chmod 640 "${ENV_FILE}"
+}
+
+# Self-heal the DB connection: fills any missing CITUS_DB_* parts (preserving
+# values already present) and composes CITUS_ACCOUNTING_DB if absent. The
+# subsequent ensure_postgres_database call re-aligns the Postgres role password
+# to whatever ends up in CITUS_DB_PASSWORD, so generating a fresh secret here
+# stays in sync with the database.
+ensure_db_connection_string() {
+  local db_host db_port db_name db_user db_password
+  db_host="$(read_env_value CITUS_DB_HOST)"
+  db_port="$(read_env_value CITUS_DB_PORT)"
+  db_name="$(read_env_value CITUS_DB_NAME)"
+  db_user="$(read_env_value CITUS_DB_USER)"
+  db_password="$(read_env_value CITUS_DB_PASSWORD)"
+  : "${db_host:=127.0.0.1}"
+  : "${db_port:=5432}"
+  : "${db_name:=citus_accounting}"
+  : "${db_user:=citus_app}"
+  if [[ -z "${db_password}" ]]; then
+    db_password="$(generate_secret)"
+    log "CITUS_DB_PASSWORD missing from ${ENV_FILE}; generated a new secret and will sync the Postgres role."
+  fi
+  append_env_if_missing "CITUS_DB_HOST" "${db_host}"
+  append_env_if_missing "CITUS_DB_PORT" "${db_port}"
+  append_env_if_missing "CITUS_DB_NAME" "${db_name}"
+  append_env_if_missing "CITUS_DB_USER" "${db_user}"
+  append_env_if_missing "CITUS_DB_PASSWORD" "${db_password}"
+  if ! grep -q "^CITUS_ACCOUNTING_DB=" "${ENV_FILE}" 2>/dev/null; then
+    append_env_if_missing "CITUS_ACCOUNTING_DB" \
+      "Host=${db_host};Port=${db_port};Database=${db_name};Username=${db_user};Password=${db_password};Pooling=true"
+    log "Composed CITUS_ACCOUNTING_DB in ${ENV_FILE} from CITUS_DB_* parts."
+  fi
 }
 
 ensure_env_file() {
