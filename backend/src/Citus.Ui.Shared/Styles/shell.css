@@ -1072,6 +1072,69 @@
     appearance: textfield;
 }
 
+/* ==========================================================================
+   Global form-control height normalization.
+
+   Single source of truth for "how tall is an input in this app". Every text
+   input / password / select / dropdown / number / date control gets pinned
+   to the same effective height regardless of which component library
+   rendered it (native HTML, CitusInput wrapper, or Radzen). A row of mixed
+   controls (e.g. a posting page header that has a date + text + dropdown)
+   reads as one bar instead of three different heights.
+
+   New code should prefer .citus-form-field + plain <input> (cleanest DOM,
+   no library coupling). This block exists so legacy Radzen / CitusInput
+   surfaces don't need to be migrated page-by-page just to align side-by-
+   side. Bump --citus-input-height in one place to retune the whole app.
+   ========================================================================== */
+
+:root {
+    /* 32px — chosen to match .citus-button --md so input + button rows
+       read as one dense bar. */
+    --citus-input-height: 2rem;
+    --citus-input-padding-x: 0.625rem;
+    --citus-input-padding-y: 0.4375rem;
+}
+
+/* Native HTML form fields wearing our class (login pages, wizards,
+   journal entry header, etc). Already approximately 32px via padding +
+   line-height; pinning min-height makes it exact and survives different
+   font metrics. */
+.citus-form-field__input {
+    min-height: var(--citus-input-height);
+}
+
+/* CitusInput wrapper. Collapse all three size variants (--sm / --md /
+   --lg) to the canonical height. The size prop stays valid for Razor
+   compatibility but renders identically; density splits via padding-y
+   in the future if needed. */
+.citus-input--sm .citus-input__row,
+.citus-input--md .citus-input__row,
+.citus-input--lg .citus-input__row {
+    min-height: var(--citus-input-height);
+    padding: var(--citus-input-padding-y) var(--citus-input-padding-x);
+}
+
+/* Radzen primitives — TextBox / Password (.rz-textbox), generic input
+   (.rz-inputtext), dropdowns, numeric spinners, date pickers. */
+.rz-textbox,
+.rz-inputtext,
+.rz-password,
+.rz-dropdown,
+.rz-numeric,
+.rz-datepicker {
+    min-height: var(--citus-input-height);
+    box-sizing: border-box;
+}
+
+/* Interior <input> of compound Radzen controls (numeric spinner, date
+   picker) needs the same pin so the trigger and the input agree on
+   height. */
+.rz-numeric .rz-spinner-input,
+.rz-datepicker .rz-inputtext {
+    min-height: var(--citus-input-height);
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);
