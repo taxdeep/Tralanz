@@ -42,8 +42,14 @@ the operator explicitly opts in.
 ```bash
 git clone https://github.com/taxdeep/Tralanz.git /root/citus
 cd /root/citus
-sudo ./deploy/ubuntu24/install.sh --domain books.example.com --ssl --email ops@example.com
+sudo bash ./deploy/ubuntu24/install.sh --domain books.example.com --ssl --email ops@example.com
 ```
+
+> The scripts are committed with the executable bit set, so plain
+> `sudo ./deploy/ubuntu24/install.sh ...` also works. The `sudo bash`
+> form above is robust against checkouts that lost the `+x` bit (for
+> example a Windows clone, or `git diff --cached` mode comparisons), so
+> it is the recommended way to invoke them.
 
 The interactive prompts cover HTTPS / certificate email / HTTP-to-HTTPS
 redirect / auto-start of services. CLI flags override the prompts:
@@ -81,7 +87,7 @@ What lands on the host:
 ```bash
 cd /root/citus
 git pull
-sudo ./deploy/ubuntu24/upgrade.sh
+sudo bash ./deploy/ubuntu24/upgrade.sh
 ```
 
 `upgrade.sh` reuses the saved settings in `/etc/citus/citus.env`, so it
@@ -97,8 +103,8 @@ Postgres role password in the same pass.
 ### Reset back to first-run state
 
 ```bash
-sudo ./deploy/ubuntu24/reset.sh        # interactive; type 'reset' to confirm
-sudo ./deploy/ubuntu24/reset.sh --yes  # non-interactive
+sudo bash ./deploy/ubuntu24/reset.sh        # interactive; type 'reset' to confirm
+sudo bash ./deploy/ubuntu24/reset.sh --yes  # non-interactive
 ```
 
 `reset.sh` drops every table in the public schema of the accounting
