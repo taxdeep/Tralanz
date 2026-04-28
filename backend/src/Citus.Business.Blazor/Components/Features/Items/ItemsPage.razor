@@ -1,0 +1,480 @@
+@page "/items"
+
+@inject BusinessShellState ShellState
+@inject ItemClient ItemClient
+@inject TaxCodeClient TaxCodeClient
+@inject CitusToastService Message
+
+<PageTitle>Products & Services | Citus Business</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     LeadingIcon="IconName.Plus"
+                     OnClick="StartCreate">New item</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_lastResult is not null)
+{
+    <CitusAlert Severity="@(_lastResult.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Info)"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            @_lastResult.Message
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+@if (_isCreating)
+{
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+
+    <section class="citus-panel mb-4">
+        <h2 class="citus-panel__title">Identity</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Item code</label>
+                <CitusInput TValue="string" @bind-Value="_draft.ItemCode" Placeholder="WIDGET-001" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Name</label>
+                <CitusInput TValue="string" @bind-Value="_draft.Name" Placeholder="Widget A" />
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-sm font-medium block mb-1">Description</label>
+                <CitusInput TValue="string" @bind-Value="_draft.Description" Placeholder="Optional" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Kind</label>
+                <select class="citus-input__field"
+                        @bind="_draft.ItemKind"
+                        style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <option value="service">Service</option>
+                    <option value="non_stock">Non-stock</option>
+                    <option value="stock">Stock</option>
+                </select>
+                <p class="text-fg-subtle text-xs mt-1">@KindHint(_draft.ItemKind)</p>
+            </div>
+            @if (_draft.ItemKind == "stock")
+            {
+                <div>
+                    <label class="text-sm font-medium block mb-1">Stock UoM</label>
+                    <CitusInput TValue="string" @bind-Value="_draft.StockUomCode" Placeholder="EA" />
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="citus-panel mb-4">
+        <h2 class="citus-panel__title">Pricing</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Default sales price (@ShellState.ActiveCompany.BaseCurrencyCode)</label>
+                <RadzenNumeric TValue="decimal?"
+                               @bind-Value="_draft.DefaultSalesPrice"
+                               Min="0"
+                               Format="0.00"
+                               Style="width: 100%;" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Default purchase price (@ShellState.ActiveCompany.BaseCurrencyCode)</label>
+                <RadzenNumeric TValue="decimal?"
+                               @bind-Value="_draft.DefaultPurchasePrice"
+                               Min="0"
+                               Format="0.00"
+                               Style="width: 100%;" />
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Default sales tax</label>
+                <select class="citus-input__field"
+                        @bind="_draft.DefaultSalesTaxCodeId"
+                        style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <option value="">— None —</option>
+                    @foreach (var tax in _salesTaxCodes)
+                    {
+                        <option value="@tax.Id">@tax.Code · @tax.Name (@tax.RatePercent.ToString("0.##")%)</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="text-sm font-medium block mb-1">Default purchase tax</label>
+                <select class="citus-input__field"
+                        @bind="_draft.DefaultPurchaseTaxCodeId"
+                        style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <option value="">— None —</option>
+                    @foreach (var tax in _purchaseTaxCodes)
+                    {
+                        <option value="@tax.Id">@tax.Code · @tax.Name (@tax.RatePercent.ToString("0.##")%)</option>
+                    }
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="citus-panel mb-4">
+        <h2 class="citus-panel__title">Accounting defaults</h2>
+        <p class="text-fg-muted text-sm mb-3">
+            Suggested accounts when this item appears on a document. The user can still override per line.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            @if (_draft.ItemKind == "stock")
+            {
+                <div>
+                    <label class="text-sm font-medium block mb-1">Inventory asset account</label>
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="items.inventory_asset"
+                                   DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                   SelectedId="@_draft.DefaultInventoryAssetAccountId"
+                                   SelectedDisplayText="@AccountDisplay(_draft.DefaultInventoryAssetAccountId)"
+                                   OnAccountSelected="@(a => _draft.DefaultInventoryAssetAccountId = a.Id)"
+                                   OnCleared="@(() => _draft.DefaultInventoryAssetAccountId = null)" />
+                </div>
+            }
+            <div>
+                <label class="text-sm font-medium block mb-1">COGS / expense account</label>
+                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                               Context="items.cogs"
+                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                               SelectedId="@_draft.DefaultCogsAccountId"
+                               SelectedDisplayText="@AccountDisplay(_draft.DefaultCogsAccountId)"
+                               OnAccountSelected="@(a => _draft.DefaultCogsAccountId = a.Id)"
+                               OnCleared="@(() => _draft.DefaultCogsAccountId = null)" />
+            </div>
+            @if (_draft.ItemKind == "stock")
+            {
+                <div>
+                    <label class="text-sm font-medium block mb-1">Write-off account</label>
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="items.writeoff"
+                                   DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                   SelectedId="@_draft.DefaultWriteOffAccountId"
+                                   SelectedDisplayText="@AccountDisplay(_draft.DefaultWriteOffAccountId)"
+                                   OnAccountSelected="@(a => _draft.DefaultWriteOffAccountId = a.Id)"
+                                   OnCleared="@(() => _draft.DefaultWriteOffAccountId = null)" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Purchase-variance account</label>
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="items.purchase_variance"
+                                   DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                   SelectedId="@_draft.DefaultPurchaseVarianceAccountId"
+                                   SelectedDisplayText="@AccountDisplay(_draft.DefaultPurchaseVarianceAccountId)"
+                                   OnAccountSelected="@(a => _draft.DefaultPurchaseVarianceAccountId = a.Id)"
+                                   OnCleared="@(() => _draft.DefaultPurchaseVarianceAccountId = null)" />
+                </div>
+            }
+        </div>
+    </section>
+
+    @if (_draft.ItemKind == "stock")
+    {
+        <section class="citus-panel mb-4">
+            <h2 class="citus-panel__title">Inventory tracking</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Manage inventory method</label>
+                    <select class="citus-input__field"
+                            @bind="_draft.ManageInventoryMethod"
+                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                        <option value="manage_stock">Manage stock</option>
+                        <option value="manage_stock_by_sku">Manage stock by SKU</option>
+                        <option value="dont_manage_stock">Don't manage stock</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Costing method</label>
+                    <select class="citus-input__field"
+                            @bind="_draft.DefaultCostingMethod"
+                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                        <option value="moving_average">Moving average</option>
+                        <option value="fifo">FIFO</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Backorder policy</label>
+                    <select class="citus-input__field"
+                            @bind="_draft.BackorderMode"
+                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                        <option value="disallow">Disallow negative stock</option>
+                        <option value="allow_negative_with_warning">Allow with warning</option>
+                        <option value="allow_negative">Allow without warning</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Low-stock activity</label>
+                    <select class="citus-input__field"
+                            @bind="_draft.LowStockActivity"
+                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                        <option value="nothing">Do nothing</option>
+                        <option value="warn">Warn</option>
+                        <option value="block_outbound">Block outbound</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+    }
+
+    <div class="flex gap-2 mt-4">
+        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
+            @(_isSubmitting ? "Saving…" : (_draft.Id == Guid.Empty ? "Save item" : "Update item"))
+        </CitusButton>
+        <CitusButton OnClick="CancelCreate">Cancel</CitusButton>
+    </div>
+}
+else
+{
+    <section class="citus-panel">
+        <CitusAsyncBoundary IsLoading="@_isLoading"
+                            IsEmpty="@(_items.Count == 0)"
+                            EmptyIcon="IconName.LayoutDashboard"
+                            EmptyTitle="No products or services yet"
+                            EmptyMessage="Create one with the New item button. Items unblock invoice / bill line entry and feed inventory tracking when you add Stock items.">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Kind</th>
+                        <th class="text-right">Sales price</th>
+                        <th class="text-right">Purchase price</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _items)
+                    {
+                        <tr>
+                            <td><span class="citus-inline-code">@item.ItemCode</span></td>
+                            <td>@item.Name</td>
+                            <td><CitusBadge Color="@KindBadge(item.ItemKind)">@KindLabel(item.ItemKind)</CitusBadge></td>
+                            <td class="text-right">@(item.DefaultSalesPrice?.ToString("N2") ?? "—")</td>
+                            <td class="text-right">@(item.DefaultPurchasePrice?.ToString("N2") ?? "—")</td>
+                            <td>
+                                @if (item.IsActive)
+                                {
+                                    <CitusBadge Color="@("green")">Active</CitusBadge>
+                                }
+                                else
+                                {
+                                    <CitusBadge Color="@("default")">Inactive</CitusBadge>
+                                }
+                            </td>
+                            <td class="text-right">
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             OnClick="@(() => StartEdit(item))">Edit</CitusButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </CitusAsyncBoundary>
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Catalog",
+        Title = "Products & Services",
+        Subtitle = "Items that appear on invoices, bills, and (for Stock items) feed inventory tracking."
+    };
+
+    private IReadOnlyList<ItemSummary> _items = Array.Empty<ItemSummary>();
+    private List<TaxCodeSummary> _salesTaxCodes = new();
+    private List<TaxCodeSummary> _purchaseTaxCodes = new();
+    private ItemDraft _draft = ItemDraft.Empty();
+    private bool _isLoading = true;
+    private bool _isCreating;
+    private bool _isSubmitting;
+    private string? _validation;
+    private MutationResult? _lastResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _items = await ItemClient.ListAsync(includeInactive: true);
+            var allTax = await TaxCodeClient.ListAsync();
+            _salesTaxCodes = allTax
+                .Where(t => t.IsActive && (string.Equals(t.AppliesTo, "sales", StringComparison.OrdinalIgnoreCase) ||
+                                            string.Equals(t.AppliesTo, "both", StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(t => t.Code)
+                .ToList();
+            _purchaseTaxCodes = allTax
+                .Where(t => t.IsActive && (string.Equals(t.AppliesTo, "purchase", StringComparison.OrdinalIgnoreCase) ||
+                                            string.Equals(t.AppliesTo, "both", StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(t => t.Code)
+                .ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void StartCreate()
+    {
+        _draft = ItemDraft.Empty();
+        _isCreating = true;
+        _validation = null;
+        _lastResult = null;
+    }
+
+    private void StartEdit(ItemSummary item)
+    {
+        _draft = ItemDraft.From(item);
+        _isCreating = true;
+        _validation = null;
+        _lastResult = null;
+    }
+
+    private void CancelCreate()
+    {
+        _isCreating = false;
+        _validation = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _validation = null;
+        if (string.IsNullOrWhiteSpace(_draft.ItemCode)) { _validation = "Item code is required."; return; }
+        if (string.IsNullOrWhiteSpace(_draft.Name)) { _validation = "Name is required."; return; }
+
+        _isSubmitting = true;
+        try
+        {
+            var payload = new ItemUpsertPayload(
+                ItemCode: _draft.ItemCode.Trim(),
+                Name: _draft.Name.Trim(),
+                Description: string.IsNullOrWhiteSpace(_draft.Description) ? null : _draft.Description.Trim(),
+                ItemKind: _draft.ItemKind,
+                StockUomCode: string.IsNullOrWhiteSpace(_draft.StockUomCode) ? null : _draft.StockUomCode.Trim(),
+                ManageInventoryMethod: _draft.ItemKind == "stock" ? _draft.ManageInventoryMethod : null,
+                DefaultCostingMethod: _draft.ItemKind == "stock" ? _draft.DefaultCostingMethod : null,
+                BackorderMode: _draft.ItemKind == "stock" ? _draft.BackorderMode : null,
+                LowStockActivity: _draft.ItemKind == "stock" ? _draft.LowStockActivity : null,
+                DefaultInventoryAssetAccountId: _draft.ItemKind == "stock" ? _draft.DefaultInventoryAssetAccountId : null,
+                DefaultCogsAccountId: _draft.DefaultCogsAccountId,
+                DefaultWriteOffAccountId: _draft.ItemKind == "stock" ? _draft.DefaultWriteOffAccountId : null,
+                DefaultPurchaseVarianceAccountId: _draft.ItemKind == "stock" ? _draft.DefaultPurchaseVarianceAccountId : null,
+                DefaultSalesPrice: _draft.DefaultSalesPrice,
+                DefaultPurchasePrice: _draft.DefaultPurchasePrice,
+                DefaultSalesTaxCodeId: _draft.DefaultSalesTaxCodeId == Guid.Empty ? null : _draft.DefaultSalesTaxCodeId,
+                DefaultPurchaseTaxCodeId: _draft.DefaultPurchaseTaxCodeId == Guid.Empty ? null : _draft.DefaultPurchaseTaxCodeId);
+
+            var outcome = _draft.Id == Guid.Empty
+                ? await ItemClient.CreateAsync(payload)
+                : await ItemClient.UpdateAsync(_draft.Id, payload);
+
+            if (outcome.Succeeded)
+            {
+                _lastResult = new MutationResult(true, $"Item {outcome.Saved?.ItemCode ?? _draft.ItemCode} saved.");
+                await Message.SuccessAsync("Item saved.");
+                _isCreating = false;
+                await LoadAsync();
+            }
+            else
+            {
+                _lastResult = new MutationResult(false, outcome.ErrorMessage ?? "Could not save the item.");
+                await Message.InfoAsync(outcome.ErrorMessage ?? "Could not save the item.");
+            }
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private string AccountDisplay(Guid? accountId)
+    {
+        // The accounts are loaded inside AccountPicker itself; this hint
+        // surfaces what we already know about the saved selection until
+        // the picker fetches its own list. Empty when nothing's selected.
+        return accountId.HasValue ? "(account)" : string.Empty;
+    }
+
+    private static string KindHint(string kind) => kind switch
+    {
+        "stock" => "Tracked in inventory; needs Inventory asset + COGS accounts.",
+        "non_stock" => "Sold or bought but not held in inventory (e.g. drop-shipped).",
+        _ => "Time / labour / consulting — never held in inventory."
+    };
+
+    private static string KindLabel(string kind) => kind switch
+    {
+        "stock" => "Stock",
+        "non_stock" => "Non-stock",
+        _ => "Service"
+    };
+
+    private static string KindBadge(string kind) => kind switch
+    {
+        "stock" => "blue",
+        "non_stock" => "geekblue",
+        _ => "default"
+    };
+
+    private sealed record MutationResult(bool Succeeded, string Message);
+
+    private sealed class ItemDraft
+    {
+        public Guid Id { get; set; }
+        public string ItemCode { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string ItemKind { get; set; } = "service";
+        public string StockUomCode { get; set; } = string.Empty;
+        public string ManageInventoryMethod { get; set; } = "manage_stock";
+        public string DefaultCostingMethod { get; set; } = "moving_average";
+        public string BackorderMode { get; set; } = "disallow";
+        public string LowStockActivity { get; set; } = "nothing";
+        public Guid? DefaultInventoryAssetAccountId { get; set; }
+        public Guid? DefaultCogsAccountId { get; set; }
+        public Guid? DefaultWriteOffAccountId { get; set; }
+        public Guid? DefaultPurchaseVarianceAccountId { get; set; }
+        public decimal? DefaultSalesPrice { get; set; }
+        public decimal? DefaultPurchasePrice { get; set; }
+        public Guid DefaultSalesTaxCodeId { get; set; }
+        public Guid DefaultPurchaseTaxCodeId { get; set; }
+
+        public static ItemDraft Empty() => new();
+
+        public static ItemDraft From(ItemSummary item) => new()
+        {
+            Id = item.Id,
+            ItemCode = item.ItemCode,
+            Name = item.Name,
+            Description = item.Description ?? string.Empty,
+            ItemKind = item.ItemKind,
+            StockUomCode = item.StockUomCode ?? string.Empty,
+            ManageInventoryMethod = item.ManageInventoryMethod,
+            DefaultCostingMethod = item.DefaultCostingMethod,
+            BackorderMode = item.BackorderMode,
+            LowStockActivity = item.LowStockActivity,
+            DefaultInventoryAssetAccountId = item.DefaultInventoryAssetAccountId,
+            DefaultCogsAccountId = item.DefaultCogsAccountId,
+            DefaultWriteOffAccountId = item.DefaultWriteOffAccountId,
+            DefaultPurchaseVarianceAccountId = item.DefaultPurchaseVarianceAccountId,
+            DefaultSalesPrice = item.DefaultSalesPrice,
+            DefaultPurchasePrice = item.DefaultPurchasePrice,
+            DefaultSalesTaxCodeId = item.DefaultSalesTaxCodeId ?? Guid.Empty,
+            DefaultPurchaseTaxCodeId = item.DefaultPurchaseTaxCodeId ?? Guid.Empty,
+        };
+    }
+}

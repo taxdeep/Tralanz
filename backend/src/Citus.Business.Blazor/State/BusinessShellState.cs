@@ -76,6 +76,14 @@ public sealed class BusinessShellState
         },
         new NavSection
         {
+            Title = "Catalog",
+            Items =
+            [
+                new NavMenuItem { Title = "Products & Services", Href = "items", Icon = IconName.Puzzle }
+            ]
+        },
+        new NavSection
+        {
             Title = "Accounting",
             Items =
             [
