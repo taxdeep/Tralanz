@@ -1,0 +1,582 @@
+@page "/expenses/new"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject VendorClient VendorClient
+@inject AccountClient AccountClient
+@inject TaxCodeClient TaxCodeClient
+@inject ExpenseClient ExpenseClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+@*
+    Expense create. Posted-only state machine — there's no Draft, an
+    expense reflects a payment that already happened.
+
+    Payment Account picker filters to accounts whose detail_type is
+    Bank / Cash / Credit Card. Payment Method conditional fields:
+      cash                    → no extra
+      cheque                  → cheque # required
+      wire / direct_deposit / eft → ref # required
+      credit_card / other     → ref # optional
+
+    Server-side cross-validates that the chosen method is compatible
+    with the picked account's detail_type (cheque must be from a
+    Bank account, etc.).
+*@
+
+<PageTitle>New Expense | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="expenses">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to expenses</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (ShellState.AreWritesBlocked)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Payee + payment</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Payee kind</label>
+                        <select class="citus-form-field__input" value="@_payeeKind" @onchange="OnPayeeKindChanged">
+                            <option value="vendor">Vendor</option>
+                            <option value="employee">Employee</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Payee</label>
+                        @if (_payeeKind == "vendor")
+                        {
+                            <RadzenDropDown TValue="Guid?"
+                                            Data="@_vendors"
+                                            @bind-Value="_payeeId"
+                                            TextProperty="DisplayName"
+                                            ValueProperty="Id"
+                                            Placeholder="Who did you pay?"
+                                            AllowFiltering="true"
+                                            AllowClear="true"
+                                            Style="width: 100%;"
+                                            Change="@(_ => OnPayeeChanged())" />
+                        }
+                        else
+                        {
+                            <CitusInput TValue="string" @bind-Value="_payeeNameFreeform" Placeholder="Payee name" />
+                        }
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Paid from (account)</label>
+                        <RadzenDropDown TValue="Guid?"
+                                        Data="@_paymentAccountOptions"
+                                        @bind-Value="_paymentAccountId"
+                                        TextProperty="Label"
+                                        ValueProperty="Id"
+                                        Placeholder="Select bank / cash / credit card…"
+                                        AllowFiltering="true"
+                                        Style="width: 100%;"
+                                        Change="@(_ => OnPaymentAccountChanged())" />
+                        @if (_paymentAccountId is { } accId)
+                        {
+                            var acct = _paymentAccountOptions.FirstOrDefault(a => a.Id == accId);
+                            if (acct is not null)
+                            {
+                                <p class="text-fg-subtle text-xs mt-1">
+                                    @HumanizeDetailType(acct.DetailType) · @acct.CurrencyCode
+                                </p>
+                            }
+                        }
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Payment date</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_paymentDate" Style="width: 100%;" />
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Payment method</label>
+                        <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
+                            <option value="cash">Cash</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="credit_card">Credit Card</option>
+                            <option value="wire">Wire</option>
+                            <option value="direct_deposit">Direct Deposit</option>
+                            <option value="eft">EFT</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        @if (_paymentMethod == "cheque")
+                        {
+                            <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
+                            <CitusInput TValue="string" @bind-Value="_chequeNumber" Placeholder="e.g. 1042" />
+                        }
+                        else if (_paymentMethod is "wire" or "direct_deposit" or "eft")
+                        {
+                            <label class="text-sm font-medium block mb-1">Reference # <span class="text-fg-danger">*</span></label>
+                            <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Bank trace / SWIFT MT103 / etc." />
+                        }
+                        else if (_paymentMethod is "credit_card" or "other")
+                        {
+                            <label class="text-sm font-medium block mb-1">Reference #</label>
+                            <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Optional" />
+                        }
+                        else
+                        {
+                            <label class="text-sm font-medium block mb-1">&nbsp;</label>
+                            <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
+                        }
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <header class="citus-panel__header">
+                    <h2 class="citus-panel__title">Lines</h2>
+                    <select class="citus-form-field__input" style="width: auto" value="@_taxMode" @onchange="OnTaxModeChanged">
+                        <option value="exclusive">Tax exclusive</option>
+                        <option value="inclusive">Tax inclusive</option>
+                    </select>
+                </header>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th style="width: 16rem">Category</th>
+                            <th>Description</th>
+                            <th style="width: 6rem" class="text-right">Qty</th>
+                            <th style="width: 8rem" class="text-right">Rate</th>
+                            <th style="width: 9rem">Tax</th>
+                            <th style="width: 8rem" class="text-right">Amount</th>
+                            <th style="width: 3rem"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < _lines.Count; i++)
+                        {
+                            var index = i;
+                            var line = _lines[index];
+                            <tr>
+                                <td>@(index + 1)</td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_categoryAccounts"
+                                                    Value="@line.ExpenseAccountId"
+                                                    Change="@(v => UpdateLine(index, l => l with { ExpenseAccountId = v as Guid? }))"
+                                                    TextProperty="Label"
+                                                    ValueProperty="Id"
+                                                    AllowFiltering="true"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <CitusInput TValue="string"
+                                                Value="@line.Description"
+                                                ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.Quantity"
+                                                   Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
+                                                   Format="0.##" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.UnitPrice"
+                                                   Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
+                                                   Format="0.0000" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_taxCodes"
+                                                    Value="@line.TaxCodeId"
+                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                                    TextProperty="Code"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                                <td>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="flex gap-2 mt-3">
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Notes</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Memo</label>
+                        <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the expense record." />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Internal note</label>
+                        <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Currency</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Discount</h2>
+                <div class="flex gap-2">
+                    <select class="citus-form-field__input" style="width: 8rem"
+                            value="@(_discountKind ?? "")"
+                            @onchange="OnDiscountKindChanged">
+                        <option value="">None</option>
+                        <option value="percent">Percent</option>
+                        <option value="amount">Amount</option>
+                    </select>
+                    <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Style="flex: 1;" />
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal) @_currency</td></tr>
+                        <tr><th>Discount</th><td class="text-right">−@FormatAmount(DiscountAmount)</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
+                        @if (!string.IsNullOrEmpty(_currency)
+                             && !string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)
+                             && _fxRate is { } fx && fx > 0m)
+                        {
+                            <tr><th>Total (@ShellState.ActiveCompany.BaseCurrencyCode)</th><td class="text-right">@FormatAmount(Total * fx)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <div class="flex flex-wrap gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="SaveAsync">
+                    @(_isSaving ? "Saving…" : "Save")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
+    private IReadOnlyList<AccountSummary> _accountsRaw = Array.Empty<AccountSummary>();
+    private IReadOnlyList<PaymentAccountOption> _paymentAccountOptions = Array.Empty<PaymentAccountOption>();
+    private IReadOnlyList<CategoryOption> _categoryAccounts = Array.Empty<CategoryOption>();
+    private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+
+    private string _payeeKind = "vendor";
+    private Guid? _payeeId;
+    private string _payeeNameFreeform = string.Empty;
+
+    private Guid? _paymentAccountId;
+    private string _paymentMethod = "cash";
+    private string _chequeNumber = string.Empty;
+    private string _refNo = string.Empty;
+
+    private DateTime? _paymentDate = DateTime.Today;
+    private string _currency = string.Empty;
+    private decimal? _fxRate;
+
+    private string _taxMode = "exclusive";
+    private string? _discountKind;
+    private decimal? _discountValue;
+    private string _memo = string.Empty;
+    private string _internalNote = string.Empty;
+
+    private List<LineDraft> _lines = new() { new LineDraft() };
+
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _validation;
+
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "New expense",
+        Subtitle = "Record a payment that has already happened."
+    };
+
+    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
+    private decimal DiscountAmount =>
+        _discountKind == "percent" && _discountValue is { } pct ? Math.Round(Subtotal * pct / 100m, 4)
+        : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
+        : 0m;
+    private decimal Total => Math.Round(Subtotal - DiscountAmount, 4);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var vendorsTask = VendorClient.ListAsync();
+            var accountsTask = AccountClient.ListAsync();
+            var taxTask = TaxCodeClient.ListAsync(appliesTo: "purchase");
+            await Task.WhenAll(vendorsTask, accountsTask, taxTask);
+
+            _vendors = vendorsTask.Result;
+            _accountsRaw = accountsTask.Result;
+            _paymentAccountOptions = _accountsRaw
+                .Where(a => a.IsActive && a.AllowManualPosting)
+                .Where(a => a.DetailType is "bank" or "cash" or "credit_card")
+                .OrderBy(a => DetailTypeOrder(a.DetailType))
+                .ThenBy(a => a.Code)
+                .Select(a => new PaymentAccountOption(
+                    Id: a.Id,
+                    Label: $"{HumanizeDetailType(a.DetailType)} · {a.Code}  {a.Name}",
+                    DetailType: a.DetailType,
+                    CurrencyCode: a.CurrencyCode ?? string.Empty))
+                .ToList();
+            _categoryAccounts = _accountsRaw
+                .Where(a => a.IsActive && a.AllowManualPosting)
+                .Where(a => a.RootType is "expense" or "asset" or "cost_of_sales")
+                .Select(a => new CategoryOption(a.Id, $"{a.Code}  {a.Name}"))
+                .ToList();
+            _taxCodes = taxTask.Result;
+        }
+        finally { _isLoading = false; }
+    }
+
+    private static int DetailTypeOrder(string? detailType) => detailType switch
+    {
+        "bank" => 0,
+        "cash" => 1,
+        "credit_card" => 2,
+        _ => 3
+    };
+
+    private static string HumanizeDetailType(string? detailType) => detailType switch
+    {
+        "bank" => "Bank",
+        "cash" => "Cash",
+        "credit_card" => "Credit Card",
+        _ => detailType ?? "—"
+    };
+
+    private void OnPayeeKindChanged(ChangeEventArgs args)
+    {
+        _payeeKind = args.Value?.ToString() ?? "vendor";
+        if (_payeeKind != "vendor") _payeeId = null;
+    }
+
+    private void OnPayeeChanged()
+    {
+        if (_payeeId is null || _payeeKind != "vendor") return;
+        var vendor = _vendors.FirstOrDefault(v => v.Id == _payeeId.Value);
+        if (vendor is null) return;
+        _currency = vendor.DefaultCurrencyCode;
+    }
+
+    private void OnPaymentAccountChanged()
+    {
+        // Clear conflicting payment-method/account combos lazily — server still
+        // validates, but offer immediate UX hint by matching defaults.
+        if (_paymentAccountId is null) return;
+        var acct = _paymentAccountOptions.FirstOrDefault(a => a.Id == _paymentAccountId.Value);
+        if (acct is null) return;
+        if (acct.DetailType == "credit_card" && _paymentMethod != "credit_card")
+            _paymentMethod = "credit_card";
+        else if (acct.DetailType == "cash" && _paymentMethod is "cheque" or "wire" or "direct_deposit" or "eft" or "credit_card")
+            _paymentMethod = "cash";
+    }
+
+    private void OnPaymentMethodChanged(ChangeEventArgs args)
+    {
+        _paymentMethod = args.Value?.ToString() ?? "cash";
+        // Don't auto-clear cheque#/ref# — user might want to switch back.
+    }
+
+    private void OnTaxModeChanged(ChangeEventArgs args) =>
+        _taxMode = args.Value?.ToString() ?? "exclusive";
+
+    private void OnDiscountKindChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _discountKind = string.IsNullOrWhiteSpace(raw) ? null : raw;
+    }
+
+    private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        var current = _lines[index];
+        var updated = mutate(current);
+        current.ExpenseAccountId = updated.ExpenseAccountId;
+        current.Description = updated.Description;
+        current.Quantity = updated.Quantity;
+        current.UnitPrice = updated.UnitPrice;
+        current.TaxCodeId = updated.TaxCodeId;
+    }
+
+    private void AddLine() => _lines.Add(new LineDraft());
+
+    private void RemoveLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.RemoveAt(index);
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
+
+    private async Task SaveAsync()
+    {
+        _validation = null;
+
+        if (_payeeKind == "vendor" && _payeeId is null)
+        {
+            _validation = "Pick a vendor (or switch payee kind to Other and enter a name).";
+            return;
+        }
+        if (_payeeKind != "vendor" && string.IsNullOrWhiteSpace(_payeeNameFreeform))
+        {
+            _validation = "Enter a payee name.";
+            return;
+        }
+        if (_paymentAccountId is null) { _validation = "Pick a payment account."; return; }
+        if (_paymentMethod == "cheque" && string.IsNullOrWhiteSpace(_chequeNumber))
+        {
+            _validation = "Cheque # is required when payment method is Cheque.";
+            return;
+        }
+        if (_paymentMethod is "wire" or "direct_deposit" or "eft" && string.IsNullOrWhiteSpace(_refNo))
+        {
+            _validation = "Reference # is required for Wire / Direct Deposit / EFT.";
+            return;
+        }
+        if (_lines.All(l => l.Quantity == 0 && l.UnitPrice == 0 && string.IsNullOrWhiteSpace(l.Description) && l.ExpenseAccountId is null))
+        {
+            _validation = "Add at least one line with a category and amount.";
+            return;
+        }
+        var lineWithoutCategory = _lines.FirstOrDefault(l => (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)) && l.ExpenseAccountId is null);
+        if (lineWithoutCategory is not null)
+        {
+            _validation = "Every active line needs a category.";
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var payload = new ExpenseUpsertPayload(
+                PayeeKind: _payeeKind,
+                PayeeId: _payeeId,
+                PayeeNameFreeform: _payeeKind == "vendor" ? null : _payeeNameFreeform,
+                PaymentAccountId: _paymentAccountId!.Value,
+                PaymentMethod: _paymentMethod,
+                ChequeNumber: NullIfEmpty(_chequeNumber),
+                RefNo: NullIfEmpty(_refNo),
+                TransactionCurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
+                FxRate: _fxRate,
+                PaymentDate: DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date),
+                SourcePurchaseOrderId: null,
+                SourcePurchaseOrderNumber: null,
+                TaxMode: _taxMode,
+                DiscountKind: _discountKind,
+                DiscountValue: _discountValue,
+                Memo: NullIfEmpty(_memo),
+                InternalNote: NullIfEmpty(_internalNote),
+                Lines: _lines
+                    .Where(l => l.ExpenseAccountId is not null && (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)))
+                    .Select((l, i) => new ExpenseLinePayload(
+                        Sequence: i + 1,
+                        ServiceDate: null,
+                        ItemId: null,
+                        ExpenseAccountId: l.ExpenseAccountId!.Value,
+                        Description: l.Description ?? string.Empty,
+                        Quantity: l.Quantity,
+                        UnitPrice: l.UnitPrice,
+                        TaxCodeId: l.TaxCodeId))
+                    .ToArray());
+
+            var outcome = await ExpenseClient.CreateAsync(payload);
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not save the expense.";
+                return;
+            }
+
+            await Message.SuccessAsync($"Expense {outcome.Saved.ExpenseNumber} recorded.");
+            Navigation.NavigateTo($"expenses/{outcome.Saved.Id:D}");
+        }
+        finally { _isSaving = false; }
+    }
+
+    private void Cancel() => Navigation.NavigateTo("expenses");
+
+    private static string FormatAmount(decimal value) =>
+        value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record LineDraft
+    {
+        public Guid? ExpenseAccountId { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public Guid? TaxCodeId { get; set; }
+    }
+
+    private sealed record PaymentAccountOption(Guid Id, string Label, string? DetailType, string CurrencyCode);
+    private sealed record CategoryOption(Guid Id, string Label);
+}

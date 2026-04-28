@@ -1,0 +1,301 @@
+@page "/purchase-orders/{PurchaseOrderId:guid}/convert-to-expense"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject PurchaseOrderClient PurchaseOrderClient
+@inject AccountClient AccountClient
+@inject ExpenseClient ExpenseClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+@*
+    Convert PO → Expense. Lines come from the PO read-only; user
+    supplies the payment-side bits (account / method / cheque# /
+    ref#). Submit hits /accounting/ap/purchase-orders/{id}/convert-to-expense
+    which atomically creates the Expense (with source_purchase_order_id
+    + source_purchase_order_number stamped) and marks the PO as Closed.
+*@
+
+<PageTitle>Convert PO to Expense | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{PurchaseOrderId:D}")">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to PO</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else if (_po is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Purchase order not found." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">From PO</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>PO #</th><td><span class="citus-inline-code">@_po.PurchaseOrderNumber</span></td></tr>
+                        <tr><th>Vendor</th><td>@_po.VendorName</td></tr>
+                        <tr><th>Order date</th><td>@_po.OrderDate.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Currency</th><td>@_po.TransactionCurrencyCode</td></tr>
+                        <tr><th>Total</th><td><strong>@_po.TotalAmount.ToString("N2") @_po.TransactionCurrencyCode</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines (from PO)</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 5rem">Qty</th>
+                            <th class="text-right" style="width: 7rem">Rate</th>
+                            <th class="text-right" style="width: 8rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _po.Lines)
+                        {
+                            <tr>
+                                <td>@line.Sequence</td>
+                                <td>@(line.ExpenseAccountId is { } accId ? ResolveAccountLabel(accId) : "—")</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                <td class="text-right">@line.UnitPrice.ToString("0.0000")</td>
+                                <td class="text-right">@line.LineTotal.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Payment</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Paid from (account)</label>
+                        <RadzenDropDown TValue="Guid?"
+                                        Data="@_paymentAccountOptions"
+                                        @bind-Value="_paymentAccountId"
+                                        TextProperty="Label"
+                                        ValueProperty="Id"
+                                        Placeholder="Bank / Cash / Credit Card…"
+                                        AllowFiltering="true"
+                                        Style="width: 100%;" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Payment date</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_paymentDate" Style="width: 100%;" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Payment method</label>
+                        <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
+                            <option value="cash">Cash</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="credit_card">Credit Card</option>
+                            <option value="wire">Wire</option>
+                            <option value="direct_deposit">Direct Deposit</option>
+                            <option value="eft">EFT</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    @if (_paymentMethod == "cheque")
+                    {
+                        <div>
+                            <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
+                            <CitusInput TValue="string" @bind-Value="_chequeNumber" Placeholder="e.g. 1042" />
+                        </div>
+                    }
+                    else if (_paymentMethod is "wire" or "direct_deposit" or "eft")
+                    {
+                        <div>
+                            <label class="text-sm font-medium block mb-1">Reference # <span class="text-fg-danger">*</span></label>
+                            <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Bank trace / SWIFT / etc." />
+                        </div>
+                    }
+                    else if (_paymentMethod is "credit_card" or "other")
+                    {
+                        <div>
+                            <label class="text-sm font-medium block mb-1">Reference #</label>
+                            <CitusInput TValue="string" @bind-Value="_refNo" Placeholder="Optional" />
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <div class="flex flex-wrap gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="ConvertAsync">
+                    @(_isSaving ? "Converting…" : "Convert to Expense")
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost"
+                             OnClick="@(() => Navigation.NavigateTo($"purchase-orders/{PurchaseOrderId:D}"))">
+                    Cancel
+                </CitusButton>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid PurchaseOrderId { get; set; }
+
+    private PurchaseOrderRecordDto? _po;
+    private IReadOnlyList<AccountSummary> _accountsRaw = Array.Empty<AccountSummary>();
+    private IReadOnlyList<PaymentAccountOption> _paymentAccountOptions = Array.Empty<PaymentAccountOption>();
+
+    private Guid? _paymentAccountId;
+    private DateTime? _paymentDate = DateTime.Today;
+    private string _paymentMethod = "cash";
+    private string _chequeNumber = string.Empty;
+    private string _refNo = string.Empty;
+
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _validation;
+
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "Convert PO to Expense",
+        Subtitle = "Pay the PO directly without creating an AP open item."
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var poTask = PurchaseOrderClient.GetByIdAsync(PurchaseOrderId);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(poTask, accountsTask);
+
+            _po = poTask.Result;
+            _accountsRaw = accountsTask.Result;
+            _paymentAccountOptions = _accountsRaw
+                .Where(a => a.IsActive && a.AllowManualPosting)
+                .Where(a => a.DetailType is "bank" or "cash" or "credit_card")
+                .OrderBy(a => DetailTypeOrder(a.DetailType))
+                .ThenBy(a => a.Code)
+                .Select(a => new PaymentAccountOption(
+                    Id: a.Id,
+                    Label: $"{HumanizeDetailType(a.DetailType)} · {a.Code}  {a.Name}",
+                    DetailType: a.DetailType,
+                    CurrencyCode: a.CurrencyCode ?? string.Empty))
+                .ToList();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void OnPaymentMethodChanged(ChangeEventArgs args) =>
+        _paymentMethod = args.Value?.ToString() ?? "cash";
+
+    private string ResolveAccountLabel(Guid accountId)
+    {
+        var account = _accountsRaw.FirstOrDefault(a => a.Id == accountId);
+        return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
+    }
+
+    private async Task ConvertAsync()
+    {
+        if (_po is null || _isSaving) return;
+        _validation = null;
+
+        if (_paymentAccountId is null) { _validation = "Pick a payment account."; return; }
+        if (_paymentMethod == "cheque" && string.IsNullOrWhiteSpace(_chequeNumber))
+        { _validation = "Cheque # is required for Cheque payment."; return; }
+        if (_paymentMethod is "wire" or "direct_deposit" or "eft" && string.IsNullOrWhiteSpace(_refNo))
+        { _validation = "Reference # is required for Wire / Direct Deposit / EFT."; return; }
+
+        _isSaving = true;
+        try
+        {
+            var payload = new ExpenseUpsertPayload(
+                PayeeKind: "vendor",
+                PayeeId: _po.VendorId,
+                PayeeNameFreeform: _po.VendorName,
+                PaymentAccountId: _paymentAccountId!.Value,
+                PaymentMethod: _paymentMethod,
+                ChequeNumber: NullIfEmpty(_chequeNumber),
+                RefNo: NullIfEmpty(_refNo),
+                TransactionCurrencyCode: _po.TransactionCurrencyCode,
+                FxRate: _po.FxRate,
+                PaymentDate: DateOnly.FromDateTime((_paymentDate ?? DateTime.Today).Date),
+                SourcePurchaseOrderId: _po.Id,
+                SourcePurchaseOrderNumber: _po.PurchaseOrderNumber,
+                TaxMode: _po.TaxMode,
+                DiscountKind: _po.DiscountKind,
+                DiscountValue: _po.DiscountValue,
+                Memo: _po.MemoToSupplier,
+                InternalNote: _po.InternalNote,
+                Lines: _po.Lines
+                    .Where(l => l.ExpenseAccountId is not null)
+                    .Select(l => new ExpenseLinePayload(
+                        Sequence: l.Sequence,
+                        ServiceDate: l.ServiceDate,
+                        ItemId: null,
+                        ExpenseAccountId: l.ExpenseAccountId!.Value,
+                        Description: l.Description,
+                        Quantity: l.Quantity,
+                        UnitPrice: l.UnitPrice,
+                        TaxCodeId: l.TaxCodeId))
+                    .ToArray());
+
+            var outcome = await ExpenseClient.ConvertFromPurchaseOrderAsync(PurchaseOrderId, payload);
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Convert failed.";
+                await Message.WarningAsync(_validation);
+                return;
+            }
+
+            await Message.SuccessAsync($"Expense {outcome.Saved.ExpenseNumber} created from PO.");
+            Navigation.NavigateTo($"expenses/{outcome.Saved.Id:D}");
+        }
+        finally { _isSaving = false; }
+    }
+
+    private static int DetailTypeOrder(string? detailType) => detailType switch
+    {
+        "bank" => 0,
+        "cash" => 1,
+        "credit_card" => 2,
+        _ => 3
+    };
+
+    private static string HumanizeDetailType(string? detailType) => detailType switch
+    {
+        "bank" => "Bank",
+        "cash" => "Cash",
+        "credit_card" => "Credit Card",
+        _ => detailType ?? "—"
+    };
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record PaymentAccountOption(Guid Id, string Label, string? DetailType, string CurrencyCode);
+}

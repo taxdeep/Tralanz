@@ -69,7 +69,7 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
         Accounts: new CoaTemplateAccount[]
         {
             // ---- Bank / Cash (10000-10999) ----
-            new("10000", "Cash on Hand", "asset", DetailType: "bank"),
+            new("10000", "Cash on Hand", "asset", DetailType: "cash"),
             new("10100", "Bank Operating Account", "asset", DetailType: "bank"),
 
             // ---- Accounts Receivable (11000 base; 11001-11099 reserved for per-currency rows) ----

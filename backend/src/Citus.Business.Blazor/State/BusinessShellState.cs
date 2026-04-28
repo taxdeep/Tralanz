@@ -75,6 +75,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Vendors", Href = "vendors", Icon = IconName.BuildingStore },
                 new NavMenuItem { Title = "Purchase Orders", Href = "purchase-orders", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Bills", Href = "bills", Icon = IconName.Receipt },
+                new NavMenuItem { Title = "Expenses", Href = "expenses", Icon = IconName.Wallet },
                 new NavMenuItem { Title = "Pay Bills", Href = "pay-bills", Icon = IconName.Wallet }
             ]
         },

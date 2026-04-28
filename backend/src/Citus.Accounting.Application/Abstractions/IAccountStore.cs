@@ -48,6 +48,25 @@ public static class AccountRootType
         value is Asset or Liability or Equity or Revenue or CostOfSales or Expense;
 }
 
+/// <summary>
+/// The <c>detail_type</c> values that mark an account as eligible to
+/// be a payment source on an Expense. Tralanz Books surfaces the
+/// Payment Account picker grouped by these three buckets so cheque /
+/// wire / EFT / direct-deposit / credit-card workflows can be
+/// validated against the picked account's category.
+/// </summary>
+public static class PaymentAccountDetailType
+{
+    public const string Bank = "bank";
+    public const string Cash = "cash";
+    public const string CreditCard = "credit_card";
+
+    public static readonly IReadOnlyList<string> All = new[] { Bank, Cash, CreditCard };
+
+    public static bool IsPaymentEligible(string? detailType) =>
+        detailType is Bank or Cash or CreditCard;
+}
+
 public sealed record AccountUpsertInput(
     string Code,
     string Name,

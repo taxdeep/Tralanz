@@ -1,0 +1,146 @@
+@page "/expenses"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject ExpenseClient ExpenseClient
+
+<PageTitle>Expenses | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="expenses/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New expense</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Expenses</h2>
+    </header>
+
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
+                        EmptyIcon="IconName.Wallet"
+                        EmptyTitle="No expenses yet"
+                        EmptyMessage="Use New expense to record a payment that has already happened (cash / cheque / wire / credit-card).">
+        <RadzenDataGrid TItem="ExpenseRow"
+                        Data="@_rows"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        FilterMode="FilterMode.Simple"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.ExpenseNumber)" Title="Expense #" Width="200px">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"expenses/{row.Id:D}")">
+                            <span class="citus-inline-code">@row.ExpenseNumber</span>
+                        </a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.PayeeDisplayName)" Title="Payee">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"expenses/{row.Id:D}")">@row.PayeeDisplayName</a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.PaymentDate)" Title="Date" Width="120px">
+                    <Template Context="row">@row.PaymentDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.PaymentAccountLabel)" Title="Paid from" />
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.PaymentMethod)" Title="Method" Width="130px">
+                    <Template Context="row">@HumanizeMethod(row.PaymentMethod)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.Status)" Title="Status" Width="100px">
+                    <Template Context="row">
+                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.SourcePurchaseOrderNumber)" Title="Source PO" Width="140px">
+                    <Template Context="row">@(string.IsNullOrEmpty(row.SourcePurchaseOrderNumber) ? "—" : row.SourcePurchaseOrderNumber)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ExpenseRow" Property="@nameof(ExpenseRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </CitusAsyncBoundary>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "Expenses",
+        Subtitle = "Cash outflows. Recorded when you've already paid; no AP open item created."
+    };
+
+    private List<ExpenseRow> _rows = new();
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await ExpenseClient.ListAsync();
+            _rows = rows.Select(r => new ExpenseRow(
+                Id: r.Id,
+                ExpenseNumber: r.ExpenseNumber,
+                Status: r.Status,
+                PayeeDisplayName: string.IsNullOrEmpty(r.PayeeDisplayName) ? "—" : r.PayeeDisplayName,
+                PaymentAccountLabel: r.PaymentAccountLabel,
+                PaymentMethod: r.PaymentMethod,
+                PaymentDate: r.PaymentDate,
+                TotalAmount: r.TotalAmount,
+                Currency: r.TransactionCurrencyCode,
+                SourcePurchaseOrderNumber: r.SourcePurchaseOrderNumber)).ToList();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "posted" => "green",
+        "voided" => "default",
+        _ => "default"
+    };
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "posted" => "Posted",
+        "voided" => "Voided",
+        _ => status
+    };
+
+    private static string HumanizeMethod(string method) => method switch
+    {
+        "cash" => "Cash",
+        "cheque" => "Cheque",
+        "credit_card" => "Credit Card",
+        "wire" => "Wire",
+        "direct_deposit" => "Direct Deposit",
+        "eft" => "EFT",
+        "other" => "Other",
+        _ => method
+    };
+
+    private sealed record ExpenseRow(
+        Guid Id,
+        string ExpenseNumber,
+        string Status,
+        string PayeeDisplayName,
+        string PaymentAccountLabel,
+        string PaymentMethod,
+        DateOnly PaymentDate,
+        decimal TotalAmount,
+        string Currency,
+        string? SourcePurchaseOrderNumber);
+}

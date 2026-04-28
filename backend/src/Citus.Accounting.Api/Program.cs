@@ -32,10 +32,12 @@ using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.AP.Bills;
+using Infrastructure.PostgreSQL.AP.Expenses;
 using Infrastructure.PostgreSQL.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.Counterparties;
 using Infrastructure.PostgreSQL.Sales;
 using Modules.AP.Bills;
+using Modules.AP.Expenses;
 using Modules.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
@@ -223,6 +225,12 @@ builder.Services.AddSingleton<IBillStore, PostgreSqlBillStore>();
 // Inventory batch.
 builder.Services.AddSingleton<IPurchaseOrderStore, PostgreSqlPurchaseOrderStore>();
 
+// AP-side: Expense (cash outflow) document surface. Owns expenses /
+// expense_lines. Posted-only state machine — Expense reflects payments
+// already made, no Draft. V1 framework writes the document but defers
+// the journal-entry pipeline alongside the Bill GL integration batch.
+builder.Services.AddSingleton<IExpenseStore, PostgreSqlExpenseStore>();
+
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
 // exist by (company_id, code).
@@ -346,6 +354,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var salesOrderStore = startupScope.ServiceProvider.GetRequiredService<ISalesOrderStore>();
     var billStore = startupScope.ServiceProvider.GetRequiredService<IBillStore>();
     var purchaseOrderStore = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderStore>();
+    var expenseStore = startupScope.ServiceProvider.GetRequiredService<IExpenseStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
@@ -371,6 +380,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await billStore.EnsureSchemaAsync(CancellationToken.None);
     await purchaseOrderStore.EnsureSchemaAsync(CancellationToken.None);
+    await expenseStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
@@ -5283,6 +5293,255 @@ static PurchaseOrderUpsertInput MapPurchaseOrderInput(PurchaseOrderUpsertHttpReq
     PaymentTermId: request.PaymentTermId,
     Lines: (request.Lines ?? Array.Empty<PurchaseOrderLineHttpRequest>())
         .Select(l => new PurchaseOrderLineInput(
+            Sequence: l.Sequence,
+            ServiceDate: l.ServiceDate,
+            ItemId: l.ItemId,
+            ExpenseAccountId: l.ExpenseAccountId,
+            Description: l.Description ?? string.Empty,
+            Quantity: l.Quantity,
+            UnitPrice: l.UnitPrice,
+            TaxCodeId: l.TaxCodeId))
+        .ToArray());
+
+// ===========================================================================
+// Expenses (AP-side, /ap/expenses) — cash outflows.
+//
+// Posted-only state machine: an Expense reflects a payment that has
+// already happened, so it lands directly in Posted state and only
+// transitions out via Void. V1 framework writes the document but
+// defers the journal-entry pipeline (DR category accounts / CR
+// payment account) — same scheduling as Bill posting integration.
+//
+// Convert to Expense (from a PO): see /ap/purchase-orders/{id}/convert-to-expense
+// below.
+// ===========================================================================
+
+accounting.MapGet(
+    "/ap/expenses",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IExpenseStore store,
+        string? status,
+        Guid? payeeId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var filter = new ExpenseListFilter(
+            Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
+            PayeeId: payeeId,
+            FromDate: from,
+            ToDate: to);
+        var rows = await store.ListAsync(session.ActiveCompanyId, filter, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/ap/expenses/{expenseId:guid}",
+    async (
+        Guid expenseId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IExpenseStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var expense = await store.GetByIdAsync(session.ActiveCompanyId, expenseId, cancellationToken);
+        return expense is null ? Results.NotFound() : Results.Ok(expense);
+    });
+
+accounting.MapPost(
+    "/ap/expenses",
+    async (
+        ExpenseUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IExpenseStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateExpenseInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                MapExpenseInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.Conflict(new { message = "Could not allocate a unique expense number. Please try saving again." });
+        }
+    });
+
+accounting.MapPost(
+    "/ap/expenses/{expenseId:guid}/void",
+    async (
+        Guid expenseId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IExpenseStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var saved = await store.VoidAsync(session.ActiveCompanyId, expenseId, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/ap/purchase-orders/{purchaseOrderId:guid}/convert-to-expense",
+    async (
+        Guid purchaseOrderId,
+        ExpenseUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore poStore,
+        IExpenseStore expenseStore,
+        CancellationToken cancellationToken) =>
+    {
+        // PO → Expense conversion needs payment account / method / cheque
+        // or ref number from the user — those don't exist on the PO. The
+        // Blazor side opens a small dialog, collects them, and posts here
+        // alongside the PO id.
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        var po = await poStore.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
+        if (po is null) return Results.NotFound();
+        if (!PurchaseOrderStatus.CanConvert(po.Status))
+        {
+            return Results.BadRequest(new { message = $"Purchase order in status '{po.Status}' cannot be converted to an Expense." });
+        }
+        if (po.Lines.Count == 0)
+        {
+            return Results.BadRequest(new { message = "Purchase order has no lines to convert." });
+        }
+        if (po.Lines.Any(l => l.ExpenseAccountId is null))
+        {
+            return Results.BadRequest(new { message = "All purchase-order lines must have a category before converting to Expense." });
+        }
+
+        // Build a synthesised ExpenseUpsertHttpRequest from PO lines + the
+        // payment/method bits the caller supplied.
+        var expenseRequest = request with
+        {
+            // Payee defaults to vendor of the PO when caller didn't override.
+            PayeeKind = string.IsNullOrWhiteSpace(request.PayeeKind) ? ExpensePayeeKind.Vendor : request.PayeeKind,
+            PayeeId = request.PayeeId ?? po.VendorId,
+            PayeeNameFreeform = string.IsNullOrWhiteSpace(request.PayeeNameFreeform) ? po.VendorName : request.PayeeNameFreeform,
+            TransactionCurrencyCode = string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? po.TransactionCurrencyCode : request.TransactionCurrencyCode,
+            FxRate = request.FxRate ?? po.FxRate,
+            SourcePurchaseOrderId = po.Id,
+            SourcePurchaseOrderNumber = po.PurchaseOrderNumber,
+            Memo = request.Memo ?? po.MemoToSupplier,
+            Lines = po.Lines
+                .Select(l => new ExpenseLineHttpRequest(
+                    Sequence: l.Sequence,
+                    ServiceDate: l.ServiceDate,
+                    ItemId: null,
+                    ExpenseAccountId: l.ExpenseAccountId!.Value,
+                    Description: l.Description,
+                    Quantity: l.Quantity,
+                    UnitPrice: l.UnitPrice,
+                    TaxCodeId: l.TaxCodeId))
+                .ToArray()
+        };
+
+        var validation = ValidateExpenseInput(expenseRequest);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        ExpenseRecord savedExpense;
+        try
+        {
+            savedExpense = await expenseStore.CreateAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                MapExpenseInput(expenseRequest),
+                cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+
+        await poStore.MarkClosedAsync(session.ActiveCompanyId, po.Id, cancellationToken);
+
+        return Results.Ok(savedExpense);
+    });
+
+static string? ValidateExpenseInput(ExpenseUpsertHttpRequest request)
+{
+    if (!ExpensePayeeKind.IsValid(request.PayeeKind))
+        return "Payee kind must be 'vendor', 'employee', or 'other'.";
+    if (request.PayeeId is null && string.IsNullOrWhiteSpace(request.PayeeNameFreeform))
+        return "Payee is required (pick a vendor / employee or enter a free-form name).";
+    if (request.PaymentAccountId == Guid.Empty)
+        return "Payment account is required.";
+    if (!ExpensePaymentMethod.IsValid(request.PaymentMethod))
+        return "Invalid payment method.";
+
+    var refValidation = ExpensePaymentMethod.ValidateReferenceFields(request.PaymentMethod, request.ChequeNumber, request.RefNo);
+    if (refValidation is not null) return refValidation;
+
+    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
+    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
+    if (request.FxRate is { } rate && rate <= 0m) return "Exchange rate must be greater than zero.";
+
+    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? ExpenseTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
+    if (!ExpenseTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
+
+    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
+    foreach (var line in request.Lines)
+    {
+        if (line.ExpenseAccountId == Guid.Empty) return "Each line must point to a category account.";
+        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
+        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
+    }
+    return null;
+}
+
+static ExpenseUpsertInput MapExpenseInput(ExpenseUpsertHttpRequest request) => new(
+    PayeeKind: request.PayeeKind,
+    PayeeId: request.PayeeId,
+    PayeeNameFreeform: request.PayeeNameFreeform ?? string.Empty,
+    PaymentAccountId: request.PaymentAccountId,
+    PaymentMethod: request.PaymentMethod,
+    ChequeNumber: string.IsNullOrWhiteSpace(request.ChequeNumber) ? null : request.ChequeNumber.Trim(),
+    RefNo: string.IsNullOrWhiteSpace(request.RefNo) ? null : request.RefNo.Trim(),
+    TransactionCurrencyCode: request.TransactionCurrencyCode,
+    FxRate: request.FxRate,
+    PaymentDate: request.PaymentDate,
+    SourcePurchaseOrderId: request.SourcePurchaseOrderId,
+    SourcePurchaseOrderNumber: request.SourcePurchaseOrderNumber,
+    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? ExpenseTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
+    DiscountKind: request.DiscountKind,
+    DiscountValue: request.DiscountValue,
+    Memo: request.Memo,
+    InternalNote: request.InternalNote,
+    Lines: (request.Lines ?? Array.Empty<ExpenseLineHttpRequest>())
+        .Select(l => new ExpenseLineInput(
             Sequence: l.Sequence,
             ServiceDate: l.ServiceDate,
             ItemId: l.ItemId,

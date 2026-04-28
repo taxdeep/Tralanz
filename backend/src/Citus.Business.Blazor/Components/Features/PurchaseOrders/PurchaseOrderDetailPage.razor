@@ -66,10 +66,9 @@ else
                 <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConvertToBillAsync">
                     Convert to Bill
                 </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="true"
-                             OnClick="@(() => Task.CompletedTask)">
-                    Convert to Expense (coming with Expense module)
-                </CitusButton>
+                <a class="citus-button" href="@($"purchase-orders/{_po.Id:D}/convert-to-expense")">
+                    Convert to Expense
+                </a>
             }
             @if (_po.Status is "draft" or "open")
             {

@@ -1,0 +1,269 @@
+@page "/expenses/{ExpenseId:guid}"
+
+@inject BusinessShellState ShellState
+@inject ExpenseClient ExpenseClient
+@inject AccountClient AccountClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+<PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="expenses">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to expenses</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else if (_expense is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Expense not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Expense #" Value="@_expense.ExpenseNumber" Description="@_expense.PayeeNameFreeform"
+                       Icon="IconName.Wallet" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_expense.Status)"
+                       Description="@(_expense.VoidedAt is { } v ? $"Voided {v.ToLocalTime():yyyy-MM-dd HH:mm}" : "Posted")"
+                       Icon="IconName.Eye" Tone="@StatusTone(_expense.Status)" />
+        <CitusStatCard Label="Total" Value="@($"{_expense.TotalAmount:N2} {_expense.TransactionCurrencyCode}")"
+                       Description="@($"Paid via {HumanizeMethod(_expense.PaymentMethod)}")"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+        <CitusStatCard Label="Payment date"
+                       Value="@_expense.PaymentDate.ToString("yyyy-MM-dd")"
+                       Description="@_expense.PaymentAccountLabel"
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+    </div>
+
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Actions</h2>
+        <div class="flex flex-wrap gap-2 items-center">
+            @if (_expense.Status == "posted")
+            {
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
+            }
+            else
+            {
+                <span class="text-fg-muted text-sm">This expense is voided. No further actions.</span>
+            }
+            @if (_expense.SourcePurchaseOrderId is { } poId)
+            {
+                <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
+            }
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 5rem">Qty</th>
+                            <th class="text-right" style="width: 7rem">Rate</th>
+                            <th class="text-right" style="width: 8rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _expense.Lines)
+                        {
+                            <tr>
+                                <td>@line.Sequence</td>
+                                <td>@ResolveAccountLabel(line.ExpenseAccountId)</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                <td class="text-right">@line.UnitPrice.ToString("0.0000")</td>
+                                <td class="text-right">@line.LineTotal.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_expense.Memo) || !string.IsNullOrWhiteSpace(_expense.InternalNote))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Notes</h2>
+                    <table class="citus-keyvalue">
+                        <tbody>
+                            @if (!string.IsNullOrWhiteSpace(_expense.Memo))
+                            {
+                                <tr><th>Memo</th><td>@_expense.Memo</td></tr>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_expense.InternalNote))
+                            {
+                                <tr><th>Internal note</th><td>@_expense.InternalNote</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Payment</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Payee</th><td>@(string.IsNullOrEmpty(_expense.PayeeNameFreeform) ? "—" : _expense.PayeeNameFreeform)</td></tr>
+                        <tr><th>Paid from</th><td>@_expense.PaymentAccountLabel</td></tr>
+                        <tr><th>Method</th><td>@HumanizeMethod(_expense.PaymentMethod)</td></tr>
+                        @if (!string.IsNullOrEmpty(_expense.ChequeNumber))
+                        {
+                            <tr><th>Cheque #</th><td><span class="citus-inline-code">@_expense.ChequeNumber</span></td></tr>
+                        }
+                        @if (!string.IsNullOrEmpty(_expense.RefNo))
+                        {
+                            <tr><th>Reference #</th><td><span class="citus-inline-code">@_expense.RefNo</span></td></tr>
+                        }
+                        <tr><th>Currency</th><td>
+                            @_expense.TransactionCurrencyCode
+                            @(_expense.TransactionCurrencyCode == _expense.BaseCurrencyCode ? "" : $"@ {_expense.FxRate}")
+                        </td></tr>
+                        <tr><th>Source PO</th><td>@(string.IsNullOrEmpty(_expense.SourcePurchaseOrderNumber) ? "—" : _expense.SourcePurchaseOrderNumber)</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@_expense.SubtotalAmount.ToString("N2")</td></tr>
+                        <tr><th>Discount</th><td class="text-right">−@_expense.DiscountAmount.ToString("N2")</td></tr>
+                        <tr><th>Tax</th><td class="text-right">@_expense.TaxAmount.ToString("N2")</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@_expense.TotalAmount.ToString("N2") @_expense.TransactionCurrencyCode</strong></td></tr>
+                        @if (_expense.TransactionCurrencyCode != _expense.BaseCurrencyCode)
+                        {
+                            <tr><th>Total (@_expense.BaseCurrencyCode)</th><td class="text-right">@((_expense.TotalAmount * _expense.FxRate).ToString("N2"))</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid ExpenseId { get; set; }
+
+    private ExpenseRecordDto? _expense;
+    private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private bool _isLoading = true;
+    private bool _isMutating;
+    private string? _error;
+
+    private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "Expense", Subtitle = "Expense detail" };
+    private string _pageTitle = "Expense";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_expense is not null && _expense.Id != ExpenseId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            var expenseTask = ExpenseClient.GetByIdAsync(ExpenseId);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(expenseTask, accountsTask);
+            _expense = expenseTask.Result;
+            _accounts = accountsTask.Result;
+            ApplyHeader();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_expense is null)
+        {
+            _pageTitle = "Expense";
+            _header = new PageHeaderModel { Eyebrow = "Expense & Bills", Title = "Expense", Subtitle = "Expense detail" };
+            return;
+        }
+        _pageTitle = _expense.ExpenseNumber;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Expense & Bills",
+            Title = _expense.ExpenseNumber,
+            Subtitle = $"{_expense.PayeeNameFreeform} · {HumanizeStatus(_expense.Status)}"
+        };
+    }
+
+    private string ResolveAccountLabel(Guid accountId)
+    {
+        var account = _accounts.FirstOrDefault(a => a.Id == accountId);
+        return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
+    }
+
+    private async Task VoidAsync()
+    {
+        if (_expense is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await ExpenseClient.VoidAsync(_expense.Id);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Void failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _expense = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync("Expense voided.");
+        }
+        finally { _isMutating = false; }
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "posted" => "Posted",
+        "voided" => "Voided",
+        _ => status
+    };
+
+    private static string HumanizeMethod(string method) => method switch
+    {
+        "cash" => "Cash",
+        "cheque" => "Cheque",
+        "credit_card" => "Credit Card",
+        "wire" => "Wire",
+        "direct_deposit" => "Direct Deposit",
+        "eft" => "EFT",
+        "other" => "Other",
+        _ => method
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "posted" => StatTone.Success,
+        "voided" => StatTone.Neutral,
+        _ => StatTone.Neutral
+    };
+}
