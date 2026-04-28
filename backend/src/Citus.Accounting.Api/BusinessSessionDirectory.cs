@@ -17,11 +17,9 @@ public sealed class BusinessSessionDirectory
         ICompanySessionContextWorkflow? companySessionContextWorkflow = null)
     {
         var hasConfiguredDirectory = options.Value.Companies.Count > 0 || options.Value.Users.Count > 0;
-        var companies = options.Value.Companies.Count > 0 ? options.Value.Companies : GetDefaultCompanies();
-        var users = options.Value.Users.Count > 0 ? options.Value.Users : GetDefaultUsers();
 
-        _companies = companies.ToDictionary(company => company.Id);
-        _users = users.ToDictionary(user => user.Id);
+        _companies = options.Value.Companies.ToDictionary(company => company.Id);
+        _users = options.Value.Users.ToDictionary(user => user.Id);
         _companySessionContextWorkflow = companySessionContextWorkflow;
         _allowStaticFallback = companySessionContextWorkflow is null || hasConfiguredDirectory;
     }
@@ -195,48 +193,6 @@ public sealed class BusinessSessionDirectory
         string.IsNullOrWhiteSpace(status)
             ? "active"
             : status.Trim().ToLowerInvariant();
-
-    private static List<BusinessSessionCompanyOptions> GetDefaultCompanies() =>
-    [
-        new BusinessSessionCompanyOptions
-        {
-            Id = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc"),
-            CompanyCode = "NORTHWIND",
-            CompanyName = "Northwind Studio Ltd.",
-            BaseCurrencyCode = "USD",
-            MultiCurrencyEnabled = true
-        },
-        new BusinessSessionCompanyOptions
-        {
-            Id = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6"),
-            CompanyCode = "BLUEHARBOR",
-            CompanyName = "Blue Harbor Trading Co.",
-            BaseCurrencyCode = "CAD",
-            MultiCurrencyEnabled = false
-        }
-    ];
-
-    private static List<BusinessSessionUserOptions> GetDefaultUsers() =>
-    [
-        new BusinessSessionUserOptions
-        {
-            Id = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d"),
-            DisplayName = "Alice Rowan",
-            Email = "alice.rowan@northwind.example",
-            Username = "alice.rowan",
-            Roles = ["owner", "reports"],
-            CompanyIds = [Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc")]
-        },
-        new BusinessSessionUserOptions
-        {
-            Id = Guid.Parse("3512739f-2af3-41f5-8fd4-d648d913a274"),
-            DisplayName = "Ben Mercer",
-            Email = "ben.mercer@blueharbor.example",
-            Username = "ben.mercer",
-            Roles = ["user", "ap"],
-            CompanyIds = [Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6")]
-        }
-    ];
 
     public sealed record ResolveResult(
         bool Success,

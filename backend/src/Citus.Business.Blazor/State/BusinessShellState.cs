@@ -22,8 +22,6 @@ public sealed class BusinessShellState
 
     public string SessionToken { get; private set; } = string.Empty;
 
-    public bool IsBootstrapSession { get; private set; }
-
     public bool IsAuthenticated => !string.IsNullOrWhiteSpace(SessionToken);
 
     public MaintenanceStateSummary MaintenanceState { get; private set; } = new()
@@ -138,11 +136,9 @@ public sealed class BusinessShellState
 
     public void ApplyAuthenticatedSession(
         string sessionToken,
-        BusinessAuthSessionSummary session,
-        bool isBootstrap)
+        BusinessAuthSessionSummary session)
     {
         SessionToken = sessionToken.Trim();
-        IsBootstrapSession = isBootstrap;
         User = session.User;
         ActiveCompany = session.ActiveCompany;
         AvailableCompanies = session.AvailableCompanies.Count > 0
@@ -169,7 +165,6 @@ public sealed class BusinessShellState
     public void ClearAuthenticatedSession()
     {
         SessionToken = string.Empty;
-        IsBootstrapSession = false;
         User = BuildSignedOutUser();
         ActiveCompany = BuildSignedOutCompany();
         AvailableCompanies = Array.Empty<BusinessCompanySummary>();

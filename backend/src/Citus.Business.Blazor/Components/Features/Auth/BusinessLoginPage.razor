@@ -118,7 +118,7 @@
                 return;
             }
 
-            ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session, response.IsBootstrap);
+            ShellState.ApplyAuthenticatedSession(response.SessionToken, response.Session);
             await JS.InvokeVoidAsync("citusBusinessAuth.setSessionToken", response.SessionToken);
 
             // Merge any persisted display-name override so the user sees
@@ -129,14 +129,7 @@
                 ShellState.UpdateUserDisplayName(profileOverride.DisplayName);
             }
 
-            if (response.IsBootstrap)
-            {
-                await Message.InfoAsync("Signed in with the local bootstrap user.");
-            }
-            else
-            {
-                await Message.SuccessAsync($"Welcome back, {response.Session.User.DisplayName}.");
-            }
+            await Message.SuccessAsync($"Welcome back, {response.Session.User.DisplayName}.");
 
             NavigationManager.NavigateTo("dashboard");
         }

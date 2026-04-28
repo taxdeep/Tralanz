@@ -126,10 +126,48 @@ public sealed class BusinessSessionDirectoryTests
     }
 
     private static BusinessSessionDirectory CreateDirectory() =>
-        new(Microsoft.Extensions.Options.Options.Create(new BusinessSessionOptions()));
+        new(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()));
 
     private static BusinessSessionDirectory CreateDirectory(ICompanySessionContextWorkflow workflow) =>
-        new(Microsoft.Extensions.Options.Options.Create(new BusinessSessionOptions()), workflow);
+        new(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()), workflow);
+
+    // Test-local fixture: the production directory no longer carries any
+    // built-in companies / users, so the tests own the data they exercise.
+    // Names are arbitrary but kept consistent with the assertions below.
+    private static BusinessSessionOptions CreateFixtureOptions() => new()
+    {
+        Companies =
+        [
+            new BusinessSessionCompanyOptions
+            {
+                Id = CompanyId,
+                CompanyCode = "NORTHWIND",
+                CompanyName = "Northwind Studio Ltd.",
+                BaseCurrencyCode = "USD",
+                MultiCurrencyEnabled = true
+            },
+            new BusinessSessionCompanyOptions
+            {
+                Id = OtherCompanyId,
+                CompanyCode = "BLUEHARBOR",
+                CompanyName = "Blue Harbor Trading Co.",
+                BaseCurrencyCode = "CAD",
+                MultiCurrencyEnabled = false
+            }
+        ],
+        Users =
+        [
+            new BusinessSessionUserOptions
+            {
+                Id = UserId,
+                DisplayName = "Alice Rowan",
+                Email = "alice.rowan@northwind.example",
+                Username = "alice.rowan",
+                Roles = ["owner", "reports"],
+                CompanyIds = [CompanyId]
+            }
+        ]
+    };
 
     private static CompanyAccessSessionContext CreatePersistedSessionContext(
         Guid userId,

@@ -101,41 +101,44 @@ public sealed class BusinessSessionHeaderHandlerTests
 
     private static BusinessShellState CreateState()
     {
-        var bootstrap = new AppHostOptions();
+        // Test-local identity. The handler under test only inspects the
+        // active user / company GUIDs, so any non-empty fixture works.
+        var userId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+        var companyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+
         var state = new BusinessShellState();
         state.ApplyAuthenticatedSession(
-            "bootstrap:test",
+            "session-test",
             new BusinessAuthSessionSummary
             {
                 User = new BusinessUserSummary
                 {
-                    Id = bootstrap.BootstrapUserId,
-                    DisplayName = bootstrap.BootstrapUserDisplayName,
-                    Email = bootstrap.BootstrapUserEmail,
-                    Username = bootstrap.BootstrapUsername,
-                    Roles = bootstrap.BootstrapRoles
+                    Id = userId,
+                    DisplayName = "Alice Rowan",
+                    Email = "alice.rowan@northwind.example",
+                    Username = "alice.rowan",
+                    Roles = ["owner", "reports"]
                 },
                 ActiveCompany = new BusinessCompanySummary
                 {
-                    Id = bootstrap.BootstrapCompanyId,
-                    CompanyCode = bootstrap.BootstrapCompanyCode,
-                    CompanyName = bootstrap.BootstrapCompanyName,
-                    BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
-                    MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
+                    Id = companyId,
+                    CompanyCode = "NORTHWIND",
+                    CompanyName = "Northwind Studio Ltd.",
+                    BaseCurrencyCode = "USD",
+                    MultiCurrencyEnabled = true
                 },
                 AvailableCompanies = new List<BusinessCompanySummary>
                 {
                     new()
                     {
-                        Id = bootstrap.BootstrapCompanyId,
-                        CompanyCode = bootstrap.BootstrapCompanyCode,
-                        CompanyName = bootstrap.BootstrapCompanyName,
-                        BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
-                        MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
+                        Id = companyId,
+                        CompanyCode = "NORTHWIND",
+                        CompanyName = "Northwind Studio Ltd.",
+                        BaseCurrencyCode = "USD",
+                        MultiCurrencyEnabled = true
                     }
                 }
-            },
-            isBootstrap: true);
+            });
         return state;
     }
 

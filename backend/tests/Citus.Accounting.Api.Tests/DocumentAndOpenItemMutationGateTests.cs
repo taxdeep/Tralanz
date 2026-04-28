@@ -317,8 +317,36 @@ public sealed class DocumentAndOpenItemMutationGateTests
             new BusinessSessionRequestReader(),
             new BusinessRequestContractGuard(),
             new BusinessSessionDirectory(
-                Microsoft.Extensions.Options.Options.Create(new BusinessSessionOptions()),
+                Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()),
                 new StubCompanySessionContextWorkflow(context)));
+
+    // Test-local fixture. Production directory no longer carries built-ins.
+    private static BusinessSessionOptions CreateFixtureOptions() => new()
+    {
+        Companies =
+        [
+            new BusinessSessionCompanyOptions
+            {
+                Id = CompanyId,
+                CompanyCode = "NORTHWIND",
+                CompanyName = "Northwind Studio Ltd.",
+                BaseCurrencyCode = "USD",
+                MultiCurrencyEnabled = true
+            }
+        ],
+        Users =
+        [
+            new BusinessSessionUserOptions
+            {
+                Id = UserId,
+                DisplayName = "Alice Rowan",
+                Email = "alice.rowan@northwind.example",
+                Username = "alice.rowan",
+                Roles = ["owner", "reports"],
+                CompanyIds = [CompanyId]
+            }
+        ]
+    };
 
     private static HeaderDictionary CreateHeaders(Guid userId, Guid companyId) =>
         new()

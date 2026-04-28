@@ -202,8 +202,7 @@ else
         var session = await BusinessAuthenticationClient.ResumeSessionAsync(storedToken);
         if (session is not null)
         {
-            var isBootstrap = storedToken.StartsWith("bootstrap:", StringComparison.Ordinal);
-            ShellState.ApplyAuthenticatedSession(storedToken, session, isBootstrap);
+            ShellState.ApplyAuthenticatedSession(storedToken, session);
 
             // Merge the per-user display-name override so a renamed user
             // sees their preferred name immediately on every reload.
@@ -231,11 +230,6 @@ else
 
     private async Task LoadSessionContextAsync()
     {
-        if (ShellState.IsBootstrapSession)
-        {
-            return;
-        }
-
         _isContextLoading = true;
 
         try

@@ -243,19 +243,16 @@ builder.Services.AddSingleton<ICoaTemplateSeeder, CoaTemplateSeeder>();
 builder.Services.AddSingleton<UnityAiFeatureFlagAccessor>();
 builder.Services.AddSingleton<PostgreSqlUnityAiSchemaInitializer>();
 
-// Platform schema setup + dev bootstrap fixtures gating.
-// The schema setup runs unconditionally (creates platform tables + seeds
-// the ISO 4217 currency catalog — real reference data needed in every
-// environment). The dev fixtures (Alice / Ben / Northwind / Blue Harbor)
-// are gated behind BusinessBootstrap:Fixtures:Enabled, defaulting to
-// "Development only" so a fresh production install stays clean.
-// See PlatformBootstrapFixturesInitializer for the full breakdown.
-builder.Services.Configure<BusinessBootstrapOptions>(
-    builder.Configuration.GetSection(BusinessBootstrapOptions.SectionName));
+// Platform schema setup. Runs unconditionally in every environment because
+// the Accounting API's accounts / tax codes / journal entries / FX writes
+// FK into currency_catalog, companies, users, company_memberships, and
+// these tables (plus the ISO 4217 currency rows) must exist before any
+// business write. PostgresPlatformFirstCompanyProvisioningRepository
+// guarantees idempotency via IF NOT EXISTS / ON CONFLICT DO NOTHING.
 builder.Services.AddSingleton<Citus.Platform.Core.Runtime.SysAdminPasswordHasher>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformFirstCompanyProvisioningRepository,
     Citus.Platform.Infrastructure.Persistence.PostgresPlatformFirstCompanyProvisioningRepository>();
-builder.Services.AddSingleton<PlatformBootstrapFixturesInitializer>();
+builder.Services.AddSingleton<PlatformSchemaInitializer>();
 
 // Business sign-in / session endpoints. The repo is the same one SysAdmin
 // has been using for first-company-wizard creds — it owns the users /
@@ -356,7 +353,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var purchaseOrderStore = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderStore>();
     var expenseStore = startupScope.ServiceProvider.GetRequiredService<IExpenseStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
-    var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
+    var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -364,13 +361,12 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
     await userProfileOverrideStore.EnsureSchemaAsync(CancellationToken.None);
     // Platform tables (currency_catalog, companies, users, company_memberships,
-    // company_books, etc.) and bootstrap fixtures must exist before any
-    // accountStore / taxCodeStore insert that FKs into them. The Accounting
-    // API used to assume the SysAdmin First-Company Wizard had run first to
-    // create those tables and seed the catalog, but bootstrap-mode sessions
-    // skip that wizard — this initializer runs the same idempotent schema
+    // company_books, etc.) must exist before any accountStore / taxCodeStore
+    // insert that FKs into them. The Accounting API used to assume the
+    // SysAdmin First-Company Wizard had run first to create those tables and
+    // seed the catalog; this initializer runs the same idempotent schema
     // setup directly so the API works end-to-end without external bootstrapping.
-    await bootstrapFixtures.EnsureAsync(CancellationToken.None);
+    await platformSchema.EnsureAsync(CancellationToken.None);
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
     await customerStore.EnsureSchemaAsync(CancellationToken.None);
@@ -396,12 +392,6 @@ await using (var startupScope = app.Services.CreateAsyncScope())
 // RevokeSessionAsync delegate to the Postgres-backed
 // IPlatformBusinessSessionRepository (same repo SysAdmin uses to verify
 // First-Company-Wizard owners).
-//
-// Until a real auth flow shipped, the Blazor side silently fell back to
-// a "bootstrap" Northwind/Alice session whenever /auth/login returned 404 —
-// that's why an operator who'd just provisioned a real owner kept landing
-// on Northwind. With these endpoints live, real credentials succeed and
-// the bootstrap fallback is no longer reached on this code path.
 // ---------------------------------------------------------------------------
 
 app.MapPost(

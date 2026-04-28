@@ -1,15 +1,10 @@
-using Citus.Business.Blazor.Configuration;
 using Citus.Ui.Shared.Business;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace Citus.Business.Blazor.Services;
 
 public sealed class BusinessAuthenticationClient(
     HttpClient httpClient,
-    IOptions<AppHostOptions> hostOptions,
-    IHostEnvironment hostEnvironment,
     ILogger<BusinessAuthenticationClient> logger)
 {
     public async Task<SignInResponse> SignInAsync(
@@ -41,32 +36,11 @@ public sealed class BusinessAuthenticationClient(
                 return SignInResponse.Failed("The Accounting API returned an empty session response.");
             }
 
-            // Past behaviour: fall back to a bootstrap (Northwind/Alice) session
-            // on 404 so the dev experience worked before /auth/login shipped.
-            // That fallback now hides a real misconfiguration — operators who
-            // had just provisioned a real owner via the SysAdmin First-Company
-            // Wizard kept landing on "Northwind" because /auth/login was 404'ing
-            // and the silent fallback masked it. /auth/login is wired now;
-            // a 404 here means the API is genuinely missing the endpoint, and
-            // a clear error is more useful than a misleading "Welcome, Alice".
             var message = await ReadMessageAsync(response, cancellationToken);
             return SignInResponse.Failed(message);
         }
         catch (HttpRequestException ex)
         {
-            // Network-level unreachable (DNS, refused connection, TLS handshake).
-            // In Development, fall back to a bootstrap session so a fully
-            // offline dev box can still demo the shell. In any other
-            // environment we MUST NOT silently substitute a fake Alice /
-            // Northwind identity — that masked real misconfiguration in the
-            // past and made operators land on demo content after a clean
-            // production install.
-            if (hostEnvironment.IsDevelopment())
-            {
-                logger.LogWarning(ex, "Accounting API unreachable; falling back to bootstrap session (Development only).");
-                return BuildBootstrapResponse();
-            }
-
             logger.LogWarning(ex, "Accounting API unreachable.");
             return SignInResponse.Failed("Sign in is temporarily unavailable. Please try again in a moment.");
         }
@@ -84,23 +58,6 @@ public sealed class BusinessAuthenticationClient(
         if (string.IsNullOrWhiteSpace(sessionToken))
         {
             return null;
-        }
-
-        if (sessionToken.StartsWith(BootstrapSessionPrefix, StringComparison.Ordinal))
-        {
-            // Bootstrap tokens are a Development-only convenience. Outside
-            // Development we treat any leftover bootstrap token as expired
-            // so a stale browser sessionStorage entry can never resurrect
-            // the Alice / Northwind demo identity in a production install.
-            if (!hostEnvironment.IsDevelopment())
-            {
-                logger.LogInformation(
-                    "Discarding stale bootstrap session token in '{Environment}' environment; the user will be redirected to sign in.",
-                    hostEnvironment.EnvironmentName);
-                return null;
-            }
-
-            return BuildBootstrapSummary();
         }
 
         try
@@ -186,8 +143,7 @@ public sealed class BusinessAuthenticationClient(
 
     public async Task SignOutAsync(string sessionToken, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(sessionToken) ||
-            sessionToken.StartsWith(BootstrapSessionPrefix, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(sessionToken))
         {
             return;
         }
@@ -209,56 +165,6 @@ public sealed class BusinessAuthenticationClient(
         {
             logger.LogWarning(ex, "Unable to sign out from the Accounting API.");
         }
-    }
-
-    private const string BootstrapSessionPrefix = "bootstrap:";
-
-    private SignInResponse BuildBootstrapResponse()
-    {
-        var summary = BuildBootstrapSummary();
-        return new SignInResponse
-        {
-            Succeeded = true,
-            SessionToken = $"{BootstrapSessionPrefix}{Guid.NewGuid():N}",
-            Session = summary,
-            IsBootstrap = true,
-            Message = "Signed in with the local bootstrap user. Wire up the Accounting auth endpoints to use a real session."
-        };
-    }
-
-    private BusinessAuthSessionSummary BuildBootstrapSummary()
-    {
-        var bootstrap = hostOptions.Value;
-        return new BusinessAuthSessionSummary
-        {
-            User = new BusinessUserSummary
-            {
-                Id = bootstrap.BootstrapUserId,
-                DisplayName = bootstrap.BootstrapUserDisplayName,
-                Email = bootstrap.BootstrapUserEmail,
-                Username = bootstrap.BootstrapUsername,
-                Roles = bootstrap.BootstrapRoles
-            },
-            ActiveCompany = new BusinessCompanySummary
-            {
-                Id = bootstrap.BootstrapCompanyId,
-                CompanyCode = bootstrap.BootstrapCompanyCode,
-                CompanyName = bootstrap.BootstrapCompanyName,
-                BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
-                MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
-            },
-            AvailableCompanies = new List<BusinessCompanySummary>
-            {
-                new()
-                {
-                    Id = bootstrap.BootstrapCompanyId,
-                    CompanyCode = bootstrap.BootstrapCompanyCode,
-                    CompanyName = bootstrap.BootstrapCompanyName,
-                    BaseCurrencyCode = bootstrap.BootstrapCompanyBaseCurrencyCode,
-                    MultiCurrencyEnabled = bootstrap.BootstrapCompanyMultiCurrencyEnabled
-                }
-            }
-        };
     }
 
     private static async Task<string> ReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -302,8 +208,6 @@ public sealed class BusinessAuthenticationClient(
         public BusinessAuthSessionSummary Session { get; set; } = new();
 
         public string Message { get; set; } = string.Empty;
-
-        public bool IsBootstrap { get; set; }
 
         public static SignInResponse Failed(string message) => new()
         {

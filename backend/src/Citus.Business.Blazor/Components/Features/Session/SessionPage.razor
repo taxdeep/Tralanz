@@ -90,7 +90,7 @@
         new("Roles", string.Join(", ", ShellState.User.Roles)),
         new("Session token", string.IsNullOrEmpty(ShellState.SessionToken)
             ? "(none)"
-            : $"{ShellState.SessionToken[..Math.Min(8, ShellState.SessionToken.Length)]}… ({(ShellState.IsBootstrapSession ? "bootstrap" : "real")})")
+            : $"{ShellState.SessionToken[..Math.Min(8, ShellState.SessionToken.Length)]}…")
     ];
 
     private IReadOnlyList<FactRow> _companyFacts =>

@@ -279,13 +279,49 @@ public sealed class BusinessRouteGuardTests
         new(
             new BusinessSessionRequestReader(),
             new BusinessRequestContractGuard(),
-            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(new BusinessSessionOptions())));
+            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions())));
 
     private static BusinessRouteGuard CreateGuard(ICompanySessionContextWorkflow workflow) =>
         new(
             new BusinessSessionRequestReader(),
             new BusinessRequestContractGuard(),
-            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(new BusinessSessionOptions()), workflow));
+            new BusinessSessionDirectory(Microsoft.Extensions.Options.Options.Create(CreateFixtureOptions()), workflow));
+
+    // Test-local fixture. Production directory no longer carries built-ins.
+    private static BusinessSessionOptions CreateFixtureOptions() => new()
+    {
+        Companies =
+        [
+            new BusinessSessionCompanyOptions
+            {
+                Id = CompanyId,
+                CompanyCode = "NORTHWIND",
+                CompanyName = "Northwind Studio Ltd.",
+                BaseCurrencyCode = "USD",
+                MultiCurrencyEnabled = true
+            },
+            new BusinessSessionCompanyOptions
+            {
+                Id = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6"),
+                CompanyCode = "BLUEHARBOR",
+                CompanyName = "Blue Harbor Trading Co.",
+                BaseCurrencyCode = "CAD",
+                MultiCurrencyEnabled = false
+            }
+        ],
+        Users =
+        [
+            new BusinessSessionUserOptions
+            {
+                Id = UserId,
+                DisplayName = "Alice Rowan",
+                Email = "alice.rowan@northwind.example",
+                Username = "alice.rowan",
+                Roles = ["owner", "reports"],
+                CompanyIds = [CompanyId]
+            }
+        ]
+    };
 
     private static HeaderDictionary CreateHeaders(Guid userId, Guid companyId) =>
         new()
