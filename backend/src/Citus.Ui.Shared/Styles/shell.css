@@ -1666,6 +1666,27 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     color: var(--citus-color-fg-muted);
 }
 
+/* ---------- Form-control height alignment (cross-theme) ----------
+   CitusInput renders at min-height: 2.25rem (36px). Radzen's default
+   datepicker / dropdown / numeric ship slightly shorter, which made
+   side-by-side rows on header forms (Date next to Transaction
+   currency, etc.) sit at mismatched heights. Pin every Radzen wrapper
+   we use to the same 2.25rem so labels-with-fields line up cleanly
+   regardless of theme. */
+
+.rz-datepicker,
+.rz-dropdown,
+.rz-numeric {
+    min-height: 2.25rem;
+}
+
+.rz-datepicker .rz-inputtext,
+.rz-dropdown .rz-dropdown-label,
+.rz-numeric .rz-spinner-input {
+    min-height: 2.25rem;
+    line-height: 1.4;
+}
+
 /* ---------- Inline AccountPicker (chart-of-accounts dropdown) ---------- */
 
 .citus-account-picker {
