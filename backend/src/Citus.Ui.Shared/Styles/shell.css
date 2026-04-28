@@ -1078,11 +1078,17 @@
    on text inputs. Both render with a built-in glyph font that often
    degrades to a red placeholder square when the operating system's
    font fallback chain doesn't ship the right symbol; the result looks
-   like an icon overflowing the input. We render password / text inputs
-   without these affordances for a consistent appearance across browsers. */
-.citus-form-field__input::-ms-reveal,
-.citus-form-field__input::-ms-clear {
-    display: none;
+   like an icon overflowing the input. Strip them globally so every
+   <input> in the app is consistent, not just the citus-form-field
+   variant. The !important + width/height 0 belt-and-suspenders also
+   covers older Edge builds that don't honour `display: none` on the
+   pseudo-element. */
+input::-ms-reveal,
+input::-ms-clear {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    visibility: hidden !important;
 }
 
 /* Hide native number-input up/down spinner buttons on our form classes.
