@@ -553,10 +553,17 @@ configure_runtime_preferences() {
       fi
     fi
 
-    if prompt_yes_no "Start the Tralanz Books services when deployment finishes?" "$(default_prompt_choice "${auto_start}")"; then
-      auto_start="1"
-    else
-      auto_start="0"
+    # Auto-start prompt is install-only. On upgrade we already have a saved
+    # CITUS_AUTO_START in the env file (and any --start / --no-start CLI
+    # flag has already been applied via apply_cli_overrides_to_env_file),
+    # so re-asking would be noise. Keep upgrade fully non-interactive,
+    # mirroring the HTTPS-prompt skip above.
+    if [[ "${deployment_mode}" != "upgrade" ]]; then
+      if prompt_yes_no "Start the Tralanz Books services when deployment finishes?" "$(default_prompt_choice "${auto_start}")"; then
+        auto_start="1"
+      else
+        auto_start="0"
+      fi
     fi
 
     set_env_value "CITUS_ENABLE_HTTPS" "${enable_https}"
