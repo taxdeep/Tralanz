@@ -186,6 +186,10 @@ builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
 // auto-generated to match the platform-wide ENYYYYxxxxxxxx contract.
 builder.Services.AddSingleton<ICustomerStore, PostgreSqlCustomerStore>();
 
+// Vendor master data (per-company). AP-side mirror of ICustomerStore;
+// anchors bills, pay-bill settlement, and AP aging.
+builder.Services.AddSingleton<IVendorStore, PostgreSqlVendorStore>();
+
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
 // exist by (company_id, code).
@@ -303,6 +307,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
     var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
+    var vendorStore = startupScope.ServiceProvider.GetRequiredService<IVendorStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
@@ -322,6 +327,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
     await customerStore.EnsureSchemaAsync(CancellationToken.None);
+    await vendorStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
@@ -780,6 +786,73 @@ accounting.MapPost(
             // Unique constraint hit (entity_number collision is the realistic
             // case — random 8-digit seeds collide rarely but it's possible).
             // Surface as a friendly retry hint rather than a 500.
+            return Results.Conflict(new { message = "Could not allocate a unique entity number. Please try saving again." });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
+        }
+    });
+
+// -----------------------------------------------------------------------
+// Vendor master data — AP-side mirror of /accounting/customers.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/vendors",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/vendors",
+    async (
+        VendorUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            return Results.BadRequest(new { message = "Display name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.DefaultCurrencyCode))
+        {
+            return Results.BadRequest(new { message = "Default currency code is required." });
+        }
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                new VendorUpsertRequest(
+                    DisplayName: request.DisplayName,
+                    DefaultCurrencyCode: request.DefaultCurrencyCode,
+                    Email: request.Email,
+                    Phone: request.Phone,
+                    AddressLine: request.AddressLine,
+                    City: request.City,
+                    ProvinceState: request.ProvinceState,
+                    PostalCode: request.PostalCode,
+                    Country: request.Country,
+                    TaxId: request.TaxId,
+                    Notes: request.Notes),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
             return Results.Conflict(new { message = "Could not allocate a unique entity number. Please try saving again." });
         }
         catch (PostgresException ex) when (ex.SqlState == "23503")

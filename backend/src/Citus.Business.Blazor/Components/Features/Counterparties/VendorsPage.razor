@@ -2,6 +2,7 @@
 
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject VendorClient VendorClient
 @inject CitusToastService Message
 
 <PageTitle>Vendors | Citus Business</PageTitle>
@@ -43,7 +44,7 @@
 else
 {
     <section class="citus-panel">
-        <CitusAsyncBoundary IsLoading="false"
+        <CitusAsyncBoundary IsLoading="@_isLoading"
                             IsEmpty="@(_vendors.Count == 0)"
                             EmptyIcon="IconName.BuildingStore"
                             EmptyTitle="No vendors yet"
@@ -66,7 +67,7 @@ else
                             <td><span class="citus-inline-code">@v.EntityNumber</span></td>
                             <td>@v.Email</td>
                             <td>@v.Country</td>
-                            <td>@v.PreferredCurrencyCode</td>
+                            <td>@v.DefaultCurrencyCode</td>
                         </tr>
                     }
                 </tbody>
@@ -83,12 +84,31 @@ else
         Subtitle = "Vendor master records that anchor bills, pay-bill settlement, and AP aging."
     };
 
-    private readonly IReadOnlyList<CounterpartyDraft> _vendors = Array.Empty<CounterpartyDraft>();
+    private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
     private CounterpartyDraft _draft = new();
     private bool _isCreating;
     private bool _isSubmitting;
+    private bool _isLoading = true;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _vendors = await VendorClient.ListAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
 
     private void StartCreate()
     {
@@ -109,8 +129,16 @@ else
         try
         {
             _lastResult = await WriteFlow.SaveVendorAsync(_draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Vendor saved."); _isCreating = false; }
-            else { await Message.InfoAsync(_lastResult.Message); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Vendor saved.");
+                _isCreating = false;
+                await LoadAsync();
+            }
+            else
+            {
+                await Message.InfoAsync(_lastResult.Message);
+            }
         }
         finally { _isSubmitting = false; }
     }

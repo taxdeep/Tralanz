@@ -22,10 +22,12 @@ public sealed class BusinessWriteFlowClient
         "route is published, this stub will be replaced with the real call.";
 
     private readonly CustomerClient _customers;
+    private readonly VendorClient _vendors;
 
-    public BusinessWriteFlowClient(CustomerClient customers)
+    public BusinessWriteFlowClient(CustomerClient customers, VendorClient vendors)
     {
         _customers = customers ?? throw new ArgumentNullException(nameof(customers));
+        _vendors = vendors ?? throw new ArgumentNullException(nameof(vendors));
     }
 
     public Task<WriteFlowResult> PostManualJournalAsync(ManualJournalDraft draft, CancellationToken cancellationToken = default) =>
@@ -73,8 +75,35 @@ public sealed class BusinessWriteFlowClient
                 DraftEcho: draft);
     }
 
-    public Task<WriteFlowResult> SaveVendorAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(SaveVendorAsync), draft);
+    public async Task<WriteFlowResult> SaveVendorAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default)
+    {
+        var outcome = await _vendors.CreateAsync(
+            new VendorUpsertPayload(
+                DisplayName: draft.DisplayName,
+                DefaultCurrencyCode: draft.PreferredCurrencyCode,
+                Email: draft.Email,
+                Phone: draft.Phone,
+                AddressLine: draft.AddressLine,
+                City: draft.City,
+                ProvinceState: draft.ProvinceState,
+                PostalCode: draft.PostalCode,
+                Country: draft.Country,
+                TaxId: draft.TaxId,
+                Notes: draft.Notes),
+            cancellationToken);
+
+        return outcome.Succeeded
+            ? new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Vendor {outcome.Saved!.EntityNumber} saved.",
+                Operation: nameof(SaveVendorAsync),
+                DraftEcho: outcome.Saved)
+            : new WriteFlowResult(
+                Succeeded: false,
+                Message: outcome.ErrorMessage ?? "Could not save the vendor.",
+                Operation: nameof(SaveVendorAsync),
+                DraftEcho: draft);
+    }
 
     private static Task<WriteFlowResult> Pending(string operation, object payload) =>
         Task.FromResult(new WriteFlowResult(
