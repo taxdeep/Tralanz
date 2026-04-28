@@ -65,7 +65,12 @@
                 <span class="citus-topbar__avatar">@AvatarInitials</span>
                 <span class="citus-topbar__user-text">
                     <span class="citus-topbar__user-name">@ShellState.User.DisplayName</span>
-                    <span class="citus-topbar__user-role">@PrimaryRole</span>
+                    @* Role/permissions line intentionally omitted: User.Roles
+                       carries the company-membership permissions array (e.g.
+                       "ap", "approve", "ar") whose alphabetical-first entry
+                       isn't a meaningful user-facing label. Re-introduce a
+                       proper "Owner" / "Admin" / "Member" badge once the API
+                       session summary exposes membership.role separately. *@
                 </span>
                 <CitusIcon Name="IconName.ChevronDown" Size="IconSize.Inline" />
             </summary>
@@ -99,8 +104,6 @@
 
     [Parameter] public EventCallback OnToggle { get; set; }
 
-    private string PrimaryRole => ShellState.User.Roles.FirstOrDefault() ?? "user";
-
     private Guid SelectedCompanyId => ShellState.ActiveCompany.Id;
 
     private bool IsCompanySwitcherDisabled => ShellState.AvailableCompanies.Count <= 1;
@@ -123,8 +126,12 @@
 
     private static string FormatCompanyLabel(BusinessCompanySummary company)
     {
+        // Entity number / company code intentionally omitted from the topbar
+        // label: it's metadata, surfaced in Settings → Company Profile, not
+        // something the operator needs to read on every page navigation. The
+        // read-only badge stays because it gates write actions.
         var suffix = company.IsReadOnly ? " · read-only" : string.Empty;
-        return $"{company.CompanyName} ({company.CompanyCode}){suffix}";
+        return $"{company.CompanyName}{suffix}";
     }
 
     private async Task OnSignOutAsync()

@@ -23,9 +23,9 @@
       base-36 BUILD slot can't be embedded there directly. AssemblyVersion
       stability also keeps binding redirects from churning on every push.
     -->
-    <Version>0.000.000.0009</Version>
-    <AssemblyVersion>0.000.000.0009</AssemblyVersion>
-    <FileVersion>0.000.000.0009</FileVersion>
-    <InformationalVersion>0.000.000.0009</InformationalVersion>
+    <Version>0.000.000.0010</Version>
+    <AssemblyVersion>0.000.000.0010</AssemblyVersion>
+    <FileVersion>0.000.000.0010</FileVersion>
+    <InformationalVersion>0.000.000.0010</InformationalVersion>
   </PropertyGroup>
 </Project>
