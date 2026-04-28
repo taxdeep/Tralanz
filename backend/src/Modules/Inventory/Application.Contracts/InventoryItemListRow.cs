@@ -2,10 +2,15 @@ using Citus.Modules.Inventory.Domain.Shared;
 
 namespace Citus.Modules.Inventory.Application.Contracts;
 
-public sealed record class InventoryItemUpsertRequest(
+/// <summary>
+/// Item-list projection used by the Items / Services Blazor page. Carries the
+/// full set of fields the form edits — pricing, tax-code defaults, accounting
+/// defaults, inventory tracking — so the page can render rows and pre-fill
+/// the edit form without a second round-trip.
+/// </summary>
+public sealed record class InventoryItemListRow(
+    Guid Id,
     Guid CompanyId,
-    Guid UserId,
-    Guid? ItemId,
     string ItemCode,
     string Name,
     string? Description,
@@ -22,4 +27,7 @@ public sealed record class InventoryItemUpsertRequest(
     decimal? DefaultSalesPrice,
     decimal? DefaultPurchasePrice,
     Guid? DefaultSalesTaxCodeId,
-    Guid? DefaultPurchaseTaxCodeId);
+    Guid? DefaultPurchaseTaxCodeId,
+    bool IsActive,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);

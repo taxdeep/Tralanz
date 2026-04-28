@@ -30,6 +30,15 @@ public interface IInventoryFoundationStore
         bool isActive,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Items list projection for the Items / Services management page.
+    /// Includes both stock and non-inventory items (Service / Non-stock).
+    /// </summary>
+    Task<IReadOnlyList<InventoryItemListRow>> ListItemsAsync(
+        Guid companyId,
+        bool includeInactive,
+        CancellationToken cancellationToken);
+
     Task<Guid> SaveWarehouseAsync(
         InventoryWarehouseUpsertRequest request,
         CancellationToken cancellationToken);

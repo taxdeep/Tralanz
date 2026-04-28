@@ -159,6 +159,10 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                         default_cogs_account_id = @default_cogs_account_id,
                         default_writeoff_account_id = @default_writeoff_account_id,
                         default_purchase_variance_account_id = @default_purchase_variance_account_id,
+                        default_sales_price = @default_sales_price,
+                        default_purchase_price = @default_purchase_price,
+                        default_sales_tax_code_id = @default_sales_tax_code_id,
+                        default_purchase_tax_code_id = @default_purchase_tax_code_id,
                         updated_at = now()
                     where id = @item_id
                       and company_id = @company_id;
@@ -186,6 +190,18 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 updateCommand.Parameters.AddWithValue(
                     "default_purchase_variance_account_id",
                     request.DefaultPurchaseVarianceAccountId.HasValue ? (object)request.DefaultPurchaseVarianceAccountId.Value : DBNull.Value);
+                updateCommand.Parameters.AddWithValue(
+                    "default_sales_price",
+                    request.DefaultSalesPrice.HasValue ? (object)request.DefaultSalesPrice.Value : DBNull.Value);
+                updateCommand.Parameters.AddWithValue(
+                    "default_purchase_price",
+                    request.DefaultPurchasePrice.HasValue ? (object)request.DefaultPurchasePrice.Value : DBNull.Value);
+                updateCommand.Parameters.AddWithValue(
+                    "default_sales_tax_code_id",
+                    request.DefaultSalesTaxCodeId.HasValue ? (object)request.DefaultSalesTaxCodeId.Value : DBNull.Value);
+                updateCommand.Parameters.AddWithValue(
+                    "default_purchase_tax_code_id",
+                    request.DefaultPurchaseTaxCodeId.HasValue ? (object)request.DefaultPurchaseTaxCodeId.Value : DBNull.Value);
 
                 if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) == 0)
                 {
@@ -217,6 +233,10 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   default_cogs_account_id,
                   default_writeoff_account_id,
                   default_purchase_variance_account_id,
+                  default_sales_price,
+                  default_purchase_price,
+                  default_sales_tax_code_id,
+                  default_purchase_tax_code_id,
                   is_active,
                   created_at,
                   updated_at
@@ -237,6 +257,10 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   @default_cogs_account_id,
                   @default_writeoff_account_id,
                   @default_purchase_variance_account_id,
+                  @default_sales_price,
+                  @default_purchase_price,
+                  @default_sales_tax_code_id,
+                  @default_purchase_tax_code_id,
                   true,
                   now(),
                   now()
@@ -265,6 +289,18 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             insertCommand.Parameters.AddWithValue(
                 "default_purchase_variance_account_id",
                 request.DefaultPurchaseVarianceAccountId.HasValue ? (object)request.DefaultPurchaseVarianceAccountId.Value : DBNull.Value);
+            insertCommand.Parameters.AddWithValue(
+                "default_sales_price",
+                request.DefaultSalesPrice.HasValue ? (object)request.DefaultSalesPrice.Value : DBNull.Value);
+            insertCommand.Parameters.AddWithValue(
+                "default_purchase_price",
+                request.DefaultPurchasePrice.HasValue ? (object)request.DefaultPurchasePrice.Value : DBNull.Value);
+            insertCommand.Parameters.AddWithValue(
+                "default_sales_tax_code_id",
+                request.DefaultSalesTaxCodeId.HasValue ? (object)request.DefaultSalesTaxCodeId.Value : DBNull.Value);
+            insertCommand.Parameters.AddWithValue(
+                "default_purchase_tax_code_id",
+                request.DefaultPurchaseTaxCodeId.HasValue ? (object)request.DefaultPurchaseTaxCodeId.Value : DBNull.Value);
             await insertCommand.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -309,6 +345,94 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             throw new InvalidOperationException("The selected inventory item could not be found for this company.");
         }
+    }
+
+    public async Task<IReadOnlyList<InventoryItemListRow>> ListItemsAsync(
+        Guid companyId,
+        bool includeInactive,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              id,
+              company_id,
+              item_code,
+              name,
+              description,
+              item_kind,
+              stock_uom_code,
+              manage_inventory_method,
+              default_costing_method,
+              backorder_mode,
+              low_stock_activity,
+              default_inventory_asset_account_id,
+              default_cogs_account_id,
+              default_writeoff_account_id,
+              default_purchase_variance_account_id,
+              default_sales_price,
+              default_purchase_price,
+              default_sales_tax_code_id,
+              default_purchase_tax_code_id,
+              is_active,
+              created_at,
+              updated_at
+            from inventory_items
+            where company_id = @company_id
+              and (@include_inactive or is_active = true)
+            order by
+              case when is_active then 0 else 1 end,
+              item_kind asc,
+              item_code asc;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("include_inactive", includeInactive);
+
+        var rows = new List<InventoryItemListRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new InventoryItemListRow(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("company_id")),
+                reader.GetString(reader.GetOrdinal("item_code")),
+                reader.GetString(reader.GetOrdinal("name")),
+                reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
+                ParseItemKind(reader.GetString(reader.GetOrdinal("item_kind"))),
+                reader.IsDBNull(reader.GetOrdinal("stock_uom_code")) ? null : reader.GetString(reader.GetOrdinal("stock_uom_code")),
+                ParseManageInventoryMethod(reader.GetString(reader.GetOrdinal("manage_inventory_method"))),
+                ParseCostingMethod(reader.GetString(reader.GetOrdinal("default_costing_method"))),
+                ParseBackorderMode(reader.GetString(reader.GetOrdinal("backorder_mode"))),
+                ParseLowStockActivity(reader.GetString(reader.GetOrdinal("low_stock_activity"))),
+                ReadNullableGuid(reader, "default_inventory_asset_account_id"),
+                ReadNullableGuid(reader, "default_cogs_account_id"),
+                ReadNullableGuid(reader, "default_writeoff_account_id"),
+                ReadNullableGuid(reader, "default_purchase_variance_account_id"),
+                ReadNullableDecimal(reader, "default_sales_price"),
+                ReadNullableDecimal(reader, "default_purchase_price"),
+                ReadNullableGuid(reader, "default_sales_tax_code_id"),
+                ReadNullableGuid(reader, "default_purchase_tax_code_id"),
+                reader.GetBoolean(reader.GetOrdinal("is_active")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at"))));
+        }
+        return rows;
+    }
+
+    private static Guid? ReadNullableGuid(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetGuid(ordinal);
+    }
+
+    private static decimal? ReadNullableDecimal(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
     }
 
     public async Task<Guid> SaveWarehouseAsync(
@@ -519,6 +643,18 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 alter table inventory_items
                   add column if not exists default_purchase_variance_account_id uuid null references accounts(id);
+
+                alter table inventory_items
+                  add column if not exists default_sales_price numeric(18, 4) null;
+
+                alter table inventory_items
+                  add column if not exists default_purchase_price numeric(18, 4) null;
+
+                alter table inventory_items
+                  add column if not exists default_sales_tax_code_id uuid null references tax_codes(id);
+
+                alter table inventory_items
+                  add column if not exists default_purchase_tax_code_id uuid null references tax_codes(id);
 
                 create table if not exists inventory_warehouses (
                   id uuid primary key default gen_random_uuid(),
