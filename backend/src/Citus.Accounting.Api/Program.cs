@@ -1,5 +1,6 @@
 using Citus.Accounting.Api;
 using static Citus.Accounting.Api.CompanyCurrencyResponseMapper;
+using static Citus.Accounting.Api.InventoryItemRequestMapper;
 using Citus.Accounting.Api.Initialization;
 using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
@@ -24,6 +25,7 @@ using Citus.Modules.UnityAi.Application;
 using Citus.Modules.UnityAi.Application.Contracts;
 using Citus.Modules.UnityAi.Domain.Shared;
 using Citus.Modules.Inventory.Application.Contracts;
+using Citus.Modules.Inventory.Domain.Shared;
 using Infrastructure.PostgreSQL;
 using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
@@ -858,6 +860,142 @@ accounting.MapPost(
         catch (PostgresException ex) when (ex.SqlState == "23503")
         {
             return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
+        }
+    });
+
+// -----------------------------------------------------------------------
+// Inventory items (Products & Services).
+//
+// V1 surface: list / create / update / activate-toggle. Items come in
+// three kinds (Stock, Non-stock, Service). Stock items carry inventory
+// settings (costing method, backorder, low-stock activity, default
+// inventory asset / COGS / write-off / purchase-variance accounts);
+// Non-stock and Service items use only the pricing + accounting
+// defaults. The store's existing schema accepts both shapes — the
+// per-kind validation lives in the Blazor form so the API can stay
+// generic.
+//
+// Active company id + user id resolve from the BusinessSession header.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/items",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows.Select(MapItemSummary));
+    });
+
+accounting.MapPost(
+    "/items",
+    async (
+        InventoryItemUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateItemRequest(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var itemId = await store.SaveItemAsync(
+                BuildItemUpsertRequest(session.ActiveCompanyId, session.UserId, itemId: null, request),
+                cancellationToken);
+
+            // Re-fetch the saved row so the response carries the same shape
+            // as GET /items (including auto-set fields like created_at).
+            var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive: true, cancellationToken);
+            var saved = rows.FirstOrDefault(r => r.Id == itemId);
+            return saved is null ? Results.NoContent() : Results.Ok(MapItemSummary(saved));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPut(
+    "/items/{itemId:guid}",
+    async (
+        Guid itemId,
+        InventoryItemUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateItemRequest(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            await store.SaveItemAsync(
+                BuildItemUpsertRequest(session.ActiveCompanyId, session.UserId, itemId, request),
+                cancellationToken);
+
+            var rows = await store.ListItemsAsync(session.ActiveCompanyId, includeInactive: true, cancellationToken);
+            var saved = rows.FirstOrDefault(r => r.Id == itemId);
+            return saved is null ? Results.NoContent() : Results.Ok(MapItemSummary(saved));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/items/{itemId:guid}/activate",
+    async (
+        Guid itemId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        try
+        {
+            await store.SetItemActiveAsync(session.ActiveCompanyId, itemId, isActive: true, cancellationToken);
+            return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.NotFound(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/items/{itemId:guid}/deactivate",
+    async (
+        Guid itemId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        try
+        {
+            await store.SetItemActiveAsync(session.ActiveCompanyId, itemId, isActive: false, cancellationToken);
+            return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.NotFound(new { message = ex.Message });
         }
     });
 
