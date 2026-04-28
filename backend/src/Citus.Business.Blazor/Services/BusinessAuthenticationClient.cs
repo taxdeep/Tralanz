@@ -1,5 +1,6 @@
 using Citus.Business.Blazor.Configuration;
 using Citus.Ui.Shared.Business;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 
@@ -8,6 +9,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class BusinessAuthenticationClient(
     HttpClient httpClient,
     IOptions<AppHostOptions> hostOptions,
+    IHostEnvironment hostEnvironment,
     ILogger<BusinessAuthenticationClient> logger)
 {
     public async Task<SignInResponse> SignInAsync(
@@ -53,11 +55,20 @@ public sealed class BusinessAuthenticationClient(
         catch (HttpRequestException ex)
         {
             // Network-level unreachable (DNS, refused connection, TLS handshake).
-            // Keep the bootstrap fallback only here so a fully offline dev box
-            // can still demo the shell. Once a real session is needed, the
-            // operator will need the API up.
-            logger.LogWarning(ex, "Accounting API unreachable; falling back to bootstrap session.");
-            return BuildBootstrapResponse();
+            // In Development, fall back to a bootstrap session so a fully
+            // offline dev box can still demo the shell. In any other
+            // environment we MUST NOT silently substitute a fake Alice /
+            // Northwind identity — that masked real misconfiguration in the
+            // past and made operators land on demo content after a clean
+            // production install.
+            if (hostEnvironment.IsDevelopment())
+            {
+                logger.LogWarning(ex, "Accounting API unreachable; falling back to bootstrap session (Development only).");
+                return BuildBootstrapResponse();
+            }
+
+            logger.LogWarning(ex, "Accounting API unreachable.");
+            return SignInResponse.Failed("Sign in is temporarily unavailable. Please try again in a moment.");
         }
         catch (Exception ex)
         {
@@ -77,6 +88,18 @@ public sealed class BusinessAuthenticationClient(
 
         if (sessionToken.StartsWith(BootstrapSessionPrefix, StringComparison.Ordinal))
         {
+            // Bootstrap tokens are a Development-only convenience. Outside
+            // Development we treat any leftover bootstrap token as expired
+            // so a stale browser sessionStorage entry can never resurrect
+            // the Alice / Northwind demo identity in a production install.
+            if (!hostEnvironment.IsDevelopment())
+            {
+                logger.LogInformation(
+                    "Discarding stale bootstrap session token in '{Environment}' environment; the user will be redirected to sign in.",
+                    hostEnvironment.EnvironmentName);
+                return null;
+            }
+
             return BuildBootstrapSummary();
         }
 
