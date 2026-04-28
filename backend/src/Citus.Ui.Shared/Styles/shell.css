@@ -87,9 +87,44 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    align-items: stretch;
+    align-items: center;
     padding: var(--citus-space-12);
     background: var(--citus-color-bg);
+}
+
+/* Centered branded splash for the moments before MainLayout knows
+   whether we're authenticated. See ShellBootstrapSplash.razor. */
+.citus-bootstrap-splash {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--citus-space-6);
+    color: var(--citus-color-fg-muted);
+    width: 100%;
+    max-width: 22rem;
+}
+
+.citus-bootstrap-splash__brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--citus-space-3);
+    color: var(--citus-color-primary);
+}
+
+.citus-bootstrap-splash__title {
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-xl);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.citus-bootstrap-splash__bars {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--citus-space-2);
+    width: 100%;
 }
 
 /* ---------- Nav menu (Phase 8: plain <nav> structure, no AntDesign) ---------- */

@@ -1,0 +1,21 @@
+@*
+    ShellBootstrapSplash — what the user sees the moment they hit
+    tralanz.com and the Blazor circuit is still warming up. The shell
+    layout (sidebar / topbar / content) hasn't rendered yet, so we show
+    a centered branded card with placeholder bars instead of a thin
+    progress line. Replaces the legacy <CitusLoadingBar /> in
+    MainLayout's !_isShellReady and unauthenticated-redirect states.
+*@
+
+<div class="citus-bootstrap-splash" aria-hidden="true">
+    <div class="citus-bootstrap-splash__brand">
+        <CitusIcon Name="IconName.BuildingBank" Size="IconSize.Display" />
+        <span class="citus-bootstrap-splash__title">Tralanz Books</span>
+    </div>
+
+    <div class="citus-bootstrap-splash__bars">
+        <div class="citus-skeleton citus-skeleton--row" style="width: 14rem;"></div>
+        <div class="citus-skeleton citus-skeleton--row" style="width: 10rem;"></div>
+        <div class="citus-skeleton citus-skeleton--row" style="width: 12rem;"></div>
+    </div>
+</div>

@@ -21,7 +21,7 @@
 @if (!_isShellReady)
 {
     <div class="citus-shell__bootstrap">
-        <CitusLoadingBar />
+        <ShellBootstrapSplash />
     </div>
 }
 else if (!ShellState.IsAuthenticated)
@@ -33,7 +33,7 @@ else if (!ShellState.IsAuthenticated)
         }
         else
         {
-            <CitusLoadingBar />
+            <ShellBootstrapSplash />
         }
     </div>
 }
@@ -66,16 +66,17 @@ else
             </header>
 
             <main class="citus-shell__content">
-                @if (_isContextLoading)
-                {
-                    <div class="citus-shell__loading">
-                        <CitusLoadingBar />
-                    </div>
-                }
-
                 <CitusMaintenanceBanner State="ShellState.MaintenanceState" />
                 <CitusCompanyAccessBanner Company="ShellState.ActiveCompany" />
-                @Body
+
+                @if (_isContextLoading)
+                {
+                    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+                }
+                else
+                {
+                    @Body
+                }
             </main>
         </div>
     </div>
