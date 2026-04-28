@@ -885,6 +885,15 @@
     align-items: stretch;
 }
 
+/* Constrain the form area so email / password inputs and the
+   Sign-in button don't stretch the full card width. The card itself
+   stays 28rem; the form sits centered at ~18rem inside it. */
+.sys-login__form {
+    width: 100%;
+    max-width: 18rem;
+    align-self: center;
+}
+
 .sys-login__crest {
     align-self: center;
     color: var(--citus-color-primary);
