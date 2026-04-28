@@ -29,60 +29,135 @@
         <section class="citus-panel">
             <h2 class="citus-panel__title">1. First business owner</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <CitusInput TValue="string" @bind-Value="_ownerDisplayName" Placeholder="Display name" />
-                <CitusInput TValue="string" @bind-Value="_ownerEmail" Placeholder="Email" />
-                <RadzenPassword @bind-Value="_ownerPassword" Placeholder="@("Password")" />
-                <RadzenPassword @bind-Value="_ownerPasswordConfirm" Placeholder="@("Confirm password")" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Display name"
+                       autocomplete="name"
+                       value="@_ownerDisplayName"
+                       @oninput="@(e => _ownerDisplayName = e.Value?.ToString() ?? string.Empty)" />
+                <input type="email"
+                       class="citus-form-field__input"
+                       placeholder="Email"
+                       autocomplete="username"
+                       value="@_ownerEmail"
+                       @oninput="@(e => _ownerEmail = e.Value?.ToString() ?? string.Empty)" />
+                <input type="password"
+                       class="citus-form-field__input"
+                       placeholder="Password"
+                       autocomplete="new-password"
+                       value="@_ownerPassword"
+                       @oninput="@(e => _ownerPassword = e.Value?.ToString() ?? string.Empty)" />
+                <input type="password"
+                       class="citus-form-field__input"
+                       placeholder="Confirm password"
+                       autocomplete="new-password"
+                       value="@_ownerPasswordConfirm"
+                       @oninput="@(e => _ownerPasswordConfirm = e.Value?.ToString() ?? string.Empty)" />
             </div>
         </section>
 
         <section class="citus-panel">
             <h2 class="citus-panel__title">2. Company profile</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <CitusInput TValue="string" @bind-Value="_companyName" Placeholder="Company name" />
-                <RadzenDropDown TValue="string"
-                                Data="@_entityTypes"
-                                Value="@EntityType"
-                                ValueChanged="OnEntityTypeChanged"
-                                Placeholder="Entity type">
-                    <Template Context="ctx">@EntityTypeLabel((string)ctx)</Template>
-                </RadzenDropDown>
-                <RadzenDropDown TValue="string"
-                                Data="@_industries"
-                                Value="@Industry"
-                                ValueChanged="OnIndustryChanged"
-                                Placeholder="Industry">
-                    <Template Context="ctx">@IndustryLabel((string)ctx)</Template>
-                </RadzenDropDown>
-                <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_incorporatedOn" Placeholder="@("Incorporated date")" />
-                <CitusInput TValue="string" @bind-Value="_fiscalYearEnd" Placeholder="Fiscal year end (MM-DD)" />
-                <CitusInput TValue="string" @bind-Value="_businessNumber" Placeholder="Business number" />
-                <RadzenDropDown TValue="int"
-                                Data="@_codeLengths"
-                                Value="@_accountCodeLength"
-                                ValueChanged="@(v => _accountCodeLength = v)"
-                                Placeholder="Account code length" />
-                <CitusInput TValue="string" @bind-Value="_phone" Placeholder="Phone (optional)" />
-                <CitusInput TValue="string" @bind-Value="_companyEmail" Placeholder="Company email" />
-                <div class="md:col-span-2"><CitusInput TValue="string" @bind-Value="_addressLine" Placeholder="Address line" /></div>
-                <CitusInput TValue="string" @bind-Value="_city" Placeholder="City" />
-                <CitusInput TValue="string" @bind-Value="_province" Placeholder="Province / State" />
-                <CitusInput TValue="string" @bind-Value="_postalCode" Placeholder="Postal code" />
-                <CitusInput TValue="string" Value="@Country" ValueChanged="OnCountryChanged" Placeholder="Country" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Company name"
+                       value="@_companyName"
+                       @oninput="@(e => _companyName = e.Value?.ToString() ?? string.Empty)" />
+                <select class="citus-form-field__input"
+                        value="@_entityType"
+                        @onchange="@(e => OnEntityTypeChanged(e.Value?.ToString()))">
+                    @foreach (var t in _entityTypes)
+                    {
+                        <option value="@t" selected="@(_entityType == t)">@EntityTypeLabel(t)</option>
+                    }
+                </select>
+                <select class="citus-form-field__input"
+                        value="@_industry"
+                        @onchange="@(e => OnIndustryChanged(e.Value?.ToString()))">
+                    @foreach (var t in _industries)
+                    {
+                        <option value="@t" selected="@(_industry == t)">@IndustryLabel(t)</option>
+                    }
+                </select>
+                <input type="date"
+                       class="citus-form-field__input"
+                       value="@(_incorporatedOn?.ToString("yyyy-MM-dd"))"
+                       @onchange="OnIncorporatedOnChanged" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Fiscal year end (MM-DD)"
+                       value="@_fiscalYearEnd"
+                       @oninput="@(e => _fiscalYearEnd = e.Value?.ToString() ?? string.Empty)" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Business number"
+                       value="@_businessNumber"
+                       @oninput="@(e => _businessNumber = e.Value?.ToString() ?? string.Empty)" />
+                <select class="citus-form-field__input"
+                        value="@_accountCodeLength"
+                        @onchange="@(e => _accountCodeLength = int.Parse(e.Value?.ToString() ?? "5"))">
+                    @foreach (var len in _codeLengths)
+                    {
+                        <option value="@len" selected="@(_accountCodeLength == len)">@len</option>
+                    }
+                </select>
+                <input type="tel"
+                       class="citus-form-field__input"
+                       placeholder="Phone (optional)"
+                       value="@_phone"
+                       @oninput="@(e => _phone = e.Value?.ToString() ?? string.Empty)" />
+                <input type="email"
+                       class="citus-form-field__input"
+                       placeholder="Company email"
+                       value="@_companyEmail"
+                       @oninput="@(e => _companyEmail = e.Value?.ToString() ?? string.Empty)" />
+                <div class="md:col-span-2">
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="Address line"
+                           value="@_addressLine"
+                           @oninput="@(e => _addressLine = e.Value?.ToString() ?? string.Empty)" />
+                </div>
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="City"
+                       value="@_city"
+                       @oninput="@(e => _city = e.Value?.ToString() ?? string.Empty)" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Province / State"
+                       value="@_province"
+                       @oninput="@(e => _province = e.Value?.ToString() ?? string.Empty)" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Postal code"
+                       value="@_postalCode"
+                       @oninput="@(e => _postalCode = e.Value?.ToString() ?? string.Empty)" />
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Country"
+                       value="@_country"
+                       @oninput="@(e => OnCountryChanged(e.Value?.ToString()))" />
             </div>
         </section>
 
         <section class="citus-panel">
             <h2 class="citus-panel__title">3. Chart template and multi-currency reserve preview</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <RadzenDropDown TValue="string"
-                                Data="@_templates"
-                                Value="@TemplateKey"
-                                ValueChanged="OnTemplateChanged"
-                                Placeholder="Template">
-                    <Template Context="ctx">@GetTemplateLabel((string)ctx)</Template>
-                </RadzenDropDown>
-                <CitusInput TValue="string" @bind-Value="_baseCurrencyCode" Placeholder="Base currency" />
+                <select class="citus-form-field__input"
+                        value="@_templateKey"
+                        @onchange="@(e => OnTemplateChanged(e.Value?.ToString()))">
+                    @foreach (var t in _templates)
+                    {
+                        <option value="@t" selected="@(_templateKey == t)">@GetTemplateLabel(t)</option>
+                    }
+                </select>
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Base currency"
+                       value="@_baseCurrencyCode"
+                       @oninput="@(e => _baseCurrencyCode = e.Value?.ToString() ?? string.Empty)" />
             </div>
 
             <CitusAlert Severity="CitusAlertSeverity.Info"
@@ -217,11 +292,18 @@
         ApplyTemplateSuggestion();
     }
 
-    private Task OnCountryChanged(string? value)
+    private void OnCountryChanged(string? value)
     {
         _country = value ?? "Canada";
         ApplyTemplateSuggestion();
-        return Task.CompletedTask;
+    }
+
+    private void OnIncorporatedOnChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _incorporatedOn = string.IsNullOrWhiteSpace(raw)
+            ? null
+            : DateTime.TryParse(raw, out var parsed) ? parsed : _incorporatedOn;
     }
 
     private void OnTemplateChanged(string? value)
