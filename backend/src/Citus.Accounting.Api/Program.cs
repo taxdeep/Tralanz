@@ -32,9 +32,11 @@ using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
 using Infrastructure.PostgreSQL.AP.Bills;
+using Infrastructure.PostgreSQL.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.Counterparties;
 using Infrastructure.PostgreSQL.Sales;
 using Modules.AP.Bills;
+using Modules.AP.PurchaseOrders;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
@@ -214,6 +216,13 @@ builder.Services.AddSingleton<ISalesOrderStore, PostgreSqlSalesOrderStore>();
 // the GL writes wire in alongside the PO + Inventory batch.
 builder.Services.AddSingleton<IBillStore, PostgreSqlBillStore>();
 
+// AP-side: Purchase Order document surface. Owns ap_purchase_orders /
+// ap_purchase_order_lines — distinct from the inventory-grade
+// purchase_orders table that the existing posting infrastructure owns.
+// Convergence between the two PO surfaces is a migration item for the
+// Inventory batch.
+builder.Services.AddSingleton<IPurchaseOrderStore, PostgreSqlPurchaseOrderStore>();
+
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
 // exist by (company_id, code).
@@ -336,6 +345,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
     var salesOrderStore = startupScope.ServiceProvider.GetRequiredService<ISalesOrderStore>();
     var billStore = startupScope.ServiceProvider.GetRequiredService<IBillStore>();
+    var purchaseOrderStore = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
@@ -360,6 +370,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await quoteStore.EnsureSchemaAsync(CancellationToken.None);
     await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await billStore.EnsureSchemaAsync(CancellationToken.None);
+    await purchaseOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
@@ -5015,6 +5026,272 @@ static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
                 TaxCodeId: l.TaxCodeId,
                 TaxAmount: l.TaxAmount ?? 0m))
             .ToArray());
+
+// ===========================================================================
+// Purchase Orders (AP-side, /ap/purchase-orders) — pre-bill commitments.
+//
+// Uses the brand-neutral Modules.AP.PurchaseOrders module backed by the
+// ap_purchase_orders / ap_purchase_order_lines tables. Distinct from
+// the inventory-grade purchase_orders table that the existing posting
+// infrastructure owns; convergence is an Inventory-batch migration.
+//
+// Convert to Bill: atomic — creates a Bill (Draft) populated from the
+// PO's lines, marks the PO as Closed with cross-references on both
+// sides. Convert to Expense lands when the Expense module ships.
+// ===========================================================================
+
+accounting.MapGet(
+    "/ap/purchase-orders",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore store,
+        bool? includeDrafts,
+        string? status,
+        Guid? vendorId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var filter = new PurchaseOrderListFilter(
+            IncludeDrafts: includeDrafts ?? true,
+            Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
+            VendorId: vendorId,
+            FromDate: from,
+            ToDate: to);
+        var rows = await store.ListAsync(session.ActiveCompanyId, filter, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/ap/purchase-orders/{purchaseOrderId:guid}",
+    async (
+        Guid purchaseOrderId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var po = await store.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
+        return po is null ? Results.NotFound() : Results.Ok(po);
+    });
+
+accounting.MapPost(
+    "/ap/purchase-orders",
+    async (
+        PurchaseOrderUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidatePurchaseOrderInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                MapPurchaseOrderInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.Conflict(new { message = "Could not allocate a unique purchase-order number. Please try saving again." });
+        }
+    });
+
+accounting.MapPut(
+    "/ap/purchase-orders/{purchaseOrderId:guid}",
+    async (
+        Guid purchaseOrderId,
+        PurchaseOrderUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidatePurchaseOrderInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                purchaseOrderId,
+                MapPurchaseOrderInput(request),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/ap/purchase-orders/{purchaseOrderId:guid}/status",
+    async (
+        Guid purchaseOrderId,
+        PurchaseOrderStatusHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var newStatus = request.Status?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(newStatus) || !PurchaseOrderStatus.IsValid(newStatus))
+        {
+            return Results.BadRequest(new { message = "Status is required and must be one of: draft, open, closed, cancelled, void." });
+        }
+
+        try
+        {
+            var saved = await store.SetStatusAsync(session.ActiveCompanyId, purchaseOrderId, newStatus, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/ap/purchase-orders/{purchaseOrderId:guid}/convert-to-bill",
+    async (
+        Guid purchaseOrderId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IPurchaseOrderStore poStore,
+        IBillStore billStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        var po = await poStore.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
+        if (po is null) return Results.NotFound();
+        if (!PurchaseOrderStatus.CanConvert(po.Status))
+        {
+            return Results.BadRequest(new { message = $"Purchase order in status '{po.Status}' cannot be converted to a Bill. Open or Closed POs are eligible." });
+        }
+        if (po.Lines.Count == 0)
+        {
+            return Results.BadRequest(new { message = "Purchase order has no lines to convert." });
+        }
+        if (po.Lines.Any(l => l.ExpenseAccountId is null))
+        {
+            return Results.BadRequest(new { message = "All purchase-order lines must have a category before converting to Bill (V1 supports Category-mode lines only)." });
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var billInput = new BillUpsertInput(
+            BillNumber: $"PENDING-{po.PurchaseOrderNumber}",
+            VendorId: po.VendorId,
+            BillDate: today,
+            DueDate: today,
+            DocumentCurrencyCode: po.TransactionCurrencyCode,
+            FxRate: po.FxRate,
+            Memo: po.MemoToSupplier,
+            PaymentTermId: po.PaymentTermId,
+            SourcePurchaseOrderId: po.Id,
+            SourcePurchaseOrderNumber: po.PurchaseOrderNumber,
+            Lines: po.Lines
+                .Select((l, i) => new BillLineInput(
+                    LineNumber: i + 1,
+                    ExpenseAccountId: l.ExpenseAccountId!.Value,
+                    Description: l.Description,
+                    LineAmount: Math.Round(l.Quantity * l.UnitPrice, 6),
+                    TaxCodeId: l.TaxCodeId,
+                    TaxAmount: 0m))
+                .ToArray());
+
+        BillRecord savedBill;
+        try
+        {
+            savedBill = await billStore.CreateAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                billInput,
+                cancellationToken);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"A bill with number 'PENDING-{po.PurchaseOrderNumber}' already exists. Edit it directly or update the bill number to convert again." });
+        }
+
+        await poStore.MarkClosedAsync(session.ActiveCompanyId, po.Id, cancellationToken);
+
+        return Results.Ok(savedBill);
+    });
+
+static string? ValidatePurchaseOrderInput(PurchaseOrderUpsertHttpRequest request)
+{
+    if (request.VendorId == Guid.Empty) return "Vendor is required.";
+    if (string.IsNullOrWhiteSpace(request.TransactionCurrencyCode)) return "Transaction currency is required.";
+    if (request.TransactionCurrencyCode.Length != 3) return "Transaction currency must be a 3-letter code.";
+    var taxMode = string.IsNullOrWhiteSpace(request.TaxMode) ? PurchaseOrderTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant();
+    if (!PurchaseOrderTaxMode.IsValid(taxMode)) return "Tax mode must be 'exclusive' or 'inclusive'.";
+    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
+    foreach (var line in request.Lines)
+    {
+        if (line.ExpenseAccountId is null && line.ItemId is null)
+            return "Each line must have a category (Item-mode lines land with the Inventory batch).";
+        if (line.Quantity < 0) return "Line quantity must be 0 or greater.";
+        if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
+    }
+    return null;
+}
+
+static PurchaseOrderUpsertInput MapPurchaseOrderInput(PurchaseOrderUpsertHttpRequest request) => new(
+    VendorId: request.VendorId,
+    OrderDate: request.OrderDate,
+    ExpectedDeliveryDate: request.ExpectedDeliveryDate,
+    TransactionCurrencyCode: request.TransactionCurrencyCode,
+    FxRate: request.FxRate,
+    BillingAddressLine: request.BillingAddressLine,
+    BillingCity: request.BillingCity,
+    BillingProvinceState: request.BillingProvinceState,
+    BillingPostalCode: request.BillingPostalCode,
+    BillingCountry: request.BillingCountry,
+    ShippingAddressLine: request.ShippingAddressLine,
+    ShippingCity: request.ShippingCity,
+    ShippingProvinceState: request.ShippingProvinceState,
+    ShippingPostalCode: request.ShippingPostalCode,
+    ShippingCountry: request.ShippingCountry,
+    ShipVia: request.ShipVia,
+    ShippingDate: request.ShippingDate,
+    TrackingNo: request.TrackingNo,
+    TaxMode: string.IsNullOrWhiteSpace(request.TaxMode) ? PurchaseOrderTaxMode.Exclusive : request.TaxMode.Trim().ToLowerInvariant(),
+    DiscountKind: request.DiscountKind,
+    DiscountValue: request.DiscountValue,
+    ShippingAmount: request.ShippingAmount,
+    ShippingTaxCodeId: request.ShippingTaxCodeId,
+    MemoToSupplier: request.MemoToSupplier,
+    InternalNote: request.InternalNote,
+    PaymentTermId: request.PaymentTermId,
+    Lines: (request.Lines ?? Array.Empty<PurchaseOrderLineHttpRequest>())
+        .Select(l => new PurchaseOrderLineInput(
+            Sequence: l.Sequence,
+            ServiceDate: l.ServiceDate,
+            ItemId: l.ItemId,
+            ExpenseAccountId: l.ExpenseAccountId,
+            Description: l.Description ?? string.Empty,
+            Quantity: l.Quantity,
+            UnitPrice: l.UnitPrice,
+            TaxCodeId: l.TaxCodeId))
+        .ToArray());
 
 // ===========================================================================
 // Chart of Accounts (per-company)

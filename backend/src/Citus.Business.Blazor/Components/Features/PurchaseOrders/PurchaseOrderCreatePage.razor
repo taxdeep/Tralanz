@@ -1,0 +1,595 @@
+@page "/purchase-orders/new"
+@page "/purchase-orders/{PurchaseOrderId:guid}/edit"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject VendorClient VendorClient
+@inject AccountClient AccountClient
+@inject TaxCodeClient TaxCodeClient
+@inject PaymentTermClient PaymentTermClient
+@inject PurchaseOrderClient PurchaseOrderClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+@*
+    Purchase Order create / edit. V1 Category-mode lines only — line
+    points to an account (expense / asset). Item-mode (inventory)
+    lands with the Inventory batch; the schema's item_id column is a
+    forward-compat hook.
+
+    Save = silent draft. Save & Send = transition to Open (signals
+    the PO is ready to convert into Bill / Expense).
+*@
+
+<PageTitle>@(_purchaseOrderId is null ? "New PO" : $"Edit {_poNumber}") | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="purchase-orders">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to POs</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (ShellState.AreWritesBlocked)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Vendor</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Vendor</label>
+                        <RadzenDropDown TValue="Guid?"
+                                        Data="@_vendors"
+                                        @bind-Value="_vendorId"
+                                        TextProperty="DisplayName"
+                                        ValueProperty="Id"
+                                        Placeholder="Choose a supplier…"
+                                        AllowFiltering="true"
+                                        Style="width: 100%;"
+                                        Change="@(_ => OnVendorChanged())" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Address</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Billing address</label>
+                        <CitusInput TValue="string" @bind-Value="_billingAddressLine" Placeholder="Street + suite" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Ship to (your delivery)</label>
+                        <CitusInput TValue="string" @bind-Value="_shippingAddressLine" Placeholder="Street + suite" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_billingCity" Placeholder="City" />
+                        <CitusInput TValue="string" @bind-Value="_billingProvinceState" Placeholder="Province / State" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_shippingCity" Placeholder="City" />
+                        <CitusInput TValue="string" @bind-Value="_shippingProvinceState" Placeholder="Province / State" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_billingPostalCode" Placeholder="Postal" />
+                        <CitusInput TValue="string" @bind-Value="_billingCountry" Placeholder="Country" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <CitusInput TValue="string" @bind-Value="_shippingPostalCode" Placeholder="Postal" />
+                        <CitusInput TValue="string" @bind-Value="_shippingCountry" Placeholder="Country" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="CopyBillingToShipping">
+                            Copy billing → shipping
+                        </CitusButton>
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <header class="citus-panel__header">
+                    <h2 class="citus-panel__title">Lines</h2>
+                    <select class="citus-form-field__input" style="width: auto" value="@_taxMode" @onchange="OnTaxModeChanged">
+                        <option value="exclusive">Tax exclusive</option>
+                        <option value="inclusive">Tax inclusive</option>
+                    </select>
+                </header>
+
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th style="width: 16rem">Category</th>
+                            <th>Description</th>
+                            <th style="width: 6rem" class="text-right">Qty</th>
+                            <th style="width: 8rem" class="text-right">Rate</th>
+                            <th style="width: 9rem">Tax</th>
+                            <th style="width: 8rem" class="text-right">Amount</th>
+                            <th style="width: 3rem"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < _lines.Count; i++)
+                        {
+                            var index = i;
+                            var line = _lines[index];
+                            <tr>
+                                <td>@(index + 1)</td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_accounts"
+                                                    Value="@line.ExpenseAccountId"
+                                                    Change="@(v => UpdateLine(index, l => l with { ExpenseAccountId = v as Guid? }))"
+                                                    TextProperty="Label"
+                                                    ValueProperty="Id"
+                                                    AllowFiltering="true"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <CitusInput TValue="string"
+                                                Value="@line.Description"
+                                                ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.Quantity"
+                                                   Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
+                                                   Format="0.##" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.UnitPrice"
+                                                   Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
+                                                   Format="0.0000" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_taxCodes"
+                                                    Value="@line.TaxCodeId"
+                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                                    TextProperty="Code"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                                <td>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="flex gap-2 mt-3">
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Notes</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Memo to supplier</label>
+                        <CitusInput TValue="string" @bind-Value="_memoToSupplier" Placeholder="Visible on the PO." />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Internal note</label>
+                        <CitusInput TValue="string" @bind-Value="_internalNote" Placeholder="Private to your team." />
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    @if (!string.IsNullOrWhiteSpace(_poNumber))
+                    {
+                        <div>
+                            <label class="text-sm font-medium block mb-1">PO no.</label>
+                            <div class="citus-inline-code">@_poNumber</div>
+                        </div>
+                    }
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Order date</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_orderDate" Style="width: 100%;" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Expected delivery</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_expectedDeliveryDate" Style="width: 100%;" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_orderDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Discount + shipping</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Discount</label>
+                        <div class="flex gap-2">
+                            <select class="citus-form-field__input" style="width: 8rem"
+                                    value="@(_discountKind ?? "")"
+                                    @onchange="OnDiscountKindChanged">
+                                <option value="">None</option>
+                                <option value="percent">Percent</option>
+                                <option value="amount">Amount</option>
+                            </select>
+                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Style="flex: 1;" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Shipping amount</label>
+                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Style="width: 100%;" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal)</td></tr>
+                        <tr><th>Discount</th><td class="text-right">−@FormatAmount(DiscountAmount)</td></tr>
+                        <tr><th>Shipping</th><td class="text-right">@FormatAmount(_shippingAmount ?? 0m)</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <div class="flex flex-wrap gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(send: false))">
+                    @(_isSaving ? "Saving…" : "Save")
+                </CitusButton>
+                @if (_status == "draft" || _purchaseOrderId is null)
+                {
+                    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(send: true))">
+                        Save &amp; Send
+                    </CitusButton>
+                }
+                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid? PurchaseOrderId { get; set; }
+
+    private Guid? _purchaseOrderId;
+    private string? _poNumber;
+    private string _status = "draft";
+
+    private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
+    private IReadOnlyList<AccountSummary> _accountsRaw = Array.Empty<AccountSummary>();
+    private IReadOnlyList<AccountOption> _accounts = Array.Empty<AccountOption>();
+    private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+    private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+
+    private Guid? _vendorId;
+    private Guid? _paymentTermId;
+    private DateTime? _orderDate = DateTime.Today;
+    private DateTime? _expectedDeliveryDate;
+    private string _currency = string.Empty;
+    private decimal? _fxRate;
+    private string _billingAddressLine = string.Empty;
+    private string _billingCity = string.Empty;
+    private string _billingProvinceState = string.Empty;
+    private string _billingPostalCode = string.Empty;
+    private string _billingCountry = string.Empty;
+    private string _shippingAddressLine = string.Empty;
+    private string _shippingCity = string.Empty;
+    private string _shippingProvinceState = string.Empty;
+    private string _shippingPostalCode = string.Empty;
+    private string _shippingCountry = string.Empty;
+    private string _taxMode = "exclusive";
+    private string? _discountKind;
+    private decimal? _discountValue;
+    private decimal? _shippingAmount;
+    private string _memoToSupplier = string.Empty;
+    private string _internalNote = string.Empty;
+
+    private List<LineDraft> _lines = new() { new LineDraft() };
+
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _validation;
+    private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New PO", Subtitle = "Commit to a vendor purchase." };
+
+    private decimal Subtotal => _lines.Sum(l => Math.Round(l.Quantity * l.UnitPrice, 4));
+    private decimal DiscountAmount =>
+        _discountKind == "percent" && _discountValue is { } pct ? Math.Round(Subtotal * pct / 100m, 4)
+        : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
+        : 0m;
+    private decimal Total => Math.Round(Subtotal - DiscountAmount + (_shippingAmount ?? 0m), 4);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (PurchaseOrderId.HasValue && _purchaseOrderId != PurchaseOrderId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var vendorsTask = VendorClient.ListAsync();
+            var accountsTask = AccountClient.ListAsync();
+            var taxTask = TaxCodeClient.ListAsync(appliesTo: "purchase");
+            var termsTask = PaymentTermClient.ListAsync(includeInactive: false);
+            await Task.WhenAll(vendorsTask, accountsTask, taxTask, termsTask);
+
+            _vendors = vendorsTask.Result;
+            _accountsRaw = accountsTask.Result;
+            _accounts = _accountsRaw
+                .Where(a => a.IsActive && a.AllowManualPosting)
+                .Select(a => new AccountOption(a.Id, $"{a.Code}  {a.Name}"))
+                .ToList();
+            _taxCodes = taxTask.Result;
+            _paymentTerms = termsTask.Result;
+
+            _purchaseOrderId = PurchaseOrderId;
+            if (PurchaseOrderId is { } id)
+            {
+                var po = await PurchaseOrderClient.GetByIdAsync(id);
+                if (po is null) { _validation = "Purchase order not found."; return; }
+                ApplyExisting(po);
+            }
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyExisting(PurchaseOrderRecordDto po)
+    {
+        _poNumber = po.PurchaseOrderNumber;
+        _status = po.Status;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Expense & Bills",
+            Title = $"Edit {po.PurchaseOrderNumber}",
+            Subtitle = $"Status: {po.Status}"
+        };
+        _vendorId = po.VendorId;
+        _paymentTermId = po.PaymentTermId;
+        _orderDate = po.OrderDate.ToDateTime(TimeOnly.MinValue);
+        _expectedDeliveryDate = po.ExpectedDeliveryDate?.ToDateTime(TimeOnly.MinValue);
+        _currency = po.TransactionCurrencyCode;
+        _fxRate = po.FxRate;
+        _billingAddressLine = po.BillingAddressLine ?? string.Empty;
+        _billingCity = po.BillingCity ?? string.Empty;
+        _billingProvinceState = po.BillingProvinceState ?? string.Empty;
+        _billingPostalCode = po.BillingPostalCode ?? string.Empty;
+        _billingCountry = po.BillingCountry ?? string.Empty;
+        _shippingAddressLine = po.ShippingAddressLine ?? string.Empty;
+        _shippingCity = po.ShippingCity ?? string.Empty;
+        _shippingProvinceState = po.ShippingProvinceState ?? string.Empty;
+        _shippingPostalCode = po.ShippingPostalCode ?? string.Empty;
+        _shippingCountry = po.ShippingCountry ?? string.Empty;
+        _taxMode = po.TaxMode;
+        _discountKind = po.DiscountKind;
+        _discountValue = po.DiscountValue;
+        _shippingAmount = po.ShippingAmount;
+        _memoToSupplier = po.MemoToSupplier ?? string.Empty;
+        _internalNote = po.InternalNote ?? string.Empty;
+        _lines = po.Lines.Select(l => new LineDraft
+        {
+            ExpenseAccountId = l.ExpenseAccountId,
+            Description = l.Description,
+            Quantity = l.Quantity,
+            UnitPrice = l.UnitPrice,
+            TaxCodeId = l.TaxCodeId
+        }).ToList();
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void OnVendorChanged()
+    {
+        if (_vendorId is null) return;
+        var vendor = _vendors.FirstOrDefault(v => v.Id == _vendorId.Value);
+        if (vendor is null) return;
+        _currency = vendor.DefaultCurrencyCode;
+        _paymentTermId = vendor.PaymentTermId;
+        if (string.IsNullOrWhiteSpace(_billingAddressLine)) _billingAddressLine = vendor.AddressLine ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingCity)) _billingCity = vendor.City ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingProvinceState)) _billingProvinceState = vendor.ProvinceState ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingPostalCode)) _billingPostalCode = vendor.PostalCode ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_billingCountry)) _billingCountry = vendor.Country ?? string.Empty;
+    }
+
+    private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        var current = _lines[index];
+        var updated = mutate(current);
+        current.ExpenseAccountId = updated.ExpenseAccountId;
+        current.Description = updated.Description;
+        current.Quantity = updated.Quantity;
+        current.UnitPrice = updated.UnitPrice;
+        current.TaxCodeId = updated.TaxCodeId;
+    }
+
+    private void AddLine() => _lines.Add(new LineDraft());
+
+    private void RemoveLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.RemoveAt(index);
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
+
+    private void OnTaxModeChanged(ChangeEventArgs args) =>
+        _taxMode = args.Value?.ToString() ?? "exclusive";
+
+    private void OnDiscountKindChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _discountKind = string.IsNullOrWhiteSpace(raw) ? null : raw;
+    }
+
+    private void CopyBillingToShipping()
+    {
+        _shippingAddressLine = _billingAddressLine;
+        _shippingCity = _billingCity;
+        _shippingProvinceState = _billingProvinceState;
+        _shippingPostalCode = _billingPostalCode;
+        _shippingCountry = _billingCountry;
+    }
+
+    private async Task SaveAsync(bool send)
+    {
+        _validation = null;
+        if (_vendorId is null) { _validation = "Pick a vendor."; return; }
+        if (_lines.All(l => l.Quantity == 0 && l.UnitPrice == 0 && string.IsNullOrWhiteSpace(l.Description) && l.ExpenseAccountId is null))
+        {
+            _validation = "Add at least one line with a category.";
+            return;
+        }
+        var lineWithoutCategory = _lines.FirstOrDefault(l => (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)) && l.ExpenseAccountId is null);
+        if (lineWithoutCategory is not null)
+        {
+            _validation = "Every active line needs a category (Item-mode lines land with the Inventory batch).";
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var payload = new PurchaseOrderUpsertPayload(
+                VendorId: _vendorId.Value,
+                OrderDate: DateOnly.FromDateTime((_orderDate ?? DateTime.Today).Date),
+                ExpectedDeliveryDate: _expectedDeliveryDate is { } exp ? DateOnly.FromDateTime(exp.Date) : null,
+                TransactionCurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
+                FxRate: _fxRate,
+                BillingAddressLine: NullIfEmpty(_billingAddressLine),
+                BillingCity: NullIfEmpty(_billingCity),
+                BillingProvinceState: NullIfEmpty(_billingProvinceState),
+                BillingPostalCode: NullIfEmpty(_billingPostalCode),
+                BillingCountry: NullIfEmpty(_billingCountry),
+                ShippingAddressLine: NullIfEmpty(_shippingAddressLine),
+                ShippingCity: NullIfEmpty(_shippingCity),
+                ShippingProvinceState: NullIfEmpty(_shippingProvinceState),
+                ShippingPostalCode: NullIfEmpty(_shippingPostalCode),
+                ShippingCountry: NullIfEmpty(_shippingCountry),
+                ShipVia: null,
+                ShippingDate: null,
+                TrackingNo: null,
+                TaxMode: _taxMode,
+                DiscountKind: _discountKind,
+                DiscountValue: _discountValue,
+                ShippingAmount: _shippingAmount,
+                ShippingTaxCodeId: null,
+                MemoToSupplier: NullIfEmpty(_memoToSupplier),
+                InternalNote: NullIfEmpty(_internalNote),
+                PaymentTermId: _paymentTermId,
+                Lines: _lines
+                    .Where(l => l.ExpenseAccountId is not null && (l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description)))
+                    .Select((l, i) => new PurchaseOrderLinePayload(
+                        Sequence: i + 1,
+                        ServiceDate: null,
+                        ItemId: null,
+                        ExpenseAccountId: l.ExpenseAccountId,
+                        Description: l.Description ?? string.Empty,
+                        Quantity: l.Quantity,
+                        UnitPrice: l.UnitPrice,
+                        TaxCodeId: l.TaxCodeId))
+                    .ToArray());
+
+            PurchaseOrderMutationOutcome outcome = _purchaseOrderId is null
+                ? await PurchaseOrderClient.CreateAsync(payload)
+                : await PurchaseOrderClient.UpdateAsync(_purchaseOrderId.Value, payload);
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not save the purchase order.";
+                return;
+            }
+
+            var saved = outcome.Saved;
+            if (send && saved.Status == "draft")
+            {
+                var sentOutcome = await PurchaseOrderClient.SetStatusAsync(saved.Id, "open");
+                if (!sentOutcome.Succeeded)
+                {
+                    _validation = sentOutcome.ErrorMessage ?? "Saved, but could not transition to Open.";
+                    await Message.WarningAsync(_validation);
+                }
+                else
+                {
+                    await Message.SuccessAsync($"PO {saved.PurchaseOrderNumber} sent.");
+                }
+            }
+            else
+            {
+                await Message.SuccessAsync($"PO {saved.PurchaseOrderNumber} saved.");
+            }
+
+            Navigation.NavigateTo($"purchase-orders/{saved.Id:D}");
+        }
+        finally { _isSaving = false; }
+    }
+
+    private void Cancel() => Navigation.NavigateTo(_purchaseOrderId is null ? "purchase-orders" : $"purchase-orders/{_purchaseOrderId:D}");
+
+    private static string FormatAmount(decimal value) =>
+        value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record LineDraft
+    {
+        public Guid? ExpenseAccountId { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public Guid? TaxCodeId { get; set; }
+    }
+
+    private sealed record AccountOption(Guid Id, string Label);
+}

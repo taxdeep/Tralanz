@@ -1,0 +1,145 @@
+@page "/purchase-orders"
+
+@using Radzen
+@using Radzen.Blazor
+
+@inject BusinessShellState ShellState
+@inject PurchaseOrderClient PurchaseOrderClient
+
+<PageTitle>Purchase Orders | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="purchase-orders/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New PO</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Purchase orders</h2>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox"
+                   checked="@_showDrafts"
+                   @onchange="OnToggleDrafts" />
+            Show drafts
+        </label>
+    </header>
+
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
+                        EmptyIcon="IconName.FileText"
+                        EmptyTitle="No purchase orders yet"
+                        EmptyMessage="Click New PO to commit to a vendor purchase. POs convert into Bills (or Expenses) when the vendor invoices you.">
+        <RadzenDataGrid TItem="PurchaseOrderRow"
+                        Data="@_rows"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowColumnResize="true"
+                        AllowPaging="true"
+                        PageSize="50"
+                        FilterMode="FilterMode.Simple"
+                        class="citus-radzen-grid">
+            <Columns>
+                <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.PurchaseOrderNumber)" Title="PO #" Width="200px">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"purchase-orders/{row.Id:D}")">
+                            <span class="citus-inline-code">@row.PurchaseOrderNumber</span>
+                        </a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.VendorName)" Title="Vendor">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"purchase-orders/{row.Id:D}")">@row.VendorName</a>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.OrderDate)" Title="Order date" Width="120px">
+                    <Template Context="row">@row.OrderDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.ExpectedDeliveryDate)" Title="Expected" Width="120px">
+                    <Template Context="row">@(row.ExpectedDeliveryDate?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.Status)" Title="Status" Width="120px">
+                    <Template Context="row">
+                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PurchaseOrderRow" Property="@nameof(PurchaseOrderRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </CitusAsyncBoundary>
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "Purchase orders",
+        Subtitle = "Commitments to buy. Convert open POs into Bills or Expenses when the vendor invoices you."
+    };
+
+    private List<PurchaseOrderRow> _rows = new();
+    private bool _isLoading = true;
+    private bool _showDrafts = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await PurchaseOrderClient.ListAsync(includeDrafts: _showDrafts);
+            _rows = rows.Select(r => new PurchaseOrderRow(
+                Id: r.Id,
+                PurchaseOrderNumber: r.PurchaseOrderNumber,
+                VendorName: string.IsNullOrEmpty(r.VendorName) ? "—" : r.VendorName,
+                OrderDate: r.OrderDate,
+                ExpectedDeliveryDate: r.ExpectedDeliveryDate,
+                Status: r.Status,
+                TotalAmount: r.TotalAmount,
+                Currency: r.TransactionCurrencyCode)).ToList();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OnToggleDrafts(ChangeEventArgs args)
+    {
+        _showDrafts = (bool)(args.Value ?? true);
+        await LoadAsync();
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "draft" => "default",
+        "open" => "blue",
+        "closed" => "green",
+        "cancelled" => "default",
+        "void" => "default",
+        _ => "default"
+    };
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "open" => "Open",
+        "closed" => "Closed",
+        "cancelled" => "Cancelled",
+        "void" => "Void",
+        _ => status
+    };
+
+    private sealed record PurchaseOrderRow(
+        Guid Id,
+        string PurchaseOrderNumber,
+        string VendorName,
+        DateOnly OrderDate,
+        DateOnly? ExpectedDeliveryDate,
+        string Status,
+        decimal TotalAmount,
+        string Currency);
+}
