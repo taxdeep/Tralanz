@@ -1300,7 +1300,14 @@ html[data-theme="dark"] .citus-shell__sider {
 }
 
 .citus-journal-lines__row td > .unity-picker .unity-picker__input {
-    min-height: 1.85rem;
+    /* Cell is height:2rem with padding:2px×2 → 28px internal. Pin the
+       picker's input to exactly that so it can't overflow into the row
+       above or below and create an "overlapping inputs" visual artifact.
+       Box-sizing border-box makes the 1px border eat into the 28px
+       envelope instead of stacking on top. */
+    box-sizing: border-box;
+    height: 1.75rem;
+    min-height: 1.75rem;
     padding: 0.25rem 1.85rem 0.25rem 0.5rem;
     border: 1px solid transparent;
     border-radius: var(--citus-radius-sm);
@@ -1322,8 +1329,11 @@ html[data-theme="dark"] .citus-shell__sider {
 }
 
 .citus-journal-lines__cell-input {
+    /* Same envelope as the picker input — fits exactly in the cell's
+       28px internal space. */
+    box-sizing: border-box;
     width: 100%;
-    height: 1.85rem;
+    height: 1.75rem;
     padding: 0.25rem 0.5rem;
     border: 1px solid transparent;
     border-radius: var(--citus-radius-sm);
