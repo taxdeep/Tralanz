@@ -45,7 +45,10 @@ else
                 <CitusIcon Name="IconName.BuildingBank" Size="@(_collapsed ? IconSize.Action : IconSize.Display)" />
                 @if (!_collapsed)
                 {
-                    <span class="citus-shell__brand-text">Citus Business</span>
+                    <div class="citus-shell__brand-stack">
+                        <span class="citus-shell__brand-text">Citus Business</span>
+                        <span class="citus-shell__brand-version">v@AppVersion</span>
+                    </div>
                 }
             </div>
             <BusinessNavMenu Collapsed="@_collapsed" />
@@ -82,6 +85,27 @@ else
     private bool _isContextLoading;
     private bool _isShellReady;
     private bool _collapsed;
+
+    /// <summary>
+    /// Display version pulled from the assembly's
+    /// <see cref="System.Reflection.AssemblyInformationalVersionAttribute"/>,
+    /// which the pre-push hook keeps in lockstep with VERSION (mixed
+    /// base-10 / base-36 widths). The SDK appends "+commitHash" in some
+    /// build configurations; strip it so the sidebar shows just the
+    /// numeric portion.
+    /// </summary>
+    private static readonly string AppVersion = ResolveAppVersion();
+
+    private static string ResolveAppVersion()
+    {
+        var raw = typeof(MainLayout).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion;
+        if (string.IsNullOrWhiteSpace(raw)) return "dev";
+        var plus = raw.IndexOf('+');
+        return plus < 0 ? raw : raw[..plus];
+    }
 
     private bool IsLoginRoute
     {
