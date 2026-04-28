@@ -347,7 +347,7 @@ public static class CitusPlatformKernel
         Module(
             id: Guid.Parse("5f59462a-c262-4cee-90ca-f39a29ea67c6"),
             key: PlatformModuleKeys.Platform,
-            name: "Citus Platform",
+            name: "Tralanz Platform",
             description: "Shared kernel for identity, tenant isolation, and platform-level entity metadata.",
             routePrefix: "/core",
             isSystemModule: true,
@@ -365,7 +365,7 @@ public static class CitusPlatformKernel
         Module(
             id: Guid.Parse("b6d72cca-b5b4-4ae8-a8aa-90aa2e1bcd4f"),
             key: PlatformModuleKeys.SysAdmin,
-            name: "Citus SysAdmin",
+            name: "Tralanz SysAdmin",
             description: "Administrative control surface for bootstrapping and governing the platform kernel.",
             routePrefix: "/",
             isSystemModule: true,

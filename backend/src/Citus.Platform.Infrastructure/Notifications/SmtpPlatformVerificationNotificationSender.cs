@@ -134,7 +134,7 @@ public sealed class SmtpPlatformVerificationNotificationSender(
             "password_change" =>
                 "A password change confirmation was requested for your Citus account.",
             "password_reset" =>
-                "A Citus SysAdmin password reset has been requested for your platform account.",
+                "A Tralanz SysAdmin password reset has been requested for your platform account.",
             _ =>
                 "A Citus verification code was requested for your platform account."
         };
