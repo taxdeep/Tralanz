@@ -1,11 +1,30 @@
 @page "/bills/new"
+@page "/bills/{BillId:guid}/edit"
+
+@using Radzen
+@using Radzen.Blazor
 
 @inject BusinessShellState ShellState
-@inject BusinessWriteFlowClient WriteFlow
-@inject NavigationManager NavigationManager
+@inject VendorClient VendorClient
+@inject AccountClient AccountClient
+@inject TaxCodeClient TaxCodeClient
+@inject PaymentTermClient PaymentTermClient
+@inject BillClient BillClient
 @inject CitusToastService Message
+@inject NavigationManager Navigation
 
-<PageTitle>New Bill | Tralanz Books</PageTitle>
+@*
+    Bill create / edit. Same component handles both routes:
+      • /bills/new — fresh draft
+      • /bills/{id}/edit — loads an existing Draft (only Draft is editable)
+
+    Two save buttons: Save (silent draft) and Save & Post (transitions
+    to Posted). The full GL posting pipeline isn't wired in V1 — Post
+    just flips the status flag for now; the journal entry / AP open
+    item integration lands when PO + Inventory ships.
+*@
+
+<PageTitle>@(_billId is null ? "New bill" : $"Edit {_billNumberDisplay}") | Tralanz Books</PageTitle>
 
 <CitusPageHeader Model="_header">
     <Actions>
@@ -26,201 +45,465 @@
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
 
-@if (_lastResult is not null)
+@if (_isLoading)
 {
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>@_lastResult.Operation</strong>
-            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
-        </MessageTemplate>
-    </CitusAlert>
+    <CitusLoadingBar />
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Supplier</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Supplier</label>
+                        <RadzenDropDown TValue="Guid?"
+                                        Data="@_vendors"
+                                        @bind-Value="_vendorId"
+                                        TextProperty="DisplayName"
+                                        ValueProperty="Id"
+                                        Placeholder="Choose a supplier…"
+                                        AllowFiltering="true"
+                                        Style="width: 100%;"
+                                        Change="@(_ => OnVendorChanged())" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Source PO</label>
+                        @if (!string.IsNullOrWhiteSpace(_sourcePurchaseOrderNumber))
+                        {
+                            @if (_sourcePurchaseOrderId is { } poId)
+                            {
+                                <a class="citus-link" href="@($"purchase-orders/{poId:D}")">
+                                    <span class="citus-inline-code">@_sourcePurchaseOrderNumber</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="citus-inline-code">@_sourcePurchaseOrderNumber</span>
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-fg-muted text-sm">Created directly (no source PO)</div>
+                        }
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th style="width: 18rem">Category</th>
+                            <th>Description</th>
+                            <th style="width: 9rem">Tax</th>
+                            <th class="text-right" style="width: 9rem">Tax amt</th>
+                            <th class="text-right" style="width: 10rem">Amount</th>
+                            <th style="width: 3rem"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < _lines.Count; i++)
+                        {
+                            var index = i;
+                            var line = _lines[index];
+                            <tr>
+                                <td>@(index + 1)</td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_accounts"
+                                                    Value="@line.ExpenseAccountId"
+                                                    Change="@(v => UpdateLine(index, l => l with { ExpenseAccountId = v as Guid? }))"
+                                                    TextProperty="Label"
+                                                    ValueProperty="Id"
+                                                    AllowFiltering="true"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <CitusInput TValue="string"
+                                                Value="@line.Description"
+                                                ValueChanged="@(v => UpdateLine(index, l => l with { Description = v ?? string.Empty }))" />
+                                </td>
+                                <td>
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Data="@_taxCodes"
+                                                    Value="@line.TaxCodeId"
+                                                    Change="@(v => UpdateLine(index, l => l with { TaxCodeId = v as Guid? }))"
+                                                    TextProperty="Code"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.TaxAmount"
+                                                   Change="@(v => UpdateLine(index, l => l with { TaxAmount = v }))"
+                                                   Format="0.00" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <RadzenNumeric TValue="decimal" Value="@line.LineAmount"
+                                                   Change="@(v => UpdateLine(index, l => l with { LineAmount = v }))"
+                                                   Format="0.00" Style="width: 100%;" />
+                                </td>
+                                <td>
+                                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
+                                                 OnClick="@(() => RemoveLine(index))">×</CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="flex gap-2 mt-3">
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="AddLine">+ Add line</CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearLines">Clear all lines</CitusButton>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Memo</h2>
+                <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note about this bill" />
+            </section>
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    @if (!string.IsNullOrWhiteSpace(_billNumberDisplay))
+                    {
+                        <div>
+                            <label class="text-sm font-medium block mb-1">Internal entity number</label>
+                            <div class="citus-inline-code">@_billNumberDisplay</div>
+                        </div>
+                    }
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Bill no. (supplier's invoice #)</label>
+                        <CitusInput TValue="string" @bind-Value="_billNumber" Placeholder="e.g. INV-12345" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Bill date</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_billDate"
+                                          Change="@(_ => RecomputeDueDate())"
+                                          Style="width: 100%;" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Due date</label>
+                        <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
+                                          @bind-Value="_dueDate" Style="width: 100%;" />
+                        @if (_paymentTermId is { } termId)
+                        {
+                            var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
+                            if (term is not null)
+                            {
+                                <p class="text-fg-subtle text-xs mt-1">Defaulted from payment term <strong>@term.Name</strong> (Net @term.NetDays).</p>
+                            }
+                        }
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Transaction currency</label>
+                        <CitusInput TValue="string"
+                                    @bind-Value="_currency"
+                                    Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@FormatAmount(Subtotal)</td></tr>
+                        <tr><th>Tax</th><td class="text-right">@FormatAmount(TaxTotal)</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@FormatAmount(Total) @_currency</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <div class="flex flex-wrap gap-2">
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(post: false))">
+                    @(_isSaving ? "Saving…" : "Save")
+                </CitusButton>
+                @if (_status == "draft" || _billId is null)
+                {
+                    <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSaving" OnClick="@(() => SaveAsync(post: true))">
+                        Save &amp; Post
+                    </CitusButton>
+                }
+                <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="Cancel">Cancel</CitusButton>
+            </div>
+        </aside>
+    </div>
 }
 
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Document date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Style="width: 100%;" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Due date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Style="width: 100%;" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Vendor (id)</label>
-                    <CitusInput TValue="string" @bind-Value="_vendorIdInput" Placeholder="@("00000000-0000-0000-0000-000000000000")" />
-                    <p class="text-fg-subtle text-xs mt-1">Lookup goes here once /accounting/vendors HTTP endpoint exists.</p>
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Placeholder="USD"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
-                    {
-                        <p class="text-fg-subtle text-xs mt-1">
-                            Multi-currency is off — enable in Settings to choose another currency.
-                        </p>
-                    }
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
-                </div>
-            </div>
-        </section>
-
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Lines</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-            </header>
-
-            <table class="citus-data-table">
-                <thead>
-                    <tr>
-                        <th>Description</th>
-                        <th class="text-right" style="width: 6rem">Qty</th>
-                        <th class="text-right" style="width: 9rem">Unit price</th>
-                        <th style="width: 7rem">Account</th>
-                        <th style="width: 6rem">Tax</th>
-                        <th class="text-right" style="width: 9rem">Line total</th>
-                        <th style="width: 3rem"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var index = 0; index < _lines.Count; index++)
-                    {
-                        var i = index;
-                        var line = _lines[i];
-                        <tr>
-                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="What's being purchased?" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => Update(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="6000" /></td>
-                            <td><CitusInput TValue="string" Value="@line.TaxCode" ValueChanged="@(v => Update(i, l => l with { TaxCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="HST" /></td>
-                            <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
-                            <td>
-                                <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
-                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                    <tr class="citus-data-table__total">
-                        <td colspan="5" class="text-right font-medium">Total</td>
-                        <td class="text-right font-semibold">@FormatAmount(_total)</td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-    </div>
-
-    <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
-                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
-                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
-                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
-                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        <tr>
-                            <th>FX rate</th>
-                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </section>
-
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post bill</h2>
-            <p class="text-fg-muted text-sm mb-3">
-                Posting reserves the bill number, opens the AP control row, and creates the journal entry. Settlement happens in Pay Bills.
-            </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_lines.Count == 0 || _total <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
-                         OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post bill")
-            </CitusButton>
-        </section>
-    </div>
-</div>
-
 @code {
-    private readonly PageHeaderModel _header = new()
-    {
-        Eyebrow = "Expense & Bills",
-        Title = "New bill",
-        Subtitle = "Vendor-facing payable. Posting opens the AP open item; settlement happens in Pay Bills."
-    };
+    [Parameter] public Guid? BillId { get; set; }
 
-    private DateTime? _documentDate = DateTime.Today;
-    private DateTime? _dueDate = DateTime.Today.AddDays(30);
-    private string _vendorIdInput = string.Empty;
+    private Guid? _billId;
+    private string? _billNumberDisplay;
+    private string _status = "draft";
+
+    private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
+    private IReadOnlyList<AccountSummary> _accountsRaw = Array.Empty<AccountSummary>();
+    private IReadOnlyList<AccountOption> _accounts = Array.Empty<AccountOption>();
+    private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
+    private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+
+    private Guid? _vendorId;
+    private Guid? _paymentTermId;
+    private Guid? _sourcePurchaseOrderId;
+    private string? _sourcePurchaseOrderNumber;
+    private string _billNumber = string.Empty;
+    private DateTime? _billDate = DateTime.Today;
+    private DateTime? _dueDate;
     private string _currency = string.Empty;
     private decimal? _fxRate;
     private string _memo = string.Empty;
-    private readonly List<DocumentLineDraft> _lines = new() { new DocumentLineDraft { Quantity = 1m } };
-    private bool _isSubmitting;
+
+    private List<LineDraft> _lines = new() { new LineDraft() };
+
+    private bool _isLoading = true;
+    private bool _isSaving;
     private string? _validation;
-    private WriteFlowResult? _lastResult;
+    private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "New bill", Subtitle = "Record a vendor invoice." };
 
-    private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+    private decimal Subtotal => _lines.Sum(l => Math.Round(l.LineAmount, 6));
+    private decimal TaxTotal => _lines.Sum(l => Math.Round(l.TaxAmount, 6));
+    private decimal Total => Math.Round(Subtotal + TaxTotal, 6);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
-
-    private void AddLine() => _lines.Add(new DocumentLineDraft { Quantity = 1m });
-    private void RemoveLine(int i) { if (i >= 0 && i < _lines.Count) _lines.RemoveAt(i); }
-    private void Update(int i, Func<DocumentLineDraft, DocumentLineDraft> mutate) { if (i >= 0 && i < _lines.Count) _lines[i] = mutate(_lines[i]); }
-
-    private async Task PostAsync()
+    protected override async Task OnInitializedAsync()
     {
-        _validation = null;
-        _lastResult = null;
-
-        if (_lines.Count == 0) { _validation = "Add at least one bill line."; return; }
-        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
-        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs an expense account code."; return; }
-        if (_total <= 0) { _validation = "Bill total must be greater than zero."; return; }
-
-        Guid? vendorId = null;
-        if (!string.IsNullOrWhiteSpace(_vendorIdInput) && Guid.TryParse(_vendorIdInput, out var parsed)) vendorId = parsed;
-
-        _isSubmitting = true;
-        try
-        {
-            var draft = new BillDraft
-            {
-                DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
-                DueDate = _dueDate.HasValue ? DateOnly.FromDateTime(_dueDate.Value.Date) : null,
-                VendorId = vendorId,
-                TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
-                FxRate = _fxRate,
-                Memo = _memo.Trim(),
-                Lines = _lines.ToArray()
-            };
-            _lastResult = await WriteFlow.PostBillAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Bill posted."); NavigationManager.NavigateTo("bills"); }
-            else { await Message.InfoAsync(_lastResult.Message); }
-        }
-        finally { _isSubmitting = false; }
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        await LoadAsync();
     }
 
-    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+    protected override async Task OnParametersSetAsync()
+    {
+        if (BillId.HasValue && _billId != BillId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var vendorsTask = VendorClient.ListAsync();
+            var accountsTask = AccountClient.ListAsync();
+            var taxTask = TaxCodeClient.ListAsync(appliesTo: "purchase");
+            var termsTask = PaymentTermClient.ListAsync(includeInactive: false);
+            await Task.WhenAll(vendorsTask, accountsTask, taxTask, termsTask);
+
+            _vendors = vendorsTask.Result;
+            _accountsRaw = accountsTask.Result;
+            _accounts = _accountsRaw
+                .Where(a => a.IsActive && a.AllowManualPosting)
+                .Select(a => new AccountOption(a.Id, $"{a.Code}  {a.Name}"))
+                .ToList();
+            _taxCodes = taxTask.Result;
+            _paymentTerms = termsTask.Result;
+
+            _billId = BillId;
+            if (BillId is { } id)
+            {
+                var bill = await BillClient.GetByIdAsync(id);
+                if (bill is null)
+                {
+                    _validation = "Bill not found.";
+                    return;
+                }
+                ApplyExisting(bill);
+            }
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyExisting(BillRecordDto bill)
+    {
+        _billNumberDisplay = bill.EntityNumber;
+        _status = bill.Status;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Expense & Bills",
+            Title = $"Edit {bill.BillNumber}",
+            Subtitle = $"Status: {bill.Status}"
+        };
+        _vendorId = bill.VendorId;
+        _paymentTermId = bill.PaymentTermId;
+        _sourcePurchaseOrderId = bill.SourcePurchaseOrderId;
+        _sourcePurchaseOrderNumber = bill.SourcePurchaseOrderNumber;
+        _billNumber = bill.BillNumber;
+        _billDate = bill.BillDate.ToDateTime(TimeOnly.MinValue);
+        _dueDate = bill.DueDate.ToDateTime(TimeOnly.MinValue);
+        _currency = bill.DocumentCurrencyCode;
+        _fxRate = bill.FxRate;
+        _memo = bill.Memo ?? string.Empty;
+        _lines = bill.Lines.Select(l => new LineDraft
+        {
+            ExpenseAccountId = l.ExpenseAccountId,
+            Description = l.Description,
+            LineAmount = l.LineAmount,
+            TaxCodeId = l.TaxCodeId,
+            TaxAmount = l.TaxAmount
+        }).ToList();
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void OnVendorChanged()
+    {
+        if (_vendorId is null) return;
+        var vendor = _vendors.FirstOrDefault(v => v.Id == _vendorId.Value);
+        if (vendor is null) return;
+        _currency = vendor.DefaultCurrencyCode;
+        _paymentTermId = vendor.PaymentTermId;
+        RecomputeDueDate();
+    }
+
+    private void RecomputeDueDate()
+    {
+        if (_paymentTermId is { } termId && _billDate is { } billDate)
+        {
+            var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);
+            if (term is not null)
+            {
+                _dueDate = billDate.AddDays(term.NetDays);
+            }
+        }
+        else if (_dueDate is null && _billDate is { } d)
+        {
+            _dueDate = d;
+        }
+    }
+
+    private void UpdateLine(int index, Func<LineDraft, LineDraft> mutate)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        var current = _lines[index];
+        var updated = mutate(current);
+        current.ExpenseAccountId = updated.ExpenseAccountId;
+        current.Description = updated.Description;
+        current.LineAmount = updated.LineAmount;
+        current.TaxCodeId = updated.TaxCodeId;
+        current.TaxAmount = updated.TaxAmount;
+    }
+
+    private void AddLine() => _lines.Add(new LineDraft());
+
+    private void RemoveLine(int index)
+    {
+        if (index < 0 || index >= _lines.Count) return;
+        _lines.RemoveAt(index);
+        if (_lines.Count == 0) _lines.Add(new LineDraft());
+    }
+
+    private void ClearLines() { _lines.Clear(); _lines.Add(new LineDraft()); }
+
+    private async Task SaveAsync(bool post)
+    {
+        _validation = null;
+        if (_vendorId is null) { _validation = "Pick a supplier."; return; }
+        if (string.IsNullOrWhiteSpace(_billNumber)) { _validation = "Bill no. is required (use the supplier's invoice number)."; return; }
+        if (_lines.All(l => l.LineAmount == 0 && string.IsNullOrWhiteSpace(l.Description) && l.ExpenseAccountId is null))
+        {
+            _validation = "Add at least one line with a category and amount.";
+            return;
+        }
+        var lineWithoutCategory = _lines.FirstOrDefault(l => (l.LineAmount > 0 || !string.IsNullOrWhiteSpace(l.Description)) && l.ExpenseAccountId is null);
+        if (lineWithoutCategory is not null)
+        {
+            _validation = "Every line with an amount or description needs a category.";
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var billDate = DateOnly.FromDateTime((_billDate ?? DateTime.Today).Date);
+            var dueDate = DateOnly.FromDateTime((_dueDate ?? _billDate ?? DateTime.Today).Date);
+            var payload = new BillUpsertPayload(
+                BillNumber: _billNumber.Trim(),
+                VendorId: _vendorId.Value,
+                BillDate: billDate,
+                DueDate: dueDate,
+                DocumentCurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
+                FxRate: _fxRate,
+                Memo: NullIfEmpty(_memo),
+                PaymentTermId: _paymentTermId,
+                SourcePurchaseOrderId: _sourcePurchaseOrderId,
+                SourcePurchaseOrderNumber: _sourcePurchaseOrderNumber,
+                Lines: _lines
+                    .Where(l => l.ExpenseAccountId is not null && (l.LineAmount > 0 || !string.IsNullOrWhiteSpace(l.Description)))
+                    .Select((l, i) => new BillLinePayload(
+                        LineNumber: i + 1,
+                        ExpenseAccountId: l.ExpenseAccountId!.Value,
+                        Description: l.Description ?? string.Empty,
+                        LineAmount: l.LineAmount,
+                        TaxCodeId: l.TaxCodeId,
+                        TaxAmount: l.TaxAmount))
+                    .ToArray());
+
+            BillMutationOutcome outcome = _billId is null
+                ? await BillClient.CreateAsync(payload)
+                : await BillClient.UpdateAsync(_billId.Value, payload);
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not save the bill.";
+                return;
+            }
+
+            var saved = outcome.Saved;
+            if (post && saved.Status == "draft")
+            {
+                var postOutcome = await BillClient.PostAsync(saved.Id);
+                if (!postOutcome.Succeeded)
+                {
+                    _validation = postOutcome.ErrorMessage ?? "Saved, but could not transition to Posted.";
+                    await Message.WarningAsync(_validation);
+                }
+                else
+                {
+                    await Message.SuccessAsync($"Bill {saved.BillNumber} posted.");
+                }
+            }
+            else
+            {
+                await Message.SuccessAsync($"Bill {saved.BillNumber} saved.");
+            }
+
+            Navigation.NavigateTo($"bills/{saved.Id:D}");
+        }
+        finally { _isSaving = false; }
+    }
+
+    private void Cancel() => Navigation.NavigateTo(_billId is null ? "bills" : $"bills/{_billId:D}");
+
+    private static string FormatAmount(decimal value) =>
+        value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record LineDraft
+    {
+        public Guid? ExpenseAccountId { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public decimal LineAmount { get; set; }
+        public Guid? TaxCodeId { get; set; }
+        public decimal TaxAmount { get; set; }
+    }
+
+    private sealed record AccountOption(Guid Id, string Label);
 }

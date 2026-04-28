@@ -31,8 +31,10 @@ using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
+using Infrastructure.PostgreSQL.AP.Bills;
 using Infrastructure.PostgreSQL.Counterparties;
 using Infrastructure.PostgreSQL.Sales;
+using Modules.AP.Bills;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
@@ -205,6 +207,13 @@ builder.Services.AddSingleton<IPaymentTermStore, PostgreSqlPaymentTermStore>();
 builder.Services.AddSingleton<IQuoteStore, PostgreSqlQuoteStore>();
 builder.Services.AddSingleton<ISalesOrderStore, PostgreSqlSalesOrderStore>();
 
+// AP-side: Bill (vendor invoice) draft + lifecycle. The heavy posting
+// pipeline (PostBillCommandHandler, FX snapshot, AP open item) stays
+// in Citus.Accounting.Infrastructure; this store is the document-level
+// CRUD surface for the Bill page. V1 drives status transitions only;
+// the GL writes wire in alongside the PO + Inventory batch.
+builder.Services.AddSingleton<IBillStore, PostgreSqlBillStore>();
+
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
 // exist by (company_id, code).
@@ -326,6 +335,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var paymentTermStore = startupScope.ServiceProvider.GetRequiredService<IPaymentTermStore>();
     var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
     var salesOrderStore = startupScope.ServiceProvider.GetRequiredService<ISalesOrderStore>();
+    var billStore = startupScope.ServiceProvider.GetRequiredService<IBillStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
@@ -349,6 +359,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
     await quoteStore.EnsureSchemaAsync(CancellationToken.None);
     await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
+    await billStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
@@ -4801,6 +4812,209 @@ static SalesOrderUpsertInput MapSalesOrderInput(SalesOrderUpsertHttpRequest requ
             TaxCodeId: l.TaxCodeId,
             AccountCode: l.AccountCode))
         .ToArray());
+
+// ===========================================================================
+// Bills (vendor invoices) — AP-side document lifecycle.
+//
+// V1 surface: list / get / create-as-draft / edit-draft / post / void.
+// Post is a pure status transition in V1; the heavy posting pipeline
+// (PostBillCommandHandler — FX snapshot, AP open item, journal entry)
+// gets wired in alongside the PO + Inventory batch. Void is also pure
+// status today; reversing the GL entries lands with the same batch.
+// ===========================================================================
+
+accounting.MapGet(
+    "/ap/bills",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillStore store,
+        bool? includeDrafts,
+        string? status,
+        Guid? vendorId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var filter = new BillListFilter(
+            IncludeDrafts: includeDrafts ?? true,
+            Status: string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToLowerInvariant(),
+            VendorId: vendorId,
+            FromDate: from,
+            ToDate: to);
+        var rows = await store.ListAsync(session.ActiveCompanyId, filter, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/ap/bills/{billId:guid}",
+    async (
+        Guid billId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var bill = await store.GetByIdAsync(session.ActiveCompanyId, billId, cancellationToken);
+        return bill is null ? Results.NotFound() : Results.Ok(bill);
+    });
+
+accounting.MapPost(
+    "/ap/bills",
+    async (
+        BillUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateBillInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                session.UserId,
+                MapBillInput(request),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Bill number '{request.BillNumber}' already exists for this vendor / company." });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = "A referenced row (vendor / currency / payment term) was not found." });
+        }
+    });
+
+accounting.MapPut(
+    "/ap/bills/{billId:guid}",
+    async (
+        Guid billId,
+        BillUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var validation = ValidateBillInput(request);
+        if (validation is not null) return Results.BadRequest(new { message = validation });
+
+        try
+        {
+            var saved = await store.UpdateAsync(
+                session.ActiveCompanyId,
+                billId,
+                MapBillInput(request),
+                cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            return Results.BadRequest(new { message = $"Bill number '{request.BillNumber}' already exists for this vendor / company." });
+        }
+    });
+
+accounting.MapPost(
+    "/ap/bills/{billId:guid}/post",
+    async (
+        Guid billId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var saved = await store.PostAsync(session.ActiveCompanyId, billId, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapPost(
+    "/ap/bills/{billId:guid}/void",
+    async (
+        Guid billId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IBillStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var saved = await store.VoidAsync(session.ActiveCompanyId, billId, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+static string? ValidateBillInput(BillUpsertHttpRequest request)
+{
+    if (string.IsNullOrWhiteSpace(request.BillNumber)) return "Bill number is required (use the supplier's invoice number).";
+    if (request.BillNumber.Length > 64) return "Bill number must be 64 characters or fewer.";
+    if (request.VendorId == Guid.Empty) return "Vendor is required.";
+    if (string.IsNullOrWhiteSpace(request.DocumentCurrencyCode)) return "Document currency is required.";
+    if (request.DocumentCurrencyCode.Length != 3) return "Document currency must be a 3-letter code.";
+    if (request.DueDate < request.BillDate) return "Due date cannot be before bill date.";
+    if (request.FxRate is { } rate && rate <= 0m) return "Exchange rate must be greater than zero.";
+    if (request.Lines is null || request.Lines.Count == 0) return "At least one line is required.";
+    foreach (var line in request.Lines)
+    {
+        if (line.ExpenseAccountId == Guid.Empty) return "Each line must point to a category account.";
+        if (line.LineAmount < 0m) return "Line amount must be 0 or greater.";
+        if (line.TaxAmount is { } tax && tax < 0m) return "Tax amount must be 0 or greater.";
+    }
+    return null;
+}
+
+static BillUpsertInput MapBillInput(BillUpsertHttpRequest request) =>
+    new(
+        BillNumber: request.BillNumber,
+        VendorId: request.VendorId,
+        BillDate: request.BillDate,
+        DueDate: request.DueDate,
+        DocumentCurrencyCode: request.DocumentCurrencyCode,
+        FxRate: request.FxRate,
+        Memo: request.Memo,
+        PaymentTermId: request.PaymentTermId,
+        SourcePurchaseOrderId: request.SourcePurchaseOrderId,
+        SourcePurchaseOrderNumber: request.SourcePurchaseOrderNumber,
+        Lines: (request.Lines ?? Array.Empty<BillLineHttpRequest>())
+            .Select(l => new BillLineInput(
+                LineNumber: l.LineNumber,
+                ExpenseAccountId: l.ExpenseAccountId,
+                Description: l.Description ?? string.Empty,
+                LineAmount: l.LineAmount,
+                TaxCodeId: l.TaxCodeId,
+                TaxAmount: l.TaxAmount ?? 0m))
+            .ToArray());
 
 // ===========================================================================
 // Chart of Accounts (per-company)

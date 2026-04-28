@@ -4,6 +4,7 @@
 @using Radzen.Blazor
 
 @inject BusinessShellState ShellState
+@inject BillClient BillClient
 
 <PageTitle>Bills | Tralanz Books</PageTitle>
 
@@ -16,24 +17,24 @@
     </Actions>
 </CitusPageHeader>
 
-<CitusAlert Severity="CitusAlertSeverity.Info"
-                 ShowIcon="true"
-                 Message="Bill list pulls from the existing A/P Aging + Document Review HTTP surface. Posted bills stay read-only — review opens via the Document drill-down."
-                 Class="mb-4" />
-
 <section class="citus-panel">
     <header class="citus-panel__header">
-        <h2 class="citus-panel__title">Recent bills</h2>
-        <CitusBadge Color="@("blue")">Read-only review</CitusBadge>
+        <h2 class="citus-panel__title">Bills</h2>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox"
+                   checked="@_showDrafts"
+                   @onchange="OnToggleDrafts" />
+            Show drafts
+        </label>
     </header>
 
-    <CitusAsyncBoundary IsLoading="false"
-                        IsEmpty="@(_bills.Count == 0)"
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
                         EmptyIcon="IconName.Receipt"
-                        EmptyTitle="No bills for this company yet"
-                        EmptyMessage="Use 'New bill' to record one. Posted bills appear here ordered by document date.">
-        <RadzenDataGrid TItem="BillListRow"
-                        Data="@_bills"
+                        EmptyTitle="No bills yet"
+                        EmptyMessage="Click New bill to record one. Drafts stay local until you Post them.">
+        <RadzenDataGrid TItem="BillRow"
+                        Data="@_rows"
                         AllowSorting="true"
                         AllowFiltering="true"
                         AllowColumnResize="true"
@@ -42,26 +43,34 @@
                         FilterMode="FilterMode.Simple"
                         class="citus-radzen-grid">
             <Columns>
-                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.DisplayNumber)" Title="Bill" Width="180px">
-                    <Template Context="bill">
-                        <a class="citus-link" href="@($"documents/bill/{bill.Id:D}")">@bill.DisplayNumber</a>
-                        <div class="text-fg-subtle text-xs">@bill.Memo</div>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.BillNumber)" Title="Bill #" Width="180px">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"bills/{row.Id:D}")">
+                            <span class="citus-inline-code">@row.BillNumber</span>
+                        </a>
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.VendorName)" Title="Vendor" />
-                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.DocumentDate)" Title="Document date" Width="140px">
-                    <Template Context="bill">@bill.DocumentDate.ToString("yyyy-MM-dd")</Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.DueDate)" Title="Due date" Width="120px">
-                    <Template Context="bill">@(bill.DueDate?.ToString("yyyy-MM-dd") ?? "-")</Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.Status)" Title="Status" Width="110px">
-                    <Template Context="bill">
-                        <CitusBadge Color="@StatusColor(bill.Status)">@bill.Status</CitusBadge>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.VendorName)" Title="Vendor">
+                    <Template Context="row">
+                        <a class="citus-link" href="@($"bills/{row.Id:D}")">@row.VendorName</a>
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="BillListRow" Property="@nameof(BillListRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="140px">
-                    <Template Context="bill">@bill.TotalAmount.ToString("N2") @bill.Currency</Template>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.BillDate)" Title="Bill date" Width="120px">
+                    <Template Context="row">@row.BillDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.DueDate)" Title="Due date" Width="120px">
+                    <Template Context="row">@row.DueDate.ToString("yyyy-MM-dd")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.Status)" Title="Status" Width="120px">
+                    <Template Context="row">
+                        <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.SourcePurchaseOrderNumber)" Title="Source PO" Width="140px">
+                    <Template Context="row">@(string.IsNullOrEmpty(row.SourcePurchaseOrderNumber) ? "—" : row.SourcePurchaseOrderNumber)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillRow" Property="@nameof(BillRow.TotalAmount)" Title="Total" TextAlign="TextAlign.Right" Width="160px">
+                    <Template Context="row">@row.TotalAmount.ToString("N2") @row.Currency</Template>
                 </RadzenDataGridColumn>
             </Columns>
         </RadzenDataGrid>
@@ -73,28 +82,71 @@
     {
         Eyebrow = "Expense & Bills",
         Title = "Bills",
-        Subtitle = "Vendor-facing payable anchors. Posted bills feed A/P Aging and Pay Bills settlement."
+        Subtitle = "Vendor invoices. Posted bills feed AP aging and Pay Bills settlement."
     };
 
-    private readonly IReadOnlyList<BillListRow> _bills = Array.Empty<BillListRow>();
+    private List<BillRow> _rows = new();
+    private bool _isLoading = true;
+    private bool _showDrafts = true;
 
-    private static string StatusColor(string status) => status.ToLowerInvariant() switch
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
-        "posted" => "green",
-        "draft" => "blue",
-        "voided" => "red",
-        "overdue" => "orange",
+        _isLoading = true;
+        try
+        {
+            var rows = await BillClient.ListAsync(includeDrafts: _showDrafts);
+            _rows = rows.Select(r => new BillRow(
+                Id: r.Id,
+                BillNumber: r.BillNumber,
+                VendorName: string.IsNullOrEmpty(r.VendorName) ? "—" : r.VendorName,
+                BillDate: r.BillDate,
+                DueDate: r.DueDate,
+                Status: r.Status,
+                SourcePurchaseOrderNumber: r.SourcePurchaseOrderNumber,
+                TotalAmount: r.TotalAmount,
+                Currency: r.DocumentCurrencyCode)).ToList();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OnToggleDrafts(ChangeEventArgs args)
+    {
+        _showDrafts = (bool)(args.Value ?? true);
+        await LoadAsync();
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "draft" => "default",
+        "posted" => "blue",
+        "partially_paid" => "geekblue",
+        "paid" => "green",
+        "voided" => "default",
+        "reversed" => "orange",
         _ => "default"
     };
 
-    private sealed record class BillListRow(
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "posted" => "Posted",
+        "partially_paid" => "Partially paid",
+        "paid" => "Paid",
+        "voided" => "Voided",
+        "reversed" => "Reversed",
+        _ => status
+    };
+
+    private sealed record BillRow(
         Guid Id,
-        string DisplayNumber,
+        string BillNumber,
         string VendorName,
-        DateOnly DocumentDate,
-        DateOnly? DueDate,
+        DateOnly BillDate,
+        DateOnly DueDate,
         string Status,
+        string? SourcePurchaseOrderNumber,
         decimal TotalAmount,
-        string Currency,
-        string Memo);
+        string Currency);
 }

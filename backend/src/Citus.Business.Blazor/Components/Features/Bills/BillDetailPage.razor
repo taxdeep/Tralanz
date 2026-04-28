@@ -1,0 +1,282 @@
+@page "/bills/{BillId:guid}"
+
+@inject BusinessShellState ShellState
+@inject BillClient BillClient
+@inject AccountClient AccountClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+<PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="bills">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to bills</span>
+        </a>
+        @if (_bill is not null && IsEditable(_bill.Status))
+        {
+            <a class="citus-button" href="@($"bills/{_bill.Id:D}/edit")">
+                <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
+                <span>Edit</span>
+            </a>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusLoadingBar />
+}
+else if (_bill is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Bill not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Bill #" Value="@_bill.BillNumber" Description="@_bill.VendorName"
+                       Icon="IconName.Receipt" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_bill.Status)" Description="@StatusHint(_bill.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_bill.Status)" />
+        <CitusStatCard Label="Total" Value="@($"{_bill.TotalAmount:N2} {_bill.DocumentCurrencyCode}")"
+                       Description="@($"Subtotal {_bill.SubtotalAmount:N2} + tax {_bill.TaxAmount:N2}")"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+        <CitusStatCard Label="Due"
+                       Value="@_bill.DueDate.ToString("yyyy-MM-dd")"
+                       Description="@($"Issued {_bill.BillDate:yyyy-MM-dd}")"
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+    </div>
+
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Actions</h2>
+        <div class="flex flex-wrap gap-2 items-center">
+            @if (_bill.Status == "draft")
+            {
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="PostAsync">Post</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
+            }
+            else if (_bill.Status == "posted")
+            {
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="VoidAsync">Void</CitusButton>
+                <span class="text-fg-muted text-sm">Use the Pay Bills page to settle this bill.</span>
+            }
+            @if (_bill.SourcePurchaseOrderId is { } poId)
+            {
+                <a class="citus-button citus-button--ghost" href="@($"purchase-orders/{poId:D}")">View source PO</a>
+            }
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 8rem">Tax</th>
+                            <th class="text-right" style="width: 9rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _bill.Lines)
+                        {
+                            <tr>
+                                <td>@line.LineNumber</td>
+                                <td>@ResolveAccountLabel(line.ExpenseAccountId)</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.TaxAmount.ToString("N2")</td>
+                                <td class="text-right">@line.LineAmount.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_bill.Memo))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Memo</h2>
+                    <p class="text-fg-muted text-sm">@_bill.Memo</p>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Bill no.</th><td><span class="citus-inline-code">@_bill.BillNumber</span></td></tr>
+                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_bill.EntityNumber</span></td></tr>
+                        <tr><th>Bill date</th><td>@_bill.BillDate.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Due date</th><td>@_bill.DueDate.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Currency</th><td>@_bill.DocumentCurrencyCode @(_bill.DocumentCurrencyCode == _bill.BaseCurrencyCode ? "" : $"@ {_bill.FxRate}")</td></tr>
+                        <tr><th>Source PO</th><td>@(string.IsNullOrEmpty(_bill.SourcePurchaseOrderNumber) ? "—" : _bill.SourcePurchaseOrderNumber)</td></tr>
+                        @if (_bill.PostedAt is { } postedAt)
+                        {
+                            <tr><th>Posted</th><td>@postedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@_bill.SubtotalAmount.ToString("N2")</td></tr>
+                        <tr><th>Tax</th><td class="text-right">@_bill.TaxAmount.ToString("N2")</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@_bill.TotalAmount.ToString("N2") @_bill.DocumentCurrencyCode</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid BillId { get; set; }
+
+    private BillRecordDto? _bill;
+    private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private bool _isLoading = true;
+    private bool _isMutating;
+    private string? _error;
+
+    private PageHeaderModel _header = new() { Eyebrow = "Expense & Bills", Title = "Bill", Subtitle = "Bill detail" };
+    private string _pageTitle = "Bill";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_bill is not null && _bill.Id != BillId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            var billTask = BillClient.GetByIdAsync(BillId);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(billTask, accountsTask);
+            _bill = billTask.Result;
+            _accounts = accountsTask.Result;
+            ApplyHeader();
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_bill is null)
+        {
+            _pageTitle = "Bill";
+            _header = new PageHeaderModel { Eyebrow = "Expense & Bills", Title = "Bill", Subtitle = "Bill detail" };
+            return;
+        }
+        _pageTitle = _bill.BillNumber;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Expense & Bills",
+            Title = _bill.BillNumber,
+            Subtitle = $"{_bill.VendorName} · {HumanizeStatus(_bill.Status)}"
+        };
+    }
+
+    private string ResolveAccountLabel(Guid accountId)
+    {
+        var account = _accounts.FirstOrDefault(a => a.Id == accountId);
+        return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
+    }
+
+    private async Task PostAsync()
+    {
+        if (_bill is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await BillClient.PostAsync(_bill.Id);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Post failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _bill = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync($"Bill {_bill?.BillNumber} posted.");
+        }
+        finally { _isMutating = false; }
+    }
+
+    private async Task VoidAsync()
+    {
+        if (_bill is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await BillClient.VoidAsync(_bill.Id);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Void failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _bill = outcome.Saved;
+            ApplyHeader();
+            await Message.SuccessAsync("Bill voided.");
+        }
+        finally { _isMutating = false; }
+    }
+
+    private static bool IsEditable(string status) => status is "draft";
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "posted" => "Posted",
+        "partially_paid" => "Partially paid",
+        "paid" => "Paid",
+        "voided" => "Voided",
+        "reversed" => "Reversed",
+        _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "draft" => "Not posted yet.",
+        "posted" => "Awaiting payment.",
+        "partially_paid" => "Some applications received.",
+        "paid" => "Fully settled.",
+        "voided" => "Voided.",
+        "reversed" => "Reversed.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "draft" => StatTone.Neutral,
+        "posted" => StatTone.Info,
+        "partially_paid" => StatTone.Info,
+        "paid" => StatTone.Success,
+        "voided" => StatTone.Neutral,
+        "reversed" => StatTone.Warning,
+        _ => StatTone.Neutral
+    };
+}
