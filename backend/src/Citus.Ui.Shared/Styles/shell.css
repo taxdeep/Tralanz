@@ -1034,7 +1034,7 @@ html[data-theme="dark"] .citus-shell__sider {
 }
 
 .citus-topbar__search > .unity-picker:focus-within {
-    max-width: 640px;
+    max-width: 560px;
 }
 
 /*
