@@ -1,0 +1,82 @@
+@*
+    CitusSkeleton — animated shimmer placeholders that mimic the
+    actual content layout. Replaces the indeterminate
+    <CitusLoadingBar /> on pages that have a predictable structure
+    so the user sees "shape" of what's coming, not a context-free
+    progress line.
+
+    Usage:
+        <CitusSkeleton Variant="SkeletonVariant.List" />     — list pages (RadzenDataGrid)
+        <CitusSkeleton Variant="SkeletonVariant.Detail" />   — detail pages (4 stat cards + 2-col content)
+        <CitusSkeleton Variant="SkeletonVariant.Form" />     — create / edit pages (form + aside)
+
+    Animation + colors are driven by .citus-skeleton-* CSS rules
+    in shell.css; theme tokens make the shimmer respect light /
+    dark mode automatically.
+*@
+
+@switch (Variant)
+{
+    case SkeletonVariant.List:
+        <div class="citus-skeleton-stack" aria-hidden="true">
+            <div class="citus-skeleton citus-skeleton--row citus-skeleton--row-header"></div>
+            @for (var i = 0; i < RowCount; i++)
+            {
+                <div class="citus-skeleton citus-skeleton--row"></div>
+            }
+        </div>
+        break;
+
+    case SkeletonVariant.Detail:
+        <div class="citus-skeleton-stack" aria-hidden="true">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="citus-skeleton citus-skeleton--card"></div>
+                <div class="citus-skeleton citus-skeleton--card"></div>
+                <div class="citus-skeleton citus-skeleton--card"></div>
+                <div class="citus-skeleton citus-skeleton--card"></div>
+            </div>
+            <div class="citus-skeleton citus-skeleton--actions"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div class="lg:col-span-8 citus-skeleton-stack">
+                    <div class="citus-skeleton citus-skeleton--text-lg" style="width: 30%;"></div>
+                    <div class="citus-skeleton citus-skeleton--row"></div>
+                    <div class="citus-skeleton citus-skeleton--row"></div>
+                    <div class="citus-skeleton citus-skeleton--row"></div>
+                    <div class="citus-skeleton citus-skeleton--row"></div>
+                </div>
+                <div class="lg:col-span-4 citus-skeleton-stack">
+                    <div class="citus-skeleton citus-skeleton--card-tall"></div>
+                    <div class="citus-skeleton citus-skeleton--card-tall"></div>
+                </div>
+            </div>
+        </div>
+        break;
+
+    case SkeletonVariant.Form:
+        <div class="citus-skeleton-stack" aria-hidden="true">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div class="lg:col-span-8 citus-skeleton-stack">
+                    <div class="citus-skeleton citus-skeleton--card-tall"></div>
+                    <div class="citus-skeleton citus-skeleton--card-tall"></div>
+                    <div class="citus-skeleton citus-skeleton--card-tall"></div>
+                </div>
+                <div class="lg:col-span-4 citus-skeleton-stack">
+                    <div class="citus-skeleton citus-skeleton--card-tall"></div>
+                    <div class="citus-skeleton citus-skeleton--card"></div>
+                    <div class="citus-skeleton citus-skeleton--actions"></div>
+                </div>
+            </div>
+        </div>
+        break;
+
+    default:
+        <div class="citus-skeleton citus-skeleton--row" aria-hidden="true"></div>
+        break;
+}
+
+@code {
+    [Parameter] public SkeletonVariant Variant { get; set; } = SkeletonVariant.List;
+
+    /// <summary>How many rows to draw for the List variant. Ignored for other variants.</summary>
+    [Parameter] public int RowCount { get; set; } = 6;
+}

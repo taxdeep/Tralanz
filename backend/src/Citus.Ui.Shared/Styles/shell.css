@@ -894,6 +894,65 @@
     align-self: center;
 }
 
+/* ---------------------------------------------------------------
+   Skeleton loaders — animated shimmer placeholders matching common
+   page archetypes (list / detail / form). See CitusSkeleton.razor
+   for the variant layouts that combine these primitives.
+   --------------------------------------------------------------- */
+.citus-skeleton {
+    display: block;
+    width: 100%;
+    background: linear-gradient(
+        90deg,
+        var(--citus-color-bg-muted) 0%,
+        var(--citus-color-bg-elevated) 50%,
+        var(--citus-color-bg-muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: citus-skeleton-shimmer 1.4s ease-in-out infinite;
+    border-radius: var(--citus-radius-sm);
+}
+
+@keyframes citus-skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .citus-skeleton {
+        animation: none;
+        background: var(--citus-color-bg-muted);
+    }
+}
+
+/* Vertical stack used by every variant. Mirrors the spacing the
+   real pages use so the skeleton occupies roughly the same footprint. */
+.citus-skeleton-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-4);
+}
+
+/* Sizing variants. Heights are tuned to match the corresponding real
+   element so the skeleton-to-content swap doesn't reflow the layout. */
+.citus-skeleton--text-sm   { height: 0.75rem; max-width: 70%; }
+.citus-skeleton--text      { height: 0.875rem; }
+.citus-skeleton--text-lg   { height: 1.125rem; }
+.citus-skeleton--row       { height: 2.5rem; border-radius: var(--citus-radius-sm); }
+.citus-skeleton--row-header {
+    height: 2.75rem;
+    background: linear-gradient(
+        90deg,
+        var(--citus-color-bg-elevated) 0%,
+        var(--citus-color-bg-muted) 50%,
+        var(--citus-color-bg-elevated) 100%
+    );
+    background-size: 200% 100%;
+}
+.citus-skeleton--card      { height: 6rem; border-radius: var(--citus-radius-md); }
+.citus-skeleton--card-tall { height: 12rem; border-radius: var(--citus-radius-md); }
+.citus-skeleton--actions   { height: 3rem; border-radius: var(--citus-radius-md); }
+
 .sys-login__crest {
     align-self: center;
     color: var(--citus-color-primary);

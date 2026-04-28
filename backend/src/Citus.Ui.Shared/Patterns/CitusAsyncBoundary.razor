@@ -26,9 +26,7 @@
     }
     else
     {
-        <div class="citus-async-boundary__loading mb-4">
-            <CitusLoadingBar />
-        </div>
+        <CitusSkeleton Variant="@LoadingVariant" RowCount="@LoadingRowCount" />
     }
 }
 else if (!string.IsNullOrWhiteSpace(ErrorMessage))
@@ -91,6 +89,17 @@ else
     [Parameter] public string RetryLabel { get; set; } = "Retry";
 
     [Parameter] public RenderFragment? LoadingTemplate { get; set; }
+
+    /// <summary>
+    /// Skeleton variant the default loading state renders. List is
+    /// the right choice for grid-style pages (Bills, Quotes, etc.) —
+    /// detail / form pages typically render the skeleton themselves
+    /// without going through the async boundary.
+    /// </summary>
+    [Parameter] public SkeletonVariant LoadingVariant { get; set; } = SkeletonVariant.List;
+
+    /// <summary>Row count for the List skeleton variant. Ignored otherwise.</summary>
+    [Parameter] public int LoadingRowCount { get; set; } = 6;
 
     [Parameter] public RenderFragment? ErrorTemplate { get; set; }
 
