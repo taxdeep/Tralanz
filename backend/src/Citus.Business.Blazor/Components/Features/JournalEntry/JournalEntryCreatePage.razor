@@ -48,43 +48,53 @@
     </CitusAlert>
 }
 
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-9 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Header</h2>
+<div class="flex flex-col gap-6">
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Header</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_date" Style="width: 100%;" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Placeholder="USD"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Date</span>
+                    <input type="date"
+                           class="citus-form-field__input"
+                           value="@(_date?.ToString("yyyy-MM-dd"))"
+                           @onchange="OnDateChanged" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Transaction currency</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="USD"
+                           value="@_currency"
+                           @oninput="@(e => _currency = e.Value?.ToString() ?? string.Empty)"
+                           disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
                     @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
                     {
-                        <p class="text-fg-subtle text-xs mt-1">
+                        <span class="text-fg-subtle text-xs mt-1">
                             Multi-currency is off — enable in Settings to choose another currency.
-                        </p>
+                        </span>
                     }
-                </div>
+                </label>
                 <div>
                     @if (!string.Equals(_currency.Trim(), ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase) &&
                          !string.IsNullOrWhiteSpace(_currency.Trim()))
                     {
-                        <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
-                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                      QuoteCurrencyCode="@_currency"
-                                      @bind-Rate="_exchangeRate" />
+                        <label class="citus-form-field">
+                            <span class="citus-form-field__label">Exchange rate</span>
+                            <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
+                                          BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                          QuoteCurrencyCode="@_currency"
+                                          @bind-Rate="_exchangeRate" />
+                        </label>
                     }
                 </div>
-                <div class="md:col-span-3">
-                    <label class="text-sm font-medium block mb-1">Description</label>
-                    <CitusInput TValue="string" @bind-Value="_description" Placeholder="What is this journal recording?" />
-                </div>
+                <label class="citus-form-field md:col-span-3">
+                    <span class="citus-form-field__label">Description</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="What is this journal recording?"
+                           value="@_description"
+                           @oninput="@(e => _description = e.Value?.ToString() ?? string.Empty)" />
+                </label>
             </div>
         </section>
 
@@ -202,19 +212,18 @@
             </table>
 
             <div class="flex items-center gap-3 mt-3">
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearAllLines">Clear all lines</CitusButton>
-                @if (!_isBalanced)
-                {
-                    <span class="text-warning text-sm ml-auto">
-                        Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>
-                    </span>
-                }
-            </div>
-        </section>
-    </div>
+            <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="ClearAllLines">Clear all lines</CitusButton>
+            @if (!_isBalanced)
+            {
+                <span class="text-warning text-sm ml-auto">
+                    Difference: <span class="citus-inline-code">@FormatAmount(Math.Abs(_totalDebit - _totalCredit))</span>
+                </span>
+            }
+        </div>
+    </section>
 
-    <div class="lg:col-span-3 flex flex-col gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section class="citus-panel">
             <h2 class="citus-panel__title">Posting summary</h2>
             <table class="citus-keyvalue">
@@ -326,6 +335,14 @@
         }
     }
 
+    private void OnDateChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _date = string.IsNullOrWhiteSpace(raw)
+            ? null
+            : DateTime.TryParse(raw, out var parsed) ? parsed : _date;
+    }
+
     private void AddLine() => _lines.Add(new JournalLineEditState());
 
     private void InsertLineAfter(int index)
@@ -362,13 +379,25 @@
     private void UpdateDebit(int index, string? raw)
     {
         var parsed = ParseDecimal(raw);
-        UpdateLine(index, l => l with { Debit = parsed });
+        // A journal line is either a debit or a credit — never both. As soon
+        // as the user types a positive amount in one column, zero out the
+        // other so the row is unambiguous and the row-level check the
+        // backend will run later can never fail on a UI-side input slip.
+        UpdateLine(index, l => l with
+        {
+            Debit = parsed,
+            Credit = parsed > 0 ? 0m : l.Credit,
+        });
     }
 
     private void UpdateCredit(int index, string? raw)
     {
         var parsed = ParseDecimal(raw);
-        UpdateLine(index, l => l with { Credit = parsed });
+        UpdateLine(index, l => l with
+        {
+            Credit = parsed,
+            Debit = parsed > 0 ? 0m : l.Debit,
+        });
     }
 
     private void OnAccountPicked(int index, AccountSummary account)
