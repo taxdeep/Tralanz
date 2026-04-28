@@ -51,6 +51,12 @@ else
                     </div>
                 }
             </div>
+            @if (!_collapsed)
+            {
+                <div class="citus-shell__create">
+                    <CreateNewButton />
+                </div>
+            }
             <BusinessNavMenu Collapsed="@_collapsed" />
         </aside>
 

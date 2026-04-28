@@ -1,0 +1,106 @@
+@*
+    CreateNewButton — primary affordance pinned to the top of the
+    sidebar. Click toggles a wide three-column popup that lists every
+    "create a new business document" entry point. The shape mirrors
+    QuickBooks' global Create button: Customers (AR-side), Suppliers
+    (AP-side), and Other (GL / inventory / catalog).
+
+    Items routed to existing pages render as live links. Items whose
+    destination page hasn't been built yet render as muted, disabled
+    rows with a "Coming soon" tooltip — the menu's full surface is
+    visible so the user can see what's planned.
+
+    Outside-click close is handled by the shared citus-user-menu.js
+    listener (it scans for any details.citus-popover[open] and
+    collapses on outside click).
+*@
+
+@namespace Citus.Business.Blazor.Components.Layout
+
+<details class="citus-popover citus-create-menu">
+    <summary class="citus-create-menu__trigger">
+        <span class="citus-create-menu__plus">+</span>
+        <span class="citus-create-menu__label">Create new</span>
+    </summary>
+    <div class="citus-create-menu__panel">
+        <div class="citus-create-menu__column">
+            <div class="citus-create-menu__column-title">Customers</div>
+            @foreach (var item in CustomerItems)
+            {
+                @RenderItem(item)
+            }
+        </div>
+        <div class="citus-create-menu__column">
+            <div class="citus-create-menu__column-title">Suppliers</div>
+            @foreach (var item in SupplierItems)
+            {
+                @RenderItem(item)
+            }
+        </div>
+        <div class="citus-create-menu__column">
+            <div class="citus-create-menu__column-title">Other</div>
+            @foreach (var item in OtherItems)
+            {
+                @RenderItem(item)
+            }
+        </div>
+    </div>
+</details>
+
+@code {
+    private RenderFragment RenderItem(CreateMenuEntry item) => __builder =>
+    {
+        if (item.Href is null)
+        {
+            <button type="button"
+                    class="citus-create-menu__item is-disabled"
+                    disabled
+                    title="Coming soon">@item.Label</button>
+        }
+        else
+        {
+            <a class="citus-create-menu__item" href="@item.Href">@item.Label</a>
+        }
+    };
+
+    private static readonly IReadOnlyList<CreateMenuEntry> CustomerItems = new CreateMenuEntry[]
+    {
+        new("Invoice", "/invoices/new"),
+        new("Quote", null),
+        new("Sales Order", null),
+        new("Customer Deposit", null),
+        new("Customer Receipt", null),
+        new("Receive Payment", "/receive-payment"),
+        new("Credit Note", null),
+        new("Return Receipt", null),
+        new("AR Return", null),
+        new("AR Refund", null),
+        new("AR Write-Off", null),
+        new("Add Customer", "/customers")
+    };
+
+    private static readonly IReadOnlyList<CreateMenuEntry> SupplierItems = new CreateMenuEntry[]
+    {
+        new("Bill", "/bills/new"),
+        new("Purchase Order", null),
+        new("Expense", null),
+        new("Vendor Prepayment", null),
+        new("Pay Bills", "/pay-bills"),
+        new("Vendor Credit Note", null),
+        new("Return to Vendor", null),
+        new("Vendor Return", null),
+        new("Vendor Refund", null),
+        new("Add Vendor", "/vendors")
+    };
+
+    private static readonly IReadOnlyList<CreateMenuEntry> OtherItems = new CreateMenuEntry[]
+    {
+        new("Journal Entry", "/journal-entry/new"),
+        new("Warehouse Transfer", null),
+        new("Add Warehouse", null),
+        new("Add Product/Service", null),
+        new("Task", null)
+    };
+
+    private sealed record CreateMenuEntry(string Label, string? Href);
+}
