@@ -29,6 +29,7 @@ using Infrastructure.PostgreSQL.Accounts;
 using Infrastructure.PostgreSQL.BusinessAuth;
 using Infrastructure.PostgreSQL.Company;
 using Infrastructure.PostgreSQL.CompanyAccess;
+using Infrastructure.PostgreSQL.Counterparties;
 using Infrastructure.PostgreSQL.GL;
 using Infrastructure.PostgreSQL.Inventory;
 using Infrastructure.PostgreSQL.Numbering;
@@ -37,6 +38,7 @@ using Infrastructure.PostgreSQL.UnitySearch;
 using Infrastructure.PostgreSQL.UnityAi;
 using Microsoft.Extensions.Options;
 using Modules.CompanyAccess.SessionContext;
+using Npgsql;
 using Modules.Company.MultiBook;
 using Modules.Company.MultiCurrency;
 using System.Text;
@@ -179,6 +181,11 @@ builder.Services.AddSingleton<ITaxCodeStore, PostgreSqlTaxCodeStore>();
 // modify them so AR/AP/FX control accounts stay stable.
 builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
 
+// Customer master data (per-company). Anchors invoices, receive
+// payments, and AR open-item tracking. Entity numbers are
+// auto-generated to match the platform-wide ENYYYYxxxxxxxx contract.
+builder.Services.AddSingleton<ICustomerStore, PostgreSqlCustomerStore>();
+
 // CoA starter templates. Static C# data (no DB tables); the seeder is
 // additive — re-applying the same template skips rows that already
 // exist by (company_id, code).
@@ -295,6 +302,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var userProfileOverrideStore = startupScope.ServiceProvider.GetRequiredService<IUserProfileOverrideStore>();
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
+    var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var bootstrapFixtures = startupScope.ServiceProvider.GetRequiredService<PlatformBootstrapFixturesInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
@@ -313,6 +321,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await bootstrapFixtures.EnsureAsync(CancellationToken.None);
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
+    await customerStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
@@ -701,6 +710,82 @@ accounting.MapGet(
             rate.Source,
             rate.IsStale
         });
+    });
+
+// -----------------------------------------------------------------------
+// Customer master data.
+//
+// V1 surface: list + create. Update / deactivate land in a follow-up
+// once the form supports an edit mode. Reads / writes the per-company
+// customers table; entity_number is auto-generated server-side to
+// match the platform-wide ENYYYYxxxxxxxx contract. Active company id
+// resolves from the BusinessSession header — callers don't pass it.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/customers",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/customers",
+    async (
+        CustomerUpsertHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            return Results.BadRequest(new { message = "Display name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.DefaultCurrencyCode))
+        {
+            return Results.BadRequest(new { message = "Default currency code is required." });
+        }
+
+        try
+        {
+            var saved = await store.CreateAsync(
+                session.ActiveCompanyId,
+                new CustomerUpsertRequest(
+                    DisplayName: request.DisplayName,
+                    DefaultCurrencyCode: request.DefaultCurrencyCode,
+                    Email: request.Email,
+                    Phone: request.Phone,
+                    AddressLine: request.AddressLine,
+                    City: request.City,
+                    ProvinceState: request.ProvinceState,
+                    PostalCode: request.PostalCode,
+                    Country: request.Country,
+                    TaxId: request.TaxId,
+                    Notes: request.Notes),
+                cancellationToken);
+            return Results.Ok(saved);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            // Unique constraint hit (entity_number collision is the realistic
+            // case — random 8-digit seeds collide rarely but it's possible).
+            // Surface as a friendly retry hint rather than a 500.
+            return Results.Conflict(new { message = "Could not allocate a unique entity number. Please try saving again." });
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503")
+        {
+            return Results.BadRequest(new { message = $"Currency '{request.DefaultCurrencyCode}' is not available in this company. Enable it in Settings → Multi-currency." });
+        }
     });
 
 accounting.MapGet(

@@ -5,6 +5,19 @@ namespace Citus.Accounting.Api;
 public sealed record EnableCompanyCurrencyHttpRequest(
     string CurrencyCode);
 
+public sealed record CustomerUpsertHttpRequest(
+    string DisplayName,
+    string DefaultCurrencyCode,
+    string? Email,
+    string? Phone,
+    string? AddressLine,
+    string? City,
+    string? ProvinceState,
+    string? PostalCode,
+    string? Country,
+    string? TaxId,
+    string? Notes);
+
 internal static class CompanyCurrencyResponseMapper
 {
     public static object MapCurrencyProfile(CompanyCurrencyProfile profile) => new
