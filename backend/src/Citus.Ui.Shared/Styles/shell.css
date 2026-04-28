@@ -1050,6 +1050,28 @@
     display: none;
 }
 
+/* Hide native number-input up/down spinner buttons on our form classes.
+   The spinners add visual noise to amount columns and don't help with
+   decimal entry (users type the digits and the period directly). Keeping
+   <input type="number"> for keyboard hints (numeric keyboard on mobile,
+   step / min validation) but stripping the chrome. */
+.citus-form-field__input[type="number"]::-webkit-outer-spin-button,
+.citus-form-field__input[type="number"]::-webkit-inner-spin-button,
+.citus-journal-lines__amount-input::-webkit-outer-spin-button,
+.citus-journal-lines__amount-input::-webkit-inner-spin-button,
+.citus-journal-lines__cell-input[type="number"]::-webkit-outer-spin-button,
+.citus-journal-lines__cell-input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.citus-form-field__input[type="number"],
+.citus-journal-lines__amount-input,
+.citus-journal-lines__cell-input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);
