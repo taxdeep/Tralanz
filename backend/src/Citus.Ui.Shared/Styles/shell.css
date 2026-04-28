@@ -1038,6 +1038,18 @@
     transition: background-color 5000s ease-in-out 0s;
 }
 
+/* Suppress Edge / Chromium native pseudo-controls inside text inputs.
+   ::-ms-reveal is the password-show eye on Edge, ::-ms-clear is the X
+   on text inputs. Both render with a built-in glyph font that often
+   degrades to a red placeholder square when the operating system's
+   font fallback chain doesn't ship the right symbol; the result looks
+   like an icon overflowing the input. We render password / text inputs
+   without these affordances for a consistent appearance across browsers. */
+.citus-form-field__input::-ms-reveal,
+.citus-form-field__input::-ms-clear {
+    display: none;
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);

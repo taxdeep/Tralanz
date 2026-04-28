@@ -114,13 +114,15 @@
                        autocomplete="new-password" />
             </label>
 
-            <CitusButton Variant="CitusButtonVariant.Primary"
-                         Size="CitusButtonSize.Medium"
-                         HtmlType="@("submit")"
-                         Disabled="_isSavingPassword"
-                         OnClick="OnChangePasswordAsync">
-                @(_isSavingPassword ? "Updating…" : "Update password")
-            </CitusButton>
+            <div class="flex items-center gap-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Size="CitusButtonSize.Medium"
+                             HtmlType="@("submit")"
+                             Disabled="_isSavingPassword"
+                             OnClick="OnChangePasswordAsync">
+                    @(_isSavingPassword ? "Updating…" : "Update password")
+                </CitusButton>
+            </div>
         </form>
     </section>
 </div>
