@@ -21,6 +21,13 @@ public sealed class BusinessWriteFlowClient
         "The form is fully validated and the payload is ready; once the backend " +
         "route is published, this stub will be replaced with the real call.";
 
+    private readonly CustomerClient _customers;
+
+    public BusinessWriteFlowClient(CustomerClient customers)
+    {
+        _customers = customers ?? throw new ArgumentNullException(nameof(customers));
+    }
+
     public Task<WriteFlowResult> PostManualJournalAsync(ManualJournalDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostManualJournalAsync), draft);
 
@@ -36,8 +43,35 @@ public sealed class BusinessWriteFlowClient
     public Task<WriteFlowResult> PostPayBillAsync(PayBillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostPayBillAsync), draft);
 
-    public Task<WriteFlowResult> SaveCustomerAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(SaveCustomerAsync), draft);
+    public async Task<WriteFlowResult> SaveCustomerAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default)
+    {
+        var outcome = await _customers.CreateAsync(
+            new CustomerUpsertPayload(
+                DisplayName: draft.DisplayName,
+                DefaultCurrencyCode: draft.PreferredCurrencyCode,
+                Email: draft.Email,
+                Phone: draft.Phone,
+                AddressLine: draft.AddressLine,
+                City: draft.City,
+                ProvinceState: draft.ProvinceState,
+                PostalCode: draft.PostalCode,
+                Country: draft.Country,
+                TaxId: draft.TaxId,
+                Notes: draft.Notes),
+            cancellationToken);
+
+        return outcome.Succeeded
+            ? new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Customer {outcome.Saved!.EntityNumber} saved.",
+                Operation: nameof(SaveCustomerAsync),
+                DraftEcho: outcome.Saved)
+            : new WriteFlowResult(
+                Succeeded: false,
+                Message: outcome.ErrorMessage ?? "Could not save the customer.",
+                Operation: nameof(SaveCustomerAsync),
+                DraftEcho: draft);
+    }
 
     public Task<WriteFlowResult> SaveVendorAsync(CounterpartyDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(SaveVendorAsync), draft);

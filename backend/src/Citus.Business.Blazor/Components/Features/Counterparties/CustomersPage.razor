@@ -2,6 +2,7 @@
 
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject CustomerClient CustomerClient
 @inject CitusToastService Message
 
 <PageTitle>Customers | Citus Business</PageTitle>
@@ -43,7 +44,7 @@
 else
 {
     <section class="citus-panel">
-        <CitusAsyncBoundary IsLoading="false"
+        <CitusAsyncBoundary IsLoading="@_isLoading"
                             IsEmpty="@(_customers.Count == 0)"
                             EmptyIcon="IconName.Users"
                             EmptyTitle="No customers yet"
@@ -66,7 +67,7 @@ else
                             <td><span class="citus-inline-code">@c.EntityNumber</span></td>
                             <td>@c.Email</td>
                             <td>@c.Country</td>
-                            <td>@c.PreferredCurrencyCode</td>
+                            <td>@c.DefaultCurrencyCode</td>
                         </tr>
                     }
                 </tbody>
@@ -83,12 +84,31 @@ else
         Subtitle = "Customer master records that anchor invoices, receive-payment settlement, and AR aging."
     };
 
-    private readonly IReadOnlyList<CounterpartyDraft> _customers = Array.Empty<CounterpartyDraft>();
+    private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
     private CounterpartyDraft _draft = new();
     private bool _isCreating;
     private bool _isSubmitting;
+    private bool _isLoading = true;
     private string? _validation;
     private WriteFlowResult? _lastResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _customers = await CustomerClient.ListAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
 
     private void StartCreate()
     {
@@ -109,8 +129,16 @@ else
         try
         {
             _lastResult = await WriteFlow.SaveCustomerAsync(_draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Customer saved."); _isCreating = false; }
-            else { await Message.InfoAsync(_lastResult.Message); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Customer saved.");
+                _isCreating = false;
+                await LoadAsync();
+            }
+            else
+            {
+                await Message.InfoAsync(_lastResult.Message);
+            }
         }
         finally { _isSubmitting = false; }
     }
