@@ -223,8 +223,8 @@
         </div>
     </section>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section class="citus-panel">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <section class="citus-panel h-full">
             <h2 class="citus-panel__title">Posting summary</h2>
             <table class="citus-keyvalue">
                 <tbody>
@@ -239,7 +239,7 @@
             </table>
         </section>
 
-        <section class="citus-panel">
+        <section class="citus-panel h-full">
             <h2 class="citus-panel__title">Post</h2>
             <p class="text-fg-muted text-sm mb-3">
                 Posting is irreversible from this surface. Backend reserves the journal entry number and the FX snapshot at the moment of the call.
@@ -248,14 +248,13 @@
                 Note: per-line counterparty (NAME) and tax-code values are captured for the upcoming backend integration. They are not yet sent on post — only debit / credit / account / description make the wire today.
             </p>
 
-            <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-3">
                 <CitusButton Variant="CitusButtonVariant.Primary"
-                             Block="true"
                              Disabled="@(!_isBalanced || _lines.Count == 0 || ShellState.AreWritesBlocked || _isSubmitting)"
                              OnClick="PostAsync">
                     @(_isSubmitting ? "Posting..." : "Post journal entry")
                 </CitusButton>
-                <CitusButton Block="true" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isSubmitting" OnClick="ResetAsync">Reset draft</CitusButton>
             </div>
         </section>
     </div>
