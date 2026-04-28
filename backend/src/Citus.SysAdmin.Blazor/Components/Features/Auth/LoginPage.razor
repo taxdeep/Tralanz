@@ -44,25 +44,52 @@
 
             <div class="sys-login__rule"></div>
 
-            <div class="sys-login__form flex flex-col gap-3 mt-4">
-                <CitusInput TValue="string" @bind-Value="_setupDisplayName"
-                            Placeholder="Display name"
-                            LeadingIcon="IconName.User"
-                            Size="CitusButtonSize.Large" />
-                <CitusInput TValue="string" @bind-Value="_setupEmail"
-                            Placeholder="Email"
-                            LeadingIcon="IconName.User"
-                            Size="CitusButtonSize.Large" />
-                <RadzenPassword @bind-Value="_setupPassword" Placeholder="@("Password")" />
-                <RadzenPassword @bind-Value="_setupPasswordConfirm" Placeholder="@("Confirm password")" />
+            <form class="sys-login__form flex flex-col gap-3 mt-4" @onsubmit="ProvisionFirstAccountAsync" @onsubmit:preventDefault>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Display name</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           autocomplete="name"
+                           value="@_setupDisplayName"
+                           @oninput="OnSetupDisplayNameChanged"
+                           disabled="@_isSubmitting" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Email</span>
+                    <input type="email"
+                           class="citus-form-field__input"
+                           autocomplete="username"
+                           value="@_setupEmail"
+                           @oninput="OnSetupEmailChanged"
+                           disabled="@_isSubmitting" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Password</span>
+                    <input type="password"
+                           class="citus-form-field__input"
+                           autocomplete="new-password"
+                           value="@_setupPassword"
+                           @oninput="OnSetupPasswordChanged"
+                           disabled="@_isSubmitting" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Confirm password</span>
+                    <input type="password"
+                           class="citus-form-field__input"
+                           autocomplete="new-password"
+                           value="@_setupPasswordConfirm"
+                           @oninput="OnSetupPasswordConfirmChanged"
+                           disabled="@_isSubmitting" />
+                </label>
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              Size="CitusButtonSize.Large"
                              Block="true"
+                             HtmlType="@("submit")"
                              Disabled="_isSubmitting"
                              OnClick="ProvisionFirstAccountAsync">
                     @(_isSubmitting ? "Provisioning..." : "Create first SysAdmin")
                 </CitusButton>
-            </div>
+            </form>
         }
         else
         {
@@ -83,20 +110,34 @@
 
             <div class="sys-login__rule"></div>
 
-            <div class="sys-login__form flex flex-col gap-3 mt-4">
-                <CitusInput TValue="string" @bind-Value="_email"
-                            Placeholder="Email"
-                            LeadingIcon="IconName.User"
-                            Size="CitusButtonSize.Large" />
-                <RadzenPassword @bind-Value="_password" Placeholder="@("Password")" />
+            <form class="sys-login__form flex flex-col gap-3 mt-4" @onsubmit="SignInAsync" @onsubmit:preventDefault>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Email</span>
+                    <input type="email"
+                           class="citus-form-field__input"
+                           autocomplete="username"
+                           value="@_email"
+                           @oninput="OnEmailChanged"
+                           disabled="@_isSubmitting" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Password</span>
+                    <input type="password"
+                           class="citus-form-field__input"
+                           autocomplete="current-password"
+                           value="@_password"
+                           @oninput="OnPasswordChanged"
+                           disabled="@_isSubmitting" />
+                </label>
                 <CitusButton Variant="CitusButtonVariant.Primary"
                              Size="CitusButtonSize.Large"
                              Block="true"
+                             HtmlType="@("submit")"
                              Disabled="_isSubmitting"
                              OnClick="SignInAsync">
                     @(_isSubmitting ? "Signing in..." : "Sign in")
                 </CitusButton>
-            </div>
+            </form>
         }
     </div>
 
@@ -116,6 +157,24 @@
     private string _setupPasswordConfirm = string.Empty;
     private bool _isSubmitting;
     private bool _isLoadingSetup = true;
+
+    private void OnEmailChanged(ChangeEventArgs args) =>
+        _email = args.Value?.ToString() ?? string.Empty;
+
+    private void OnPasswordChanged(ChangeEventArgs args) =>
+        _password = args.Value?.ToString() ?? string.Empty;
+
+    private void OnSetupDisplayNameChanged(ChangeEventArgs args) =>
+        _setupDisplayName = args.Value?.ToString() ?? string.Empty;
+
+    private void OnSetupEmailChanged(ChangeEventArgs args) =>
+        _setupEmail = args.Value?.ToString() ?? string.Empty;
+
+    private void OnSetupPasswordChanged(ChangeEventArgs args) =>
+        _setupPassword = args.Value?.ToString() ?? string.Empty;
+
+    private void OnSetupPasswordConfirmChanged(ChangeEventArgs args) =>
+        _setupPasswordConfirm = args.Value?.ToString() ?? string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
