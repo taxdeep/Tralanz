@@ -1,10 +1,13 @@
 @page "/settings/invoice-templates/new"
 @page "/settings/invoice-templates/{TemplateId:guid}"
 
+@implements IAsyncDisposable
+
 @inject BusinessShellState ShellState
 @inject InvoiceTemplateClient TemplateClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>@_pageTitle | Tralanz Books</PageTitle>
 
@@ -51,7 +54,7 @@ else
                     <input type="text"
                            class="citus-form-field__input"
                            value="@_template.Name"
-                           @oninput="@(e => _template = _template with { Name = e.Value?.ToString() ?? string.Empty })" />
+                           @oninput="@(e => UpdateDraft(_template with { Name = e.Value?.ToString() ?? string.Empty }))" />
                 </label>
 
                 <label class="citus-form-field">
@@ -61,11 +64,11 @@ else
                                class="citus-form-field__input"
                                style="width:3rem;padding:0;"
                                value="@_template.PrimaryColorHex"
-                               @oninput="@(e => _template = _template with { PrimaryColorHex = e.Value?.ToString() ?? "#000000" })" />
+                               @oninput="@(e => UpdateDraft(_template with { PrimaryColorHex = e.Value?.ToString() ?? "#000000" }))" />
                         <input type="text"
                                class="citus-form-field__input"
                                value="@_template.PrimaryColorHex"
-                               @oninput="@(e => _template = _template with { PrimaryColorHex = e.Value?.ToString() ?? string.Empty })" />
+                               @oninput="@(e => UpdateDraft(_template with { PrimaryColorHex = e.Value?.ToString() ?? string.Empty }))" />
                     </div>
                 </label>
 
@@ -76,11 +79,11 @@ else
                                class="citus-form-field__input"
                                style="width:3rem;padding:0;"
                                value="@_template.AccentColorHex"
-                               @oninput="@(e => _template = _template with { AccentColorHex = e.Value?.ToString() ?? "#666666" })" />
+                               @oninput="@(e => UpdateDraft(_template with { AccentColorHex = e.Value?.ToString() ?? "#666666" }))" />
                         <input type="text"
                                class="citus-form-field__input"
                                value="@_template.AccentColorHex"
-                               @oninput="@(e => _template = _template with { AccentColorHex = e.Value?.ToString() ?? string.Empty })" />
+                               @oninput="@(e => UpdateDraft(_template with { AccentColorHex = e.Value?.ToString() ?? string.Empty }))" />
                     </div>
                 </label>
 
@@ -90,7 +93,7 @@ else
                            class="citus-form-field__input"
                            placeholder="https://cdn.example.com/logo.png"
                            value="@(_template.LogoUrl ?? string.Empty)"
-                           @oninput="@(e => _template = _template with { LogoUrl = NullIfBlank(e.Value?.ToString()) })" />
+                           @oninput="@(e => UpdateDraft(_template with { LogoUrl = NullIfBlank(e.Value?.ToString()) }))" />
                 </label>
 
                 <label class="citus-form-field md:col-span-2">
@@ -99,7 +102,7 @@ else
                            class="citus-form-field__input"
                            placeholder="e.g. Independent advisory and integration"
                            value="@(_template.Tagline ?? string.Empty)"
-                           @oninput="@(e => _template = _template with { Tagline = NullIfBlank(e.Value?.ToString()) })" />
+                           @oninput="@(e => UpdateDraft(_template with { Tagline = NullIfBlank(e.Value?.ToString()) }))" />
                 </label>
             </div>
 
@@ -110,7 +113,7 @@ else
                     <input type="text"
                            class="citus-form-field__input"
                            value="@_template.Greeting"
-                           @oninput="@(e => _template = _template with { Greeting = e.Value?.ToString() ?? string.Empty })" />
+                           @oninput="@(e => UpdateDraft(_template with { Greeting = e.Value?.ToString() ?? string.Empty }))" />
                 </label>
 
                 <label class="citus-form-field">
@@ -118,7 +121,7 @@ else
                     <textarea class="citus-form-field__input"
                               rows="3"
                               placeholder="Wire / e-Transfer / cheque mailing address — anything you want above the customer's eyes."
-                              @oninput="@(e => _template = _template with { PaymentInstructions = e.Value?.ToString() ?? string.Empty })">@_template.PaymentInstructions</textarea>
+                              @oninput="@(e => UpdateDraft(_template with { PaymentInstructions = e.Value?.ToString() ?? string.Empty }))">@_template.PaymentInstructions</textarea>
                 </label>
 
                 <label class="citus-form-field">
@@ -126,14 +129,14 @@ else
                     <input type="text"
                            class="citus-form-field__input"
                            value="@_template.FooterNote"
-                           @oninput="@(e => _template = _template with { FooterNote = e.Value?.ToString() ?? string.Empty })" />
+                           @oninput="@(e => UpdateDraft(_template with { FooterNote = e.Value?.ToString() ?? string.Empty }))" />
                 </label>
 
                 <label class="citus-form-field">
                     <input type="checkbox"
                            class="mr-2"
                            checked="@_template.ShowTaxColumn"
-                           @onchange="@(e => _template = _template with { ShowTaxColumn = (bool)(e.Value ?? false) })" />
+                           @onchange="@(e => UpdateDraft(_template with { ShowTaxColumn = (bool)(e.Value ?? false) }))" />
                     <span>Show tax row in invoice totals</span>
                 </label>
             </div>
@@ -152,7 +155,7 @@ else
                     <input type="text"
                            class="citus-form-field__input"
                            value="@_template.EmailSubjectTemplate"
-                           @oninput="@(e => _template = _template with { EmailSubjectTemplate = e.Value?.ToString() ?? string.Empty })" />
+                           @oninput="@(e => UpdateDraft(_template with { EmailSubjectTemplate = e.Value?.ToString() ?? string.Empty }))" />
                 </label>
 
                 <label class="citus-form-field">
@@ -160,49 +163,25 @@ else
                     <textarea class="citus-form-field__input"
                               rows="4"
                               placeholder="Hello {customerName} — etc."
-                              @oninput="@(e => _template = _template with { EmailBodyTemplate = e.Value?.ToString() ?? string.Empty })">@_template.EmailBodyTemplate</textarea>
+                              @oninput="@(e => UpdateDraft(_template with { EmailBodyTemplate = e.Value?.ToString() ?? string.Empty }))">@_template.EmailBodyTemplate</textarea>
                 </label>
             </div>
 
-            <h2 class="citus-panel__title mt-6">Live preview</h2>
-            <div class="citus-template-preview">
-                <div class="citus-template-preview__header" style="border-color:@_template.PrimaryColorHex">
-                    <strong style="color:@_template.PrimaryColorHex">Sample Invoice INV-2026-000001</strong>
-                    <span class="citus-template-preview__accent" style="color:@_template.AccentColorHex">
-                        @(_template.Tagline ?? "")
-                    </span>
-                </div>
-                <p class="citus-template-preview__greeting">@_template.Greeting</p>
-                <table class="citus-template-preview__table">
-                    <thead style="border-color:@_template.PrimaryColorHex">
-                        <tr><th>#</th><th>Description</th><th>Amount</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td>1</td><td>Sample design retainer</td><td>100.00</td></tr>
-                        <tr><td>2</td><td>Sample hosting</td><td>75.00</td></tr>
-                    </tbody>
-                </table>
-                <div class="citus-template-preview__totals">
-                    <div>Subtotal: 175.00</div>
-                    @if (_template.ShowTaxColumn)
-                    {
-                        <div>Tax: 22.75</div>
-                    }
-                    <div style="border-color:@_template.PrimaryColorHex"><strong>Total: 197.75 CAD</strong></div>
-                </div>
-                @if (!string.IsNullOrWhiteSpace(_template.PaymentInstructions))
-                {
-                    <p class="citus-template-preview__pay" style="color:@_template.AccentColorHex">
-                        <strong>Payment:</strong> @_template.PaymentInstructions
-                    </p>
-                }
-                @if (!string.IsNullOrWhiteSpace(_template.FooterNote))
-                {
-                    <p class="citus-template-preview__footer" style="color:@_template.AccentColorHex">
-                        @_template.FooterNote
-                    </p>
-                }
-            </div>
+            <header class="citus-panel__header mt-6">
+                <h2 class="citus-panel__title">Live PDF preview</h2>
+                <span class="citus-template-preview__status @_previewStatusModifier">
+                    @_previewStatusLabel
+                </span>
+            </header>
+            <p class="text-fg-subtle text-xs mb-3">
+                Byte-accurate render of what your customer will receive. Auto-refreshes
+                ~800ms after typing pauses; shows a synthetic Acme Co. invoice so the
+                preview works before you have any real invoice data.
+            </p>
+            <iframe id="@_previewIframeId"
+                    class="citus-template-preview__iframe"
+                    title="Invoice template PDF preview"
+                    src="about:blank"></iframe>
         </section>
     </div>
 
@@ -222,11 +201,34 @@ else
     public Guid? TemplateId { get; set; }
 
     private InvoiceTemplateDraft _template = InvoiceTemplateDraft.Empty();
+    private InvoiceTemplateDraft? _lastPreviewedTemplate;
     private bool _isLoading;
     private bool _isBusy;
     private bool _isExisting;
     private string? _error;
     private string _pageTitle = "Invoice template";
+
+    private const int PreviewDebounceMilliseconds = 800;
+    private readonly string _previewIframeId = $"invoice-template-preview-{Guid.NewGuid():N}";
+    private CancellationTokenSource? _previewCts;
+    private PreviewStatus _previewStatus = PreviewStatus.Idle;
+    private DateTimeOffset? _previewUpdatedAt;
+    private string _previewStatusLabel => _previewStatus switch
+    {
+        PreviewStatus.Refreshing => "Refreshing…",
+        PreviewStatus.Failed => "Could not render preview",
+        PreviewStatus.Updated when _previewUpdatedAt is { } at => $"Updated {at.ToLocalTime():HH:mm:ss}",
+        _ => "Pending first render",
+    };
+    private string _previewStatusModifier => _previewStatus switch
+    {
+        PreviewStatus.Refreshing => "citus-template-preview__status--busy",
+        PreviewStatus.Failed => "citus-template-preview__status--error",
+        PreviewStatus.Updated => "citus-template-preview__status--ok",
+        _ => "citus-template-preview__status--idle",
+    };
+
+    private enum PreviewStatus { Idle, Refreshing, Updated, Failed }
 
     private PageHeaderModel _header = new()
     {
@@ -269,6 +271,122 @@ else
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // First render gives us a real DOM-mounted iframe to embed into.
+        // Kick off the initial PDF preview render so the operator sees
+        // something immediately on page load instead of an empty frame.
+        if (firstRender && !_isLoading)
+        {
+            await RefreshPreviewAsync(immediate: true);
+        }
+    }
+
+    /// <summary>
+    /// Single mutation entry point used by every form field handler.
+    /// Replaces the draft and schedules a debounced preview re-render so
+    /// rapid edits don't cause a network call per keystroke.
+    /// </summary>
+    private void UpdateDraft(InvoiceTemplateDraft next)
+    {
+        _template = next;
+        ScheduleDebouncedPreview();
+    }
+
+    /// <summary>
+    /// Called on every form field input. Cancels any pending preview
+    /// render and schedules a new one PreviewDebounceMilliseconds in the
+    /// future. The actual fetch happens once typing stops; rapid edits
+    /// only trigger one final render instead of a network roundtrip per
+    /// keystroke.
+    /// </summary>
+    private void ScheduleDebouncedPreview()
+    {
+        _previewCts?.Cancel();
+        _previewCts = new CancellationTokenSource();
+        var token = _previewCts.Token;
+
+        // Fire-and-forget. The token tied to this scheduling call gets
+        // cancelled when the next keystroke lands; that drops the awaiter
+        // and the previous in-flight render exits without committing.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(PreviewDebounceMilliseconds, token);
+                await RefreshPreviewAsync(immediate: false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected — another keystroke landed.
+            }
+        });
+    }
+
+    private async Task RefreshPreviewAsync(bool immediate)
+    {
+        if (_isLoading) return;
+
+        // Skip the network call if the form hasn't actually changed since
+        // the last successful preview. Same hash, same PDF, no point.
+        if (_lastPreviewedTemplate == _template && !immediate) return;
+
+        var snapshot = _template;
+        _previewStatus = PreviewStatus.Refreshing;
+        await InvokeAsync(StateHasChanged);
+
+        var request = new InvoiceTemplateUpsertDto(
+            Name: snapshot.Name,
+            LogoUrl: snapshot.LogoUrl,
+            PrimaryColorHex: snapshot.PrimaryColorHex,
+            AccentColorHex: snapshot.AccentColorHex,
+            Tagline: snapshot.Tagline,
+            Greeting: snapshot.Greeting,
+            PaymentInstructions: snapshot.PaymentInstructions,
+            FooterNote: snapshot.FooterNote,
+            ShowTaxColumn: snapshot.ShowTaxColumn,
+            EmailSubjectTemplate: snapshot.EmailSubjectTemplate,
+            EmailBodyTemplate: snapshot.EmailBodyTemplate);
+
+        var pdfBytes = await TemplateClient.GeneratePreviewAsync(ShellState.ActiveCompany.Id, request);
+
+        if (pdfBytes is null)
+        {
+            _previewStatus = PreviewStatus.Failed;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            var base64 = Convert.ToBase64String(pdfBytes);
+            await JS.InvokeVoidAsync("citusDownloads.embedPdfPreview", _previewIframeId, base64);
+            _lastPreviewedTemplate = snapshot;
+            _previewStatus = PreviewStatus.Updated;
+            _previewUpdatedAt = DateTimeOffset.UtcNow;
+        }
+        catch
+        {
+            _previewStatus = PreviewStatus.Failed;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        try
+        {
+            await JS.InvokeVoidAsync("citusDownloads.clearPdfPreview", _previewIframeId);
+        }
+        catch
+        {
+            // Page is being torn down — JS handle may already be gone.
         }
     }
 

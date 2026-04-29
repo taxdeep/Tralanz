@@ -4236,6 +4236,42 @@ accounting.MapPost(
             : Results.Ok(MapInvoiceTemplate(defaulted));
     });
 
+// ---------------------------------------------------------------------------
+// Renders a PDF preview of the *draft* template (the unsaved upsert body),
+// so the Settings editor can show a byte-accurate "what your customer
+// sees" iframe that updates as the operator types. Uses the issuing
+// company's profile as the issuer block and a hard-coded sample invoice
+// (Acme Co. / two demo lines) as the bill-to + lines so the preview
+// works even before any real invoice exists.
+// ---------------------------------------------------------------------------
+accounting.MapPost(
+    "/invoice-templates/preview-pdf",
+    async (
+        [AsParameters] DocumentReviewLookupQuery query,
+        InvoiceTemplateUpsertHttpRequest request,
+        ICompanyProfileQuery companyProfileQuery,
+        IInvoicePdfRenderer renderer,
+        CancellationToken cancellationToken) =>
+    {
+        var (config, validationError) = TryReadInvoiceTemplateConfig(request);
+        if (validationError is not null)
+        {
+            return Results.BadRequest(new { message = validationError });
+        }
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new { message = "Company profile is not provisioned." });
+        }
+
+        var sample = BuildSampleInvoiceProjection(company.BaseCurrencyCode);
+        var renderModel = InvoiceRenderModelBuilder.Build(sample, company, customer: null, config);
+        var pdfBytes = renderer.Render(renderModel);
+
+        return Results.File(pdfBytes, "application/pdf");
+    });
+
 accounting.MapGet(
     "/journal-entries",
     async (
@@ -5227,6 +5263,35 @@ static string? TrimToNull(string? value)
     if (string.IsNullOrWhiteSpace(value)) return null;
     var trimmed = value.Trim();
     return trimmed.Length == 0 ? null : trimmed;
+}
+
+// ---------------------------------------------------------------------------
+// Synthesizes a stand-in invoice projection for the template preview
+// endpoint so the editor can render a real PDF before any actual invoice
+// exists. Numbers / dates / line text are deliberately recognizable as
+// sample data ("INV-PREVIEW", "Acme Co.") so an operator who downloads
+// it doesn't mistake the preview for a real document.
+// ---------------------------------------------------------------------------
+static InvoiceReviewProjection BuildSampleInvoiceProjection(string currencyCode)
+{
+    var documentDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+    return new InvoiceReviewProjection(
+        DisplayNumber: "INV-PREVIEW",
+        EntityNumber: "EN0000PREVIEW",
+        DocumentDate: documentDate,
+        DueDate: documentDate.AddDays(30),
+        Status: "preview",
+        CounterpartyDisplayName: "Acme Co.",
+        TransactionCurrencyCode: string.IsNullOrWhiteSpace(currencyCode) ? "USD" : currencyCode,
+        SubtotalAmount: 175m,
+        TaxAmount: 22.75m,
+        TotalAmount: 197.75m,
+        Memo: "Sample preview — replace with real invoice content when sending.",
+        Lines:
+        [
+            new InvoiceReviewLineProjection(1, "Design retainer (sample)", 1m, 100m, 100m, 13m),
+            new InvoiceReviewLineProjection(2, "Hosting (sample)", 3m, 25m, 75m, 9.75m),
+        ]);
 }
 
 // ---------------------------------------------------------------------------

@@ -67,6 +67,39 @@ public sealed class InvoiceTemplateClient(
             cancellationToken);
     }
 
+    /// <summary>
+    /// Renders a PDF preview of the unsaved draft template against a
+    /// synthetic sample invoice. The endpoint owns the sample shape;
+    /// caller just hands over what would have been a save body.
+    /// Returns null on any non-success status / network failure so the
+    /// editor can leave the previous preview visible while typing.
+    /// </summary>
+    public async Task<byte[]?> GeneratePreviewAsync(
+        Guid companyId,
+        InvoiceTemplateUpsertDto request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                $"accounting/invoice-templates/preview-pdf?companyId={companyId:D}",
+                request,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Invoice template preview render failed.");
+            return null;
+        }
+    }
+
     public async Task<InvoiceTemplateOutcome> SetDefaultAsync(
         Guid companyId,
         Guid templateId,

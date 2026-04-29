@@ -15,6 +15,39 @@ window.citusDownloads = window.citusDownloads || {
         }
         const blob = new Blob([bytes], { type: contentType || "application/octet-stream" });
         triggerDownload(blob, fileName || "download.bin");
+    },
+    embedPdfPreview: function (iframeId, base64Content) {
+        // Used by the invoice-template editor to flip the iframe's src
+        // to a blob URL of the freshly-rendered PDF without forcing a
+        // network reload. Revokes the prior blob URL on every refresh
+        // so we don't leak object URLs over a long edit session.
+        const iframe = document.getElementById(iframeId);
+        if (!iframe) return;
+
+        const binary = atob(base64Content);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+
+        const previousUrl = iframe.dataset.objectUrl;
+        if (previousUrl) {
+            URL.revokeObjectURL(previousUrl);
+        }
+        iframe.dataset.objectUrl = url;
+        iframe.src = url;
+    },
+    clearPdfPreview: function (iframeId) {
+        const iframe = document.getElementById(iframeId);
+        if (!iframe) return;
+        const previousUrl = iframe.dataset.objectUrl;
+        if (previousUrl) {
+            URL.revokeObjectURL(previousUrl);
+            iframe.dataset.objectUrl = "";
+        }
+        iframe.src = "about:blank";
     }
 };
 
