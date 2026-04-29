@@ -1,0 +1,204 @@
+@*
+    CustomerShippingAddressDrawer — add / edit a single saved shipping
+    address for one customer. Uses the canonical CitusDrawer atom so
+    Cancel / discard / ESC / backdrop / footer behavior matches every
+    other drawer in the shell.
+
+    The parent owns IsOpen and edit-target state; this drawer is purely
+    the form. Calls the persistence client directly so the parent
+    doesn't have to thread the result through itself.
+*@
+
+@inject CitusToastService Message
+@inject CustomerShippingAddressBookClient BookClient
+
+<CitusDrawer @bind-IsOpen="_isOpen"
+             Title="@(_editing is null ? "Add shipping address" : "Edit shipping address")"
+             SaveLabel="@(_isSaving ? "Saving…" : (_editing is null ? "Add" : "Save"))"
+             SaveDisabled="_isSaving || !CanSave"
+             Width="CitusDrawerWidth.Medium"
+             OnSave="OnSaveAsync"
+             OnCancel="OnCancelAsync">
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error"
+                    Message="@_validation"
+                    ShowIcon="true"
+                    Class="mb-4" />
+    }
+
+    <div class="flex flex-col gap-3">
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Label <span class="text-fg-subtle">(optional)</span></span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   maxlength="80"
+                   placeholder="e.g. Warehouse A, 3PL, Receiving dock"
+                   value="@_label"
+                   @oninput="@(e => _label = e.Value?.ToString() ?? string.Empty)" />
+        </label>
+
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Address line</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   maxlength="200"
+                   value="@_addressLine"
+                   @oninput="@(e => _addressLine = e.Value?.ToString() ?? string.Empty)" />
+        </label>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">City</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       maxlength="80"
+                       value="@_city"
+                       @oninput="@(e => _city = e.Value?.ToString() ?? string.Empty)" />
+            </label>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Province / State</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       maxlength="80"
+                       value="@_provinceState"
+                       @oninput="@(e => _provinceState = e.Value?.ToString() ?? string.Empty)" />
+            </label>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Postal code</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       maxlength="40"
+                       value="@_postalCode"
+                       @oninput="@(e => _postalCode = e.Value?.ToString() ?? string.Empty)" />
+            </label>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Country</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       maxlength="80"
+                       value="@_country"
+                       @oninput="@(e => _country = e.Value?.ToString() ?? string.Empty)" />
+            </label>
+        </div>
+
+        <label class="flex items-center gap-2 mt-2">
+            <input type="checkbox"
+                   checked="@_isDefault"
+                   @onchange="@(e => _isDefault = (bool)(e.Value ?? false))" />
+            <span class="text-sm">Make this the default shipping address for this customer</span>
+        </label>
+    </div>
+</CitusDrawer>
+
+@code {
+    [Parameter, EditorRequired] public Guid CustomerId { get; set; }
+
+    /// <summary>Fired after a successful save / delete so the parent reloads the list.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool _isOpen;
+    private bool _isSaving;
+    private CustomerShippingAddressBookDto? _editing;
+    private string? _validation;
+
+    private string _label = string.Empty;
+    private string _addressLine = string.Empty;
+    private string _city = string.Empty;
+    private string _provinceState = string.Empty;
+    private string _postalCode = string.Empty;
+    private string _country = string.Empty;
+    private bool _isDefault;
+
+    private bool CanSave =>
+        !string.IsNullOrWhiteSpace(_addressLine) ||
+        !string.IsNullOrWhiteSpace(_city) ||
+        !string.IsNullOrWhiteSpace(_postalCode);
+
+    public Task OpenForAddAsync()
+    {
+        _editing = null;
+        ResetForm();
+        _isOpen = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    public Task OpenForEditAsync(CustomerShippingAddressBookDto entry)
+    {
+        _editing = entry;
+        _label = entry.Label ?? string.Empty;
+        _addressLine = entry.AddressLine ?? string.Empty;
+        _city = entry.City ?? string.Empty;
+        _provinceState = entry.ProvinceState ?? string.Empty;
+        _postalCode = entry.PostalCode ?? string.Empty;
+        _country = entry.Country ?? string.Empty;
+        _isDefault = entry.IsDefault;
+        _validation = null;
+        _isOpen = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void ResetForm()
+    {
+        _label = string.Empty;
+        _addressLine = string.Empty;
+        _city = string.Empty;
+        _provinceState = string.Empty;
+        _postalCode = string.Empty;
+        _country = string.Empty;
+        _isDefault = false;
+        _validation = null;
+    }
+
+    private async Task OnSaveAsync()
+    {
+        if (!CanSave)
+        {
+            _validation = "Provide at least an address line, city, or postal code.";
+            return;
+        }
+
+        _isSaving = true;
+        _validation = null;
+        try
+        {
+            var payload = new CustomerShippingAddressBookPayload(
+                Label: NullIfBlank(_label),
+                AddressLine: NullIfBlank(_addressLine),
+                City: NullIfBlank(_city),
+                ProvinceState: NullIfBlank(_provinceState),
+                PostalCode: NullIfBlank(_postalCode),
+                Country: NullIfBlank(_country),
+                IsDefault: _isDefault);
+
+            var outcome = _editing is null
+                ? await BookClient.InsertAsync(CustomerId, payload)
+                : await BookClient.UpdateAsync(CustomerId, _editing.Id, payload);
+
+            if (!outcome.Succeeded)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not save the shipping address.";
+                return;
+            }
+
+            await Message.SuccessAsync(_editing is null ? "Shipping address added." : "Shipping address updated.");
+            _isOpen = false;
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private Task OnCancelAsync()
+    {
+        _isOpen = false;
+        return Task.CompletedTask;
+    }
+
+    private static string? NullIfBlank(string s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+}

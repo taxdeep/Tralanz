@@ -4,6 +4,7 @@
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
 @inject CustomerOverviewClient OverviewClient
+@inject CustomerShippingAddressBookClient ShippingBookClient
 @inject PaymentTermClient PaymentTermClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
@@ -98,7 +99,9 @@ else
                 </div>
                 <div class="citus-customer-summary__cell">
                     <div class="citus-customer-summary__label">Shipping addresses</div>
-                    <div class="citus-customer-summary__value">None</div>
+                    <div class="citus-customer-summary__value">
+                        @(_shippingAddresses.Count == 0 ? "None" : $"{_shippingAddresses.Count} saved")
+                    </div>
                 </div>
             </div>
         </section>
@@ -172,6 +175,12 @@ else
                 Message="A simple notes / audit-trail surface lands in a follow-up batch. For now, add free-form notes inside the Profile tab's Notes field." />
             break;
     }
+
+    @* Shared drawer for add / edit. Lives outside the tab switch so
+       the overlay can paint on top of any tab content. *@
+    <CustomerShippingAddressDrawer @ref="_shippingDrawer"
+                                   CustomerId="CustomerId"
+                                   OnChanged="OnShippingChangedAsync" />
 }
 
 @code {
@@ -181,6 +190,8 @@ else
     private CustomerFinancialSummaryDto? _financialSummary;
     private IReadOnlyList<CustomerTransactionDto> _transactions = Array.Empty<CustomerTransactionDto>();
     private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+    private IReadOnlyList<CustomerShippingAddressBookDto> _shippingAddresses = Array.Empty<CustomerShippingAddressBookDto>();
+    private CustomerShippingAddressDrawer? _shippingDrawer;
 
     private CounterpartyDraft _draft = new();
     private bool _isLoading = true;
@@ -230,11 +241,13 @@ else
             var customerTask = CustomerClient.GetByIdAsync(CustomerId);
             var termsTask = PaymentTermClient.ListAsync(includeInactive: true);
             var summaryTask = OverviewClient.GetFinancialSummaryAsync(CustomerId);
-            await Task.WhenAll(customerTask, termsTask, summaryTask);
+            var shippingTask = ShippingBookClient.ListAsync(CustomerId);
+            await Task.WhenAll(customerTask, termsTask, summaryTask, shippingTask);
 
             _customer = customerTask.Result;
             _paymentTerms = termsTask.Result;
             _financialSummary = summaryTask.Result;
+            _shippingAddresses = shippingTask.Result;
             ApplyHeader();
             ApplyPaymentTermLabel();
 
@@ -244,6 +257,12 @@ else
         {
             _isLoading = false;
         }
+    }
+
+    private async Task ReloadShippingAsync()
+    {
+        _shippingAddresses = await ShippingBookClient.ListAsync(CustomerId);
+        StateHasChanged();
     }
 
     private async Task LoadTransactionsAsync()
@@ -458,8 +477,51 @@ else
                 </div>
 
                 <div class="citus-customer-profile__shipping">
-                    <h3 class="citus-customer-profile__col-title">Shipping addresses</h3>
-                    <p class="text-fg-muted text-sm m-0">No shipping addresses. Multi-shipping support lands in the next batch — until then, the billing address above is the default.</p>
+                    <header class="citus-customer-profile__shipping-header">
+                        <h3 class="citus-customer-profile__col-title">Shipping addresses</h3>
+                        <CitusButton Variant="CitusButtonVariant.Default"
+                                     LeadingIcon="IconName.Plus"
+                                     OnClick="OpenAddShippingDrawer">Add shipping address</CitusButton>
+                    </header>
+
+                    @if (_shippingAddresses.Count == 0)
+                    {
+                        <p class="text-fg-muted text-sm m-0">
+                            No shipping addresses yet. Add one to populate the picker on quotes, sales orders, and invoices.
+                        </p>
+                    }
+                    else
+                    {
+                        <ul class="citus-shipping-list">
+                            @foreach (var entry in _shippingAddresses)
+                            {
+                                <li class="citus-shipping-list__row">
+                                    <div class="citus-shipping-list__body">
+                                        <div class="citus-shipping-list__title-row">
+                                            <span class="citus-shipping-list__label">@(string.IsNullOrWhiteSpace(entry.Label) ? "Untitled" : entry.Label)</span>
+                                            @if (entry.IsDefault)
+                                            {
+                                                <CitusBadge Color="@("blue")">Default</CitusBadge>
+                                            }
+                                        </div>
+                                        <div class="citus-shipping-list__address">@FormatBookEntry(entry)</div>
+                                    </div>
+                                    <div class="citus-shipping-list__actions">
+                                        @if (!entry.IsDefault)
+                                        {
+                                            <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                         OnClick="@(() => OnSetDefault(entry))">Set default</CitusButton>
+                                        }
+                                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                     OnClick="@(() => OnEditShipping(entry))">Edit</CitusButton>
+                                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                     Danger="true"
+                                                     OnClick="@(() => OnDeleteShipping(entry))">Delete</CitusButton>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
                 </div>
             </section>
         }
@@ -500,6 +562,66 @@ else
         _activeTab = CustomerTab.Profile;
         StartEditing();
         return Task.CompletedTask;
+    }
+
+    @* === Shipping address book handlers ========================== *@
+    private async Task OpenAddShippingDrawer()
+    {
+        if (_shippingDrawer is not null)
+        {
+            await _shippingDrawer.OpenForAddAsync();
+        }
+    }
+
+    private async Task OnEditShipping(CustomerShippingAddressBookDto entry)
+    {
+        if (_shippingDrawer is not null)
+        {
+            await _shippingDrawer.OpenForEditAsync(entry);
+        }
+    }
+
+    private async Task OnDeleteShipping(CustomerShippingAddressBookDto entry)
+    {
+        // No native confirm dialog yet — a "Cancel / Confirm" modal can
+        // replace this once the shell has shared confirmation infra.
+        var removed = await ShippingBookClient.DeleteAsync(CustomerId, entry.Id);
+        if (removed)
+        {
+            await Message.SuccessAsync("Shipping address removed.");
+            await ReloadShippingAsync();
+        }
+        else
+        {
+            await Message.WarningAsync("Could not remove the shipping address.");
+        }
+    }
+
+    private async Task OnSetDefault(CustomerShippingAddressBookDto entry)
+    {
+        var outcome = await ShippingBookClient.SetDefaultAsync(CustomerId, entry.Id);
+        if (outcome.Succeeded)
+        {
+            await Message.SuccessAsync("Default shipping address updated.");
+            await ReloadShippingAsync();
+        }
+        else
+        {
+            await Message.WarningAsync(outcome.ErrorMessage ?? "Could not set the default address.");
+        }
+    }
+
+    private async Task OnShippingChangedAsync()
+    {
+        await ReloadShippingAsync();
+    }
+
+    private static string FormatBookEntry(CustomerShippingAddressBookDto entry)
+    {
+        var parts = new[] { entry.AddressLine, entry.City, entry.ProvinceState, entry.PostalCode, entry.Country }
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToArray();
+        return parts.Length == 0 ? "—" : string.Join(", ", parts);
     }
 
     @* === Edit form lifecycle ==================================== *@

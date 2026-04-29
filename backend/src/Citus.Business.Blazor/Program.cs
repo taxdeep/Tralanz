@@ -194,6 +194,18 @@ builder.Services.AddHttpClient<CustomerOverviewClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// Persisted shipping address book CRUD for the Profile tab. The
+// historical-address picker (CustomerClient.ListShippingAddressHistoryAsync)
+// stays intact for now; both surfaces will eventually feed the
+// AddressEditor's "Use a previous address" dropdown.
+builder.Services.AddHttpClient<CustomerShippingAddressBookClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<VendorClient>(
         (serviceProvider, client) =>
         {

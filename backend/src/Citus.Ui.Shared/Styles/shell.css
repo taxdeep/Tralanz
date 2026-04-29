@@ -929,6 +929,73 @@
     border-top: 1px solid var(--citus-color-border);
 }
 
+.citus-customer-profile__shipping-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-3);
+}
+
+.citus-customer-profile__shipping-header .citus-customer-profile__col-title {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.citus-shipping-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-2);
+}
+
+.citus-shipping-list__row {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-4);
+    padding: var(--citus-space-3) var(--citus-space-4);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+}
+
+.citus-shipping-list__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+
+.citus-shipping-list__title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    flex-wrap: wrap;
+}
+
+.citus-shipping-list__label {
+    color: var(--citus-color-fg);
+    font-weight: 600;
+    font-size: var(--citus-text-base);
+}
+
+.citus-shipping-list__address {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    word-break: break-word;
+}
+
+.citus-shipping-list__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-1);
+    flex-shrink: 0;
+}
+
 /* ---------- Company list (Account → My Companies) ---------- */
 
 .citus-company-list {

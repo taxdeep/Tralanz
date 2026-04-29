@@ -203,6 +203,11 @@ builder.Services.AddSingleton<ICustomerStore, PostgreSqlCustomerStore>();
 // invoice / sales-order / quote transactions timeline. Backed by
 // ar_open_items + invoices/quotes/sales_orders unions.
 builder.Services.AddSingleton<ICustomerOverviewQueries, PostgreSqlCustomerOverviewQueries>();
+// First-class shipping address book per customer. Distinct from the
+// historical-address picker (which derives suggestions from past
+// quotes / sales orders); this one is the persisted CRUD surface
+// surfaced on the Customer Profile tab.
+builder.Services.AddSingleton<ICustomerShippingAddressBookStore, PostgreSqlCustomerShippingAddressBookStore>();
 
 // Read-only company profile lookup (legal_name, address, contacts) for
 // surfaces that print the company on a document — invoice / quote / PO
@@ -441,6 +446,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var taxCodeStore = startupScope.ServiceProvider.GetRequiredService<ITaxCodeStore>();
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
     var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
+    var customerShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<ICustomerShippingAddressBookStore>();
     var vendorStore = startupScope.ServiceProvider.GetRequiredService<IVendorStore>();
     var paymentTermStore = startupScope.ServiceProvider.GetRequiredService<IPaymentTermStore>();
     var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
@@ -471,6 +477,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await taxCodeStore.EnsureSchemaAsync(CancellationToken.None);
     await accountStore.EnsureSchemaAsync(CancellationToken.None);
     await customerStore.EnsureSchemaAsync(CancellationToken.None);
+    await customerShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
     await vendorStore.EnsureSchemaAsync(CancellationToken.None);
     await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
     await quoteStore.EnsureSchemaAsync(CancellationToken.None);
@@ -9901,6 +9908,122 @@ accounting.MapGet(
             new CustomerTransactionFilter(type, status, from, to),
             cancellationToken);
         return Results.Ok(rows);
+    });
+
+// =====================================================================
+// Customer shipping address book CRUD. Backs the Profile tab's
+// "Shipping addresses" section. The historical-address picker on quote
+// / SO creation continues to read from past documents — these endpoints
+// are the persisted book operators add to deliberately. A follow-up
+// batch will UNION the two sources in the picker.
+// =====================================================================
+accounting.MapGet(
+    "/customers/{customerId:guid}/shipping-address-book",
+    async (
+        Guid customerId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, customerId, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/customers/{customerId:guid}/shipping-address-book",
+    async (
+        Guid customerId,
+        CustomerShippingAddressBookHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (string.IsNullOrWhiteSpace(request.AddressLine) &&
+            string.IsNullOrWhiteSpace(request.City) &&
+            string.IsNullOrWhiteSpace(request.PostalCode))
+        {
+            return Results.BadRequest(new { message = "Provide at least an address line, city, or postal code." });
+        }
+
+        var inserted = await store.InsertAsync(
+            session.ActiveCompanyId,
+            customerId,
+            new CustomerShippingAddressBookUpsertRequest(
+                Label: request.Label,
+                AddressLine: request.AddressLine,
+                City: request.City,
+                ProvinceState: request.ProvinceState,
+                PostalCode: request.PostalCode,
+                Country: request.Country,
+                IsDefault: request.IsDefault),
+            cancellationToken);
+        return Results.Ok(inserted);
+    });
+
+accounting.MapPut(
+    "/customers/{customerId:guid}/shipping-address-book/{addressId:guid}",
+    async (
+        Guid customerId,
+        Guid addressId,
+        CustomerShippingAddressBookHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var updated = await store.UpdateAsync(
+            session.ActiveCompanyId,
+            customerId,
+            addressId,
+            new CustomerShippingAddressBookUpsertRequest(
+                Label: request.Label,
+                AddressLine: request.AddressLine,
+                City: request.City,
+                ProvinceState: request.ProvinceState,
+                PostalCode: request.PostalCode,
+                Country: request.Country,
+                IsDefault: request.IsDefault),
+            cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapDelete(
+    "/customers/{customerId:guid}/shipping-address-book/{addressId:guid}",
+    async (
+        Guid customerId,
+        Guid addressId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var removed = await store.DeleteAsync(session.ActiveCompanyId, customerId, addressId, cancellationToken);
+        return removed ? Results.NoContent() : Results.NotFound();
+    });
+
+accounting.MapPost(
+    "/customers/{customerId:guid}/shipping-address-book/{addressId:guid}/set-default",
+    async (
+        Guid customerId,
+        Guid addressId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var updated = await store.SetDefaultAsync(session.ActiveCompanyId, customerId, addressId, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
 accounting.MapGet(
