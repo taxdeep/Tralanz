@@ -174,6 +174,86 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
     }
 
+    public async Task<IReadOnlyList<CustomerShippingAddressRecord>> ListShippingAddressHistoryAsync(
+        Guid companyId,
+        Guid customerId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var clamped = Math.Clamp(limit, 1, 50);
+
+        // Pull all shipping addresses this customer has received on
+        // historical quotes + sales_orders (the only AR-side documents
+        // that store shipping_*; invoices don't). Group by the full
+        // address tuple so identical addresses collapse, and rank by
+        // most-recent-use first then by usage count. Empty / mostly-
+        // empty rows are filtered by requiring at least an address line
+        // or a city — pure ghost rows aren't worth offering.
+        const string sql = """
+            with all_addresses as (
+              select shipping_address_line,
+                     shipping_city,
+                     shipping_province_state,
+                     shipping_postal_code,
+                     shipping_country,
+                     document_date as used_on
+                from quotes
+               where company_id = @company_id
+                 and customer_id = @customer_id
+                 and (coalesce(shipping_address_line, '') <> ''
+                      or coalesce(shipping_city, '') <> '')
+              union all
+              select shipping_address_line,
+                     shipping_city,
+                     shipping_province_state,
+                     shipping_postal_code,
+                     shipping_country,
+                     document_date as used_on
+                from sales_orders
+               where company_id = @company_id
+                 and customer_id = @customer_id
+                 and (coalesce(shipping_address_line, '') <> ''
+                      or coalesce(shipping_city, '') <> '')
+            )
+            select coalesce(shipping_address_line, '') as address_line,
+                   coalesce(shipping_city, '') as city,
+                   coalesce(shipping_province_state, '') as province_state,
+                   coalesce(shipping_postal_code, '') as postal_code,
+                   coalesce(shipping_country, '') as country,
+                   count(*)::int as usage_count,
+                   max(used_on) as last_used_on
+              from all_addresses
+             group by 1, 2, 3, 4, 5
+             order by max(used_on) desc, count(*) desc
+             limit @limit;
+            """;
+
+        var rows = new List<CustomerShippingAddressRecord>();
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("customer_id", customerId);
+        command.Parameters.AddWithValue("limit", clamped);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new CustomerShippingAddressRecord(
+                AddressLine: NullIfEmpty(reader.GetString(0)),
+                City: NullIfEmpty(reader.GetString(1)),
+                ProvinceState: NullIfEmpty(reader.GetString(2)),
+                PostalCode: NullIfEmpty(reader.GetString(3)),
+                Country: NullIfEmpty(reader.GetString(4)),
+                UsageCount: reader.GetInt32(5),
+                LastUsedOn: reader.GetFieldValue<DateOnly>(6)));
+        }
+        return rows;
+
+        static string? NullIfEmpty(string s) =>
+            string.IsNullOrWhiteSpace(s) ? null : s;
+    }
+
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 

@@ -1,0 +1,199 @@
+@*
+    CitusDrawer — right-side overlay drawer for editing a contained
+    chunk of state without leaving the current page. First user is the
+    Quote create page's Address panel; the same shape is expected for
+    Vendor / Customer profile inline edits, line-item advanced editor,
+    bill / PO address blocks, etc.
+
+    Design language §3 — register here as the canonical drawer pattern.
+    Footer follows §7 (Cancel left, Save right; primary on the right).
+
+    Owner-driven open / close: the page binds @bind-IsOpen and decides
+    when to flip it. The drawer's Cancel / backdrop / ESC paths call
+    OnCancel; the page sets IsOpen=false in response. This avoids
+    racing on validation errors — page can keep the drawer open by
+    *not* flipping IsOpen even after OnSave fires.
+
+    Dirty-state contract: when IsDirty is true, Cancel / backdrop /
+    ESC show an inline "discard?" prompt instead of closing
+    immediately. The prompt is intentionally inline (not a separate
+    modal) so the drawer never stacks two layers of overlay.
+*@
+
+@using Microsoft.AspNetCore.Components.Web
+
+@if (IsOpen)
+{
+    <div class="citus-drawer" @onkeydown="HandleKeyDown" @ref="_root" tabindex="-1">
+        <div class="citus-drawer__backdrop" @onclick="RequestCancel"></div>
+        <aside class="citus-drawer__panel citus-drawer__panel--@WidthClass" role="dialog" aria-modal="true">
+            <header class="citus-drawer__header">
+                <h2 class="citus-drawer__title">@Title</h2>
+                <button type="button" class="citus-drawer__close" @onclick="RequestCancel" aria-label="Close">
+                    <CitusIcon Name="IconName.X" Size="IconSize.Action" />
+                </button>
+            </header>
+
+            @if (_showDiscardPrompt)
+            {
+                <div class="citus-drawer__discard">
+                    <h3>Discard your changes?</h3>
+                    <p class="text-fg-muted text-sm mt-1 mb-4">
+                        You haven't saved the edits in this drawer. Leaving will lose them.
+                    </p>
+                    <div class="citus-form-actions">
+                        <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="@KeepEditing">Keep editing</CitusButton>
+                        <div class="citus-form-actions__primary">
+                            <CitusButton Variant="CitusButtonVariant.Primary" Danger="true" OnClick="ConfirmDiscard">
+                                Discard
+                            </CitusButton>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="citus-drawer__body">
+                    @ChildContent
+                </div>
+
+                @if (FooterContent is not null)
+                {
+                    <footer class="citus-drawer__footer">
+                        @FooterContent
+                    </footer>
+                }
+                else
+                {
+                    <footer class="citus-drawer__footer citus-form-actions">
+                        <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="RequestCancel">
+                            @CancelLabel
+                        </CitusButton>
+                        <div class="citus-form-actions__primary">
+                            <CitusButton Variant="CitusButtonVariant.Primary"
+                                         Disabled="@SaveDisabled"
+                                         OnClick="HandleSave">
+                                @SaveLabel
+                            </CitusButton>
+                        </div>
+                    </footer>
+                }
+            }
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public CitusDrawerWidth Width { get; set; } = CitusDrawerWidth.Medium;
+
+    /// <summary>
+    /// True when the drawer's editor has unsaved changes. When set,
+    /// Cancel / backdrop / ESC show an inline "discard?" prompt
+    /// instead of closing.
+    /// </summary>
+    [Parameter] public bool IsDirty { get; set; }
+
+    [Parameter] public bool SaveDisabled { get; set; }
+
+    [Parameter] public string SaveLabel { get; set; } = "Save";
+
+    [Parameter] public string CancelLabel { get; set; } = "Cancel";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Override the default Cancel/Save footer with a fully custom
+    /// one. When set, SaveDisabled / SaveLabel / CancelLabel are
+    /// ignored and the consumer is responsible for calling
+    /// IsOpenChanged(false) after save.
+    /// </summary>
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ElementReference _root;
+    private bool _showDiscardPrompt;
+    private bool _hasFocused;
+
+    private string WidthClass => Width switch
+    {
+        CitusDrawerWidth.Small => "sm",
+        CitusDrawerWidth.Large => "lg",
+        _ => "md",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Auto-focus on open so ESC works without a manual click.
+        // Re-arm whenever the drawer toggles closed (IsOpen=false
+        // unmounts everything) so the next open re-focuses.
+        if (IsOpen && !_hasFocused)
+        {
+            try
+            {
+                await _root.FocusAsync();
+                _hasFocused = true;
+            }
+            catch
+            {
+                // FocusAsync can race during teardown — non-fatal.
+            }
+        }
+        else if (!IsOpen)
+        {
+            _hasFocused = false;
+            _showDiscardPrompt = false;
+        }
+    }
+
+    private async Task RequestCancel()
+    {
+        if (IsDirty)
+        {
+            _showDiscardPrompt = true;
+            return;
+        }
+        await PerformCancel();
+    }
+
+    private async Task PerformCancel()
+    {
+        _showDiscardPrompt = false;
+        if (OnCancel.HasDelegate) await OnCancel.InvokeAsync();
+        if (IsOpenChanged.HasDelegate) await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private void KeepEditing()
+    {
+        _showDiscardPrompt = false;
+    }
+
+    private async Task ConfirmDiscard()
+    {
+        await PerformCancel();
+    }
+
+    private async Task HandleSave()
+    {
+        // Owner is responsible for closing via IsOpen=false after a
+        // successful save. We deliberately don't auto-close so a
+        // server-side validation error can keep the drawer open.
+        if (OnSave.HasDelegate) await OnSave.InvokeAsync();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && IsOpen)
+        {
+            await RequestCancel();
+        }
+    }
+}

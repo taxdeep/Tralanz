@@ -29,6 +29,25 @@ public sealed class CustomerClient(HttpClient httpClient, ILogger<CustomerClient
         }
     }
 
+    public async Task<IReadOnlyList<Components.Shared.CustomerShippingAddressSuggestion>> ListShippingAddressHistoryAsync(
+        Guid customerId,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/customers/{customerId:D}/shipping-addresses?limit={limit}";
+            var rows = await httpClient.GetFromJsonAsync<Components.Shared.CustomerShippingAddressSuggestion[]>(
+                url, cancellationToken);
+            return rows ?? Array.Empty<Components.Shared.CustomerShippingAddressSuggestion>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read shipping-address history for {CustomerId}.", customerId);
+            return Array.Empty<Components.Shared.CustomerShippingAddressSuggestion>();
+        }
+    }
+
     public async Task<CustomerSummary?> GetByIdAsync(
         Guid customerId,
         CancellationToken cancellationToken = default)

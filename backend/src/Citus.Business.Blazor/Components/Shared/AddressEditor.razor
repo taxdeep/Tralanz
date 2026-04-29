@@ -1,0 +1,216 @@
+@*
+    AddressEditor — billing + shipping form used inside CitusDrawer.
+    Layout per UI_DESIGN_LANGUAGE.md §3:
+
+        [ Same as billing | Different shipping ]   <- segmented mode
+        Billing
+          (5 fields)
+        (if Different shipping selected)
+        Shipping
+          [ Use a previous address ▾ ]              <- ranked unitySearch-style
+          (5 fields, freeform editable on top of picker selection)
+
+    The component is purely presentational: parent owns the values,
+    binds @bind-Billing / @bind-Shipping / @bind-Mode and decides what
+    to do on Save (the drawer's Save button). When Mode flips to
+    SameAsBilling the parent should copy Billing into Shipping at
+    Save time — the editor doesn't auto-clear Shipping so an operator
+    flipping back to Different doesn't lose typed values.
+
+    Shipping suggestions are loaded lazily when CustomerId changes;
+    parent supplies the CustomerClient via [Parameter] so the
+    component stays free of accounting-side coupling.
+*@
+
+@inject CustomerClient CustomerClient
+
+<div class="address-editor">
+    @* === Mode segmented control ======================================= *@
+    <div class="address-editor__mode" role="tablist" aria-label="Shipping mode">
+        <button type="button"
+                role="tab"
+                aria-selected="@(Mode == ShippingMode.SameAsBilling)"
+                class="address-editor__mode-tab @(Mode == ShippingMode.SameAsBilling ? "address-editor__mode-tab--active" : null)"
+                @onclick="@(() => OnModeChanged(ShippingMode.SameAsBilling))">
+            Same as billing
+        </button>
+        <button type="button"
+                role="tab"
+                aria-selected="@(Mode == ShippingMode.Different)"
+                class="address-editor__mode-tab @(Mode == ShippingMode.Different ? "address-editor__mode-tab--active" : null)"
+                @onclick="@(() => OnModeChanged(ShippingMode.Different))">
+            Different shipping
+        </button>
+    </div>
+
+    @* === Billing block ================================================ *@
+    <h3 class="address-editor__section-title">Billing address</h3>
+    @RenderAddressFields(Billing, OnBillingChanged, "billing")
+
+    @* === Shipping block (only when Different) ========================= *@
+    @if (Mode == ShippingMode.Different)
+    {
+        <h3 class="address-editor__section-title">Shipping address</h3>
+
+        @if (_isLoadingHistory)
+        {
+            <p class="text-fg-muted text-sm mb-3">Loading previous shipping addresses…</p>
+        }
+        else if (_history.Count > 0)
+        {
+            <label class="citus-form-field mb-3">
+                <span class="citus-form-field__label">Use a previous shipping address</span>
+                <select class="citus-form-field__input" @onchange="OnHistorySelected">
+                    <option value="">Pick from past quotes / orders…</option>
+                    @for (var i = 0; i < _history.Count; i++)
+                    {
+                        var h = _history[i];
+                        <option value="@i">
+                            @FormatHistoryOption(h)
+                        </option>
+                    }
+                </select>
+            </label>
+        }
+
+        @RenderAddressFields(Shipping, OnShippingChanged, "shipping")
+    }
+</div>
+
+@code {
+    [Parameter] public AddressDraft Billing { get; set; } = AddressDraft.Empty;
+
+    [Parameter] public EventCallback<AddressDraft> BillingChanged { get; set; }
+
+    [Parameter] public AddressDraft Shipping { get; set; } = AddressDraft.Empty;
+
+    [Parameter] public EventCallback<AddressDraft> ShippingChanged { get; set; }
+
+    [Parameter] public ShippingMode Mode { get; set; } = ShippingMode.SameAsBilling;
+
+    [Parameter] public EventCallback<ShippingMode> ModeChanged { get; set; }
+
+    /// <summary>
+    /// Optional. When set, the editor fetches and offers this
+    /// customer's past shipping addresses as quick-fill options.
+    /// </summary>
+    [Parameter] public Guid? CustomerId { get; set; }
+
+    private IReadOnlyList<CustomerShippingAddressSuggestion> _history =
+        Array.Empty<CustomerShippingAddressSuggestion>();
+    private Guid? _historyLoadedFor;
+    private bool _isLoadingHistory;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CustomerId.HasValue && CustomerId != _historyLoadedFor)
+        {
+            _isLoadingHistory = true;
+            _history = await CustomerClient.ListShippingAddressHistoryAsync(CustomerId.Value);
+            _historyLoadedFor = CustomerId;
+            _isLoadingHistory = false;
+        }
+        else if (!CustomerId.HasValue && _history.Count > 0)
+        {
+            _history = Array.Empty<CustomerShippingAddressSuggestion>();
+            _historyLoadedFor = null;
+        }
+    }
+
+    private async Task OnModeChanged(ShippingMode mode)
+    {
+        if (Mode == mode) return;
+        Mode = mode;
+        if (ModeChanged.HasDelegate) await ModeChanged.InvokeAsync(mode);
+    }
+
+    private async Task OnBillingChanged(AddressDraft updated)
+    {
+        Billing = updated;
+        if (BillingChanged.HasDelegate) await BillingChanged.InvokeAsync(updated);
+    }
+
+    private async Task OnShippingChanged(AddressDraft updated)
+    {
+        Shipping = updated;
+        if (ShippingChanged.HasDelegate) await ShippingChanged.InvokeAsync(updated);
+    }
+
+    private async Task OnHistorySelected(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        if (string.IsNullOrEmpty(raw) || !int.TryParse(raw, out var idx)) return;
+        if (idx < 0 || idx >= _history.Count) return;
+
+        var pick = _history[idx];
+        var filled = new AddressDraft
+        {
+            AddressLine = pick.AddressLine,
+            City = pick.City,
+            ProvinceState = pick.ProvinceState,
+            PostalCode = pick.PostalCode,
+            Country = pick.Country,
+        };
+        await OnShippingChanged(filled);
+    }
+
+    private static string FormatHistoryOption(CustomerShippingAddressSuggestion h)
+    {
+        var parts = new List<string>(5);
+        if (!string.IsNullOrWhiteSpace(h.AddressLine)) parts.Add(h.AddressLine!);
+        if (!string.IsNullOrWhiteSpace(h.City)) parts.Add(h.City!);
+        if (!string.IsNullOrWhiteSpace(h.ProvinceState)) parts.Add(h.ProvinceState!);
+        if (!string.IsNullOrWhiteSpace(h.PostalCode)) parts.Add(h.PostalCode!);
+        if (!string.IsNullOrWhiteSpace(h.Country)) parts.Add(h.Country!);
+        var label = parts.Count > 0 ? string.Join(", ", parts) : "(empty address)";
+        var meta = h.UsageCount > 1 ? $" · used {h.UsageCount}×" : string.Empty;
+        return $"{label}{meta}";
+    }
+
+    private RenderFragment RenderAddressFields(
+        AddressDraft current,
+        Func<AddressDraft, Task> onChange,
+        string fieldKey) => __builder =>
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="citus-form-field md:col-span-2">
+                <span class="citus-form-field__label">Street + suite</span>
+                <input type="text" class="citus-form-field__input"
+                       value="@(current.AddressLine ?? string.Empty)"
+                       placeholder="123 Main St, Suite 4"
+                       @oninput="@(e => onChange(current with { AddressLine = NullIfBlank(e.Value?.ToString()) }))" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">City</span>
+                <input type="text" class="citus-form-field__input"
+                       value="@(current.City ?? string.Empty)"
+                       @oninput="@(e => onChange(current with { City = NullIfBlank(e.Value?.ToString()) }))" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Province / State</span>
+                <input type="text" class="citus-form-field__input"
+                       value="@(current.ProvinceState ?? string.Empty)"
+                       @oninput="@(e => onChange(current with { ProvinceState = NullIfBlank(e.Value?.ToString()) }))" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Postal code</span>
+                <input type="text" class="citus-form-field__input"
+                       value="@(current.PostalCode ?? string.Empty)"
+                       @oninput="@(e => onChange(current with { PostalCode = NullIfBlank(e.Value?.ToString()) }))" />
+            </label>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Country</span>
+                <input type="text" class="citus-form-field__input"
+                       value="@(current.Country ?? string.Empty)"
+                       @oninput="@(e => onChange(current with { Country = NullIfBlank(e.Value?.ToString()) }))" />
+            </label>
+        </div>
+    };
+
+    private static string? NullIfBlank(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+}

@@ -1,0 +1,40 @@
+@*
+    AddressDisplay — compact read-only render of an AddressDraft.
+    Used inside the Address panel (collapsed state, before the
+    operator clicks Edit). Empty addresses fall back to a muted
+    "No address set" placeholder so the panel never shows a blank
+    column.
+*@
+
+@if (Address.IsEmpty)
+{
+    <p class="text-fg-subtle text-sm m-0">@(EmptyHint ?? "No address set.")</p>
+}
+else
+{
+    <address class="address-display">
+        @if (!string.IsNullOrWhiteSpace(Address.AddressLine))
+        {
+            <div>@Address.AddressLine</div>
+        }
+        @{
+            var line2 = string.Join(", ",
+                new[] { Address.City, Address.ProvinceState, Address.PostalCode }
+                    .Where(s => !string.IsNullOrWhiteSpace(s)));
+        }
+        @if (!string.IsNullOrWhiteSpace(line2))
+        {
+            <div>@line2</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Address.Country))
+        {
+            <div>@Address.Country</div>
+        }
+    </address>
+}
+
+@code {
+    [Parameter, EditorRequired] public AddressDraft Address { get; set; } = AddressDraft.Empty;
+
+    [Parameter] public string? EmptyHint { get; set; }
+}

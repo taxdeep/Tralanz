@@ -1052,6 +1052,173 @@ a.citus-domain-card--linked:active {
     background: var(--citus-color-bg-muted);
 }
 
+/* CitusDrawer — right-side overlay, UI_DESIGN_LANGUAGE.md §3.
+   Backdrop fades in, panel slides from the right; both share a 200ms
+   ease-out so the chrome feels light. The drawer never stretches over
+   the left-side nav (per agreement, only-right slide-out — left is
+   reserved for the nav menu). */
+.citus-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: auto;
+}
+
+.citus-drawer__backdrop {
+    position: absolute;
+    inset: 0;
+    background: oklch(15% 0.01 254 / 0.45);
+    animation: citus-drawer-fade-in 180ms ease-out;
+    cursor: pointer;
+}
+
+.citus-drawer__panel {
+    position: relative;
+    height: 100%;
+    background: var(--citus-color-bg-elevated);
+    border-left: 1px solid var(--citus-color-border);
+    box-shadow: var(--citus-shadow-3);
+    display: flex;
+    flex-direction: column;
+    animation: citus-drawer-slide-in 220ms ease-out;
+}
+
+.citus-drawer__panel--sm { width: min(320px, 90vw); }
+.citus-drawer__panel--md { width: min(480px, 92vw); }
+.citus-drawer__panel--lg { width: min(640px, 94vw); }
+
+.citus-drawer__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-4);
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-drawer__title {
+    margin: 0;
+    font-size: var(--citus-text-lg);
+    font-weight: 600;
+    color: var(--citus-color-fg);
+}
+
+.citus-drawer__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--citus-radius-sm);
+    background: transparent;
+    border: 0;
+    color: var(--citus-color-fg-muted);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.citus-drawer__close:hover {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+}
+
+.citus-drawer__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--citus-space-4);
+}
+
+.citus-drawer__footer {
+    padding: var(--citus-space-4);
+    border-top: 1px solid var(--citus-color-border);
+    margin-top: 0; /* override .citus-form-actions's top-margin */
+}
+
+.citus-drawer__discard {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--citus-space-6) var(--citus-space-4);
+}
+
+.citus-drawer__discard h3 {
+    margin: 0;
+    font-size: var(--citus-text-lg);
+    font-weight: 600;
+    color: var(--citus-color-fg);
+}
+
+@keyframes citus-drawer-slide-in {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+}
+
+@keyframes citus-drawer-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* AddressEditor — segmented mode tabs + section titles. Lives inside
+   CitusDrawer's body. The segmented control is a simple flex of two
+   buttons sharing a 1px border; the active tab gets the primary fill
+   so the choice between Same-as-billing / Different-shipping reads at
+   a glance. */
+.address-editor__mode {
+    display: inline-flex;
+    width: 100%;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    padding: 2px;
+    background: var(--citus-color-bg-muted);
+    margin-bottom: var(--citus-space-4);
+}
+
+.address-editor__mode-tab {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    border-radius: var(--citus-radius-sm);
+    padding: 0.4rem 0.75rem;
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+    color: var(--citus-color-fg-muted);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.address-editor__mode-tab:hover {
+    color: var(--citus-color-fg);
+}
+
+.address-editor__mode-tab--active {
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    box-shadow: var(--citus-shadow-1);
+}
+
+.address-editor__section-title {
+    margin: var(--citus-space-4) 0 var(--citus-space-2);
+    font-size: var(--citus-text-base);
+    font-weight: 600;
+    color: var(--citus-color-fg);
+}
+
+.address-editor__section-title:first-child {
+    margin-top: 0;
+}
+
+.address-display {
+    font-style: normal;
+    font-size: var(--citus-text-sm);
+    line-height: var(--citus-leading-normal);
+    color: var(--citus-color-fg);
+}
+
+.address-display > div + div {
+    margin-top: 0;
+}
+
 /* Form action footer — UI_DESIGN_LANGUAGE.md §7.
    Cancel sits on the left, save / submit / post on the right; the
    rightmost positive action is Primary. The top border separates the
@@ -1786,9 +1953,12 @@ select.citus-journal-lines__cell-input {
     box-shadow: 0 0 0 3px var(--citus-color-primary-bg);
 }
 
-.citus-input--sm .citus-input__row { min-height: 1.85rem; padding: 0.15rem 0.5rem; }
-.citus-input--md .citus-input__row { min-height: 2.25rem; }
-.citus-input--lg .citus-input__row { min-height: 2.6rem; padding: 0.4rem 0.6rem; }
+/* Size-specific overrides removed 2026-04-29 — they fought with the
+   global form-control normalization above (--citus-input-height) and
+   pushed CitusInput-wrapped fields 4 px taller than RadzenDropDown,
+   making rows like Customer / Email visibly out of step. All three
+   size variants now ride the canonical 32 px height; if a future
+   density mode is needed, retune it via padding-y, not min-height. */
 
 .citus-input__leading {
     display: inline-flex;

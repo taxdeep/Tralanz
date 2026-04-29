@@ -80,6 +80,9 @@ Source: [`backend/src/Citus.Ui.Shared/Patterns/`](backend/src/Citus.Ui.Shared/Pa
 | `CitusCompanyAccessBanner` | Renders the active-company chrome above the page content. Owned by the shell. |
 | `CitusMaintenanceBanner`   | Renders maintenance-mode warning. Owned by the shell. |
 | `ThemeToggle`              | Light / dark / system. Sits in the top bar. |
+| `CitusDrawer`              | Right-side overlay for editing a contained chunk of state without leaving the page. Owns backdrop, slide-in animation, ESC handling, dirty-state discard prompt, default Cancel/Save footer per §7. Width presets `Small (320) / Medium (480) / Large (640)`. Owner controls `IsOpen` (two-way bind) + `IsDirty` + `OnSave`. Left-side slide-out is intentionally not supported — left edge is reserved for the nav menu. |
+| `AddressEditor`            | Five-field billing + shipping form intended to live inside `CitusDrawer`. Includes a `Same as billing / Different shipping` segmented control and a UnitySearch-style picker that surfaces past shipping addresses for the selected customer (ranked most-recent-first). Pair with `AddressDisplay` for the collapsed read-only view. |
+| `AddressDisplay`           | Compact read-only render of an `AddressDraft`. Empty state shows a muted "No address set." hint instead of a blank column. Used in the panel header alongside an Edit button that opens the drawer. |
 
 Page-level CSS class kit (lives in `shell.css`):
 
@@ -245,7 +248,7 @@ Status legend: ✅ matches §3–§9 · ⚠️ partial · ❌ violates rule(s).
 | Bill — New | `Components/Features/Bills/BillCreatePage.razor` | ❌ | ✅ | ✅ | Footer row exists but Cancel is on the right. Flip per §7. |
 | Expense — New | `Components/Features/Expenses/ExpenseCreatePage.razor` | ❌ | ✅ | ✅ | Same as Bill — Cancel on the right. Flip. |
 | Purchase Order — New | `Components/Features/PurchaseOrders/PurchaseOrderCreatePage.razor` | ❌ | ✅ | ✅ | Cancel on right. Flip. |
-| Quote — New | `Components/Features/Sales/QuoteCreatePage.razor` | ❌ | ✅ | ✅ | Cancel on right. Flip. |
+| Quote — New | `Components/Features/Sales/QuoteCreatePage.razor` | ❌ | ✅ | ✅ | Cancel on right. Flip. **Address panel migrated to AddressDisplay + CitusDrawer + AddressEditor (2026-04-29).** |
 | Sales Order — New | `Components/Features/Sales/SalesOrderCreatePage.razor` | ❌ | ✅ | ✅ | Cancel on right. Flip. |
 | Journal Entry — New | `Components/Features/JournalEntry/JournalEntryCreatePage.razor` | ⚠️ | ✅ | ✅ | No Cancel; uses "Reset draft" instead. Add a Cancel that returns to `/journal-entry` and keep Reset. |
 | Customer — Profile / Edit | `Components/Features/Counterparties/CustomerProfilePage.razor` | — | ✅ | ✅ | Inline-edit panel; revisit when edit mode is opened. |
@@ -261,6 +264,29 @@ UI footer §7: <PageName> — Cancel left, primary right
 
 Pages not listed above either match §3–§9 today or are read-only and
 don't need the form footer rule applied.
+
+### Address pattern follow-ups
+
+`AddressDisplay` + `CitusDrawer` + `AddressEditor` is the canonical
+shape for any document that carries a billing / shipping address.
+Quote was the first migration (above). Apply the same pattern to:
+
+| Page | Path | Drawer scope |
+|---|---|---|
+| Sales Order — New | `Components/Features/Sales/SalesOrderCreatePage.razor` | Customer billing + shipping (mirror Quote) |
+| Invoice — New | `Components/Features/Invoices/InvoiceCreatePage.razor` | Customer billing + shipping |
+| Purchase Order — New | `Components/Features/PurchaseOrders/PurchaseOrderCreatePage.razor` | Vendor billing + ship-to |
+| Bill — New | `Components/Features/Bills/BillCreatePage.razor` | Vendor billing + remit-to |
+| Expense — New | `Components/Features/Expenses/ExpenseCreatePage.razor` | Payee address |
+| Customer — Profile / Edit | `Components/Features/Counterparties/CustomerProfilePage.razor` | Master address (no shipping mode toggle — single block) |
+| Vendor — Profile / Edit | `Components/Features/Counterparties/VendorProfilePage.razor` | Master address (single block) |
+
+Notes for the AP-side migrations: shipping-history picker reads from
+the AR side today (`/customers/{id}/shipping-addresses`); the vendor
+analogue (`/vendors/{id}/shipping-addresses`) does not exist yet —
+expose it before lighting up the picker on Bill / PO drawers, or
+ship those pages with the picker hidden when `CustomerId` is null
+(the editor already handles that gracefully).
 
 ---
 

@@ -32,7 +32,31 @@ public interface ICustomerStore
         Guid customerId,
         CustomerUpsertRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Distinct shipping addresses this customer has been quoted /
+    /// sold to before, sorted by most-recent-use desc then by usage
+    /// count desc. Source: union of `quotes` + `sales_orders` rows
+    /// for this customer that have at least one shipping_* field
+    /// set. Backs the AddressEditor drawer's "Use a previous
+    /// shipping address" picker — pure unitySearch-style "use = learn"
+    /// (no separate address-book table needed).
+    /// </summary>
+    Task<IReadOnlyList<CustomerShippingAddressRecord>> ListShippingAddressHistoryAsync(
+        Guid companyId,
+        Guid customerId,
+        int limit,
+        CancellationToken cancellationToken);
 }
+
+public sealed record CustomerShippingAddressRecord(
+    string? AddressLine,
+    string? City,
+    string? ProvinceState,
+    string? PostalCode,
+    string? Country,
+    int UsageCount,
+    DateOnly LastUsedOn);
 
 public sealed record CustomerRecord(
     Guid Id,

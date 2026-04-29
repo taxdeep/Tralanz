@@ -952,6 +952,40 @@ accounting.MapPut(
         }
     });
 
+// Customer shipping-address history — backs the AddressEditor drawer's
+// "Use a previous shipping address" picker. Distinct shipping_*
+// values from the customer's historical quotes + sales_orders, ranked
+// most-recent-first then by usage count.
+accounting.MapGet(
+    "/customers/{customerId:guid}/shipping-addresses",
+    async (
+        Guid customerId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerStore store,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListShippingAddressHistoryAsync(
+            session.ActiveCompanyId,
+            customerId,
+            limit ?? 20,
+            cancellationToken);
+
+        return Results.Ok(rows.Select(r => new
+        {
+            r.AddressLine,
+            r.City,
+            r.ProvinceState,
+            r.PostalCode,
+            r.Country,
+            r.UsageCount,
+            r.LastUsedOn,
+        }));
+    });
+
 // -----------------------------------------------------------------------
 // Vendor master data — AP-side mirror of /accounting/customers.
 // -----------------------------------------------------------------------

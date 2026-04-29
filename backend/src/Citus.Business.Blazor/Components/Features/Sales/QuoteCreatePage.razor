@@ -75,39 +75,42 @@ else
             </section>
 
             <section class="citus-panel">
-                <h2 class="citus-panel__title">Address</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <header class="citus-panel__header">
+                    <h2 class="citus-panel__title">Address</h2>
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Size="CitusButtonSize.Small"
+                                 LeadingIcon="IconName.Pencil"
+                                 OnClick="OpenAddressDrawer">Edit</CitusButton>
+                </header>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label class="text-sm font-medium block mb-1">Billing address</label>
-                        <CitusInput TValue="string" @bind-Value="_billingAddressLine" Placeholder="Street + suite" />
+                        <h3 class="text-fg-muted text-xs font-medium mb-2 uppercase">Billing</h3>
+                        <AddressDisplay Address="_billing" EmptyHint="No billing address set." />
                     </div>
                     <div>
-                        <label class="text-sm font-medium block mb-1">Shipping address</label>
-                        <CitusInput TValue="string" @bind-Value="_shippingAddressLine" Placeholder="Street + suite" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <CitusInput TValue="string" @bind-Value="_billingCity" Placeholder="City" />
-                        <CitusInput TValue="string" @bind-Value="_billingProvinceState" Placeholder="Province / State" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <CitusInput TValue="string" @bind-Value="_shippingCity" Placeholder="City" />
-                        <CitusInput TValue="string" @bind-Value="_shippingProvinceState" Placeholder="Province / State" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <CitusInput TValue="string" @bind-Value="_billingPostalCode" Placeholder="Postal code" />
-                        <CitusInput TValue="string" @bind-Value="_billingCountry" Placeholder="Country" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <CitusInput TValue="string" @bind-Value="_shippingPostalCode" Placeholder="Postal code" />
-                        <CitusInput TValue="string" @bind-Value="_shippingCountry" Placeholder="Country" />
-                    </div>
-                    <div class="md:col-span-2">
-                        <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small" OnClick="CopyBillingToShipping">
-                            Copy billing → shipping
-                        </CitusButton>
+                        <h3 class="text-fg-muted text-xs font-medium mb-2 uppercase">Shipping</h3>
+                        @if (_shippingMode == ShippingMode.SameAsBilling)
+                        {
+                            <p class="text-fg-muted text-sm m-0">Same as billing</p>
+                        }
+                        else
+                        {
+                            <AddressDisplay Address="_shipping" EmptyHint="No shipping address set." />
+                        }
                     </div>
                 </div>
             </section>
+
+            <CitusDrawer @bind-IsOpen="_addressDrawerOpen"
+                         Title="Edit address"
+                         Width="CitusDrawerWidth.Medium"
+                         IsDirty="@AddressDraftIsDirty"
+                         OnSave="SaveAddressDrawer">
+                <AddressEditor @bind-Billing="_draftBilling"
+                               @bind-Shipping="_draftShipping"
+                               @bind-Mode="_draftMode"
+                               CustomerId="_customerId" />
+            </CitusDrawer>
 
             <section class="citus-panel">
                 <header class="citus-panel__header">
@@ -314,16 +317,23 @@ else
 
     private Guid? _customerId;
     private string _email = string.Empty;
-    private string _billingAddressLine = string.Empty;
-    private string _billingCity = string.Empty;
-    private string _billingProvinceState = string.Empty;
-    private string _billingPostalCode = string.Empty;
-    private string _billingCountry = string.Empty;
-    private string _shippingAddressLine = string.Empty;
-    private string _shippingCity = string.Empty;
-    private string _shippingProvinceState = string.Empty;
-    private string _shippingPostalCode = string.Empty;
-    private string _shippingCountry = string.Empty;
+    private AddressDraft _billing = AddressDraft.Empty;
+    private AddressDraft _shipping = AddressDraft.Empty;
+    private ShippingMode _shippingMode = ShippingMode.SameAsBilling;
+
+    // Drawer working copies. Populated when OpenAddressDrawer runs;
+    // committed back to _billing / _shipping / _shippingMode on Save,
+    // dropped on Cancel. AddressDraftIsDirty drives the drawer's
+    // discard-confirmation prompt.
+    private bool _addressDrawerOpen;
+    private AddressDraft _draftBilling = AddressDraft.Empty;
+    private AddressDraft _draftShipping = AddressDraft.Empty;
+    private ShippingMode _draftMode = ShippingMode.SameAsBilling;
+
+    private bool AddressDraftIsDirty =>
+        _draftBilling != _billing ||
+        _draftShipping != _shipping ||
+        _draftMode != _shippingMode;
     private DateTime? _documentDate = DateTime.Today;
     private DateTime? _expirationDate;
     private string _currency = string.Empty;
@@ -407,16 +417,28 @@ else
             Subtitle = $"Status: {quote.Status}"
         };
         _customerId = quote.CustomerId;
-        _billingAddressLine = quote.BillingAddressLine ?? string.Empty;
-        _billingCity = quote.BillingCity ?? string.Empty;
-        _billingProvinceState = quote.BillingProvinceState ?? string.Empty;
-        _billingPostalCode = quote.BillingPostalCode ?? string.Empty;
-        _billingCountry = quote.BillingCountry ?? string.Empty;
-        _shippingAddressLine = quote.ShippingAddressLine ?? string.Empty;
-        _shippingCity = quote.ShippingCity ?? string.Empty;
-        _shippingProvinceState = quote.ShippingProvinceState ?? string.Empty;
-        _shippingPostalCode = quote.ShippingPostalCode ?? string.Empty;
-        _shippingCountry = quote.ShippingCountry ?? string.Empty;
+        _billing = new AddressDraft
+        {
+            AddressLine = quote.BillingAddressLine,
+            City = quote.BillingCity,
+            ProvinceState = quote.BillingProvinceState,
+            PostalCode = quote.BillingPostalCode,
+            Country = quote.BillingCountry,
+        };
+        _shipping = new AddressDraft
+        {
+            AddressLine = quote.ShippingAddressLine,
+            City = quote.ShippingCity,
+            ProvinceState = quote.ShippingProvinceState,
+            PostalCode = quote.ShippingPostalCode,
+            Country = quote.ShippingCountry,
+        };
+        // If the persisted shipping equals the billing (or shipping is
+        // empty), default the editor to "Same as billing" so the
+        // collapsed-state shows the simpler hint.
+        _shippingMode = (_shipping.IsEmpty || _shipping == _billing)
+            ? ShippingMode.SameAsBilling
+            : ShippingMode.Different;
         _documentDate = quote.DocumentDate.ToDateTime(TimeOnly.MinValue);
         _expirationDate = quote.ExpirationDate?.ToDateTime(TimeOnly.MinValue);
         _currency = quote.TransactionCurrencyCode;
@@ -448,11 +470,20 @@ else
         if (customer is null) return;
 
         _email = customer.Email ?? _email;
-        if (string.IsNullOrWhiteSpace(_billingAddressLine)) _billingAddressLine = customer.AddressLine ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(_billingCity)) _billingCity = customer.City ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(_billingProvinceState)) _billingProvinceState = customer.ProvinceState ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(_billingPostalCode)) _billingPostalCode = customer.PostalCode ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(_billingCountry)) _billingCountry = customer.Country ?? string.Empty;
+        // Auto-prefill billing from the customer master, but only if
+        // the operator hasn't already typed an address — replacing a
+        // partial typing is more annoying than helpful.
+        if (_billing.IsEmpty)
+        {
+            _billing = new AddressDraft
+            {
+                AddressLine = customer.AddressLine,
+                City = customer.City,
+                ProvinceState = customer.ProvinceState,
+                PostalCode = customer.PostalCode,
+                Country = customer.Country,
+            };
+        }
         _currency = customer.DefaultCurrencyCode;
         if (customer.PaymentTermId is { } termId)
         {
@@ -517,13 +548,23 @@ else
         _discountKind = string.IsNullOrWhiteSpace(raw) ? null : raw;
     }
 
-    private void CopyBillingToShipping()
+    private void OpenAddressDrawer()
     {
-        _shippingAddressLine = _billingAddressLine;
-        _shippingCity = _billingCity;
-        _shippingProvinceState = _billingProvinceState;
-        _shippingPostalCode = _billingPostalCode;
-        _shippingCountry = _billingCountry;
+        // Snapshot current state into the drawer's working copy so
+        // Cancel can drop edits cleanly. Mode + records are value
+        // types so this is a cheap copy.
+        _draftBilling = _billing;
+        _draftShipping = _shipping;
+        _draftMode = _shippingMode;
+        _addressDrawerOpen = true;
+    }
+
+    private void SaveAddressDrawer()
+    {
+        _billing = _draftBilling;
+        _shipping = _draftShipping;
+        _shippingMode = _draftMode;
+        _addressDrawerOpen = false;
     }
 
     private async Task SaveAsync(bool send)
@@ -549,16 +590,20 @@ else
                 ExpirationDate: _expirationDate is { } exp ? DateOnly.FromDateTime(exp.Date) : null,
                 TransactionCurrencyCode: string.IsNullOrWhiteSpace(_currency) ? ShellState.ActiveCompany.BaseCurrencyCode : _currency,
                 FxRate: _fxRate,
-                BillingAddressLine: NullIfEmpty(_billingAddressLine),
-                BillingCity: NullIfEmpty(_billingCity),
-                BillingProvinceState: NullIfEmpty(_billingProvinceState),
-                BillingPostalCode: NullIfEmpty(_billingPostalCode),
-                BillingCountry: NullIfEmpty(_billingCountry),
-                ShippingAddressLine: NullIfEmpty(_shippingAddressLine),
-                ShippingCity: NullIfEmpty(_shippingCity),
-                ShippingProvinceState: NullIfEmpty(_shippingProvinceState),
-                ShippingPostalCode: NullIfEmpty(_shippingPostalCode),
-                ShippingCountry: NullIfEmpty(_shippingCountry),
+                BillingAddressLine: _billing.AddressLine,
+                BillingCity: _billing.City,
+                BillingProvinceState: _billing.ProvinceState,
+                BillingPostalCode: _billing.PostalCode,
+                BillingCountry: _billing.Country,
+                // SameAsBilling persists with billing copied into shipping
+                // so a downstream PDF / email always has a populated
+                // shipping block without needing to re-derive at render
+                // time.
+                ShippingAddressLine: (_shippingMode == ShippingMode.SameAsBilling ? _billing : _shipping).AddressLine,
+                ShippingCity: (_shippingMode == ShippingMode.SameAsBilling ? _billing : _shipping).City,
+                ShippingProvinceState: (_shippingMode == ShippingMode.SameAsBilling ? _billing : _shipping).ProvinceState,
+                ShippingPostalCode: (_shippingMode == ShippingMode.SameAsBilling ? _billing : _shipping).PostalCode,
+                ShippingCountry: (_shippingMode == ShippingMode.SameAsBilling ? _billing : _shipping).Country,
                 ShipVia: null,
                 ShippingDate: null,
                 TrackingNo: null,
