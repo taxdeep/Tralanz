@@ -789,6 +789,27 @@
     font-size: var(--citus-text-sm);
 }
 
+/* Linked variant — entire card is an <a> so the operator can click
+   anywhere on the tile to navigate to the corresponding settings page.
+   Hover / focus get a primary-color border and a subtle elevation so
+   the affordance is visible. Non-linked stub cards stay plain. */
+a.citus-domain-card--linked {
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+a.citus-domain-card--linked:hover,
+a.citus-domain-card--linked:focus-visible {
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-primary-bg);
+    outline: none;
+}
+
+a.citus-domain-card--linked:active {
+    transform: translateY(1px);
+}
+
 .citus-definition-list {
     margin: 0;
     display: flex;

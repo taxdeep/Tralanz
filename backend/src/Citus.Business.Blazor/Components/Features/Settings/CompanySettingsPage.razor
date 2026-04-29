@@ -47,22 +47,13 @@
 </div>
 
 <div class="flex flex-wrap gap-2 mb-6">
-    <RadzenButton Text="Manage currencies"
-                  ButtonStyle="ButtonStyle.Primary"
-                  Icon="payments"
-                  Click="OpenMultiCurrencyDrawer" />
-    <RadzenButton Text="View all currencies"
-                  ButtonStyle="ButtonStyle.Secondary"
-                  Icon="open_in_new"
-                  Click="@(() => Navigation.NavigateTo("/settings/currencies"))" />
-    <RadzenButton Text="Payment terms"
-                  ButtonStyle="ButtonStyle.Secondary"
-                  Icon="schedule"
-                  Click="@(() => Navigation.NavigateTo("/settings/payment-terms"))" />
-    <RadzenButton Text="Tax rates"
-                  ButtonStyle="ButtonStyle.Secondary"
-                  Icon="receipt_long"
-                  Click="@(() => Navigation.NavigateTo("/settings/tax-rates"))" />
+    <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OpenMultiCurrencyDrawer">
+        <CitusIcon Name="IconName.Coin" Size="IconSize.Inline" />
+        <span>Manage currencies</span>
+    </CitusButton>
+    <span class="text-fg-subtle text-xs ml-2 self-center">
+        Multi-currency provisioning (drawer). Other settings are reachable via the cards below.
+    </span>
 </div>
 
 <MultiCurrencyDrawer @ref="_currencyDrawer" />
@@ -72,13 +63,26 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
         @foreach (var domain in _domains)
         {
-            <article class="citus-domain-card">
-                <header class="citus-domain-card__header">
-                    <h3 class="citus-domain-card__title">@domain.Title</h3>
-                    <CitusBadge Color="@TagColor(domain.Tone)">@domain.Stage</CitusBadge>
-                </header>
-                <p class="citus-domain-card__description">@domain.Description</p>
-            </article>
+            @if (domain.Href is not null)
+            {
+                <a href="@domain.Href" class="citus-domain-card citus-domain-card--linked">
+                    <header class="citus-domain-card__header">
+                        <h3 class="citus-domain-card__title">@domain.Title</h3>
+                        <CitusBadge Color="@TagColor(domain.Tone)">@domain.Stage</CitusBadge>
+                    </header>
+                    <p class="citus-domain-card__description">@domain.Description</p>
+                </a>
+            }
+            else
+            {
+                <article class="citus-domain-card">
+                    <header class="citus-domain-card__header">
+                        <h3 class="citus-domain-card__title">@domain.Title</h3>
+                        <CitusBadge Color="@TagColor(domain.Tone)">@domain.Stage</CitusBadge>
+                    </header>
+                    <p class="citus-domain-card__description">@domain.Description</p>
+                </article>
+            }
         }
     </div>
 </section>
@@ -128,16 +132,21 @@
         }
     }
 
+    // Domain cards: Live = page exists and is wired, Later = stub waiting
+    // for infrastructure work. Live cards render as anchor tags so the
+    // whole card is clickable; Later cards stay as plain articles so an
+    // operator never lands on a 404.
     private readonly IReadOnlyList<DomainRow> _domains =
     [
-        new("Profile", "Next", "Company identity, address, and fiscal profile should live together.", StatTone.Success),
-        new("Payment Terms", "Core", "Per-company payment terms anchor vendor master data and bill due dates.", StatTone.Success),
-        new("Templates", "Planned", "Document template controls belong under company-owned settings.", StatTone.Info),
-        new("Sales Tax", "Planned", "Tax controls should connect back to the backend tax engine, not ad hoc form logic.", StatTone.Info),
-        new("Numbering", "Planned", "Entity numbering rules are company-scoped and backend-generated.", StatTone.Info),
-        new("Notifications", "Later", "Readiness and verification state need infrastructure support.", StatTone.Warning),
-        new("Security", "Later", "Verification-driven security settings should follow auth/session foundations.", StatTone.Warning),
-        new("Currencies", "Core", "Base currency and multi-currency state must remain visible and governed.", StatTone.Neutral)
+        new("Profile", "Live", "Company identity, address, and fiscal profile.", StatTone.Success, "/settings/profile"),
+        new("Currencies", "Live", "Base currency and multi-currency state.", StatTone.Success, "/settings/currencies"),
+        new("Fiscal Year", "Live", "Year-end month / day used by reporting periods.", StatTone.Success, "/settings/fiscal-year"),
+        new("Payment Terms", "Live", "Per-company payment terms feeding vendor master data and bill due dates.", StatTone.Success, "/settings/payment-terms"),
+        new("Tax Rates", "Live", "Tax codes and rates wired into the backend posting engine.", StatTone.Success, "/settings/tax-rates"),
+        new("Numbering", "Live", "Entity-number rules are company-scoped and backend-generated.", StatTone.Success, "/settings/numbering"),
+        new("Invoice Templates", "Live", "Branding presets and email templates for invoices, with a live PDF preview.", StatTone.Success, "/settings/invoice-templates"),
+        new("Notifications", "Later", "Readiness and verification state need infrastructure support.", StatTone.Warning, null),
+        new("Security", "Later", "Verification-driven security settings will follow auth / session foundations.", StatTone.Warning, null)
     ];
 
     private IReadOnlyList<SnapshotRow> _snapshotRows =>
@@ -152,7 +161,7 @@
         new("Effective write gate", ShellState.WriteBlockMessage)
     ];
 
-    private sealed record class DomainRow(string Title, string Stage, string Description, StatTone Tone);
+    private sealed record class DomainRow(string Title, string Stage, string Description, StatTone Tone, string? Href);
 
     private sealed record class SnapshotRow(string Field, string Value);
 
