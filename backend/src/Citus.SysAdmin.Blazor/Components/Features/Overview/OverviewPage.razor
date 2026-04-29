@@ -1,11 +1,14 @@
 @page "/"
 @page "/overview"
 
+@implements IAsyncDisposable
+
 @inject AppShellState ShellState
 @inject CitusToastService Message
 @inject PlatformCoreClient PlatformCoreClient
 @inject SysAdminHealthClient SysAdminHealthClient
 @inject AccountingHealthClient AccountingHealthClient
+@inject PlatformRuntimeMetricsClient MetricsClient
 
 <PageTitle>Overview | Tralanz SysAdmin</PageTitle>
 
@@ -79,6 +82,48 @@ else
         <CitusStatCard Label="Entities" Value="@(_overview?.EntitiesRegistered.ToString() ?? _entities.Count.ToString())" Description="Metadata entities under control." Icon="IconName.Database" Tone="StatTone.Info" />
         <CitusStatCard Label="Health" Value="@HealthSummary" Description="Cross-service snapshot for the control plane." Icon="IconName.Activity" Tone="StatTone.Success" />
     </div>
+
+    <section class="citus-panel mb-6">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Resource utilization</h2>
+            <span class="text-fg-subtle text-xs">
+                @if (_metrics is null)
+                {
+                    <span>Sampling…</span>
+                }
+                else
+                {
+                    <span>Last sampled @_metrics.CapturedAt.ToLocalTime().ToString("HH:mm:ss")</span>
+                }
+            </span>
+        </header>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-3">
+            <CitusStatCard
+                Label="CPU"
+                Value="@FormatCpu(_metrics?.Cpu)"
+                Description="@FormatCpuDescription(_metrics?.Cpu)"
+                Icon="IconName.Activity"
+                Tone="@CpuTone(_metrics?.Cpu)" />
+            <CitusStatCard
+                Label="Memory"
+                Value="@FormatMemoryValue(_metrics?.Memory)"
+                Description="@FormatMemoryDescription(_metrics?.Memory)"
+                Icon="IconName.Database"
+                Tone="@MemoryTone(_metrics?.Memory)" />
+            <CitusStatCard
+                Label="Database"
+                Value="@FormatDatabaseSize(_metrics?.Database)"
+                Description="@FormatDatabaseDescription(_metrics?.Database)"
+                Icon="IconName.Database"
+                Tone="@DatabaseTone(_metrics?.Database)" />
+            <CitusStatCard
+                Label="Attachments"
+                Value="@FormatAttachmentSize(_metrics?.Attachments)"
+                Description="@FormatAttachmentDescription(_metrics?.Attachments)"
+                Icon="IconName.File"
+                Tone="@AttachmentTone(_metrics?.Attachments)" />
+        </div>
+    </section>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-7 flex flex-col gap-6">
@@ -177,6 +222,9 @@ else
     private IReadOnlyList<PlatformEntitySummary> _entities = Array.Empty<PlatformEntitySummary>();
     private ServiceHealthStatus? _sysAdminHealth;
     private ServiceHealthStatus? _accountingHealth;
+    private PlatformRuntimeMetricsSnapshotDto? _metrics;
+    private System.Threading.Timer? _metricsTimer;
+    private static readonly TimeSpan MetricsRefreshInterval = TimeSpan.FromSeconds(30);
 
     private string HealthSummary =>
         string.Equals(_sysAdminHealth?.Status, "ok", StringComparison.OrdinalIgnoreCase) &&
@@ -187,6 +235,22 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+        // Resource utilization tiles auto-refresh every 30s — light enough
+        // (one Postgres query + a /proc read) to leave running while the
+        // operator stays on the page. Disposed on page teardown.
+        _metricsTimer = new System.Threading.Timer(
+            async _ => await RefreshMetricsAsync(),
+            state: null,
+            dueTime: MetricsRefreshInterval,
+            period: MetricsRefreshInterval);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_metricsTimer is not null)
+        {
+            await _metricsTimer.DisposeAsync();
+        }
     }
 
     private async Task LoadAsync()
@@ -198,13 +262,136 @@ else
         var entitiesTask = PlatformCoreClient.ListEntitiesAsync();
         var sysAdminHealthTask = SysAdminHealthClient.GetHealthAsync();
         var accountingHealthTask = AccountingHealthClient.GetHealthAsync();
+        var metricsTask = MetricsClient.GetSnapshotAsync();
 
         _overview = await overviewTask;
         _modules = await modulesTask;
         _entities = await entitiesTask;
         _sysAdminHealth = await sysAdminHealthTask;
         _accountingHealth = await accountingHealthTask;
+        _metrics = await metricsTask;
         _isLoading = false;
+    }
+
+    private async Task RefreshMetricsAsync()
+    {
+        var snapshot = await MetricsClient.GetSnapshotAsync();
+        if (snapshot is null) return;
+        _metrics = snapshot;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Formatter helpers — every method gracefully handles null inputs so
+    // tiles render "—" while the first sample is still loading.
+    private static string FormatCpu(PlatformCpuMetricsDto? cpu)
+    {
+        if (cpu?.ProcessCpuPercent is null) return "—";
+        return $"{cpu.ProcessCpuPercent.Value:F1}%";
+    }
+
+    private static string FormatCpuDescription(PlatformCpuMetricsDto? cpu)
+    {
+        if (cpu is null) return "Sampling process CPU…";
+        var loadPart = cpu.LoadAverage1m is { } load
+            ? $" · load {load:F2}"
+            : string.Empty;
+        return $"{cpu.LogicalProcessorCount} logical cores{loadPart}";
+    }
+
+    private static StatTone CpuTone(PlatformCpuMetricsDto? cpu)
+    {
+        if (cpu?.ProcessCpuPercent is null) return StatTone.Neutral;
+        return cpu.ProcessCpuPercent.Value switch
+        {
+            > 80 => StatTone.Warning,
+            > 50 => StatTone.Info,
+            _ => StatTone.Success,
+        };
+    }
+
+    private static string FormatMemoryValue(PlatformMemoryMetricsDto? memory)
+    {
+        if (memory is null) return "—";
+        if (memory.HostTotalBytes is { } hostTotal && memory.HostUsedBytes is { } hostUsed && hostTotal > 0)
+        {
+            var percent = (double)hostUsed / hostTotal * 100;
+            return $"{percent:F0}% · {FormatBytes(hostUsed)}";
+        }
+        return FormatBytes(memory.ProcessWorkingSetBytes);
+    }
+
+    private static string FormatMemoryDescription(PlatformMemoryMetricsDto? memory)
+    {
+        if (memory is null) return "Sampling memory…";
+        if (memory.HostTotalBytes is { } total)
+        {
+            return $"Host {FormatBytes(memory.HostUsedBytes ?? 0)} / {FormatBytes(total)} · process {FormatBytes(memory.ProcessWorkingSetBytes)}";
+        }
+        return $"Process working set · GC heap {FormatBytes(memory.ManagedHeapBytes)}";
+    }
+
+    private static StatTone MemoryTone(PlatformMemoryMetricsDto? memory)
+    {
+        if (memory?.HostTotalBytes is { } total && memory.HostUsedBytes is { } used && total > 0)
+        {
+            var pct = (double)used / total * 100;
+            return pct > 90 ? StatTone.Warning : pct > 70 ? StatTone.Info : StatTone.Success;
+        }
+        return StatTone.Neutral;
+    }
+
+    private static string FormatDatabaseSize(PlatformDatabaseMetricsDto? db)
+    {
+        if (db is null) return "—";
+        if (!db.IsReachable) return "Unreachable";
+        return db.SizeBytes is { } bytes ? FormatBytes(bytes) : "—";
+    }
+
+    private static string FormatDatabaseDescription(PlatformDatabaseMetricsDto? db)
+    {
+        if (db is null) return "Sampling database…";
+        if (!db.IsReachable) return db.ErrorMessage ?? "Cannot reach Postgres.";
+        var conn = db.ActiveConnections is { } c ? $"{c} active connections" : "connections —";
+        return $"pg_database_size · {conn}";
+    }
+
+    private static StatTone DatabaseTone(PlatformDatabaseMetricsDto? db) =>
+        db is null ? StatTone.Neutral : db.IsReachable ? StatTone.Info : StatTone.Warning;
+
+    private static string FormatAttachmentSize(PlatformAttachmentMetricsDto? attachments)
+    {
+        if (attachments is null) return "—";
+        if (!attachments.IsProvisioned) return "Not enabled";
+        return attachments.TotalBytes is { } bytes ? FormatBytes(bytes) : "—";
+    }
+
+    private static string FormatAttachmentDescription(PlatformAttachmentMetricsDto? attachments)
+    {
+        if (attachments is null) return "Sampling attachments…";
+        if (!attachments.IsProvisioned) return "Configure PlatformAttachments:RootPath to enable.";
+        var count = attachments.FileCount is { } c ? $"{c:N0} files" : "files —";
+        return $"On-disk store · {count}";
+    }
+
+    private static StatTone AttachmentTone(PlatformAttachmentMetricsDto? attachments) =>
+        attachments is null ? StatTone.Neutral
+        : attachments.IsProvisioned ? StatTone.Info
+        : StatTone.Neutral;
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        const long kb = 1024L;
+        const long mb = kb * 1024L;
+        const long gb = mb * 1024L;
+        const long tb = gb * 1024L;
+        return bytes switch
+        {
+            < mb => $"{bytes / (double)kb:F1} KB",
+            < gb => $"{bytes / (double)mb:F1} MB",
+            < tb => $"{bytes / (double)gb:F2} GB",
+            _ => $"{bytes / (double)tb:F2} TB",
+        };
     }
 
     private async Task BootstrapCoreAsync()

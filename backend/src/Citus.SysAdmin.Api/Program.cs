@@ -4,6 +4,7 @@ using Citus.Platform.Core.Runtime;
 using Citus.Platform.Core.Services;
 using Citus.Platform.Infrastructure.Notifications;
 using Citus.Platform.Infrastructure.Persistence;
+using Citus.Platform.Infrastructure.Runtime;
 using Citus.SysAdmin.Api.Control;
 using Citus.SysAdmin.Api.Auth;
 using Citus.SysAdmin.Api;
@@ -45,6 +46,14 @@ builder.Services.AddScoped<IPlatformFirstCompanyProvisioningRepository, Postgres
 builder.Services.Configure<SysAdminControlOptions>(builder.Configuration.GetSection(SysAdminControlOptions.SectionName));
 builder.Services.Configure<SysAdminAuthOptions>(builder.Configuration.GetSection(SysAdminAuthOptions.SectionName));
 builder.Services.AddSingleton<SysAdminControlState>();
+
+// Runtime metrics (CPU / memory / DB / attachments) for the SysAdmin
+// Overview tile cluster. Singleton so the per-process CPU baseline
+// across calls is stable; PlatformAttachmentStorageOptions reads the
+// optional PlatformAttachments:RootPath knob from appsettings.
+builder.Services.Configure<PlatformAttachmentStorageOptions>(
+    builder.Configuration.GetSection(PlatformAttachmentStorageOptions.SectionName));
+builder.Services.AddSingleton<IPlatformRuntimeMetricsService, PlatformRuntimeMetricsService>();
 
 var app = builder.Build();
 
@@ -413,6 +422,18 @@ app.MapGet("/modules/accounting", () => Results.Ok(new
     status = "registered-through-platform-core",
     route = "/accounting"
 }));
+
+// Runtime metrics for the Overview tile cluster — CPU / memory / DB
+// size / attachment usage. Returns null fields when a source isn't
+// reachable (e.g. /proc on a Windows dev box) so the UI can render
+// a graceful em-dash.
+control.MapGet(
+    "/runtime/metrics",
+    async (IPlatformRuntimeMetricsService metricsService, CancellationToken cancellationToken) =>
+    {
+        var snapshot = await metricsService.GetSnapshotAsync(cancellationToken);
+        return Results.Ok(snapshot);
+    });
 
 control.MapGet(
     "/context",
