@@ -264,7 +264,54 @@ don't need the form footer rule applied.
 
 ---
 
-## §11. Open questions
+## §11. Pending refactors
+
+Known cleanups that are safe to defer until at least two callers
+exist. Listed so they don't get lost.
+
+- **`OverviewFlowDiagram` / `OverviewCashChart` / `OverviewLineChart`
+  components.**
+  [SalesOverviewPage.razor](backend/src/Citus.Business.Blazor/Components/Features/Sales/SalesOverviewPage.razor)
+  and
+  [ExpenseOverviewPage.razor](backend/src/Citus.Business.Blazor/Components/Features/Expenses/ExpenseOverviewPage.razor)
+  share a 3-block mirror structure (icon flow + counterparty balances
+  + 14-month column chart + over-time line chart). They were shipped
+  copy-paste on purpose — abstract once both surfaces have soaked
+  long enough that we know the real overlap. Candidate component
+  shapes:
+  - `OverviewFlowDiagram` — takes a list of `{cx, cy, IconName, label, href, ghost}` plus an edges list; emits the SVG-edges + HTML-icon-node pattern with theme-driven colors.
+  - `OverviewCashColumnChart` — takes two `(label, amount?)` series, two fills, a base-currency code; emits the Radzen column chart with data labels.
+  - `OverviewLineChart` — takes a current series, an optional previous-year series, a Duration enum, a Compare-to-previous-year toggle; emits the Radzen line chart and the controls.
+
+  Trigger to act: a third overview-style page request, OR confirmed
+  visual divergence between the two existing ones (which is a smell —
+  the design language wants them visually parallel).
+
+## §12. Razor / Blazor pitfalls
+
+Patterns the C# compiler accepts but the Razor source generator
+mis-parses on Release builds. Avoid in `.razor` files; if you hit one
+that's not listed, add it here.
+
+- **Switch expression `<` relational pattern at the start of a line.**
+  ```csharp
+  return bytes switch
+  {
+      < mb => "...",          // ❌ Razor reads `<` as opening an HTML tag
+      < gb => "...",
+  };
+  ```
+  Razor's source generator on **Release** builds (Debug usually slips
+  through) raises `RZ9980 Unclosed tag ''` and `RZ1006 missing }` on
+  the surrounding `@code` block, then cascades into ~100 phantom
+  errors. Use `>=` patterns or a plain `if/else` chain so no
+  statement begins with `<`:
+  ```csharp
+  if (bytes >= tb) return "TB ...";
+  if (bytes >= gb) return "GB ...";
+  ```
+
+## §13. Open questions
 
 Items the user has flagged but not yet resolved into rules. Land here
 before promoting to §3–§9.
