@@ -2318,6 +2318,61 @@ accounting.MapGet(
         return Results.Ok(MapIncomeOverTimeReport(report));
     });
 
+// ---------------------------------------------------------------------------
+// Expense Overview — Cash Outflow band (10 past + current + 3 forecast
+// months) and Expense Over Time (accrual-basis cost chart). Mirrors the
+// Sales Overview endpoints; sources are bills + expenses + pay_bills +
+// ap_open_items instead of invoices + receive_payments + ar_open_items.
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/expense/cash-outflow",
+    async ([AsParameters] ExpenseCashOutflowLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    {
+        var report = await repository.GetExpenseCashOutflowAsync(
+            new GetExpenseCashOutflowQuery(
+                new(query.CompanyId),
+                query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow)),
+            cancellationToken);
+
+        if (report is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "The active company is not provisioned in the accounting core yet."
+            });
+        }
+
+        return Results.Ok(MapExpenseCashOutflowReport(report));
+    });
+
+accounting.MapGet(
+    "/expense/over-time",
+    async ([AsParameters] ExpenseOverTimeLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var to = query.ToDate ?? today;
+        var defaultFrom = new DateOnly(to.Year, to.Month, 1).AddMonths(-11);
+        var from = query.FromDate ?? defaultFrom;
+
+        var report = await repository.GetExpenseOverTimeAsync(
+            new GetExpenseOverTimeQuery(
+                new(query.CompanyId),
+                from,
+                to,
+                query.CompareToPreviousYear),
+            cancellationToken);
+
+        if (report is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "The active company is not provisioned in the accounting core yet."
+            });
+        }
+
+        return Results.Ok(MapExpenseOverTimeReport(report));
+    });
+
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}",
     async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IArOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
@@ -10511,6 +10566,45 @@ static IncomeOverTimeSummary MapIncomeOverTimeReport(IncomeOverTimeReport report
     };
 
 static IncomeOverTimeMonthSummary MapIncomeMonth(IncomeOverTimeMonthBucket bucket) =>
+    new()
+    {
+        Year = bucket.Year,
+        Month = bucket.Month,
+        MonthStart = bucket.MonthStart,
+        AmountBase = bucket.AmountBase,
+    };
+
+static ExpenseCashOutflowSummary MapExpenseCashOutflowReport(ExpenseCashOutflowReport report) =>
+    new()
+    {
+        CompanyId = report.CompanyId,
+        AsOfDate = report.AsOfDate,
+        BaseCurrencyCode = report.BaseCurrencyCode,
+        Months = report.Months.Select(month => new ExpenseCashOutflowMonthSummary
+        {
+            Year = month.Year,
+            Month = month.Month,
+            MonthStart = month.MonthStart,
+            IsForecast = month.IsForecast,
+            IsCurrent = month.IsCurrent,
+            PaidAmountBase = month.PaidAmountBase,
+            ForecastAmountBase = month.ForecastAmountBase,
+        }).ToArray(),
+    };
+
+static ExpenseOverTimeSummary MapExpenseOverTimeReport(ExpenseOverTimeReport report) =>
+    new()
+    {
+        CompanyId = report.CompanyId,
+        FromDate = report.FromDate,
+        ToDate = report.ToDate,
+        BaseCurrencyCode = report.BaseCurrencyCode,
+        CompareToPreviousYear = report.CompareToPreviousYear,
+        Months = report.Months.Select(MapExpenseMonth).ToArray(),
+        PreviousYearMonths = report.PreviousYearMonths.Select(MapExpenseMonth).ToArray(),
+    };
+
+static ExpenseOverTimeMonthSummary MapExpenseMonth(ExpenseOverTimeMonthBucket bucket) =>
     new()
     {
         Year = bucket.Year,

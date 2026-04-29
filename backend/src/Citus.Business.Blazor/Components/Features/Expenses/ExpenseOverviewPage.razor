@@ -1,0 +1,627 @@
+@page "/expense-overview"
+
+@inject BusinessShellState ShellState
+@inject NavigationManager Nav
+@inject VendorClient VendorClient
+@inject ApAgingClient ApAgingClient
+@inject ExpenseOverviewClient OverviewClient
+
+<PageTitle>Expense Overview | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else
+{
+    @* === Block 1: Procurement flow + Vendor balances ==================== *@
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Procurement flow</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Click any solid node to jump to that module. Dashed nodes mark
+                upcoming surfaces (Projects, Bill Receipts).
+            </p>
+            <div class="expense-flow">
+                <svg class="expense-flow__edges" viewBox="0 0 720 460" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                    <defs>
+                        <marker id="expense-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                                markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+                        </marker>
+                    </defs>
+                    <g class="expense-flow__edge-group">
+                        @* Purchase Orders -> Bill Receipts (right) *@
+                        <path d="M 355 220 L 485 220" />
+                        @* Purchase Orders -> Bills (down then right) *@
+                        <path d="M 320 250 L 320 360 L 405 360" />
+                        @* Bill Receipts -> Bills (down then left) *@
+                        <path d="M 520 250 L 520 340 L 475 360" />
+                        @* Bills -> Pay Bills *@
+                        <path d="M 475 380 L 585 380" />
+                    </g>
+                </svg>
+
+                @RenderNode(120, 60, IconName.BuildingStore, "Vendors", "vendors")
+                @RenderNode(440, 60, IconName.Briefcase, "Projects", null, ghost: true)
+                @RenderNode(320, 220, IconName.Receipt, "Purchase Orders", "purchase-orders")
+                @RenderNode(520, 220, IconName.Truck, "Bill Receipts", null, ghost: true)
+                @RenderNode(120, 380, IconName.Wallet, "Expenses", "expenses")
+                @RenderNode(440, 380, IconName.FileInvoice, "Bills", "bills")
+                @RenderNode(620, 380, IconName.Cash, "Pay Bills", "pay-bills")
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="citus-panel__title m-0">Vendors</h2>
+                <span class="text-fg-subtle text-xs">
+                    Balances as of @_asOfDate.ToString("yyyy-MM-dd")
+                </span>
+            </div>
+
+            <label class="inline-flex items-center gap-2 text-sm mb-3">
+                <input type="checkbox"
+                       checked="@_includeInactive"
+                       @onchange="@OnIncludeInactiveChanged" />
+                <span>Include inactive vendors</span>
+            </label>
+
+            <div class="overflow-x-auto" style="max-height: 480px; overflow-y: auto;">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th class="cursor-pointer select-none"
+                                @onclick="@(() => ToggleSort(VendorSort.Name))">
+                                Vendor Name @SortIndicator(VendorSort.Name)
+                            </th>
+                            <th class="text-right cursor-pointer select-none"
+                                @onclick="@(() => ToggleSort(VendorSort.Balance))">
+                                Balance @SortIndicator(VendorSort.Balance)
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_displayedVendors.Count == 0)
+                        {
+                            <tr><td colspan="2" class="text-fg-subtle text-sm py-4">No vendors to show.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _displayedVendors)
+                            {
+                                <tr>
+                                    <td>
+                                        <a class="citus-link" href="@($"vendors/{row.VendorId:D}")">
+                                            @row.DisplayName
+                                        </a>
+                                    </td>
+                                    <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                        @FormatCurrency(row.CurrencyCode, row.Balance)
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    @* === Block 2: Cash Outflow chart =================================== *@
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Cash outflow</h2>
+        <p class="text-fg-muted text-sm mb-3">
+            Past 10 months of cash paid (posted bill payments + posted
+            expenses), the current month's running total, and a 3-month
+            forecast computed from open bills' due dates (bill + payment
+            term). All values in @_baseCurrencyCode.
+        </p>
+
+        @if (_cashOutflow is null || _cashOutflow.Months.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm">No cash-outflow data yet.</p>
+        }
+        else
+        {
+            <RadzenChart Style="height: 320px;">
+                <RadzenColumnSeries Data="@_cashOutflowPaidPoints"
+                                    CategoryProperty="Label"
+                                    ValueProperty="Amount"
+                                    Title="@($"Paid ({_baseCurrencyCode})")"
+                                    Fill="#d97706">
+                    <RadzenSeriesDataLabels Visible="true" />
+                </RadzenColumnSeries>
+                <RadzenColumnSeries Data="@_cashOutflowForecastPoints"
+                                    CategoryProperty="Label"
+                                    ValueProperty="Amount"
+                                    Title="@($"Forecast ({_baseCurrencyCode})")"
+                                    Fill="#fcd34d">
+                    <RadzenSeriesDataLabels Visible="true" />
+                </RadzenColumnSeries>
+                <RadzenColumnOptions Radius="2" />
+                <RadzenCategoryAxis Padding="20">
+                    <RadzenAxisTitle Text="" />
+                </RadzenCategoryAxis>
+                <RadzenValueAxis>
+                    <RadzenAxisTitle Text="@_baseCurrencyCode" />
+                </RadzenValueAxis>
+                <RadzenLegend Position="LegendPosition.Bottom" />
+            </RadzenChart>
+        }
+    </section>
+
+    @* === Block 3: Expense over time ==================================== *@
+    <section class="citus-panel">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 class="citus-panel__title m-0">Expense over time</h2>
+            <div class="flex items-center gap-3 text-sm">
+                <label class="flex items-center gap-2">
+                    Duration:
+                    <select class="citus-form-field__input"
+                            style="min-width: 11rem;"
+                            value="@_duration"
+                            @onchange="@(e => OnDurationChanged(e.Value?.ToString() ?? "last_12_months"))">
+                        <option value="this_month">This month</option>
+                        <option value="this_quarter">This quarter</option>
+                        <option value="ytd">Year to date</option>
+                        <option value="last_12_months">Last 12 months</option>
+                    </select>
+                </label>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox"
+                           checked="@_compareToPreviousYear"
+                           @onchange="@OnCompareChanged" />
+                    Compare to previous year
+                </label>
+            </div>
+        </div>
+        <p class="text-fg-muted text-sm mb-3">
+            Posted bill totals plus posted expenses by month — accrual-basis
+            cost, base currency.
+        </p>
+
+        @if (_expense is null)
+        {
+            <p class="text-fg-subtle text-sm">No expense data yet.</p>
+        }
+        else
+        {
+            <RadzenChart Style="height: 320px;">
+                <RadzenLineSeries Data="@_expensePoints"
+                                  CategoryProperty="Label"
+                                  ValueProperty="Amount"
+                                  Title="@($"This year ({_baseCurrencyCode})")"
+                                  Smooth="true"
+                                  LineType="LineType.Solid"
+                                  Stroke="#d97706">
+                    <RadzenMarkers MarkerType="MarkerType.Circle" />
+                </RadzenLineSeries>
+                @if (_compareToPreviousYear && _previousExpensePoints.Count > 0)
+                {
+                    <RadzenLineSeries Data="@_previousExpensePoints"
+                                      CategoryProperty="Label"
+                                      ValueProperty="Amount"
+                                      Title="Previous year"
+                                      Smooth="true"
+                                      LineType="LineType.Dashed">
+                        <RadzenMarkers MarkerType="MarkerType.Circle" />
+                    </RadzenLineSeries>
+                }
+                <RadzenCategoryAxis Padding="20" />
+                <RadzenValueAxis>
+                    <RadzenAxisTitle Text="@_baseCurrencyCode" />
+                </RadzenValueAxis>
+                <RadzenLegend Position="LegendPosition.Bottom" />
+            </RadzenChart>
+        }
+    </section>
+}
+
+<style>
+    .expense-flow {
+        position: relative;
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+        aspect-ratio: 720 / 460;
+    }
+
+    .expense-flow__edges {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        color: var(--citus-color-fg-subtle);
+        pointer-events: none;
+    }
+
+    .expense-flow__edge-group path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        marker-end: url(#expense-flow-arrow);
+    }
+
+    .expense-flow__node {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        background: transparent;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+        font: inherit;
+    }
+
+    .expense-flow__node-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--citus-color-warning-bg);
+        color: var(--citus-color-warning);
+        border: 1.5px solid var(--citus-color-warning);
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+
+    .expense-flow__node:hover .expense-flow__node-icon {
+        transform: scale(1.06);
+        box-shadow: var(--citus-shadow-2);
+        background: var(--citus-color-bg-elevated);
+    }
+
+    .expense-flow__node-label {
+        font-size: var(--citus-text-sm);
+        color: var(--citus-color-fg-muted);
+        white-space: nowrap;
+    }
+
+    .expense-flow__node--ghost {
+        cursor: not-allowed;
+    }
+
+    .expense-flow__node--ghost .expense-flow__node-icon {
+        background: var(--citus-color-bg-muted);
+        color: var(--citus-color-fg-subtle);
+        border-style: dashed;
+        border-color: var(--citus-color-border);
+    }
+
+    .expense-flow__node--ghost:hover .expense-flow__node-icon {
+        transform: none;
+        box-shadow: none;
+        background: var(--citus-color-bg-muted);
+    }
+
+    .expense-flow__node--ghost .expense-flow__node-label {
+        color: var(--citus-color-fg-subtle);
+    }
+</style>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Expense & Bills",
+        Title = "Overview",
+        Subtitle = "Procurement workflow at a glance — flow, vendor balances, cash outflow band, and cost trend."
+    };
+
+    private DateOnly _asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+    private string _baseCurrencyCode = string.Empty;
+
+    private IReadOnlyList<VendorSummary> _vendors = Array.Empty<VendorSummary>();
+    private ApAgingReportSummary? _aging;
+    private ExpenseCashOutflowSummary? _cashOutflow;
+    private ExpenseOverTimeSummary? _expense;
+
+    private bool _isLoading = true;
+    private bool _includeInactive;
+    private bool _compareToPreviousYear;
+    private string _duration = "last_12_months";
+
+    private VendorSort _sortKey = VendorSort.Balance;
+    private bool _sortDescending = true;
+
+    private List<VendorBalanceRow> _displayedVendors = new();
+    private List<ExpenseChartPoint> _expensePoints = new();
+    private List<ExpenseChartPoint> _previousExpensePoints = new();
+    private List<CashOutflowChartPoint> _cashOutflowPaidPoints = new();
+    private List<CashOutflowChartPoint> _cashOutflowForecastPoints = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            var companyId = ShellState.ActiveCompany.Id;
+            _baseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode ?? string.Empty;
+
+            var vendorsTask = VendorClient.ListAsync(includeInactive: _includeInactive);
+            var agingTask = ApAgingClient.GetReportAsync(companyId, _asOfDate);
+            var cashOutflowTask = OverviewClient.GetCashOutflowAsync(companyId, _asOfDate);
+            var (expenseFrom, expenseTo) = ResolveExpenseWindow();
+            var expenseTask = OverviewClient.GetExpenseOverTimeAsync(
+                companyId, expenseFrom, expenseTo, _compareToPreviousYear);
+
+            await Task.WhenAll(vendorsTask, agingTask, cashOutflowTask, expenseTask);
+
+            _vendors = vendorsTask.Result;
+            _aging = agingTask.Result;
+            _cashOutflow = cashOutflowTask.Result;
+            _expense = expenseTask.Result;
+
+            if (_cashOutflow is not null && !string.IsNullOrWhiteSpace(_cashOutflow.BaseCurrencyCode))
+            {
+                _baseCurrencyCode = _cashOutflow.BaseCurrencyCode;
+            }
+
+            RebuildVendorRows();
+            RebuildExpensePoints();
+            RebuildCashOutflowPoints();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnIncludeInactiveChanged(ChangeEventArgs e)
+    {
+        _includeInactive = e.Value is bool checkedValue && checkedValue;
+        _vendors = await VendorClient.ListAsync(includeInactive: _includeInactive);
+        RebuildVendorRows();
+    }
+
+    private async Task OnDurationChanged(string duration)
+    {
+        _duration = duration;
+        await ReloadExpenseAsync();
+    }
+
+    private async Task OnCompareChanged(ChangeEventArgs e)
+    {
+        _compareToPreviousYear = e.Value is bool checkedValue && checkedValue;
+        await ReloadExpenseAsync();
+    }
+
+    private async Task ReloadExpenseAsync()
+    {
+        var companyId = ShellState.ActiveCompany.Id;
+        var (expenseFrom, expenseTo) = ResolveExpenseWindow();
+        _expense = await OverviewClient.GetExpenseOverTimeAsync(
+            companyId, expenseFrom, expenseTo, _compareToPreviousYear);
+        RebuildExpensePoints();
+    }
+
+    private (DateOnly From, DateOnly To) ResolveExpenseWindow()
+    {
+        var today = _asOfDate;
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        return _duration switch
+        {
+            "this_month" => (monthStart, today),
+            "this_quarter" => (
+                new DateOnly(today.Year, ((today.Month - 1) / 3) * 3 + 1, 1),
+                today),
+            "ytd" => (new DateOnly(today.Year, 1, 1), today),
+            _ => (monthStart.AddMonths(-11), today),
+        };
+    }
+
+    private void ToggleSort(VendorSort key)
+    {
+        if (_sortKey == key)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortKey = key;
+            _sortDescending = key == VendorSort.Balance;
+        }
+        RebuildVendorRows();
+    }
+
+    private string SortIndicator(VendorSort key) =>
+        _sortKey != key ? string.Empty : (_sortDescending ? " ▼" : " ▲");
+
+    private void RebuildVendorRows()
+    {
+        var agingByVendor = (_aging?.VendorRows ?? Array.Empty<ApAgingVendorSummary>())
+            .ToDictionary(row => row.VendorId);
+
+        var rows = new List<VendorBalanceRow>(_vendors.Count);
+        foreach (var v in _vendors)
+        {
+            agingByVendor.TryGetValue(v.Id, out var aging);
+
+            string currency = v.DefaultCurrencyCode;
+            decimal balance = 0m;
+
+            if (aging is not null && aging.OpenItems.Count > 0)
+            {
+                // Same dominant-currency rule as the Customer panel:
+                // single-currency vendors render in their tx currency,
+                // multi-currency ones fall back to base.
+                var byCurrency = aging.OpenItems
+                    .GroupBy(i => i.DocumentCurrencyCode)
+                    .Select(g => new
+                    {
+                        Currency = g.Key,
+                        Total = g.Sum(i => i.SignedOpenAmountTx),
+                        Count = g.Count(),
+                    })
+                    .OrderByDescending(g => g.Count)
+                    .ToList();
+
+                if (byCurrency.Count == 1)
+                {
+                    currency = byCurrency[0].Currency;
+                    balance = byCurrency[0].Total;
+                }
+                else if (byCurrency.Count > 1)
+                {
+                    currency = _baseCurrencyCode;
+                    balance = aging.TotalOutstandingAmountBase;
+                }
+            }
+
+            rows.Add(new VendorBalanceRow(
+                VendorId: v.Id,
+                DisplayName: v.DisplayName,
+                CurrencyCode: string.IsNullOrWhiteSpace(currency) ? _baseCurrencyCode : currency,
+                Balance: balance,
+                IsActive: v.IsActive));
+        }
+
+        IEnumerable<VendorBalanceRow> ordered = _sortKey switch
+        {
+            VendorSort.Balance => _sortDescending
+                ? rows.OrderByDescending(r => r.Balance).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.Balance).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+            _ => _sortDescending
+                ? rows.OrderByDescending(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+        };
+        _displayedVendors = ordered.ToList();
+    }
+
+    private void RebuildExpensePoints()
+    {
+        _expensePoints = (_expense?.Months ?? Array.Empty<ExpenseOverTimeMonthSummary>())
+            .Select(m => new ExpenseChartPoint(
+                Label: m.MonthStart.ToString("yyyy MMM"),
+                Amount: (double)m.AmountBase))
+            .ToList();
+        _previousExpensePoints = (_expense?.PreviousYearMonths ?? Array.Empty<ExpenseOverTimeMonthSummary>())
+            .Select(m => new ExpenseChartPoint(
+                Label: m.MonthStart.AddYears(1).ToString("yyyy MMM"),
+                Amount: (double)m.AmountBase))
+            .ToList();
+    }
+
+    private void RebuildCashOutflowPoints()
+    {
+        var paid = new List<CashOutflowChartPoint>();
+        var forecast = new List<CashOutflowChartPoint>();
+
+        if (_cashOutflow is null)
+        {
+            _cashOutflowPaidPoints = paid;
+            _cashOutflowForecastPoints = forecast;
+            return;
+        }
+
+        foreach (var bucket in _cashOutflow.Months)
+        {
+            var label = bucket.MonthStart.ToString("MMM yy");
+            paid.Add(new CashOutflowChartPoint(
+                Label: label,
+                Amount: bucket.IsForecast ? null : (double?)bucket.PaidAmountBase));
+            forecast.Add(new CashOutflowChartPoint(
+                Label: label,
+                Amount: bucket.IsForecast ? (double?)bucket.ForecastAmountBase : null));
+        }
+
+        _cashOutflowPaidPoints = paid;
+        _cashOutflowForecastPoints = forecast;
+    }
+
+    private static string FormatCurrency(string? currencyCode, decimal amount)
+    {
+        var prefix = ResolveCurrencySymbol(currencyCode);
+        var sign = amount < 0 ? "-" : string.Empty;
+        var abs = Math.Abs(amount);
+        return $"{sign}{prefix}{abs:N2}";
+    }
+
+    private static string ResolveCurrencySymbol(string? code) =>
+        (code ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "USD" => "US$",
+            "CAD" => "Can$",
+            "EUR" => "€",
+            "GBP" => "£",
+            "CNY" or "RMB" => "RMB",
+            "JPY" => "¥",
+            "AUD" => "A$",
+            "" => string.Empty,
+            var c => $"{c} ",
+        };
+
+    @* Procurement-flow node — copy of the Sales-flow render fragment with
+       the .expense-flow CSS namespace. Coords (cx, cy) live in the SVG
+       viewBox space (720 x 460); the wrapper's aspect-ratio keeps the
+       percentages aligned with the arrow paths. *@
+    private RenderFragment RenderNode(int cx, int cy, IconName icon, string label, string? href, bool ghost = false) => builder =>
+    {
+        var leftPercent = (cx / 720.0 * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        var topPercent = (cy / 460.0 * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        var style = $"left: {leftPercent}%; top: {topPercent}%;";
+        var cssClass = ghost ? "expense-flow__node expense-flow__node--ghost" : "expense-flow__node";
+        var seq = 0;
+
+        if (ghost || string.IsNullOrEmpty(href))
+        {
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", cssClass);
+            builder.AddAttribute(seq++, "style", style);
+            if (ghost) builder.AddAttribute(seq++, "title", "Coming soon");
+        }
+        else
+        {
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "type", "button");
+            builder.AddAttribute(seq++, "class", cssClass);
+            builder.AddAttribute(seq++, "style", style);
+            var target = href!;
+            builder.AddAttribute(seq++, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, _ => Nav.NavigateTo(target)));
+        }
+
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "expense-flow__node-icon");
+        builder.OpenComponent<CitusIcon>(seq++);
+        builder.AddAttribute(seq++, "Name", icon);
+        builder.AddAttribute(seq++, "Size", IconSize.Display);
+        builder.CloseComponent();
+        builder.CloseElement(); // span.icon
+
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "expense-flow__node-label");
+        builder.AddContent(seq++, label);
+        builder.CloseElement(); // span.label
+
+        builder.CloseElement(); // button or div
+    };
+
+    private enum VendorSort { Name, Balance }
+
+    private sealed record VendorBalanceRow(
+        Guid VendorId,
+        string DisplayName,
+        string CurrencyCode,
+        decimal Balance,
+        bool IsActive);
+
+    private sealed record ExpenseChartPoint(string Label, double Amount);
+
+    private sealed record CashOutflowChartPoint(string Label, double? Amount);
+}

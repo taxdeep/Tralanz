@@ -33,3 +33,13 @@ public sealed record IncomeOverTimeLookupQuery(
     DateOnly? FromDate = null,
     DateOnly? ToDate = null,
     bool CompareToPreviousYear = false);
+
+public sealed record ExpenseCashOutflowLookupQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate = null);
+
+public sealed record ExpenseOverTimeLookupQuery(
+    Guid CompanyId,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    bool CompareToPreviousYear = false);

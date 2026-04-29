@@ -1086,6 +1086,14 @@ public interface IAccountingReportRepository
     Task<IncomeOverTimeReport?> GetIncomeOverTimeAsync(
         GetIncomeOverTimeQuery query,
         CancellationToken cancellationToken);
+
+    Task<ExpenseCashOutflowReport?> GetExpenseCashOutflowAsync(
+        GetExpenseCashOutflowQuery query,
+        CancellationToken cancellationToken);
+
+    Task<ExpenseOverTimeReport?> GetExpenseOverTimeAsync(
+        GetExpenseOverTimeQuery query,
+        CancellationToken cancellationToken);
 }
 
 public interface IAccountingDocumentReviewRepository
