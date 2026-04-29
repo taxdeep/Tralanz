@@ -9,7 +9,8 @@ namespace Citus.Platform.Infrastructure.Persistence;
 public sealed class PostgresSysAdminAuthRepository(
     PlatformPostgresConnectionFactory connectionFactory,
     SysAdminPasswordHasher passwordHasher,
-    IPlatformRuntimeStateRepository runtimeStateRepository) : ISysAdminAuthRepository
+    IPlatformRuntimeStateRepository runtimeStateRepository,
+    IPlatformLoginLockoutPolicy lockoutPolicy) : ISysAdminAuthRepository
 {
     private const int MinimumSecretLength = 12;
 
@@ -278,8 +279,23 @@ public sealed class PostgresSysAdminAuthRepository(
         }
 
         await EnsureSchemaAsync(cancellationToken);
+        await lockoutPolicy.EnsureSchemaAsync(cancellationToken);
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
+
+        // Lockout gate runs before password verification so a locked
+        // account can't be probed for password validity (timing /
+        // error-message enumeration).
+        var lockoutCheck = await lockoutPolicy.CheckAsync(
+            LoginLockoutRealms.SysAdmin, normalizedEmail, cancellationToken);
+        if (lockoutCheck.IsBlocked)
+        {
+            return FailedAuthentication(
+                lockoutCheck.BlockKind == LoginLockoutKinds.Permanent
+                    ? "account_permanently_locked"
+                    : "account_temporarily_locked",
+                lockoutCheck.Message ?? "Account is locked.");
+        }
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -288,12 +304,23 @@ public sealed class PostgresSysAdminAuthRepository(
         if (account is null || !passwordHasher.VerifyPassword(password, account.PasswordHash))
         {
             await transaction.RollbackAsync(cancellationToken);
+            await lockoutPolicy.RecordAttemptAsync(
+                new LoginAttempt(
+                    Realm: LoginLockoutRealms.SysAdmin,
+                    Email: normalizedEmail,
+                    AccountId: account?.Id,
+                    RemoteIp: remoteIp,
+                    UserAgent: userAgent,
+                    Succeeded: false),
+                cancellationToken);
             return FailedAuthentication("invalid_credentials", "The email or password is invalid.");
         }
 
         if (!string.Equals(account.Status, "active", StringComparison.Ordinal))
         {
             await transaction.RollbackAsync(cancellationToken);
+            // Don't ratchet failures for status='locked' / 'disabled' —
+            // it's already locked, no signal to add.
             return FailedAuthentication("account_not_active", $"SysAdmin account is {account.Status}.");
         }
 
@@ -346,6 +373,16 @@ public sealed class PostgresSysAdminAuthRepository(
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        await lockoutPolicy.RecordAttemptAsync(
+            new LoginAttempt(
+                Realm: LoginLockoutRealms.SysAdmin,
+                Email: normalizedEmail,
+                AccountId: account.Id,
+                RemoteIp: remoteIp,
+                UserAgent: userAgent,
+                Succeeded: true),
+            cancellationToken);
 
         return new SysAdminAuthenticationResult
         {

@@ -1,0 +1,224 @@
+@page "/operations/lockouts"
+
+@inject AppShellState ShellState
+@inject CitusToastService Message
+@inject LockedAccountsClient LockoutsClient
+
+<PageTitle>Locked Accounts | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.List" />
+}
+else
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <div class="flex flex-col gap-1">
+                <span><strong>5 fails in 15 min</strong> → 15-min temporary lock. <strong>3 temp locks in 36 h</strong> → permanent lock.</span>
+                <span class="text-fg-muted text-xs">
+                    Permanent locks also flip the underlying account's status to <code>locked</code>.
+                    Lift restores access and (for permanent) reverts status to <code>active</code>.
+                </span>
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+
+    <section class="citus-panel">
+        @if (_lockouts.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm m-0">No active lockouts.</p>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Realm</th>
+                            <th>Account (masked)</th>
+                            <th>Kind</th>
+                            <th>Locked at</th>
+                            <th>Locked until</th>
+                            <th class="text-right">Recent fails</th>
+                            <th class="text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _lockouts)
+                        {
+                            <tr>
+                                <td><CitusBadge Color="@RealmColor(row.Realm)">@row.Realm</CitusBadge></td>
+                                <td style="font-family: var(--citus-font-tabular);">@row.MaskedEmail</td>
+                                <td><CitusBadge Color="@KindColor(row.LockoutKind)">@KindLabel(row.LockoutKind)</CitusBadge></td>
+                                <td>@row.LockedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>
+                                    @if (row.LockedUntil is { } u)
+                                    {
+                                        <span>@u.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-fg-subtle text-xs">Permanent</span>
+                                    }
+                                </td>
+                                <td class="text-right" style="font-variant-numeric: tabular-nums;">@row.RecentFailureCount</td>
+                                <td class="text-right">
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 OnClick="@(() => OpenLiftDrawer(row))">
+                                        Lift
+                                    </CitusButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+<CitusDrawer @bind-IsOpen="_drawerOpen"
+             Title="Lift lockout"
+             Width="CitusDrawerWidth.Medium"
+             IsDirty="@(!string.IsNullOrWhiteSpace(_liftReason))"
+             SaveDisabled="@(string.IsNullOrWhiteSpace(_liftReason) || _isLifting)"
+             SaveLabel="@(_isLifting ? "Lifting…" : "Lift lockout")"
+             OnSave="LiftAsync">
+    @if (_drawerLockout is { } l)
+    {
+        <div class="flex flex-col gap-3">
+            <div>
+                <h3 class="text-fg-muted text-xs font-medium uppercase mb-1">Account</h3>
+                <p class="m-0" style="font-family: var(--citus-font-tabular);">@l.MaskedEmail</p>
+                <p class="text-fg-subtle text-xs m-0">@l.Realm · @KindLabel(l.LockoutKind)</p>
+            </div>
+
+            <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true">
+                <MessageTemplate>
+                    @if (l.LockoutKind == "permanent")
+                    {
+                        <span>This is a <strong>permanent</strong> lock. Lifting will set the account's status back to <code>active</code> and the operator can sign in immediately.</span>
+                    }
+                    else
+                    {
+                        <span>Lifting clears the temporary 15-min window. Earlier failed attempts stay on record.</span>
+                    }
+                </MessageTemplate>
+            </CitusAlert>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Reason *</span>
+                <textarea class="citus-form-field__input"
+                          rows="3"
+                          placeholder="Why is this lockout being lifted?"
+                          value="@_liftReason"
+                          @oninput="@(e => _liftReason = e.Value?.ToString() ?? string.Empty)"></textarea>
+            </label>
+
+            @if (!string.IsNullOrWhiteSpace(_liftError))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_liftError" ShowIcon="true" />
+            }
+        </div>
+    }
+</CitusDrawer>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Locked accounts",
+        Subtitle = "Brute-force lockouts currently in effect across SysAdmin and Business shells."
+    };
+
+    private IReadOnlyList<LockoutSummaryDto> _lockouts = Array.Empty<LockoutSummaryDto>();
+    private bool _isLoading = true;
+
+    private bool _drawerOpen;
+    private LockoutSummaryDto? _drawerLockout;
+    private string _liftReason = string.Empty;
+    private string? _liftError;
+    private bool _isLifting;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _lockouts = await LockoutsClient.ListAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OpenLiftDrawer(LockoutSummaryDto row)
+    {
+        _drawerLockout = row;
+        _liftReason = string.Empty;
+        _liftError = null;
+        _drawerOpen = true;
+    }
+
+    private async Task LiftAsync()
+    {
+        if (_drawerLockout is null || _isLifting) return;
+        if (string.IsNullOrWhiteSpace(_liftReason))
+        {
+            _liftError = "A reason is required.";
+            return;
+        }
+
+        _isLifting = true;
+        _liftError = null;
+        try
+        {
+            var outcome = await LockoutsClient.LiftAsync(_drawerLockout.Id, _liftReason.Trim());
+            if (!outcome.Succeeded)
+            {
+                _liftError = outcome.ErrorMessage ?? "Could not lift the lockout.";
+                return;
+            }
+
+            await Message.SuccessAsync("Lockout lifted.");
+            _drawerOpen = false;
+            await LoadAsync();
+        }
+        finally
+        {
+            _isLifting = false;
+        }
+    }
+
+    private static string RealmColor(string realm) => realm switch
+    {
+        "sysadmin" => "magenta",
+        "business" => "blue",
+        _ => "default",
+    };
+
+    private static string KindColor(string kind) => kind switch
+    {
+        "permanent" => "red",
+        "temporary_15min" => "orange",
+        _ => "default",
+    };
+
+    private static string KindLabel(string kind) => kind switch
+    {
+        "temporary_15min" => "Temporary (15 min)",
+        "permanent" => "Permanent",
+        _ => kind,
+    };
+}

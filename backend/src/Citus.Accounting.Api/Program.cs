@@ -312,6 +312,12 @@ builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformEmailDel
     Citus.Platform.Infrastructure.Notifications.PlatformEmailDeliveryConfigResolver>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformVerificationNotificationSender,
     Citus.Platform.Infrastructure.Notifications.SmtpPlatformVerificationNotificationSender>();
+// Brute-force lockout: 5 fails in 15 min → 15-min temporary lock,
+// 3 temp locks in 36 h → permanent lock. Must be registered BEFORE
+// the business session repo so the latter's constructor injection
+// resolves it.
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy,
+    Citus.Platform.Infrastructure.Persistence.PostgresPlatformLoginLockoutPolicy>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository,
     Citus.Platform.Infrastructure.Persistence.PostgresPlatformBusinessSessionRepository>();
 builder.Services.AddSingleton<IAiJobRunStore, PostgreSqlAiJobRunStore>();

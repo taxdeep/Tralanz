@@ -87,6 +87,12 @@ builder.Services.AddSingleton<IPlatformRuntimeMetricsService, PlatformRuntimeMet
 // payloads.
 builder.Services.AddSingleton<IPlatformSecretProtector, PlatformSecretProtector>();
 
+// Brute-force lockout: 5 fails in 15 min → 15-min temporary lock,
+// 3 temp locks in 36 h → permanent lock. Both auth repos call this
+// before / after password verification; the SysAdmin Locked Accounts
+// page surfaces manual lifts for permanent bans.
+builder.Services.AddSingleton<IPlatformLoginLockoutPolicy, PostgresPlatformLoginLockoutPolicy>();
+
 var app = builder.Build();
 
 await using (var startupScope = app.Services.CreateAsyncScope())
@@ -99,12 +105,14 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformSmtpConfigStore>();
     var aiProviderConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformAiProviderConfigStore>();
     var databaseAdminService = startupScope.ServiceProvider.GetRequiredService<IPlatformDatabaseAdminService>();
+    var lockoutPolicy = startupScope.ServiceProvider.GetRequiredService<IPlatformLoginLockoutPolicy>();
 
     await runtimeRepository.EnsureSchemaAsync(CancellationToken.None);
     await authRepository.EnsureSchemaAsync(CancellationToken.None);
     await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
     await aiProviderConfigStore.EnsureSchemaAsync(CancellationToken.None);
     await databaseAdminService.EnsureSchemaAsync(CancellationToken.None);
+    await lockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
 
     if (authOptions.Bootstrap.IsActive(builder.Environment.IsDevelopment()))
     {
@@ -1290,6 +1298,41 @@ control.MapPost(
             providerKey = result.ProviderKey,
             failureMessage = result.FailureMessage,
         });
+    });
+
+// ---------------------------------------------------------------------------
+// Locked accounts (SysAdmin → Operations → Locked Accounts).
+//
+// Lists active brute-force lockouts (temporary 15-min and permanent
+// bans). Lift releases a single lockout — for permanent bans the
+// policy also flips the underlying account's status back to 'active'.
+// Emergency CLI lives at deploy/ubuntu24/lift-sysadmin-lockout.sh for
+// the rare case where a SysAdmin locks themselves out.
+// ---------------------------------------------------------------------------
+control.MapGet(
+    "/operations/lockouts",
+    async (IPlatformLoginLockoutPolicy lockoutPolicy, CancellationToken cancellationToken) =>
+    {
+        var lockouts = await lockoutPolicy.ListActiveLockoutsAsync(cancellationToken);
+        return Results.Ok(lockouts);
+    });
+
+control.MapPost(
+    "/operations/lockouts/{lockoutId:guid}/lift",
+    async (
+        Guid lockoutId,
+        HttpContext httpContext,
+        LockoutLiftHttpRequest request,
+        IPlatformLoginLockoutPolicy lockoutPolicy,
+        CancellationToken cancellationToken) =>
+    {
+        var operatorId = GetAuthenticatedSession(httpContext).SysAdminAccountId;
+        var result = await lockoutPolicy.LiftLockoutAsync(
+            lockoutId, operatorId, request.Reason ?? string.Empty, cancellationToken);
+
+        return result.Succeeded
+            ? Results.Ok(new { succeeded = true })
+            : Results.BadRequest(new { message = result.FailureReason });
     });
 
 app.Run();

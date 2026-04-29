@@ -13,7 +13,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     SysAdminPasswordHasher passwordHasher,
     IPlatformRuntimeStateRepository runtimeStateRepository,
     IPlatformVerificationNotificationSender notificationSender,
-    IConfiguration configuration) : IPlatformBusinessSessionRepository
+    IConfiguration configuration,
+    IPlatformLoginLockoutPolicy lockoutPolicy) : IPlatformBusinessSessionRepository
 {
     private const string NoMfaMode = "none";
     private const string EmailCodeMfaMode = "email_code";
@@ -148,8 +149,22 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         }
 
         await EnsureSchemaAsync(cancellationToken);
+        await lockoutPolicy.EnsureSchemaAsync(cancellationToken);
 
         var normalizedLogin = login.Trim().ToLowerInvariant();
+
+        // Lockout gate runs before password verification — see same
+        // pattern in PostgresSysAdminAuthRepository for the rationale.
+        var lockoutCheck = await lockoutPolicy.CheckAsync(
+            LoginLockoutRealms.Business, normalizedLogin, cancellationToken);
+        if (lockoutCheck.IsBlocked)
+        {
+            return Failed(
+                lockoutCheck.BlockKind == LoginLockoutKinds.Permanent
+                    ? "account_permanently_locked"
+                    : "account_temporarily_locked",
+                lockoutCheck.Message ?? "Account is locked.");
+        }
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -158,6 +173,15 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         if (account is null || !passwordHasher.VerifyPassword(password, account.PasswordHash))
         {
             await transaction.RollbackAsync(cancellationToken);
+            await lockoutPolicy.RecordAttemptAsync(
+                new LoginAttempt(
+                    Realm: LoginLockoutRealms.Business,
+                    Email: normalizedLogin,
+                    AccountId: account?.Id,
+                    RemoteIp: remoteIp,
+                    UserAgent: userAgent,
+                    Succeeded: false),
+                cancellationToken);
             return Failed("invalid_credentials", "The email/username or password is invalid.");
         }
 
@@ -310,6 +334,16 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
+
+        await lockoutPolicy.RecordAttemptAsync(
+            new LoginAttempt(
+                Realm: LoginLockoutRealms.Business,
+                Email: normalizedLogin,
+                AccountId: account.Id,
+                RemoteIp: remoteIp,
+                UserAgent: userAgent,
+                Succeeded: true),
+            cancellationToken);
 
         return new PlatformBusinessSessionResult
         {
