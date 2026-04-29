@@ -1,0 +1,358 @@
+@page "/operations/database"
+
+@inject AppShellState ShellState
+@inject CitusToastService Message
+@inject DatabaseAdminClient DbClient
+@inject IOptions<AppHostOptions> HostOptions
+
+<PageTitle>Database | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+    }
+
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <div class="flex flex-col gap-1">
+                <span>Backups run pg_dump on the SysAdmin host and write to the platform backup directory. VACUUM ANALYZE reclaims dead-tuple space and refreshes planner statistics — Postgres yields internally so concurrent writes proceed.</span>
+                <span class="text-fg-muted text-xs">Backup spawning is fire-and-forget — refresh the list to see status flips.</span>
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Backups</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                pg_dump in plain-SQL format. The most recent runs are listed below; click
+                "Download" once a row reads <strong>succeeded</strong>.
+            </p>
+            <div class="flex items-center gap-3 mb-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isBackupBusy"
+                             OnClick="StartBackupAsync">
+                    @(_isBackupBusy ? "Starting…" : "Start backup")
+                </CitusButton>
+            </div>
+
+            @if (_backups.Count == 0)
+            {
+                <p class="text-fg-subtle text-sm">No backups have been recorded yet.</p>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="citus-data-table">
+                        <thead>
+                            <tr>
+                                <th>Started</th>
+                                <th>Status</th>
+                                <th class="text-right">Size</th>
+                                <th>Duration</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var backup in _backups)
+                            {
+                                <tr>
+                                    <td>@backup.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>
+                                        <CitusBadge Color="@StatusColor(backup.Status)">@backup.Status</CitusBadge>
+                                        @if (!string.IsNullOrWhiteSpace(backup.ErrorMessage))
+                                        {
+                                            <div class="text-fg-subtle text-xs">@backup.ErrorMessage</div>
+                                        }
+                                    </td>
+                                    <td class="text-right">@FormatBytes(backup.SizeBytes)</td>
+                                    <td>@FormatDuration(backup.StartedAt, backup.CompletedAt)</td>
+                                    <td class="text-right">
+                                        @if (backup.Status == "succeeded")
+                                        {
+                                            <a class="citus-button citus-button--ghost citus-button--sm"
+                                               href="@BuildAbsoluteDownloadUrl(backup.Id)"
+                                               target="_blank"
+                                               rel="noopener">
+                                                Download
+                                            </a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Optimization</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Runs <code>VACUUM (ANALYZE)</code> on the current database. Reclaims dead-tuple
+                space and refreshes planner statistics. Safe to run during business hours;
+                completes in seconds for small databases, minutes for larger ones.
+            </p>
+            <div class="flex items-center gap-3 mb-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isVacuumBusy"
+                             OnClick="RunVacuumAsync">
+                    @(_isVacuumBusy ? "Running VACUUM ANALYZE…" : "Run VACUUM ANALYZE")
+                </CitusButton>
+            </div>
+
+            @if (_lastVacuumOutcome is { } outcome)
+            {
+                <CitusAlert Severity="@(outcome.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
+                            ShowIcon="true"
+                            Class="mb-4">
+                    <MessageTemplate>
+                        @if (outcome.Succeeded && outcome.Value is { } run)
+                        {
+                            <span>VACUUM ANALYZE completed in @FormatMs(run.DurationMs).</span>
+                        }
+                        else
+                        {
+                            <span>VACUUM ANALYZE failed: @(outcome.ErrorMessage ?? "no detail returned.")</span>
+                        }
+                    </MessageTemplate>
+                </CitusAlert>
+            }
+
+            <h3 class="citus-panel__title mt-4 text-base">Recent maintenance runs</h3>
+            @if (_maintenanceRuns.Count == 0)
+            {
+                <p class="text-fg-subtle text-sm">No maintenance runs have been recorded yet.</p>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="citus-data-table">
+                        <thead>
+                            <tr>
+                                <th>Started</th>
+                                <th>Operation</th>
+                                <th>Status</th>
+                                <th class="text-right">Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var run in _maintenanceRuns)
+                            {
+                                <tr>
+                                    <td>@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>@FormatOperation(run.Operation)</td>
+                                    <td>
+                                        <CitusBadge Color="@StatusColor(run.Status)">@run.Status</CitusBadge>
+                                        @if (!string.IsNullOrWhiteSpace(run.ErrorMessage))
+                                        {
+                                            <div class="text-fg-subtle text-xs">@run.ErrorMessage</div>
+                                        }
+                                    </td>
+                                    <td class="text-right">@FormatMs(run.DurationMs)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+
+    <section class="citus-panel mt-6">
+        <h2 class="citus-panel__title">Table sizes</h2>
+        <p class="text-fg-muted text-sm mb-3">
+            Largest user tables sourced from <code>pg_stat_user_tables</code> and
+            <code>pg_total_relation_size</code>. Use this to spot tables that need
+            partitioning, archiving, or extra indexes.
+        </p>
+
+        @if (_tableSizes.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm">No table-size data available.</p>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Schema</th>
+                            <th>Table</th>
+                            <th class="text-right">Total</th>
+                            <th class="text-right">Data</th>
+                            <th class="text-right">Indexes / TOAST</th>
+                            <th class="text-right">Rows (est.)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var table in _tableSizes)
+                        {
+                            <tr>
+                                <td>@table.SchemaName</td>
+                                <td>@table.TableName</td>
+                                <td class="text-right">@FormatBytes(table.TotalBytes)</td>
+                                <td class="text-right">@FormatBytes(table.DataBytes)</td>
+                                <td class="text-right">@FormatBytes(table.IndexBytes)</td>
+                                <td class="text-right">@(table.RowEstimate?.ToString("N0") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "Database",
+        Subtitle = "pg_dump backups, VACUUM ANALYZE optimization, and per-table size report."
+    };
+
+    private IReadOnlyList<DatabaseBackupDto> _backups = Array.Empty<DatabaseBackupDto>();
+    private IReadOnlyList<DatabaseMaintenanceRunDto> _maintenanceRuns = Array.Empty<DatabaseMaintenanceRunDto>();
+    private IReadOnlyList<DatabaseTableSizeDto> _tableSizes = Array.Empty<DatabaseTableSizeDto>();
+    private DatabaseAdminOutcome<DatabaseMaintenanceRunDto>? _lastVacuumOutcome;
+    private bool _isLoading = true;
+    private bool _isBackupBusy;
+    private bool _isVacuumBusy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _backups = await DbClient.ListBackupsAsync();
+            _maintenanceRuns = await DbClient.ListMaintenanceRunsAsync();
+            _tableSizes = await DbClient.GetTableSizesAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task StartBackupAsync()
+    {
+        if (_isBackupBusy) return;
+        _isBackupBusy = true;
+        try
+        {
+            var outcome = await DbClient.StartBackupAsync();
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Could not start backup.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+
+            await Message.SuccessAsync("Backup started. Refresh in a few moments to see completion.");
+            _backups = await DbClient.ListBackupsAsync();
+        }
+        finally
+        {
+            _isBackupBusy = false;
+        }
+    }
+
+    private async Task RunVacuumAsync()
+    {
+        if (_isVacuumBusy) return;
+        _isVacuumBusy = true;
+        _lastVacuumOutcome = null;
+        try
+        {
+            var outcome = await DbClient.RunVacuumAnalyzeAsync();
+            _lastVacuumOutcome = outcome;
+            if (outcome.Succeeded)
+            {
+                await Message.SuccessAsync("VACUUM ANALYZE completed.");
+            }
+            else
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "VACUUM ANALYZE failed.");
+            }
+
+            _maintenanceRuns = await DbClient.ListMaintenanceRunsAsync();
+            _tableSizes = await DbClient.GetTableSizesAsync();
+        }
+        finally
+        {
+            _isVacuumBusy = false;
+        }
+    }
+
+    private string BuildAbsoluteDownloadUrl(Guid backupId)
+    {
+        var baseUrl = HostOptions.Value.SysAdminApiBaseUrl.TrimEnd('/');
+        return $"{baseUrl}/{DbClient.BuildBackupDownloadUrl(backupId)}";
+    }
+
+    private static string StatusColor(string status) => status switch
+    {
+        "succeeded" => "green",
+        "failed" => "red",
+        "running" => "blue",
+        _ => "default"
+    };
+
+    private static string FormatBytes(long? bytes)
+    {
+        if (bytes is null) return "—";
+        var size = (double)bytes.Value;
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.##} {units[unit]}";
+    }
+
+    private static string FormatDuration(DateTimeOffset start, DateTimeOffset? end)
+    {
+        if (end is null) return "—";
+        var span = end.Value - start;
+        if (span.TotalSeconds < 1) return $"{span.TotalMilliseconds:0} ms";
+        if (span.TotalMinutes < 1) return $"{span.TotalSeconds:0.0} s";
+        return $"{span.TotalMinutes:0.0} min";
+    }
+
+    private static string FormatMs(long? ms) =>
+        ms is null ? "—" :
+        ms.Value < 1000 ? $"{ms.Value} ms" :
+        ms.Value < 60_000 ? $"{ms.Value / 1000.0:0.0} s" :
+        $"{ms.Value / 60_000.0:0.0} min";
+
+    private static string FormatOperation(string op) => op switch
+    {
+        "vacuum_analyze" => "VACUUM ANALYZE",
+        _ => op
+    };
+}

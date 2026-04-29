@@ -43,6 +43,19 @@ builder.Services.AddSingleton<IPlatformEmailDeliveryConfigResolver, PlatformEmai
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IPlatformAiProviderConfigStore, PostgresPlatformAiProviderConfigStore>();
 builder.Services.AddSingleton<IPlatformAiProviderProbe, HttpPlatformAiProviderProbe>();
+
+// Database admin (pg_dump, VACUUM ANALYZE, table-size report). The
+// service holds the raw connection string so it can spawn pg_dump
+// with the right host / port / db / username + PGPASSWORD env var;
+// list/maintenance reads run through PlatformPostgresConnectionFactory.
+builder.Services.Configure<PlatformDatabaseAdminOptions>(
+    builder.Configuration.GetSection(PlatformDatabaseAdminOptions.SectionName));
+builder.Services.AddSingleton<IPlatformDatabaseAdminService>(sp =>
+    new PostgresPlatformDatabaseAdminService(
+        sp.GetRequiredService<PlatformPostgresConnectionFactory>(),
+        connectionString!,
+        sp.GetRequiredService<IOptions<PlatformDatabaseAdminOptions>>(),
+        sp.GetRequiredService<ILogger<PostgresPlatformDatabaseAdminService>>()));
 builder.Services.AddScoped<IPlatformMetadataRepository, PostgresPlatformMetadataRepository>();
 builder.Services.AddScoped<IPlatformMetadataService, PlatformMetadataService>();
 builder.Services.AddScoped<IPlatformBootstrapper, PlatformCoreBootstrapper>();
@@ -85,11 +98,13 @@ await using (var startupScope = app.Services.CreateAsyncScope())
 
     var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformSmtpConfigStore>();
     var aiProviderConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformAiProviderConfigStore>();
+    var databaseAdminService = startupScope.ServiceProvider.GetRequiredService<IPlatformDatabaseAdminService>();
 
     await runtimeRepository.EnsureSchemaAsync(CancellationToken.None);
     await authRepository.EnsureSchemaAsync(CancellationToken.None);
     await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
     await aiProviderConfigStore.EnsureSchemaAsync(CancellationToken.None);
+    await databaseAdminService.EnsureSchemaAsync(CancellationToken.None);
 
     if (authOptions.Bootstrap.IsActive(builder.Environment.IsDevelopment()))
     {
@@ -1128,6 +1143,114 @@ control.MapPost(
             message = result.Message,
             elapsedMs = result.Elapsed?.TotalMilliseconds,
         });
+    });
+
+// ---------------------------------------------------------------------------
+// Database admin (SysAdmin → Operations → Database).
+//
+// Three concerns:
+//   * Backups   — POST /database/backups triggers pg_dump fire-and-forget.
+//                 GET  /database/backups lists prior runs.
+//                 GET  /database/backups/{id}/download streams the .sql file.
+//   * VACUUM    — POST /database/maintenance/vacuum-analyze runs synchronously
+//                 (Postgres yields internally so concurrent writes proceed).
+//   * Sizes     — GET  /database/table-sizes reports pg_total_relation_size
+//                 per user table for the "where is the data?" panel.
+// ---------------------------------------------------------------------------
+control.MapPost(
+    "/operations/database/backups",
+    async (
+        HttpContext httpContext,
+        IPlatformDatabaseAdminService dbAdmin,
+        CancellationToken cancellationToken) =>
+    {
+        var operatorId = GetAuthenticatedSession(httpContext).SysAdminAccountId;
+        try
+        {
+            var record = await dbAdmin.StartBackupAsync(operatorId, cancellationToken);
+            return Results.Accepted($"/control/operations/database/backups/{record.Id}", record);
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(
+                title: "Could not start backup.",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    });
+
+control.MapGet(
+    "/operations/database/backups",
+    async (
+        IPlatformDatabaseAdminService dbAdmin,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var records = await dbAdmin.ListBackupsAsync(limit ?? 25, cancellationToken);
+        return Results.Ok(records);
+    });
+
+control.MapGet(
+    "/operations/database/backups/{backupId:guid}/download",
+    async (
+        Guid backupId,
+        IPlatformDatabaseAdminService dbAdmin,
+        CancellationToken cancellationToken) =>
+    {
+        var record = await dbAdmin.GetBackupAsync(backupId, cancellationToken);
+        if (record is null)
+        {
+            return Results.NotFound(new { message = $"Backup '{backupId}' was not found." });
+        }
+        if (record.Status != PlatformDatabaseStatuses.Succeeded)
+        {
+            return Results.BadRequest(new
+            {
+                message = $"Backup is not downloadable yet (status '{record.Status}')."
+            });
+        }
+        if (string.IsNullOrWhiteSpace(record.FilePath) || !File.Exists(record.FilePath))
+        {
+            return Results.NotFound(new { message = "Backup file is missing on disk." });
+        }
+
+        var fileName = Path.GetFileName(record.FilePath);
+        var stream = File.OpenRead(record.FilePath);
+        return Results.File(stream, "application/sql", fileName);
+    });
+
+control.MapPost(
+    "/operations/database/maintenance/vacuum-analyze",
+    async (
+        HttpContext httpContext,
+        IPlatformDatabaseAdminService dbAdmin,
+        CancellationToken cancellationToken) =>
+    {
+        var operatorId = GetAuthenticatedSession(httpContext).SysAdminAccountId;
+        var run = await dbAdmin.RunVacuumAnalyzeAsync(operatorId, cancellationToken);
+        return Results.Ok(run);
+    });
+
+control.MapGet(
+    "/operations/database/maintenance",
+    async (
+        IPlatformDatabaseAdminService dbAdmin,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var runs = await dbAdmin.ListMaintenanceRunsAsync(limit ?? 25, cancellationToken);
+        return Results.Ok(runs);
+    });
+
+control.MapGet(
+    "/operations/database/table-sizes",
+    async (
+        IPlatformDatabaseAdminService dbAdmin,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var sizes = await dbAdmin.GetTableSizesAsync(limit ?? 50, cancellationToken);
+        return Results.Ok(sizes);
     });
 
 control.MapPost(

@@ -66,6 +66,12 @@ builder.Services.AddHttpClient<AiProviderConfigClient>(
         var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
         client.BaseAddress = new Uri(options.SysAdminApiBaseUrl, UriKind.Absolute);
     });
+builder.Services.AddHttpClient<DatabaseAdminClient>(
+    (serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+        client.BaseAddress = new Uri(options.SysAdminApiBaseUrl, UriKind.Absolute);
+    });
 
 var app = builder.Build();
 var hostOptions = app.Services.GetRequiredService<IOptions<AppHostOptions>>().Value;
