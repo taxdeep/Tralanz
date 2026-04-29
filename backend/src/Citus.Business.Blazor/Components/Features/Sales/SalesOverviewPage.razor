@@ -28,8 +28,38 @@ else
                 Click any solid node to jump to that module. Dashed nodes mark
                 upcoming surfaces (Projects, Delivery Orders, Time Slips).
             </p>
-            <div class="sales-flow-diagram">
-                @RenderFlowDiagram()
+            <div class="sales-flow">
+                <svg class="sales-flow__edges" viewBox="0 0 720 460" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                    <defs>
+                        <marker id="sales-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                                markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+                        </marker>
+                    </defs>
+                    <g class="sales-flow__edge-group">
+                        @* Quotes -> Sales Orders *@
+                        <path d="M 175 220 L 285 220" />
+                        @* Sales Orders -> Delivery Orders *@
+                        <path d="M 355 220 L 485 220" />
+                        @* Sales Orders -> Sales Invoices (down then right) *@
+                        <path d="M 320 250 L 320 360 L 405 360" />
+                        @* Delivery Orders -> Sales Invoices (down then left) *@
+                        <path d="M 520 250 L 520 340 L 475 360" />
+                        @* Time Slips -> Sales Invoices *@
+                        <path d="M 175 380 L 405 380" />
+                        @* Sales Invoices -> Receipts *@
+                        <path d="M 475 380 L 585 380" />
+                    </g>
+                </svg>
+
+                @RenderNode(120, 60, IconName.Users, "Customers", "customers")
+                @RenderNode(440, 60, IconName.Briefcase, "Projects", null, ghost: true)
+                @RenderNode(120, 220, IconName.FileText, "Quotes", "quotes")
+                @RenderNode(320, 220, IconName.Receipt, "Sales Orders", "sales-orders")
+                @RenderNode(520, 220, IconName.Truck, "Delivery Orders", null, ghost: true)
+                @RenderNode(120, 380, IconName.Clock, "Time Slips", null, ghost: true)
+                @RenderNode(440, 380, IconName.FileInvoice, "Sales Invoices", "invoices")
+                @RenderNode(620, 380, IconName.Cash, "Receipts", "receive-payment")
             </div>
         </section>
 
@@ -210,47 +240,94 @@ else
 }
 
 <style>
-    .sales-flow-diagram {
+    /* Sales flow — SVG holds the arrows, HTML/Tabler icons sit on top
+       at absolute coords matching the SVG viewBox (720 x 460). The
+       wrapper keeps a 720:460 aspect ratio so the icon coords line up
+       with the lines at any screen width. */
+    .sales-flow {
+        position: relative;
         width: 100%;
-        overflow-x: auto;
-    }
-
-    .sales-flow-diagram svg {
-        display: block;
-        width: 100%;
-        height: auto;
         max-width: 720px;
+        margin: 0 auto;
+        aspect-ratio: 720 / 460;
     }
 
-    .sales-flow-node circle {
-        fill: #2dd1f7;
-        stroke: #1ba5c4;
-        stroke-width: 1.5;
-        cursor: pointer;
-    }
-
-    .sales-flow-node--ghost circle {
-        fill: #f3f4f6;
-        stroke: #cbd5e0;
-        stroke-dasharray: 4 3;
-        cursor: not-allowed;
-    }
-
-    .sales-flow-node text {
-        font-size: 13px;
-        fill: #374151;
-        text-anchor: middle;
+    .sales-flow__edges {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        color: var(--citus-color-fg-subtle);
         pointer-events: none;
     }
 
-    .sales-flow-node--ghost text {
-        fill: #9ca3af;
+    .sales-flow__edge-group path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        marker-end: url(#sales-flow-arrow);
     }
 
-    .sales-flow-edge {
-        stroke: #cbd5e0;
-        stroke-width: 1.5;
-        fill: none;
+    .sales-flow__node {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        background: transparent;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+        font: inherit;
+    }
+
+    .sales-flow__node-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--citus-color-primary-bg);
+        color: var(--citus-color-primary);
+        border: 1.5px solid var(--citus-color-primary-border);
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+
+    .sales-flow__node:hover .sales-flow__node-icon {
+        transform: scale(1.06);
+        box-shadow: var(--citus-shadow-2);
+        background: var(--citus-color-bg-elevated);
+    }
+
+    .sales-flow__node-label {
+        font-size: var(--citus-text-sm);
+        color: var(--citus-color-fg-muted);
+        white-space: nowrap;
+    }
+
+    .sales-flow__node--ghost {
+        cursor: not-allowed;
+    }
+
+    .sales-flow__node--ghost .sales-flow__node-icon {
+        background: var(--citus-color-bg-muted);
+        color: var(--citus-color-fg-subtle);
+        border-style: dashed;
+        border-color: var(--citus-color-border);
+    }
+
+    .sales-flow__node--ghost:hover .sales-flow__node-icon {
+        transform: none;
+        box-shadow: none;
+        background: var(--citus-color-bg-muted);
+    }
+
+    .sales-flow__node--ghost .sales-flow__node-label {
+        color: var(--citus-color-fg-subtle);
     }
 
     .sales-cashflow-table th,
@@ -513,112 +590,52 @@ else
             var c => $"{c} ",
         };
 
-    @* ===== Flow diagram (inline SVG, fixed coords for clarity) ========== *@
-    private RenderFragment RenderFlowDiagram() => builder =>
+    @* Flow-diagram node — HTML/CSS so we can drop a Tabler icon inside.
+       Coords (cx, cy) are in the SVG viewBox space (720 x 460); the
+       wrapper's aspect-ratio keeps the percentages aligned with the
+       arrow paths. Solid nodes navigate; ghost nodes get a "Coming
+       soon" tooltip and no click handler. *@
+    private RenderFragment RenderNode(int cx, int cy, IconName icon, string label, string? href, bool ghost = false) => builder =>
     {
-        const int seq = 0;
-        var seqRef = seq;
-        builder.OpenElement(seqRef++, "svg");
-        builder.AddAttribute(seqRef++, "viewBox", "0 0 720 460");
-        builder.AddAttribute(seqRef++, "xmlns", "http://www.w3.org/2000/svg");
-        builder.AddAttribute(seqRef++, "role", "img");
-        builder.AddAttribute(seqRef++, "aria-label", "Sales workflow diagram");
+        var leftPercent = (cx / 720.0 * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        var topPercent = (cy / 460.0 * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        var style = $"left: {leftPercent}%; top: {topPercent}%;";
+        var cssClass = ghost ? "sales-flow__node sales-flow__node--ghost" : "sales-flow__node";
+        var seq = 0;
 
-        // Defs: arrowhead marker.
-        builder.OpenElement(seqRef++, "defs");
-        builder.OpenElement(seqRef++, "marker");
-        builder.AddAttribute(seqRef++, "id", "sales-flow-arrow");
-        builder.AddAttribute(seqRef++, "viewBox", "0 0 10 10");
-        builder.AddAttribute(seqRef++, "refX", "9");
-        builder.AddAttribute(seqRef++, "refY", "5");
-        builder.AddAttribute(seqRef++, "markerWidth", "8");
-        builder.AddAttribute(seqRef++, "markerHeight", "8");
-        builder.AddAttribute(seqRef++, "orient", "auto-start-reverse");
-        builder.OpenElement(seqRef++, "path");
-        builder.AddAttribute(seqRef++, "d", "M0,0 L10,5 L0,10 z");
-        builder.AddAttribute(seqRef++, "fill", "#94a3b8");
-        builder.CloseElement(); // path
-        builder.CloseElement(); // marker
-        builder.CloseElement(); // defs
-
-        // Edges (drawn first so nodes overlay them).
-        DrawEdge(builder, ref seqRef, 150, 210, 290, 210);                 // Quotes -> Sales Orders
-        DrawEdge(builder, ref seqRef, 350, 210, 490, 210);                 // Sales Orders -> Delivery Orders
-        DrawEdge(builder, ref seqRef, 320, 240, 320, 360, 410, 360);       // Sales Orders -> Sales Invoices (down then right)
-        DrawEdge(builder, ref seqRef, 520, 240, 520, 340, 470, 360);       // Delivery Orders -> Sales Invoices (down then left)
-        DrawEdge(builder, ref seqRef, 150, 370, 410, 370);                 // Time Slips -> Sales Invoices
-        DrawEdge(builder, ref seqRef, 470, 370, 590, 370);                 // Sales Invoices -> Receipts
-
-        // Nodes.
-        DrawNode(builder, ref seqRef, 120, 60, "Customers", "customers");
-        DrawNode(builder, ref seqRef, 440, 60, "Projects", null, ghost: true);
-        DrawNode(builder, ref seqRef, 120, 210, "Quotes", "quotes");
-        DrawNode(builder, ref seqRef, 320, 210, "Sales Orders", "sales-orders");
-        DrawNode(builder, ref seqRef, 520, 210, "Delivery Orders", null, ghost: true);
-        DrawNode(builder, ref seqRef, 120, 370, "Time Slips", null, ghost: true);
-        DrawNode(builder, ref seqRef, 440, 370, "Sales Invoices", "invoices");
-        DrawNode(builder, ref seqRef, 620, 370, "Receipts", "receive-payment");
-
-        builder.CloseElement(); // svg
-    };
-
-    private void DrawEdge(
-        Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder,
-        ref int seq,
-        params int[] points)
-    {
-        if (points.Length < 4 || points.Length % 2 != 0) return;
-
-        var pathData = new System.Text.StringBuilder();
-        pathData.Append("M ").Append(points[0]).Append(' ').Append(points[1]);
-        for (var i = 2; i < points.Length; i += 2)
+        if (ghost || string.IsNullOrEmpty(href))
         {
-            pathData.Append(" L ").Append(points[i]).Append(' ').Append(points[i + 1]);
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", cssClass);
+            builder.AddAttribute(seq++, "style", style);
+            if (ghost) builder.AddAttribute(seq++, "title", "Coming soon");
         }
-
-        builder.OpenElement(seq++, "path");
-        builder.AddAttribute(seq++, "class", "sales-flow-edge");
-        builder.AddAttribute(seq++, "d", pathData.ToString());
-        builder.AddAttribute(seq++, "marker-end", "url(#sales-flow-arrow)");
-        builder.CloseElement();
-    }
-
-    private void DrawNode(
-        Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder,
-        ref int seq,
-        int cx,
-        int cy,
-        string label,
-        string? href,
-        bool ghost = false)
-    {
-        builder.OpenElement(seq++, "g");
-        builder.AddAttribute(seq++, "class", ghost ? "sales-flow-node sales-flow-node--ghost" : "sales-flow-node");
-        if (!ghost && !string.IsNullOrEmpty(href))
+        else
         {
-            var navHref = href;
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "type", "button");
+            builder.AddAttribute(seq++, "class", cssClass);
+            builder.AddAttribute(seq++, "style", style);
+            var target = href!;
             builder.AddAttribute(seq++, "onclick",
-                EventCallback.Factory.Create<MouseEventArgs>(this, _ => Nav.NavigateTo(navHref)));
-        }
-        if (ghost)
-        {
-            builder.AddAttribute(seq++, "title", "Coming soon");
+                EventCallback.Factory.Create<MouseEventArgs>(this, _ => Nav.NavigateTo(target)));
         }
 
-        builder.OpenElement(seq++, "circle");
-        builder.AddAttribute(seq++, "cx", cx.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        builder.AddAttribute(seq++, "cy", cy.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        builder.AddAttribute(seq++, "r", "26");
-        builder.CloseElement();
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "sales-flow__node-icon");
+        builder.OpenComponent<CitusIcon>(seq++);
+        builder.AddAttribute(seq++, "Name", icon);
+        builder.AddAttribute(seq++, "Size", IconSize.Display);
+        builder.CloseComponent();
+        builder.CloseElement(); // span.icon
 
-        builder.OpenElement(seq++, "text");
-        builder.AddAttribute(seq++, "x", cx.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        builder.AddAttribute(seq++, "y", (cy + 50).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "sales-flow__node-label");
         builder.AddContent(seq++, label);
-        builder.CloseElement();
+        builder.CloseElement(); // span.label
 
-        builder.CloseElement(); // g
-    }
+        builder.CloseElement(); // button or div
+    };
 
     private enum CustomerSort { Name, Balance }
 
