@@ -46,18 +46,6 @@
         Tone="@(ShellState.AreWritesBlocked ? StatTone.Warning : StatTone.Info)" />
 </div>
 
-<div class="flex flex-wrap gap-2 mb-6">
-    <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OpenMultiCurrencyDrawer">
-        <CitusIcon Name="IconName.Coin" Size="IconSize.Inline" />
-        <span>Manage currencies</span>
-    </CitusButton>
-    <span class="text-fg-subtle text-xs ml-2 self-center">
-        Multi-currency provisioning (drawer). Other settings are reachable via the cards below.
-    </span>
-</div>
-
-<MultiCurrencyDrawer @ref="_currencyDrawer" />
-
 <section class="citus-panel mb-6">
     <h2 class="citus-panel__title">Company settings domains</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
@@ -115,22 +103,12 @@
 </div>
 
 @code {
-    private MultiCurrencyDrawer? _currencyDrawer;
-
     private readonly PageHeaderModel _header = new()
     {
         Eyebrow = "Settings",
         Title = "Company settings shell",
         Subtitle = "This page establishes the controlled settings domains before deeper forms are migrated."
     };
-
-    private async Task OpenMultiCurrencyDrawer()
-    {
-        if (_currencyDrawer is not null)
-        {
-            await _currencyDrawer.OpenAsync();
-        }
-    }
 
     // Domain cards: Live = page exists and is wired, Later = stub waiting
     // for infrastructure work. Live cards render as anchor tags so the
