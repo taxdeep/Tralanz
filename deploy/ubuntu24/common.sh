@@ -282,6 +282,19 @@ ensure_env_defaults() {
   append_env_if_missing "DOTNET_CLI_TELEMETRY_OPTOUT" "1"
   append_env_if_missing "DOTNET_PRINT_TELEMETRY_MESSAGE" "false"
   ensure_db_connection_string
+
+  # Encryption key shared by PlatformTotpSecretProtector (TOTP secrets)
+  # and PlatformSecretProtector (SMTP password, AI provider API key).
+  # Without it the SysAdmin pages refuse to save protected secrets in
+  # any non-Development environment. Generate once per host and never
+  # rewrite — overwriting would invalidate every existing encrypted
+  # row on disk. Branch-on-grep instead of using append_env_if_missing
+  # so we don't burn an `openssl rand` on every upgrade run.
+  if ! grep -q "^PlatformIdentity__TotpProtectionKey=" "${ENV_FILE}" 2>/dev/null; then
+    printf 'PlatformIdentity__TotpProtectionKey=%s\n' "$(openssl rand -hex 32)" >> "${ENV_FILE}"
+    log "Generated PlatformIdentity__TotpProtectionKey for protected-secret encryption."
+  fi
+
   # PathBase is set explicitly per-service (sysadmin → /sysadmin, business → empty).
   # Strip any legacy shared value so it cannot leak into the Business app.
   remove_env_key "AppHost__PathBase"
