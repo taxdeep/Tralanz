@@ -85,10 +85,18 @@ else
 
                 <label class="citus-form-field">
                     <span class="citus-form-field__label">Port</span>
-                    <input type="number"
+                    @* Use type="text" + inputmode="numeric" instead of
+                       type="number". Chrome's number input lets through
+                       '.', 'e', '+', '-' even with step="1" — those
+                       reach @oninput as part of the value and confuse
+                       int.TryParse. With text+numeric, mobile keyboards
+                       still pop the digit pad and ParsePort below
+                       strips any non-digit input. *@
+                    <input type="text"
                            class="citus-form-field__input"
-                           min="1"
-                           max="65535"
+                           inputmode="numeric"
+                           pattern="\d+"
+                           maxlength="5"
                            value="@_draft.Port"
                            @oninput="@(e => _draft = _draft with { Port = ParsePort(e.Value?.ToString()) })" />
                 </label>
@@ -325,8 +333,29 @@ else
         }
     }
 
-    private static int ParsePort(string? raw) =>
-        int.TryParse(raw, out var port) && port > 0 ? port : 587;
+    /// <summary>
+    /// Coerce raw input to a valid TCP port (1..65535) by:
+    ///   1. dropping every non-digit (so '12.5' becomes '125', 'abc25'
+    ///      becomes '25'),
+    ///   2. parsing the remaining digits as int,
+    ///   3. clamping into the legal port range.
+    /// Empty / fully-stripped input falls back to 587 (the SMTP
+    /// submission default).
+    /// </summary>
+    private static int ParsePort(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return 587;
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        if (string.IsNullOrEmpty(digits)) return 587;
+        if (!int.TryParse(digits, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var port))
+        {
+            return 587;
+        }
+        if (port < 1) return 1;
+        if (port > 65535) return 65535;
+        return port;
+    }
 
     private sealed record SmtpDraft(
         string Provider,
