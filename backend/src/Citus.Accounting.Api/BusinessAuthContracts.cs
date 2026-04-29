@@ -32,3 +32,17 @@ internal sealed class BusinessSignInResponse
 
     public bool IsBootstrap { get; set; }
 }
+
+/// <summary>Wire-shape for <c>POST /auth/forgot-password</c>.</summary>
+internal sealed class BusinessForgotPasswordRequest
+{
+    public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>Wire-shape for <c>POST /auth/reset-password</c>.</summary>
+internal sealed class BusinessResetPasswordRequest
+{
+    public string Token { get; set; } = string.Empty;
+
+    public string NewPassword { get; set; } = string.Empty;
+}

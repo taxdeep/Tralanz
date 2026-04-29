@@ -192,6 +192,62 @@ public sealed class BusinessAuthenticationClient(
         return content;
     }
 
+    public async Task<PasswordResetOutcome> RequestForgotPasswordAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "auth/forgot-password",
+                new { email },
+                cancellationToken);
+
+            // The endpoint returns the generic "if an account exists,
+            // a link has been sent" message either way; just surface
+            // whatever the server included.
+            var body = await response.Content.ReadFromJsonAsync<PasswordResetAck>(cancellationToken);
+            return new PasswordResetOutcome(
+                Acknowledged: response.IsSuccessStatusCode,
+                Message: body?.Message ?? "If an account matches that email, a reset link has been sent.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Forgot-password request failed.");
+            return new PasswordResetOutcome(
+                Acknowledged: false,
+                Message: "Could not reach the server. Please try again in a moment.");
+        }
+    }
+
+    public async Task<PasswordResetOutcome> RedeemPasswordResetAsync(
+        string token,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "auth/reset-password",
+                new { token, newPassword },
+                cancellationToken);
+
+            var body = await response.Content.ReadFromJsonAsync<PasswordResetAck>(cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new PasswordResetOutcome(true, body?.Message ?? "Password updated.");
+            }
+            return new PasswordResetOutcome(false, body?.Message ?? "Could not reset the password.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Password reset redeem failed.");
+            return new PasswordResetOutcome(false, "Could not reach the server. Please try again in a moment.");
+        }
+    }
+
+    private sealed record PasswordResetAck(bool Ok, string? Code, string? Message);
+
     private sealed class SignInRequest
     {
         public string Email { get; set; } = string.Empty;
@@ -226,3 +282,9 @@ public sealed class UserProfileSnapshot
 }
 
 public sealed record UpdateDisplayNameOutcome(bool Succeeded, string? DisplayName, string? ErrorMessage);
+
+public sealed record PasswordResetOutcome(bool Acknowledged, string Message)
+{
+    /// <summary>True for the redeem path when the password was updated.</summary>
+    public bool Succeeded => Acknowledged;
+}

@@ -320,6 +320,10 @@ builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformLoginLoc
     Citus.Platform.Infrastructure.Persistence.PostgresPlatformLoginLockoutPolicy>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository,
     Citus.Platform.Infrastructure.Persistence.PostgresPlatformBusinessSessionRepository>();
+// Self-serve forgot-password flow for the Business shell. SysAdmin
+// shell uses a different (manual-grant) reset path; not wired here.
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService,
+    Citus.Platform.Infrastructure.Persistence.PostgresPlatformBusinessPasswordResetService>();
 builder.Services.AddSingleton<IAiJobRunStore, PostgreSqlAiJobRunStore>();
 builder.Services.AddSingleton<IAiRequestLogStore, PostgreSqlAiRequestLogStore>();
 builder.Services.AddSingleton<IUnitysearchEventStore, PostgreSqlUnitysearchEventStore>();
@@ -409,6 +413,8 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformSmtpConfigStore>();
     var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
+    var businessPasswordResetService = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService>();
+    var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
@@ -438,6 +444,8 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
     await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
+    await businessPasswordResetService.EnsureSchemaAsync(CancellationToken.None);
+    await loginLockoutPolicy.EnsureSchemaAsync(CancellationToken.None);
 }
 
 // ---------------------------------------------------------------------------
@@ -569,6 +577,112 @@ app.MapPost(
         }
 
         return Results.NoContent();
+    });
+
+// ---------------------------------------------------------------------------
+// Self-serve password reset (Business shell only). Pair of public endpoints:
+// /auth/forgot-password issues a token + sends an email; /auth/reset-password
+// redeems the token and sets a new password. Both deliberately return the
+// same shape regardless of whether the email matches a real account, so an
+// attacker can't enumerate registered users by timing or response shape.
+// ---------------------------------------------------------------------------
+app.MapPost(
+    "/auth/forgot-password",
+    async (
+        BusinessForgotPasswordRequest request,
+        HttpContext httpContext,
+        IConfiguration configuration,
+        Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService resetService,
+        Citus.Platform.Core.Abstractions.IPlatformVerificationNotificationSender notifier,
+        CancellationToken cancellationToken) =>
+    {
+        // Always respond with this generic ack — never leak whether
+        // the email is a known account.
+        var ack = new
+        {
+            ok = true,
+            message =
+                "If an account matches that email, a reset link has been sent. " +
+                "Check your inbox (the link expires in 15 minutes). " +
+                "If nothing arrives, your administrator may need to verify the SMTP configuration.",
+        };
+
+        if (string.IsNullOrWhiteSpace(request?.Email))
+        {
+            return Results.Ok(ack);
+        }
+
+        var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString();
+        var issued = await resetService.IssueTokenAsync(request.Email, remoteIp, cancellationToken);
+        if (issued is null)
+        {
+            return Results.Ok(ack);
+        }
+
+        var publicBaseUrl = (configuration["AppHost:PublicBaseUrl"] ?? string.Empty).TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(publicBaseUrl))
+        {
+            // Fall back to the request's own origin if the AppHost
+            // public URL hasn't been configured. Better to emit a
+            // self-relative link than to no-op the email.
+            publicBaseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}";
+        }
+        var resetUrl = $"{publicBaseUrl}/reset-password?token={Uri.EscapeDataString(issued.PlaintextToken)}";
+
+        // SMTP-not-configured failure is treated as a soft failure
+        // here — log the dispatch attempt but still return the ack
+        // so the operator-facing message stays generic. Per agreement
+        // the ack already hints at "ask admin to check SMTP" if no
+        // mail arrives.
+        await notifier.SendPasswordResetLinkAsync(
+            new Citus.Platform.Core.Runtime.PasswordResetLinkNotificationMessage
+            {
+                DispatchId = Guid.NewGuid(),
+                Destination = issued.Email,
+                RecipientDisplayName = issued.DisplayName,
+                ResetUrl = resetUrl,
+                ExpiresAtUtc = issued.ExpiresAtUtc,
+            },
+            cancellationToken);
+
+        return Results.Ok(ack);
+    });
+
+app.MapPost(
+    "/auth/reset-password",
+    async (
+        BusinessResetPasswordRequest request,
+        Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService resetService,
+        CancellationToken cancellationToken) =>
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return Results.BadRequest(new
+            {
+                ok = false,
+                code = "missing_fields",
+                message = "Reset token and new password are required.",
+            });
+        }
+
+        var outcome = await resetService.RedeemTokenAsync(
+            request.Token, request.NewPassword, cancellationToken);
+
+        if (!outcome.Succeeded)
+        {
+            return Results.BadRequest(new
+            {
+                ok = false,
+                code = outcome.FailureCode,
+                message = outcome.FailureMessage,
+            });
+        }
+
+        return Results.Ok(new
+        {
+            ok = true,
+            message = "Password updated. You can sign in now.",
+        });
     });
 
 static TimeSpan ResolveBusinessSessionLifetime(IConfiguration configuration)

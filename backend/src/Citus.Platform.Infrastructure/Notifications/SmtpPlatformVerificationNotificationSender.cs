@@ -54,6 +54,40 @@ public sealed class SmtpPlatformVerificationNotificationSender(
             },
             cancellationToken);
 
+    public Task<PlatformNotificationSendResult> SendPasswordResetLinkAsync(
+        PasswordResetLinkNotificationMessage message,
+        CancellationToken cancellationToken) =>
+        SendInternalAsync(
+            message.DispatchId,
+            message.Destination,
+            ResolveRecipientDisplayName(message.Destination, message.RecipientDisplayName),
+            "Reset your Tralanz Books password",
+            BuildResetLinkBody(message),
+            cancellationToken);
+
+    private static string BuildResetLinkBody(PasswordResetLinkNotificationMessage message)
+    {
+        var recipient = string.IsNullOrWhiteSpace(message.RecipientDisplayName)
+            ? "there"
+            : message.RecipientDisplayName.Trim();
+
+        return
+            $"""
+            Hi {recipient},
+
+            Someone requested to reset your Tralanz Books password.
+
+            If this was you, click the link below to set a new password.
+            The link expires at {message.ExpiresAtUtc:yyyy-MM-dd HH:mm} UTC.
+
+              {message.ResetUrl}
+
+            If this wasn't you, ignore this email — your account is safe.
+
+            — Tralanz Books
+            """;
+    }
+
     private async Task<PlatformNotificationSendResult> SendInternalAsync(
         Guid dispatchId,
         string destination,

@@ -164,5 +164,10 @@ public sealed class PlatformNotificationReadinessWorkflowTests
             PasswordResetNotificationMessage message,
             CancellationToken cancellationToken) =>
             Task.FromResult(SendResult);
+
+        public Task<PlatformNotificationSendResult> SendPasswordResetLinkAsync(
+            PasswordResetLinkNotificationMessage message,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(SendResult);
     }
 }
