@@ -702,6 +702,15 @@
     margin-top: var(--citus-space-4);
 }
 
+/* Auto-margin only makes sense in normal flow. Inside grid / flex
+   containers spacing comes from `gap`, and a stray margin-top on the
+   second sibling pushes it down within its cell — the cards then
+   fail to bottom-align even with `items-stretch` + `h-full`. Cancel
+   the auto-margin in those layouts. */
+:where(.grid, .flex) > .citus-panel + .citus-panel {
+    margin-top: 0;
+}
+
 .citus-panel__header {
     display: flex;
     align-items: center;
@@ -1115,22 +1124,45 @@ a.citus-domain-card--linked:active {
     transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Suppress Edge / Chromium native pseudo-controls inside text inputs.
+/* Suppress browser-native pseudo-controls inside text inputs.
    ::-ms-reveal is the password-show eye on Edge, ::-ms-clear is the X
    on text inputs. Both render with a built-in glyph font that often
    degrades to a red placeholder square when the operating system's
    font fallback chain doesn't ship the right symbol; the result looks
-   like an icon overflowing the input. Strip them globally so every
-   <input> in the app is consistent, not just the citus-form-field
-   variant. The !important + width/height 0 belt-and-suspenders also
-   covers older Edge builds that don't honour `display: none` on the
-   pseudo-element. */
+   like a red `···` icon overflowing the input. Strip them globally so
+   every <input> in the app is consistent, not just the citus-form-field
+   variant. The Webkit credential / strong-password autofill buttons
+   are the Safari-side analogues; same treatment.
+
+   The belt-and-suspenders cocktail (display + width/height + visibility
+   + appearance + pointer-events) also covers older Edge builds that
+   ignore `display: none` on the pseudo-element. */
 input::-ms-reveal,
-input::-ms-clear {
+input::-ms-clear,
+input::-webkit-credentials-auto-fill-button,
+input::-webkit-strong-password-auto-fill-button,
+input::-webkit-strong-password-fill-button,
+input::-webkit-textfield-decoration-container {
     display: none !important;
     width: 0 !important;
     height: 0 !important;
     visibility: hidden !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Belt: even when the pseudo-control is suppressed, third-party
+   password manager extensions (LastPass / 1Password / Bitwarden /
+   Edge's built-in wallet) inject their own badge as an absolutely-
+   positioned element at the input's right edge. We can't hide that
+   from page CSS, but we can reserve enough right padding so the badge
+   stays *inside* the input border instead of slipping over the
+   surrounding card. */
+.citus-form-field__input[type="password"] {
+    padding-right: var(--citus-space-8);
 }
 
 /* Hide native number-input up/down spinner buttons on our form classes.
