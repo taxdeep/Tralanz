@@ -1165,26 +1165,33 @@ input::-webkit-textfield-decoration-container {
     padding-right: var(--citus-space-8);
 }
 
-/* Hide native number-input up/down spinner buttons on our form classes.
-   The spinners add visual noise to amount columns and don't help with
-   decimal entry (users type the digits and the period directly). Keeping
-   <input type="number"> for keyboard hints (numeric keyboard on mobile,
-   step / min validation) but stripping the chrome. */
-.citus-form-field__input[type="number"]::-webkit-outer-spin-button,
-.citus-form-field__input[type="number"]::-webkit-inner-spin-button,
-.citus-journal-lines__amount-input::-webkit-outer-spin-button,
-.citus-journal-lines__amount-input::-webkit-inner-spin-button,
-.citus-journal-lines__cell-input[type="number"]::-webkit-outer-spin-button,
-.citus-journal-lines__cell-input[type="number"]::-webkit-inner-spin-button {
+/* Hide every up/down spinner on every numeric control in the app.
+   Three flavours need handling:
+     - Webkit native (Chrome / Edge): ::-webkit-outer-spin-button +
+       ::-webkit-inner-spin-button.
+     - Firefox native: -moz-appearance: textfield.
+     - Radzen RadzenNumeric: ships its own .rz-spinner-up / -down DOM
+       buttons (not pseudo-elements), so display:none reaches them.
+
+   Keeping <input type="number"> for the numeric keyboard on mobile and
+   step / min validation, just stripping the chrome. Operator types
+   digits and decimals directly. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
+    appearance: none;
     margin: 0;
 }
 
-.citus-form-field__input[type="number"],
-.citus-journal-lines__amount-input,
-.citus-journal-lines__cell-input[type="number"] {
+input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
+}
+
+.rz-numeric .rz-spinner-up,
+.rz-numeric .rz-spinner-down,
+.rz-numeric .rz-spinner-button {
+    display: none !important;
 }
 
 /* ==========================================================================
@@ -1217,6 +1224,21 @@ input::-webkit-textfield-decoration-container {
    font metrics. */
 .citus-form-field__input {
     min-height: var(--citus-input-height);
+}
+
+/* Defensive: every native form control (text / password / email / number /
+   url / search / tel / date / time / datetime-local / month / week,
+   plus <select> and <textarea>) gets the canonical 32 px height even
+   when the page forgot to apply .citus-form-field__input. Without this,
+   bare <input>s render at the browser default (typically 28-30 px) and
+   end up shorter than the styled ones in the same row. Excludes
+   checkbox / radio / file / range / color / image / button / submit /
+   reset because those are sized by their content, not by us. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="hidden"]),
+select,
+textarea {
+    min-height: var(--citus-input-height);
+    box-sizing: border-box;
 }
 
 /* CitusInput wrapper. Collapse all three size variants (--sm / --md /
@@ -2130,23 +2152,16 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 /* ---------- Form-control height alignment (cross-theme) ----------
-   CitusInput renders at min-height: 2.25rem (36px). Radzen's default
-   datepicker / dropdown / numeric ship slightly shorter, which made
-   side-by-side rows on header forms (Date next to Transaction
-   currency, etc.) sit at mismatched heights. Pin every Radzen wrapper
-   we use to the same 2.25rem so labels-with-fields line up cleanly
-   regardless of theme. */
-
-.rz-datepicker,
-.rz-dropdown,
-.rz-numeric {
-    min-height: 2.25rem;
-}
+   Superseded by the §"Global form-control height normalization" block
+   above (var(--citus-input-height) = 32 px). The 36 px override that
+   used to live here pre-dated the global pin and was making Radzen
+   widgets 4 px taller than the native .citus-form-field__input on
+   the same row. Keeping just the line-height tweak so dropdown /
+   numeric / datepicker labels stay vertically centred at 32 px. */
 
 .rz-datepicker .rz-inputtext,
 .rz-dropdown .rz-dropdown-label,
 .rz-numeric .rz-spinner-input {
-    min-height: 2.25rem;
     line-height: 1.4;
 }
 

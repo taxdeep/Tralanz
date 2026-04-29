@@ -287,7 +287,40 @@ exist. Listed so they don't get lost.
   visual divergence between the two existing ones (which is a smell —
   the design language wants them visually parallel).
 
-## §12. Razor / Blazor pitfalls
+## §12. CSS pitfalls
+
+Symptoms that have been hit and fixed; the rule set still in shell.css
+prevents them from coming back. Adding new entries here when we trip
+again keeps the doc useful.
+
+- **Don't pin Radzen widgets to a different height than `.citus-form-field__input`.**
+  `--citus-input-height` (32 px) is the single source of truth.
+  A previous override pinned `.rz-dropdown / .rz-numeric / .rz-datepicker`
+  to 36 px and quietly de-aligned every Radzen control from native
+  inputs in the same row. If a Radzen widget needs taller content,
+  fix its `padding-y` or `line-height`, not its `min-height`.
+
+- **Don't scope number-spinner suppression to a class.**
+  A bare `<input type="number">` should still hide its spinner. Rules
+  on `input[type="number"]::-webkit-outer-spin-button` and
+  `input[type="number"]::-webkit-inner-spin-button` are intentionally
+  global. RadzenNumeric ships its own `.rz-spinner-up / -down`
+  buttons (DOM elements, not pseudo-elements) — those need their own
+  `display: none` rule.
+
+- **Don't pin form-control height only on one class.**
+  Add the height-pin to `.citus-form-field__input` *and* to bare
+  `input / select / textarea` (with the right `:not()` filter for
+  checkbox / radio / file / range / color / image / button-style
+  inputs). Otherwise pages that forget the class render shorter.
+
+- **Don't use `+` adjacent-sibling auto-margin inside grid / flex parents.**
+  `.citus-panel + .citus-panel { margin-top: ... }` made sense in
+  normal flow but pushed the second panel down inside grid cells,
+  breaking `items-stretch` alignment. Cancel with
+  `:where(.grid, .flex) > .citus-panel + .citus-panel { margin-top: 0 }`.
+
+## §13. Razor / Blazor pitfalls
 
 Patterns the C# compiler accepts but the Razor source generator
 mis-parses on Release builds. Avoid in `.razor` files; if you hit one
@@ -311,7 +344,7 @@ that's not listed, add it here.
   if (bytes >= gb) return "GB ...";
   ```
 
-## §13. Open questions
+## §14. Open questions
 
 Items the user has flagged but not yet resolved into rules. Land here
 before promoting to §3–§9.
