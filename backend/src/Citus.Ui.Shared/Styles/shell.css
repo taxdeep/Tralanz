@@ -688,6 +688,247 @@
     text-transform: capitalize;
 }
 
+/* ---------- Customer detail (per-customer command center) ---------- */
+
+.citus-customer-header {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-4) 0;
+    margin-bottom: var(--citus-space-4);
+}
+
+.citus-customer-header__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 999px;
+    background: var(--citus-color-success-bg);
+    color: var(--citus-color-success);
+    font-weight: 600;
+    font-size: var(--citus-text-base);
+    flex-shrink: 0;
+}
+
+.citus-customer-header__name {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-2xl);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.citus-customer-header__back {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--citus-space-1);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    text-decoration: none;
+}
+
+.citus-customer-header__back:hover {
+    color: var(--citus-color-primary);
+}
+
+.citus-customer-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: var(--citus-space-4);
+    margin-bottom: var(--citus-space-5);
+}
+
+@media (max-width: 960px) {
+    .citus-customer-summary {
+        grid-template-columns: 1fr;
+    }
+}
+
+.citus-customer-summary__details,
+.citus-customer-summary__financial {
+    margin: 0;
+}
+
+.citus-customer-summary__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--citus-space-4) var(--citus-space-6);
+    margin-top: var(--citus-space-2);
+}
+
+.citus-customer-summary__cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+    min-width: 0;
+}
+
+.citus-customer-summary__label {
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+}
+
+.citus-customer-summary__value {
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-base);
+    word-break: break-word;
+}
+
+.citus-customer-summary__hint {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-customer-summary__add {
+    color: var(--citus-color-primary);
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.citus-customer-summary__add:hover {
+    text-decoration: underline;
+}
+
+.citus-customer-summary__financial-icon {
+    margin-right: var(--citus-space-1);
+    font-size: 1em;
+}
+
+.citus-customer-summary__metrics {
+    margin: 0 0 var(--citus-space-4) 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-2);
+}
+
+.citus-customer-summary__metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+}
+
+.citus-customer-summary__metric dt {
+    color: var(--citus-color-fg-muted);
+    font-weight: 500;
+}
+
+.citus-customer-summary__metric dd {
+    margin: 0;
+    color: var(--citus-color-fg);
+    font-weight: 600;
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-customer-summary__metric--warning {
+    color: var(--citus-color-warning) !important;
+}
+
+.citus-customer-summary__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--citus-space-2);
+}
+
+/* Tab strip below the summary row. Plain HTML buttons + an underline on
+   the active one — no Radzen tabs, since we want full control over
+   theme tokens and keyboard semantics. */
+.citus-customer-tabs {
+    display: flex;
+    gap: var(--citus-space-1);
+    border-bottom: 1px solid var(--citus-color-border);
+    margin-bottom: var(--citus-space-5);
+}
+
+.citus-customer-tabs__tab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: var(--citus-space-3) var(--citus-space-4);
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.citus-customer-tabs__tab:hover {
+    color: var(--citus-color-fg);
+}
+
+.citus-customer-tabs__tab.is-active {
+    color: var(--citus-color-primary);
+    border-bottom-color: var(--citus-color-primary);
+}
+
+.citus-customer-transactions__filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--citus-space-3);
+    padding: var(--citus-space-4);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    margin-bottom: var(--citus-space-3);
+}
+
+.citus-customer-transactions__filters .citus-form-field {
+    flex: 0 1 auto;
+    min-width: 9rem;
+}
+
+.citus-customer-transactions__total th {
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg);
+    font-weight: 700;
+}
+
+.citus-customer-profile__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--citus-space-3);
+    margin-bottom: var(--citus-space-4);
+}
+
+.citus-customer-profile__columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--citus-space-6);
+}
+
+@media (max-width: 960px) {
+    .citus-customer-profile__columns {
+        grid-template-columns: 1fr;
+    }
+}
+
+.citus-customer-profile__col-title {
+    color: var(--citus-color-fg);
+    font-size: var(--citus-text-sm);
+    font-weight: 600;
+    margin: 0 0 var(--citus-space-2) 0;
+    padding-bottom: var(--citus-space-2);
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-customer-profile__shipping {
+    margin-top: var(--citus-space-5);
+    padding-top: var(--citus-space-4);
+    border-top: 1px solid var(--citus-color-border);
+}
+
 /* ---------- Company list (Account → My Companies) ---------- */
 
 .citus-company-list {

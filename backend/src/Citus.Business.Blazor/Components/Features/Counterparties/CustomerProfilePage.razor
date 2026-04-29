@@ -3,33 +3,34 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
+@inject CustomerOverviewClient OverviewClient
 @inject PaymentTermClient PaymentTermClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
 @*
-    Customer profile — mirror of VendorProfilePage. Read-only summary
-    plus an Edit toggle that reuses CounterpartyForm. Save routes
-    through BusinessWriteFlowClient, which detects
-    CounterpartyDraft.CustomerId and PUTs the existing record.
+    Customer detail — the per-customer command center. Layout:
+
+      header            avatar + display name + Customer badge
+      summary row       customer details (left) + financial summary (right)
+      tab strip         Transactions / Quotes & Orders / Billable Work
+                        / Profile / Notes
+      tab content       changes per tab; the header + summary row stay put
+
+    Action buttons (New Quote / New Invoice / Received Payment / Statement)
+    on the financial summary card route into the existing create flows
+    with ?customerId=… prefill hints. The destination pages can wire up
+    the pre-fill incrementally; until they do, the user lands on the
+    create page and types the customer in. Statement is a placeholder
+    toast — real PDF generation lands in the next batch.
+
+    Edit lives inside the Profile tab now (split-button: Edit | chevron
+    drops a menu whose first action is "Add shipping address"). The
+    chevron menu is stubbed in this batch — multi-shipping-addresses
+    backend work ships separately.
 *@
 
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
-
-<CitusPageHeader Model="_header">
-    <Actions>
-        <a class="citus-button citus-button--ghost" href="customers">
-            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
-            <span>Back to customers</span>
-        </a>
-        @if (_customer is not null && !_isEditing)
-        {
-            <CitusButton Variant="CitusButtonVariant.Primary"
-                         LeadingIcon="IconName.Pencil"
-                         OnClick="StartEditing">Edit</CitusButton>
-        }
-    </Actions>
-</CitusPageHeader>
 
 @if (_isLoading)
 {
@@ -41,110 +42,173 @@ else if (_customer is null)
                 Message="Customer not found in this company."
                 ShowIcon="true" />
 }
-else if (_isEditing)
-{
-    @if (!string.IsNullOrWhiteSpace(_validation))
-    {
-        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
-    }
-    <CounterpartyForm Draft="_draft"
-                      DraftChanged="@(v => _draft = v)"
-                      EntityNumberPlaceholder="@_customer.EntityNumber"
-                      PaymentTerms="_paymentTerms" />
-    <div class="flex gap-2 mt-4">
-        <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
-            @(_isSubmitting ? "Saving..." : "Save changes")
-        </CitusButton>
-        <CitusButton OnClick="CancelEditing">Cancel</CitusButton>
-    </div>
-}
 else
 {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        <CitusStatCard
-            Label="Customer ID"
-            Value="@_customer.EntityNumber"
-            Description="@_customer.DisplayName"
-            Icon="IconName.Users"
-            Tone="StatTone.Primary" />
-        <CitusStatCard
-            Label="Currency"
-            Value="@_customer.DefaultCurrencyCode"
-            Description="Default transaction currency for new invoices."
-            Icon="IconName.Coin"
-            Tone="StatTone.Info" />
-        <CitusStatCard
-            Label="Payment term"
-            Value="@_paymentTermLabel"
-            Description="@_paymentTermDescription"
-            Icon="IconName.Calendar"
-            Tone="@(_customer.PaymentTermId is null ? StatTone.Neutral : StatTone.Success)" />
+    @* === Header strip ============================================== *@
+    <div class="citus-customer-header">
+        <div class="citus-customer-header__avatar">@AvatarInitials(_customer.DisplayName)</div>
+        <h1 class="citus-customer-header__name">@_customer.DisplayName</h1>
+        <CitusBadge Color="@("blue")">Customer</CitusBadge>
+        <a class="citus-customer-header__back" href="customers">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to customers</span>
+        </a>
     </div>
 
-    <section class="citus-panel">
-        <h2 class="citus-panel__title">Identity</h2>
-        <table class="citus-keyvalue">
-            <tbody>
-                <tr><th>Display name</th><td>@_customer.DisplayName</td></tr>
-                <tr><th>Customer ID</th><td><span class="citus-inline-code">@_customer.EntityNumber</span></td></tr>
-                <tr><th>Email</th><td>@(string.IsNullOrEmpty(_customer.Email) ? "—" : _customer.Email)</td></tr>
-                <tr><th>Phone</th><td>@(string.IsNullOrEmpty(_customer.Phone) ? "—" : _customer.Phone)</td></tr>
-                <tr><th>Tax ID</th><td>@(string.IsNullOrEmpty(_customer.TaxId) ? "—" : _customer.TaxId)</td></tr>
-            </tbody>
-        </table>
-    </section>
+    @* === Summary row =============================================== *@
+    <div class="citus-customer-summary">
+        <section class="citus-customer-summary__details citus-panel">
+            <h2 class="citus-panel__title">Customer details</h2>
+            <div class="citus-customer-summary__grid">
+                <div class="citus-customer-summary__cell">
+                    <div class="citus-customer-summary__label">Email</div>
+                    @if (string.IsNullOrWhiteSpace(_customer.Email))
+                    {
+                        <a class="citus-customer-summary__add" href="javascript:void(0)" @onclick="OnAddEmailClicked">Add Email</a>
+                    }
+                    else
+                    {
+                        <div class="citus-customer-summary__value">@_customer.Email</div>
+                    }
+                </div>
+                <div class="citus-customer-summary__cell">
+                    <div class="citus-customer-summary__label">Default terms</div>
+                    <div class="citus-customer-summary__value">@_paymentTermLabel</div>
+                </div>
+                <div class="citus-customer-summary__cell">
+                    <div class="citus-customer-summary__label">Currency</div>
+                    <div class="citus-customer-summary__value">
+                        @_customer.DefaultCurrencyCode
+                        @if (string.Equals(_customer.DefaultCurrencyCode, _financialSummary?.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <span class="citus-customer-summary__hint"> (base)</span>
+                        }
+                    </div>
+                </div>
+                <div class="citus-customer-summary__cell">
+                    <div class="citus-customer-summary__label">Billing address</div>
+                    @if (string.IsNullOrWhiteSpace(_customer.AddressLine))
+                    {
+                        <a class="citus-customer-summary__add" href="javascript:void(0)" @onclick="OnAddBillingAddressClicked">Add Billing address</a>
+                    }
+                    else
+                    {
+                        <div class="citus-customer-summary__value">@_customer.AddressLine</div>
+                    }
+                </div>
+                <div class="citus-customer-summary__cell">
+                    <div class="citus-customer-summary__label">Shipping addresses</div>
+                    <div class="citus-customer-summary__value">None</div>
+                </div>
+            </div>
+        </section>
 
-    <section class="citus-panel mt-6">
-        <h2 class="citus-panel__title">Address</h2>
-        <table class="citus-keyvalue">
-            <tbody>
-                <tr><th>Address line</th><td>@(string.IsNullOrEmpty(_customer.AddressLine) ? "—" : _customer.AddressLine)</td></tr>
-                <tr><th>City</th><td>@(string.IsNullOrEmpty(_customer.City) ? "—" : _customer.City)</td></tr>
-                <tr><th>Province / State</th><td>@(string.IsNullOrEmpty(_customer.ProvinceState) ? "—" : _customer.ProvinceState)</td></tr>
-                <tr><th>Postal code</th><td>@(string.IsNullOrEmpty(_customer.PostalCode) ? "—" : _customer.PostalCode)</td></tr>
-                <tr><th>Country</th><td>@(string.IsNullOrEmpty(_customer.Country) ? "—" : _customer.Country)</td></tr>
-            </tbody>
-        </table>
-    </section>
+        <section class="citus-customer-summary__financial citus-panel">
+            <h2 class="citus-panel__title">
+                <span class="citus-customer-summary__financial-icon" aria-hidden="true">💰</span>
+                Financial summary
+            </h2>
+            <dl class="citus-customer-summary__metrics">
+                <div class="citus-customer-summary__metric">
+                    <dt>Open balance</dt>
+                    <dd>@FormatMoney(_financialSummary?.OpenBalanceBase, _financialSummary?.BaseCurrencyCode)</dd>
+                </div>
+                <div class="citus-customer-summary__metric">
+                    <dt>Overdue</dt>
+                    <dd class="@(((_financialSummary?.OverdueInvoiceCount ?? 0) > 0) ? "citus-customer-summary__metric--warning" : "")">
+                        @(_financialSummary?.OverdueInvoiceCount ?? 0) invoice(s)
+                    </dd>
+                </div>
+                <div class="citus-customer-summary__metric">
+                    <dt>Unbilled work</dt>
+                    <dd>@FormatMoney(_financialSummary?.UnbilledWorkBase, _financialSummary?.BaseCurrencyCode)</dd>
+                </div>
+            </dl>
+            <div class="citus-customer-summary__actions">
+                <CitusButton OnClick="OnNewQuote">New Quote</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnNewInvoice">New Invoice</CitusButton>
+                <CitusButton OnClick="OnReceivedPayment">Received Payment</CitusButton>
+                <CitusButton OnClick="OnStatement">Statement</CitusButton>
+            </div>
+        </section>
+    </div>
 
-    <section class="citus-panel mt-6">
-        <h2 class="citus-panel__title">Other</h2>
-        <table class="citus-keyvalue">
-            <tbody>
-                <tr><th>Notes</th><td>@(string.IsNullOrEmpty(_customer.Notes) ? "—" : _customer.Notes)</td></tr>
-                <tr><th>Status</th><td>
-                    <CitusBadge Color="@(_customer.IsActive ? "green" : "default")">
-                        @(_customer.IsActive ? "Active" : "Inactive")
-                    </CitusBadge>
-                </td></tr>
-                <tr><th>Created</th><td>@_customer.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
-                <tr><th>Updated</th><td>@_customer.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td></tr>
-            </tbody>
-        </table>
-    </section>
+    @* === Tab strip ================================================ *@
+    <nav class="citus-customer-tabs" role="tablist">
+        @foreach (var tab in AllTabs)
+        {
+            <button type="button"
+                    class="citus-customer-tabs__tab @(tab == _activeTab ? "is-active" : "")"
+                    role="tab"
+                    aria-selected="@(tab == _activeTab ? "true" : "false")"
+                    @onclick="@(() => SetTabAsync(tab))">
+                @TabLabel(tab)
+            </button>
+        }
+    </nav>
+
+    @* === Tab content ============================================== *@
+    @switch (_activeTab)
+    {
+        case CustomerTab.Transactions:
+            @TransactionsTab(transactionTypeFilter: null);
+            break;
+        case CustomerTab.QuotesOrders:
+            @TransactionsTab(transactionTypeFilter: new[] { "quote", "sales_order" });
+            break;
+        case CustomerTab.BillableWork:
+            <CitusEmptyState
+                Icon="IconName.Briefcase"
+                Title="Billable work coming with the Task module."
+                Message="Time entries, expenses, and other billable line items will surface here once the Task module ships. For now, create invoices directly from the Financial summary actions above." />
+            break;
+        case CustomerTab.Profile:
+            @ProfileTab();
+            break;
+        case CustomerTab.Notes:
+            <CitusEmptyState
+                Icon="IconName.FileText"
+                Title="Notes are not wired yet."
+                Message="A simple notes / audit-trail surface lands in a follow-up batch. For now, add free-form notes inside the Profile tab's Notes field." />
+            break;
+    }
 }
 
 @code {
     [Parameter] public Guid CustomerId { get; set; }
 
     private CustomerSummary? _customer;
+    private CustomerFinancialSummaryDto? _financialSummary;
+    private IReadOnlyList<CustomerTransactionDto> _transactions = Array.Empty<CustomerTransactionDto>();
     private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+
     private CounterpartyDraft _draft = new();
     private bool _isLoading = true;
+    private bool _isLoadingTransactions;
     private bool _isEditing;
     private bool _isSubmitting;
     private string? _validation;
+    private CustomerTab _activeTab = CustomerTab.Transactions;
 
-    private PageHeaderModel _header = new()
-    {
-        Eyebrow = "Sales & Get Paid",
-        Title = "Customer",
-        Subtitle = "Customer master record."
-    };
+    // Filter UI state — bound to the inputs on the Transactions tab.
+    private string _filterType = "all";
+    private string _filterStatus = string.Empty;
+    private DateOnly? _filterFrom;
+    private DateOnly? _filterTo;
 
     private string _pageTitle = "Customer";
     private string _paymentTermLabel = "—";
-    private string _paymentTermDescription = "No preferred term set.";
+
+    private static IReadOnlyList<CustomerTab> AllTabs { get; } =
+    [
+        CustomerTab.Transactions,
+        CustomerTab.QuotesOrders,
+        CustomerTab.BillableWork,
+        CustomerTab.Profile,
+        CustomerTab.Notes,
+    ];
+
+    private enum CustomerTab { Transactions, QuotesOrders, BillableWork, Profile, Notes }
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -165,11 +229,16 @@ else
         {
             var customerTask = CustomerClient.GetByIdAsync(CustomerId);
             var termsTask = PaymentTermClient.ListAsync(includeInactive: true);
-            await Task.WhenAll(customerTask, termsTask);
+            var summaryTask = OverviewClient.GetFinancialSummaryAsync(CustomerId);
+            await Task.WhenAll(customerTask, termsTask, summaryTask);
+
             _customer = customerTask.Result;
             _paymentTerms = termsTask.Result;
+            _financialSummary = summaryTask.Result;
             ApplyHeader();
-            ApplyPaymentTermLabels();
+            ApplyPaymentTermLabel();
+
+            await LoadTransactionsAsync();
         }
         finally
         {
@@ -177,48 +246,263 @@ else
         }
     }
 
-    private void ApplyHeader()
+    private async Task LoadTransactionsAsync()
     {
-        if (_customer is null)
+        _isLoadingTransactions = true;
+        try
         {
-            _pageTitle = "Customer";
-            _header = new PageHeaderModel
-            {
-                Eyebrow = "Sales & Get Paid",
-                Title = "Customer",
-                Subtitle = "Customer master record."
-            };
-            return;
+            var filter = new CustomerTransactionFilterDto(
+                Type: NormalizeFilterType(_filterType),
+                Status: string.IsNullOrWhiteSpace(_filterStatus) ? null : _filterStatus.Trim(),
+                From: _filterFrom,
+                To: _filterTo);
+            _transactions = await OverviewClient.ListTransactionsAsync(CustomerId, filter);
         }
-        _pageTitle = _customer.DisplayName;
-        _header = new PageHeaderModel
+        finally
         {
-            Eyebrow = "Sales & Get Paid",
-            Title = _customer.DisplayName,
-            Subtitle = $"Customer ID {_customer.EntityNumber}"
-        };
+            _isLoadingTransactions = false;
+        }
     }
 
-    private void ApplyPaymentTermLabels()
+    private void ApplyHeader()
+    {
+        _pageTitle = _customer?.DisplayName ?? "Customer";
+    }
+
+    private void ApplyPaymentTermLabel()
     {
         if (_customer?.PaymentTermId is null)
         {
             _paymentTermLabel = "—";
-            _paymentTermDescription = "No preferred term set.";
             return;
         }
-
         var term = _paymentTerms.FirstOrDefault(t => t.Id == _customer.PaymentTermId.Value);
-        if (term is null)
-        {
-            _paymentTermLabel = "Unknown";
-            _paymentTermDescription = "Selected term no longer exists in this company.";
-            return;
-        }
-        _paymentTermLabel = term.Name;
-        _paymentTermDescription = $"Net {term.NetDays} days · code {term.Code}";
+        _paymentTermLabel = term is null ? "Unknown" : $"{term.Code} — {term.Name}";
     }
 
+    private async Task SetTabAsync(CustomerTab tab)
+    {
+        if (_activeTab == tab) return;
+        _activeTab = tab;
+        // The Transactions and Quotes & Orders tabs both read the
+        // transactions list; Quotes & Orders is just the same list
+        // type-filtered client-side at render time, so we don't re-fetch.
+        await Task.CompletedTask;
+    }
+
+    @* === Transactions tab body ==================================== *@
+    private RenderFragment TransactionsTab(string[]? transactionTypeFilter) => @<text>
+        <section class="citus-customer-transactions">
+            <div class="citus-customer-transactions__filters">
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Type</span>
+                    <select class="citus-form-field__input"
+                            value="@_filterType"
+                            @onchange="@(e => _filterType = e.Value?.ToString() ?? "all")">
+                        <option value="all">All types</option>
+                        <option value="invoice">Invoice</option>
+                        <option value="quote">Quote</option>
+                        <option value="sales_order">Sales order</option>
+                    </select>
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Status</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="paid, draft…"
+                           value="@_filterStatus"
+                           @oninput="@(e => _filterStatus = e.Value?.ToString() ?? string.Empty)" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">From</span>
+                    <input type="date"
+                           class="citus-form-field__input"
+                           value="@_filterFrom?.ToString("yyyy-MM-dd")"
+                           @onchange="@(e => _filterFrom = ParseDate(e.Value?.ToString()))" />
+                </label>
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">To</span>
+                    <input type="date"
+                           class="citus-form-field__input"
+                           value="@_filterTo?.ToString("yyyy-MM-dd")"
+                           @onchange="@(e => _filterTo = ParseDate(e.Value?.ToString()))" />
+                </label>
+                <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnApplyFilter">Apply Filter</CitusButton>
+                <CitusButton OnClick="OnResetFilter">Reset</CitusButton>
+            </div>
+
+            @{
+                var rows = transactionTypeFilter is null
+                    ? _transactions
+                    : _transactions.Where(t => transactionTypeFilter.Contains(t.Type, StringComparer.OrdinalIgnoreCase)).ToArray();
+                var totalAmount = rows.Sum(r => r.Amount);
+            }
+
+            @if (_isLoadingTransactions)
+            {
+                <CitusSkeleton Variant="SkeletonVariant.List" />
+            }
+            else if (rows.Count == 0)
+            {
+                <CitusEmptyState
+                    Icon="IconName.Receipt"
+                    Title="No transactions match the current filter."
+                    Message="Adjust the filter above or reset it to see every document for this customer." />
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="citus-data-table citus-customer-transactions__table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>No.</th>
+                                <th>Memo</th>
+                                <th class="text-right">Amount</th>
+                                <th>Status</th>
+                                <th class="text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in rows)
+                            {
+                                <tr>
+                                    <td>@row.Date.ToString("yyyy-MM-dd")</td>
+                                    <td>@FormatType(row.Type)</td>
+                                    <td><a href="@DocumentHref(row)" class="citus-link">@row.DisplayNumber</a></td>
+                                    <td>@(string.IsNullOrWhiteSpace(row.Memo) ? "—" : row.Memo)</td>
+                                    <td class="text-right" style="font-variant-numeric: tabular-nums;">@row.Amount.ToString("N2")</td>
+                                    <td><CitusBadge Color="@StatusBadgeColor(row.Status)">@FormatStatus(row.Status)</CitusBadge></td>
+                                    <td class="text-right"><a href="@DocumentHref(row)" class="citus-link">View</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="citus-customer-transactions__total">
+                                <th colspan="4">Total</th>
+                                <th class="text-right" style="font-variant-numeric: tabular-nums;">@totalAmount.ToString("N2")</th>
+                                <th colspan="2"></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </section>
+    </text>;
+
+    @* === Profile tab body ========================================= *@
+    private RenderFragment ProfileTab() => @<text>
+        @if (_isEditing)
+        {
+            @if (!string.IsNullOrWhiteSpace(_validation))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+            }
+            <CounterpartyForm Draft="_draft"
+                              DraftChanged="@(v => _draft = v)"
+                              EntityNumberPlaceholder="@_customer!.EntityNumber"
+                              PaymentTerms="_paymentTerms" />
+            <div class="flex gap-2 mt-4">
+                <CitusButton OnClick="CancelEditing">Cancel</CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isSubmitting" OnClick="SaveAsync">
+                    @(_isSubmitting ? "Saving…" : "Save changes")
+                </CitusButton>
+            </div>
+        }
+        else
+        {
+            <section class="citus-panel citus-customer-profile">
+                <header class="citus-customer-profile__header">
+                    <h2 class="citus-panel__title">Customer Profile</h2>
+                    <CitusButton Variant="CitusButtonVariant.Primary"
+                                 LeadingIcon="IconName.Pencil"
+                                 OnClick="StartEditing">Edit</CitusButton>
+                </header>
+
+                <div class="citus-customer-profile__columns">
+                    <div class="citus-customer-profile__col">
+                        <h3 class="citus-customer-profile__col-title">Contact info</h3>
+                        <table class="citus-keyvalue">
+                            <tbody>
+                                <tr><th>Customer</th><td>@_customer!.DisplayName</td></tr>
+                                <tr><th>Email</th><td>@(string.IsNullOrWhiteSpace(_customer.Email) ? "—" : _customer.Email)</td></tr>
+                                <tr><th>Phone</th><td>@(string.IsNullOrWhiteSpace(_customer.Phone) ? "—" : _customer.Phone)</td></tr>
+                                <tr><th>Tax ID</th><td>@(string.IsNullOrWhiteSpace(_customer.TaxId) ? "—" : _customer.TaxId)</td></tr>
+                                <tr><th>Customer ID</th><td><span class="citus-inline-code">@_customer.EntityNumber</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="citus-customer-profile__col">
+                        <h3 class="citus-customer-profile__col-title">Additional info</h3>
+                        <table class="citus-keyvalue">
+                            <tbody>
+                                <tr><th>Billing address</th><td>@FormatAddress(_customer)</td></tr>
+                                <tr><th>Terms</th><td>@_paymentTermLabel</td></tr>
+                                <tr><th>Currency</th><td>
+                                    @_customer.DefaultCurrencyCode
+                                    @if (string.Equals(_customer.DefaultCurrencyCode, _financialSummary?.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="text-fg-muted"> (base)</span>
+                                    }
+                                </td></tr>
+                                <tr><th>Status</th><td>
+                                    <CitusBadge Color="@(_customer.IsActive ? "green" : "default")">
+                                        @(_customer.IsActive ? "Active" : "Inactive")
+                                    </CitusBadge>
+                                </td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="citus-customer-profile__shipping">
+                    <h3 class="citus-customer-profile__col-title">Shipping addresses</h3>
+                    <p class="text-fg-muted text-sm m-0">No shipping addresses. Multi-shipping support lands in the next batch — until then, the billing address above is the default.</p>
+                </div>
+            </section>
+        }
+    </text>;
+
+    @* === Filter actions =========================================== *@
+    private async Task OnApplyFilter() => await LoadTransactionsAsync();
+
+    private async Task OnResetFilter()
+    {
+        _filterType = "all";
+        _filterStatus = string.Empty;
+        _filterFrom = null;
+        _filterTo = null;
+        await LoadTransactionsAsync();
+    }
+
+    @* === Action buttons ========================================== *@
+    // Existing create pages don't yet honor the customerId query
+    // hint — they're plain /quotes/new etc. We pass the hint anyway so
+    // the day they wire it up, the link starts working. Until then the
+    // operator lands on the create page and types the customer in.
+    private void OnNewQuote() => Navigation.NavigateTo($"quotes/new?customerId={CustomerId:D}");
+    private void OnNewInvoice() => Navigation.NavigateTo($"invoices/new?customerId={CustomerId:D}");
+    private void OnReceivedPayment() => Navigation.NavigateTo($"receive-payment?customerId={CustomerId:D}");
+    private Task OnStatement() => Message.InfoAsync(
+        "Statement PDF generation is coming soon. Once wired, this will produce a customer-statement PDF for the selected period and offer to email it via the same SMTP config invoices use.");
+
+    private Task OnAddEmailClicked()
+    {
+        _activeTab = CustomerTab.Profile;
+        StartEditing();
+        return Task.CompletedTask;
+    }
+
+    private Task OnAddBillingAddressClicked()
+    {
+        _activeTab = CustomerTab.Profile;
+        StartEditing();
+        return Task.CompletedTask;
+    }
+
+    @* === Edit form lifecycle ==================================== *@
     private void StartEditing()
     {
         if (_customer is null) return;
@@ -252,7 +536,11 @@ else
     private async Task SaveAsync()
     {
         _validation = null;
-        if (string.IsNullOrWhiteSpace(_draft.DisplayName)) { _validation = "Display name is required."; return; }
+        if (string.IsNullOrWhiteSpace(_draft.DisplayName))
+        {
+            _validation = "Display name is required.";
+            return;
+        }
 
         _isSubmitting = true;
         try
@@ -269,6 +557,100 @@ else
                 await Message.InfoAsync(result.Message);
             }
         }
-        finally { _isSubmitting = false; }
+        finally
+        {
+            _isSubmitting = false;
+        }
     }
+
+    @* === Helpers ================================================= *@
+    private static string AvatarInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => $"{parts[0][..1]}{parts[^1][..1]}".ToUpperInvariant(),
+        };
+    }
+
+    private static string TabLabel(CustomerTab tab) => tab switch
+    {
+        CustomerTab.Transactions => "Transactions",
+        CustomerTab.QuotesOrders => "Quotes & Orders",
+        CustomerTab.BillableWork => "Billable Work",
+        CustomerTab.Profile => "Profile",
+        CustomerTab.Notes => "Notes",
+        _ => tab.ToString(),
+    };
+
+    private static string FormatType(string raw) => raw switch
+    {
+        "invoice" => "Invoice",
+        "quote" => "Quote",
+        "sales_order" => "Sales order",
+        _ => raw,
+    };
+
+    private static string FormatStatus(string raw) => raw switch
+    {
+        "paid" => "Paid",
+        "overdue" => "Overdue",
+        "issued" => "Issued",
+        "draft" => "Draft",
+        "void" or "voided" => "Voided",
+        "open" => "Open",
+        "invoiced" => "Fully invoiced",
+        "cancelled" => "Cancelled",
+        "pending" => "Pending",
+        "accepted" => "Accepted",
+        "rejected" => "Rejected",
+        "expired" => "Expired",
+        "converted" => "Converted",
+        _ => char.ToUpperInvariant(raw[0]) + raw[1..].Replace('_', ' '),
+    };
+
+    private static string StatusBadgeColor(string raw) => raw switch
+    {
+        "paid" => "green",
+        "overdue" => "red",
+        "voided" or "void" => "default",
+        "draft" or "pending" or "expired" => "default",
+        "issued" or "open" or "confirmed" or "invoiced" or "accepted" or "converted" => "blue",
+        "cancelled" or "rejected" => "default",
+        _ => "blue",
+    };
+
+    private static string FormatMoney(decimal? amount, string? currency)
+    {
+        if (amount is null) return "—";
+        var c = string.IsNullOrWhiteSpace(currency) ? "" : $" {currency}";
+        return $"{amount.Value:N2}{c}";
+    }
+
+    private static string FormatAddress(CustomerSummary c)
+    {
+        var parts = new[] { c.AddressLine, c.City, c.ProvinceState, c.PostalCode, c.Country }
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToArray();
+        return parts.Length == 0 ? "—" : string.Join(", ", parts);
+    }
+
+    private static string DocumentHref(CustomerTransactionDto row) => row.Type switch
+    {
+        "invoice" => $"invoices/{row.SourceId:D}",
+        "quote" => $"quotes/{row.SourceId:D}",
+        "sales_order" => $"sales-orders/{row.SourceId:D}",
+        _ => "#",
+    };
+
+    private static string? NormalizeFilterType(string raw) =>
+        string.IsNullOrWhiteSpace(raw) || string.Equals(raw, "all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : raw;
+
+    private static DateOnly? ParseDate(string? raw) =>
+        DateOnly.TryParse(raw, out var d) ? d : null;
 }

@@ -183,6 +183,17 @@ builder.Services.AddHttpClient<CustomerClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// Customer detail page aggregates: financial-summary + transactions
+// timeline. Reuses the same business-session header handler the rest
+// of the per-customer surfaces use.
+builder.Services.AddHttpClient<CustomerOverviewClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<VendorClient>(
         (serviceProvider, client) =>
         {

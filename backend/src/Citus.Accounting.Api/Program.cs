@@ -198,6 +198,11 @@ builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
 // payments, and AR open-item tracking. Entity numbers are
 // auto-generated to match the platform-wide ENYYYYxxxxxxxx contract.
 builder.Services.AddSingleton<ICustomerStore, PostgreSqlCustomerStore>();
+// Read-only aggregates for the Customer detail page: financial-summary
+// (open balance + overdue count + unbilled work) and the unified
+// invoice / sales-order / quote transactions timeline. Backed by
+// ar_open_items + invoices/quotes/sales_orders unions.
+builder.Services.AddSingleton<ICustomerOverviewQueries, PostgreSqlCustomerOverviewQueries>();
 
 // Read-only company profile lookup (legal_name, address, contacts) for
 // surfaces that print the company on a document — invoice / quote / PO
@@ -9846,6 +9851,56 @@ accounting.MapPost(
                 message = ex.Message
             });
         }
+    });
+
+// Header surface for the Customer detail page. Read-only aggregate of
+// AR open items: open balance (sum of unsettled amounts in base
+// currency), count of overdue invoices, plus a placeholder for unbilled
+// work (zero today; wired when the Task module ships). The page reads
+// this once per visit and on every "Refresh" click.
+accounting.MapGet(
+    "/customers/{customerId:guid}/financial-summary",
+    async (
+        Guid customerId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerOverviewQueries queries,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var summary = await queries.GetFinancialSummaryAsync(session.ActiveCompanyId, customerId, cancellationToken);
+        return Results.Ok(summary);
+    });
+
+// Unified transaction timeline for the Customer detail page. Returns
+// invoices + sales orders + quotes for one customer, ordered by date
+// desc, with a derived status label (paid / overdue / issued / draft
+// for invoices; raw status for quote / sales order). Filters: type,
+// status (free text contains-match against the derived label), and
+// date range. The Total row is computed client-side off the returned
+// rows so we don't run a second SUM round-trip.
+accounting.MapGet(
+    "/customers/{customerId:guid}/transactions",
+    async (
+        Guid customerId,
+        string? type,
+        string? status,
+        DateOnly? from,
+        DateOnly? to,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerOverviewQueries queries,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await queries.ListTransactionsAsync(
+            session.ActiveCompanyId,
+            customerId,
+            new CustomerTransactionFilter(type, status, from, to),
+            cancellationToken);
+        return Results.Ok(rows);
     });
 
 accounting.MapGet(
