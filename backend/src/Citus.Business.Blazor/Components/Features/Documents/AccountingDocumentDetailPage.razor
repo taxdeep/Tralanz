@@ -3,6 +3,8 @@
 @inject BusinessShellState ShellState
 @inject AccountingDocumentReviewClient AccountingDocumentReviewClient
 @inject JournalEntryReviewClient JournalEntryReviewClient
+@inject IJSRuntime JS
+@inject CitusToastService Message
 
 <PageTitle>@($"{_header.Title} | Tralanz Books")</PageTitle>
 
@@ -12,6 +14,15 @@
             <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
             <span>@_backLabel</span>
         </a>
+        @if (IsInvoice)
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Disabled="_isDownloadingPdf"
+                         OnClick="DownloadInvoicePdfAsync">
+                <CitusIcon Name="IconName.Download" Size="IconSize.Inline" />
+                <span>@(_isDownloadingPdf ? "Generating…" : "Download PDF")</span>
+            </CitusButton>
+        }
         <CitusBadge Color="@("blue")">Read-only review</CitusBadge>
     </Actions>
 </CitusPageHeader>
@@ -260,7 +271,42 @@
 
     private AccountingDocumentReviewSummary? _document;
     private bool _isLoading;
+    private bool _isDownloadingPdf;
     private string? _error;
+
+    private bool IsInvoice =>
+        _document is not null
+        && string.Equals(_document.SourceType, "invoice", StringComparison.OrdinalIgnoreCase);
+
+    private async Task DownloadInvoicePdfAsync()
+    {
+        if (_document is null || _isDownloadingPdf) return;
+
+        _isDownloadingPdf = true;
+        try
+        {
+            var download = await AccountingDocumentReviewClient.GetInvoicePdfAsync(
+                ShellState.ActiveCompany.Id,
+                _document.Id);
+
+            if (download is null)
+            {
+                await Message.WarningAsync("Invoice PDF could not be generated. Please try again.");
+                return;
+            }
+
+            var base64 = Convert.ToBase64String(download.Bytes);
+            await JS.InvokeVoidAsync(
+                "citusDownloads.saveBinaryFile",
+                download.FileName,
+                base64,
+                "application/pdf");
+        }
+        finally
+        {
+            _isDownloadingPdf = false;
+        }
+    }
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
     private IReadOnlyList<FactRow> _amountRows = Array.Empty<FactRow>();
     private string? _relatedJournalEntryHref;

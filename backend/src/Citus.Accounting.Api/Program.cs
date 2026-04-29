@@ -6,6 +6,8 @@ using Citus.Accounting.Application;
 using Citus.Accounting.Application.Abstractions;
 using Citus.Accounting.Application.CoaTemplates;
 using Citus.Accounting.Application.Commands;
+using Citus.Accounting.Application.Companies;
+using Citus.Accounting.Application.Invoices;
 using Citus.Accounting.Application.Queries;
 using Citus.Accounting.Application.Repositories;
 using Citus.Accounting.Domain.Common;
@@ -16,7 +18,9 @@ using Citus.Ui.Shared.Business;
 using Citus.Ui.Shared.Journal;
 using Citus.Ui.Shared.Reports;
 using Citus.Ui.Shared.Shell;
+using Citus.Accounting.Infrastructure.Companies;
 using Citus.Accounting.Infrastructure.Fx;
+using Citus.Accounting.Infrastructure.Invoices;
 using Citus.Accounting.Infrastructure.Persistence;
 using Citus.Accounting.Infrastructure.Posting;
 using Citus.Modules.UnitySearch.Application;
@@ -194,6 +198,18 @@ builder.Services.AddSingleton<IAccountStore, PostgreSqlAccountStore>();
 // payments, and AR open-item tracking. Entity numbers are
 // auto-generated to match the platform-wide ENYYYYxxxxxxxx contract.
 builder.Services.AddSingleton<ICustomerStore, PostgreSqlCustomerStore>();
+
+// Read-only company profile lookup (legal_name, address, contacts) for
+// surfaces that print the company on a document — invoice / quote / PO
+// PDFs, email signatures, etc. Read path only; writes go through the
+// SysAdmin First-Company Wizard.
+builder.Services.AddSingleton<ICompanyProfileQuery, PostgresCompanyProfileQuery>();
+
+// Invoice PDF rendering (Batch 1 of the invoice-send / template work).
+// QuestPDF runs CPU-only, no external dependency. Community license is
+// free for any company with annual revenue under USD $1M.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+builder.Services.AddSingleton<IInvoicePdfRenderer, QuestPdfInvoiceRenderer>();
 
 // Vendor master data (per-company). AP-side mirror of ICustomerStore;
 // anchors bills, pay-bill settlement, and AP aging.
@@ -3826,6 +3842,86 @@ accounting.MapGet(
                 line.TargetDocumentDisplayNumber
             })
         });
+    });
+
+// ---------------------------------------------------------------------------
+// Invoice PDF download (Batch 1 of the invoice send / template work).
+//
+// Returns the invoice as a PDF byte stream rendered through QuestPDF using a
+// fixed "default" template. The HTML invoice preview that lands in Batch 4
+// will share the same InvoiceRenderModel + builder so the bytes the user
+// downloads always match the on-screen preview. Subsequent batches will
+// thread an InvoiceTemplate snapshot through here for branding overrides.
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/document-review/invoice/{documentId:guid}/pdf",
+    async (
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IAccountingDocumentReviewRepository reviewRepository,
+        ICustomerStore customerStore,
+        ICompanyProfileQuery companyProfileQuery,
+        IInvoicePdfRenderer renderer,
+        CancellationToken cancellationToken) =>
+    {
+        var companyId = new CompanyId(query.CompanyId);
+
+        var review = await reviewRepository.GetSourceDocumentAsync(
+            companyId,
+            "invoice",
+            documentId,
+            cancellationToken);
+
+        if (review is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Invoice was not found in the active company context."
+            });
+        }
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "Company profile is not provisioned. Run the SysAdmin First-Company Wizard before downloading invoice PDFs."
+            });
+        }
+
+        CustomerRecord? customer = null;
+        if (review.CounterpartyId is { } counterpartyId)
+        {
+            customer = await customerStore.GetByIdAsync(query.CompanyId, counterpartyId, cancellationToken);
+        }
+
+        var projection = new InvoiceReviewProjection(
+            DisplayNumber: review.DisplayNumber,
+            EntityNumber: review.EntityNumber,
+            DocumentDate: review.DocumentDate,
+            DueDate: review.DueDate,
+            Status: review.Status,
+            CounterpartyDisplayName: customer?.DisplayName,
+            TransactionCurrencyCode: review.TransactionCurrencyCode,
+            SubtotalAmount: review.SubtotalAmount,
+            TaxAmount: review.TaxAmount,
+            TotalAmount: review.TotalAmount,
+            Memo: review.Memo,
+            Lines: review.Lines.Select(line => new InvoiceReviewLineProjection(
+                LineNumber: line.LineNumber,
+                Description: line.Description,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                LineAmount: line.LineAmount,
+                TaxAmount: line.TaxAmount)).ToArray());
+
+        var renderModel = InvoiceRenderModelBuilder.Build(projection, company, customer);
+        var pdfBytes = renderer.Render(renderModel);
+
+        return Results.File(
+            fileContents: pdfBytes,
+            contentType: "application/pdf",
+            fileDownloadName: $"{review.DisplayNumber}.pdf");
     });
 
 accounting.MapGet(

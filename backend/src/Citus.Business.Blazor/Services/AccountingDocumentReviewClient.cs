@@ -5,6 +5,45 @@ namespace Citus.Business.Blazor.Services;
 
 public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogger<AccountingDocumentReviewClient> logger)
 {
+    /// <summary>
+    /// Fetches the rendered invoice as a PDF byte stream. Caller is
+    /// responsible for handing the bytes to the browser (e.g. via JS
+    /// interop createObjectURL + click).
+    /// </summary>
+    public async Task<InvoicePdfDownload?> GetInvoicePdfAsync(
+        Guid companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestUri = $"accounting/document-review/invoice/{invoiceId:D}/pdf?companyId={companyId:D}";
+
+        try
+        {
+            using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                logger.LogInformation(
+                    "Invoice PDF not available — invoice {InvoiceId} was not found in company {CompanyId}.",
+                    invoiceId,
+                    companyId);
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+                ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+                ?? $"invoice-{invoiceId:N}.pdf";
+            return new InvoicePdfDownload(bytes, fileName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to download invoice PDF for {InvoiceId}.", invoiceId);
+            return null;
+        }
+    }
+
     public async Task<AccountingDocumentReviewSummary?> GetDocumentAsync(
         Guid companyId,
         string sourceType,

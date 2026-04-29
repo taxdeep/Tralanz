@@ -1,5 +1,7 @@
 namespace Citus.Business.Blazor.Services;
 
+public sealed record InvoicePdfDownload(byte[] Bytes, string FileName);
+
 public sealed record class AccountingDocumentReviewSummary
 {
     public string SourceType { get; init; } = string.Empty;
