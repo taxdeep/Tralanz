@@ -55,6 +55,13 @@ builder.Services.Configure<PlatformAttachmentStorageOptions>(
     builder.Configuration.GetSection(PlatformAttachmentStorageOptions.SectionName));
 builder.Services.AddSingleton<IPlatformRuntimeMetricsService, PlatformRuntimeMetricsService>();
 
+// AES-GCM protector for SysAdmin-entered secrets (SMTP password, AI
+// provider API key, etc). Reads the same PlatformIdentity:
+// TotpProtectionKey config the TOTP protector uses, but with a
+// distinct envelope prefix so the two cannot decrypt each other's
+// payloads.
+builder.Services.AddSingleton<IPlatformSecretProtector, PlatformSecretProtector>();
+
 var app = builder.Build();
 
 await using (var startupScope = app.Services.CreateAsyncScope())

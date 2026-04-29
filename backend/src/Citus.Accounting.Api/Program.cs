@@ -211,6 +211,13 @@ builder.Services.AddSingleton<ICompanyProfileQuery, PostgresCompanyProfileQuery>
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 builder.Services.AddSingleton<IInvoicePdfRenderer, QuestPdfInvoiceRenderer>();
 
+// AES-GCM protector for SysAdmin-entered secrets — SMTP password and
+// AI provider API key live in Postgres in encrypted form, decrypted
+// just-in-time by the SMTP / AI senders. Same key as TOTP, distinct
+// envelope prefix.
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformSecretProtector,
+    Citus.Platform.Infrastructure.Persistence.PlatformSecretProtector>();
+
 // Invoice email send (Batch 2). The SMTP sender reuses the platform's
 // PlatformEmailDeliveryOptions so SysAdmin verification mail and
 // Business invoice mail share one outbound configuration. Send-history
