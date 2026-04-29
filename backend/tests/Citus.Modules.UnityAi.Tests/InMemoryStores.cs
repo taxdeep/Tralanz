@@ -128,6 +128,18 @@ internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
             .ToDictionary(r => r.EntityId);
         return Task.FromResult<IReadOnlyDictionary<Guid, UnitysearchUsageStatRecord>>(dict);
     }
+
+    public Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
+        Guid companyId, int limit, CancellationToken cancellationToken)
+    {
+        var results = _records
+            .Where(r => r.CompanyId == companyId && r.ScopeType == UnitysearchScopeType.Company)
+            .OrderByDescending(r => r.SelectCount30d)
+            .ThenByDescending(r => r.SelectCount)
+            .Take(Math.Max(0, limit))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<UnitysearchUsageStatRecord>>(results);
+    }
 }
 
 internal sealed class InMemoryPairStatStore : IUnitysearchPairStatStore

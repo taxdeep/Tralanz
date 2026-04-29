@@ -93,6 +93,19 @@ public interface IUnitysearchUsageStatStore
         string entityType,
         IReadOnlyCollection<Guid> entityIds,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the most-clicked (context, entity_type, entity_id) rows for a
+    /// company, ordered by 30-day select count desc. Used by the AI hint
+    /// distillation flow to discover entities worth asking the LLM about —
+    /// the existing <see cref="GetForCandidatesAsync"/> requires the caller
+    /// to already know the entity IDs, which is the wrong shape for
+    /// discovery.
+    /// </summary>
+    Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
+        Guid companyId,
+        int limit,
+        CancellationToken cancellationToken);
 }
 
 public interface IUnitysearchPairStatStore

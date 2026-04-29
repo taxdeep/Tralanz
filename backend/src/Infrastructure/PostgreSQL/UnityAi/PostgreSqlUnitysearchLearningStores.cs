@@ -155,6 +155,58 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
         }
         return dict;
     }
+
+    public async Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
+        Guid companyId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (limit <= 0)
+        {
+            return Array.Empty<UnitysearchUsageStatRecord>();
+        }
+
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, company_id, scope_type, user_id, context, entity_type, entity_id,
+                   select_count, select_count_7d, select_count_30d, select_count_90d,
+                   last_selected_at, last_query, avg_rank_position, updated_at
+            FROM unitysearch_usage_stats
+            WHERE company_id = @company_id
+              AND scope_type = @scope_type
+            ORDER BY select_count_30d DESC NULLS LAST,
+                     select_count DESC,
+                     last_selected_at DESC NULLS LAST
+            LIMIT @lim;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("scope_type", UnitysearchScopeType.Company);
+        command.Parameters.AddWithValue("lim", Math.Clamp(limit, 1, 500));
+
+        var results = new List<UnitysearchUsageStatRecord>(limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(new UnitysearchUsageStatRecord(
+                Id: reader.GetGuid(0),
+                CompanyId: reader.GetGuid(1),
+                ScopeType: reader.GetString(2),
+                UserId: reader.IsDBNull(3) ? null : reader.GetGuid(3),
+                Context: reader.GetString(4),
+                EntityType: reader.GetString(5),
+                EntityId: reader.GetGuid(6),
+                SelectCount: reader.GetInt32(7),
+                SelectCount7d: reader.GetInt32(8),
+                SelectCount30d: reader.GetInt32(9),
+                SelectCount90d: reader.GetInt32(10),
+                LastSelectedAt: reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
+                LastQuery: reader.IsDBNull(12) ? null : reader.GetString(12),
+                AvgRankPosition: reader.IsDBNull(13) ? null : reader.GetDecimal(13),
+                UpdatedAt: reader.GetFieldValue<DateTimeOffset>(14)));
+        }
+        return results;
+    }
 }
 
 public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFactory connections) : IUnitysearchPairStatStore

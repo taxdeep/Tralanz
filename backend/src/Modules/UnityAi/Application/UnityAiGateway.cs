@@ -18,6 +18,9 @@ namespace Citus.Modules.UnityAi.Application;
 /// </summary>
 public sealed class UnityAiGateway : IUnityAiGateway
 {
+    /// <summary>Substitution token recognized in <see cref="PromptTemplate.UserPromptTemplate"/>.</summary>
+    public const string InputJsonToken = "{{INPUT_JSON}}";
+
     private readonly UnityAiFeatureFlagAccessor _flags;
     private readonly IUnityAiModelRouter _router;
     private readonly IUnityAiPromptRegistry _prompts;
@@ -94,13 +97,23 @@ public sealed class UnityAiGateway : IUnityAiGateway
                 latencyMs: null, cancellationToken).ConfigureAwait(false);
         }
 
+        // Render the user prompt with the redacted input JSON. Templates
+        // address the input via the literal token {{INPUT_JSON}}; templates
+        // that don't include the token simply send a static user prompt
+        // (useful for tasks that only need the system prompt). Anything
+        // more elaborate (named slots, conditionals) is deferred until a
+        // real task asks for it — not worth the abstraction yet.
+        var renderedUserPrompt = prompt.UserPromptTemplate.Contains(InputJsonToken, StringComparison.Ordinal)
+            ? prompt.UserPromptTemplate.Replace(InputJsonToken, inputJson, StringComparison.Ordinal)
+            : prompt.UserPromptTemplate;
+
         var aiRequest = new AiRequest(
             TaskType: request.TaskType,
             Provider: selection.Provider,
             Model: selection.Model,
             PromptVersion: prompt.Version,
             SystemPrompt: prompt.SystemPrompt,
-            UserPrompt: prompt.UserPromptTemplate, // future: render with TInput
+            UserPrompt: renderedUserPrompt,
             ResponseSchemaName: prompt.ResponseSchemaName,
             MaxOutputTokens: null,
             TimeoutMs: request.TimeoutMs,

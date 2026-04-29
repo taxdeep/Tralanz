@@ -118,6 +118,58 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
         }
     }
 
+    public async Task<IReadOnlyDictionary<(string EntityType, Guid SourceId), SearchDocumentDisplay>> GetDisplayNamesAsync(
+        Guid companyId,
+        IReadOnlyCollection<(string EntityType, Guid SourceId)> keys,
+        CancellationToken cancellationToken)
+    {
+        if (keys.Count == 0)
+        {
+            return new Dictionary<(string EntityType, Guid SourceId), SearchDocumentDisplay>();
+        }
+
+        // Group by entity_type so each batch hits the (company_id,
+        // entity_type, source_id) primary key with a single ANY() lookup
+        // rather than a long OR chain.
+        var byType = keys
+            .GroupBy(k => k.EntityType, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Select(k => k.SourceId).Distinct().ToArray(), StringComparer.Ordinal);
+
+        var result = new Dictionary<(string EntityType, Guid SourceId), SearchDocumentDisplay>(keys.Count);
+        await using var connection = await connections.OpenAsync(cancellationToken);
+
+        foreach (var (entityType, ids) in byType)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                select source_id, primary_text, secondary_text, is_active
+                  from search_documents
+                 where company_id = @company_id
+                   and entity_type = @entity_type
+                   and source_id = ANY(@ids);
+                """;
+            command.Parameters.AddWithValue("company_id", companyId);
+            command.Parameters.AddWithValue("entity_type", entityType);
+            command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid)
+            {
+                Value = ids,
+            });
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var sourceId = reader.GetGuid(0);
+                result[(entityType, sourceId)] = new SearchDocumentDisplay(
+                    PrimaryText: reader.GetString(1),
+                    SecondaryText: reader.GetString(2),
+                    IsActive: reader.GetBoolean(3));
+            }
+        }
+
+        return result;
+    }
+
     private async Task RebuildCompanyProjectionAsync(Guid companyId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);

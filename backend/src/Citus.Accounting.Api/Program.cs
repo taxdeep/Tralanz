@@ -218,6 +218,18 @@ builder.Services.AddSingleton<IInvoicePdfRenderer, QuestPdfInvoiceRenderer>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformSecretProtector,
     Citus.Platform.Infrastructure.Persistence.PlatformSecretProtector>();
 
+// SysAdmin-managed AI provider config (provider, base URL, model,
+// encrypted API key). Registered here so the runtime model router and
+// IUnityAiProvider impls in this process can read what an operator
+// configured in the SysAdmin shell. The schema is created/migrated by
+// the SysAdmin API on startup; we just read.
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformAiProviderConfigStore,
+    Citus.Platform.Infrastructure.Persistence.PostgresPlatformAiProviderConfigStore>();
+// 30-second cached, decrypt-once view of the AI provider config — keeps
+// the per-call DB roundtrip + AES-GCM unwrap off the search hot path.
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformAiProviderRuntimeResolver,
+    Citus.Platform.Infrastructure.Notifications.PlatformAiProviderRuntimeResolver>();
+
 // Invoice email send (Batch 2). The SMTP sender reuses the platform's
 // PlatformEmailDeliveryOptions so SysAdmin verification mail and
 // Business invoice mail share one outbound configuration. Send-history
@@ -350,10 +362,34 @@ builder.Services.AddSingleton<IDashboardSuggestionService, DashboardSuggestionSe
 builder.Services.AddSingleton<IActionCenterTaskStore, PostgreSqlActionCenterTaskStore>();
 builder.Services.AddSingleton<IActionCenterTaskEventStore, PostgreSqlActionCenterTaskEventStore>();
 builder.Services.AddSingleton<IActionCenterTaskService, ActionCenterTaskService>();
+// Real OpenAI-compatible adapter — works for OpenAI, BigModel/智谱,
+// DeepSeek, Together, OpenRouter, LM Studio, and any other backend that
+// implements POST /chat/completions. The Noop provider stays registered
+// as a last-resort lookup if some future router selects "noop" by name.
+// The gateway picks providers by name, so multiple registrations are
+// harmless and the typed HttpClient lives behind IHttpClientFactory.
+builder.Services.AddHttpClient(nameof(OpenAiCompatibleAiProvider));
+builder.Services.AddSingleton<IUnityAiProvider, OpenAiCompatibleAiProvider>();
 builder.Services.AddSingleton<IUnityAiProvider, NoopAiProvider>();
-builder.Services.AddSingleton<IUnityAiModelRouter, NoopUnityAiModelRouter>();
-builder.Services.AddSingleton<IUnityAiPromptRegistry, NoopUnityAiPromptRegistry>();
-builder.Services.AddSingleton<IUnityAiStructuredOutputValidator, NoopUnityAiStructuredOutputValidator>();
+// Replaces NoopUnityAiModelRouter — reads SysAdmin AI provider config
+// to decide which provider/model name to select. Returns null (= gateway
+// short-circuits to Disabled) when no row is configured or the API key
+// is empty, so the deterministic ranking path stays intact.
+builder.Services.AddSingleton<IUnityAiModelRouter, PlatformConfigBackedModelRouter>();
+// Real prompt registry seeded with task templates (currently:
+// unitysearch.rerank.v1 for the hint-distillation flow). Tasks not
+// registered here cause the gateway to short-circuit at gate 3 — that's
+// the intended fail-closed behavior.
+builder.Services.AddSingleton<IUnityAiPromptRegistry, UnityAiPromptRegistry>();
+// Hint distillation orchestrator: reads top-clicked entities for a
+// company, asks the gateway for boost suggestions, persists into
+// unitysearch_ranking_hints. Manual trigger lives at
+// /internal/ai/distill-unitysearch?companyId=<uuid>.
+builder.Services.AddSingleton<IUnitysearchHintDistillationService, UnitysearchHintDistillationService>();
+// Real shape validator. Catches malformed provider responses before
+// the gateway tries to deserialize into TOutput, so a runaway LLM
+// can't poison the structured-output deserialization path.
+builder.Services.AddSingleton<IUnityAiStructuredOutputValidator, UnityAiStructuredOutputValidator>();
 builder.Services.AddSingleton<IUnityAiGateway, UnityAiGateway>();
 builder.Services.AddSingleton<IAccountingCopilotPlanner, NoopAccountingCopilotPlanner>();
 
@@ -10122,6 +10158,54 @@ accounting.MapPost(
         catch (InvalidOperationException ex)
         {
             return AccountingOperationBadRequest(ex);
+        }
+    });
+
+// ============================================================================
+// Internal admin trigger: run UnitySearch hint distillation for one company.
+//
+// This is the manual-fire endpoint while we wait for a hosted scheduler. It
+// has no business-session auth on purpose — this is a control-plane action,
+// not a tenant action — and it expects to be reached only from inside the
+// trusted network (curl on the host, the SysAdmin process forwarding from
+// the AI Activity page in a follow-up batch). Tighten this with a SysAdmin
+// session check before exposing the API to the public network.
+//
+// Usage:
+//   curl -X POST 'http://localhost:5xxx/internal/ai/distill-unitysearch?companyId=<uuid>'
+//
+// Response:
+//   { "jobRunId": "<uuid>", "candidateBuckets": 3, "gatewayCalls": 3,
+//     "hintsWritten": 6, "skippedReasonInsufficientActivity": 0,
+//     "failedGatewayCalls": 0, "overallStatus": "succeeded", "note": null }
+// ============================================================================
+app.MapPost(
+    "/internal/ai/distill-unitysearch",
+    async (
+        Guid companyId,
+        IUnitysearchHintDistillationService distillation,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken) =>
+    {
+        var logger = loggerFactory.CreateLogger("ai.distill.unitysearch");
+        if (companyId == Guid.Empty)
+        {
+            return Results.BadRequest(new { message = "companyId query parameter is required." });
+        }
+
+        try
+        {
+            var result = await distillation.DistillForCompanyAsync(
+                companyId: companyId,
+                triggeredByUserId: null,
+                triggerType: AiJobRunTriggerType.Manual,
+                cancellationToken).ConfigureAwait(false);
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Distillation trigger failed for {CompanyId}", companyId);
+            return Results.Problem(detail: ex.Message, statusCode: 500);
         }
     });
 
