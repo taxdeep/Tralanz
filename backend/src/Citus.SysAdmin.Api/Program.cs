@@ -93,6 +93,16 @@ builder.Services.AddSingleton<IPlatformSecretProtector, PlatformSecretProtector>
 // page surfaces manual lifts for permanent bans.
 builder.Services.AddSingleton<IPlatformLoginLockoutPolicy, PostgresPlatformLoginLockoutPolicy>();
 
+// AI observability stores. The Accounting API writes to ai_request_logs
+// + ai_job_runs every time UnityAiGateway runs; SysAdmin reads the
+// platform-wide aggregations from the same DB to drive the Overview
+// AI tile + the AI Activity page. Same connection string + DB as the
+// Accounting API so we can read what they wrote.
+builder.Services.AddSingleton<Citus.Modules.UnityAi.Application.Contracts.IAiJobRunStore,
+    Infrastructure.PostgreSQL.UnityAi.PostgreSqlAiJobRunStore>();
+builder.Services.AddSingleton<Citus.Modules.UnityAi.Application.Contracts.IAiRequestLogStore,
+    Infrastructure.PostgreSQL.UnityAi.PostgreSqlAiRequestLogStore>();
+
 var app = builder.Build();
 
 await using (var startupScope = app.Services.CreateAsyncScope())
@@ -1317,6 +1327,36 @@ control.MapGet(
         return Results.Ok(lockouts);
     });
 
+// AI activity (Operations → AI Activity). Pure read-only: the
+// Accounting API + UnityAiGateway write to ai_request_logs and
+// ai_job_runs every time the AI does anything; this endpoint
+// aggregates the platform-wide view for the SysAdmin tile cluster
+// + the dedicated activity page.
+control.MapGet(
+    "/operations/ai-activity",
+    async (
+        Citus.Modules.UnityAi.Application.Contracts.IAiRequestLogStore requestLogStore,
+        Citus.Modules.UnityAi.Application.Contracts.IAiJobRunStore jobRunStore,
+        string? window,
+        int? recentLimit,
+        CancellationToken cancellationToken) =>
+    {
+        var (windowStart, windowKey) = ResolveAiActivityWindow(window);
+        var summary = await requestLogStore.GetPlatformSummaryAsync(windowStart, cancellationToken);
+        var recentCalls = await requestLogStore.GetRecentPlatformAsync(
+            recentLimit ?? 100, cancellationToken);
+        var recentJobs = await jobRunStore.GetRecentPlatformAsync(
+            Math.Min(recentLimit ?? 50, 50), cancellationToken);
+
+        return Results.Ok(new
+        {
+            window = windowKey,
+            summary,
+            recentCalls,
+            recentJobs,
+        });
+    });
+
 control.MapPost(
     "/operations/lockouts/{lockoutId:guid}/lift",
     async (
@@ -1371,6 +1411,17 @@ static async ValueTask<object?> RequireSysAdminSessionAsync(
 
     httpContext.Items[typeof(SysAdminAuthSessionSummary)] = ToSessionSummaryFromValidation(validation);
     return await next(context);
+}
+
+static (DateTimeOffset windowStart, string windowKey) ResolveAiActivityWindow(string? window)
+{
+    var now = DateTimeOffset.UtcNow;
+    return (window ?? "24h").Trim().ToLowerInvariant() switch
+    {
+        "7d" => (now.AddDays(-7), "7d"),
+        "30d" => (now.AddDays(-30), "30d"),
+        _ => (now.AddHours(-24), "24h"),
+    };
 }
 
 static SysAdminAuthSessionSummary GetAuthenticatedSession(HttpContext httpContext)

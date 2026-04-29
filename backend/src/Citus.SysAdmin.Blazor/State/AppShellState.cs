@@ -55,6 +55,7 @@ public sealed class AppShellState
                 new NavMenuItem { Title = "Security", Href = "security", Icon = IconName.ShieldLock },
                 new NavMenuItem { Title = "SMTP", Href = "operations/smtp", Icon = IconName.Tool },
                 new NavMenuItem { Title = "AI Provider", Href = "operations/ai-provider", Icon = IconName.Puzzle },
+                new NavMenuItem { Title = "AI Activity", Href = "operations/ai-activity", Icon = IconName.Activity },
                 new NavMenuItem { Title = "Database", Href = "operations/database", Icon = IconName.Database },
                 new NavMenuItem { Title = "Locked Accounts", Href = "operations/lockouts", Icon = IconName.ShieldLock },
                 new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = IconName.Tool },

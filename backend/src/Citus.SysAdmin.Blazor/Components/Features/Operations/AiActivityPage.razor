@@ -1,0 +1,272 @@
+@page "/operations/ai-activity"
+
+@inject AppShellState ShellState
+@inject AiActivityClient ActivityClient
+
+<PageTitle>AI Activity | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <label class="flex items-center gap-2 text-sm">
+            Window:
+            <select class="citus-form-field__input"
+                    style="min-width: 8rem;"
+                    value="@_window"
+                    @onchange="@(e => OnWindowChanged(e.Value?.ToString() ?? "24h"))">
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+            </select>
+        </label>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else if (_report is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                Message="Could not load AI activity. The Accounting API may be unreachable."
+                ShowIcon="true" />
+}
+else
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <div class="flex flex-col gap-1">
+                <span>Pulled from <code>ai_request_logs</code> + <code>ai_job_runs</code> in the platform DB.</span>
+                <span class="text-fg-muted text-xs">
+                    Logs are <strong>kept indefinitely</strong>; retention can be revisited once data volume warrants it.
+                    AI is currently routed through the no-op runtime provider — real provider integration ships in a separate batch
+                    (so a row's <code>provider=noop</code> means the call was made but skipped the network).
+                </span>
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+
+    @* === Summary tiles ===================================================== *@
+    var s = _report.Summary;
+    var successPct = s.TotalCalls > 0
+        ? (s.SucceededCalls * 100.0 / s.TotalCalls).ToString("0.0") + "%"
+        : "—";
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Total calls"
+                       Value="@s.TotalCalls.ToString("N0")"
+                       Description="@($"Window: {WindowLabel(_report.Window)}")"
+                       Icon="IconName.Activity"
+                       Tone="@(s.TotalCalls > 0 ? StatTone.Info : StatTone.Neutral)" />
+        <CitusStatCard Label="Success rate"
+                       Value="@successPct"
+                       Description="@($"{s.SucceededCalls:N0} ok · {s.FailedCalls:N0} failed")"
+                       Icon="IconName.CircleCheck"
+                       Tone="@SuccessTone(s)" />
+        <CitusStatCard Label="Tokens"
+                       Value="@FormatTokens(s.TotalInputTokens + s.TotalOutputTokens)"
+                       Description="@($"in: {s.TotalInputTokens:N0} · out: {s.TotalOutputTokens:N0}")"
+                       Icon="IconName.Coin"
+                       Tone="StatTone.Info" />
+        <CitusStatCard Label="Est. cost"
+                       Value="@FormatCost(s.TotalEstimatedCost)"
+                       Description="@($"avg latency: {(s.AvgLatencyMs is { } a ? $"{a} ms" : "—")}")"
+                       Icon="IconName.Cash"
+                       Tone="StatTone.Info" />
+    </div>
+
+    @* === Recent calls ====================================================== *@
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Recent calls</h2>
+
+        @if (_report.RecentCalls.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm m-0">No AI calls recorded yet.</p>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>When</th>
+                            <th>Task</th>
+                            <th>Provider</th>
+                            <th>Model</th>
+                            <th>Status</th>
+                            <th class="text-right">Tokens (in / out)</th>
+                            <th class="text-right">Latency</th>
+                            <th class="text-right">Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _report.RecentCalls)
+                        {
+                            <tr>
+                                <td>@c.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
+                                <td>@c.TaskType</td>
+                                <td>@(c.Provider ?? "—")</td>
+                                <td>@(c.Model ?? "—")</td>
+                                <td>
+                                    <CitusBadge Color="@StatusColor(c.Status)">@c.Status</CitusBadge>
+                                    @if (!string.IsNullOrWhiteSpace(c.ErrorMessage))
+                                    {
+                                        <div class="text-fg-subtle text-xs mt-1" style="max-width: 24rem;">
+                                            @TruncateError(c.ErrorMessage)
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                    @FormatTokenPair(c.TokenInputCount, c.TokenOutputCount)
+                                </td>
+                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                    @(c.LatencyMs is { } ms ? $"{ms} ms" : "—")
+                                </td>
+                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                    @(c.EstimatedCost is { } v ? FormatCost(v) : "—")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @* === Recent jobs ======================================================= *@
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Recent jobs</h2>
+
+        @if (_report.RecentJobs.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm m-0">No background AI jobs recorded yet.</p>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Job type</th>
+                            <th>Trigger</th>
+                            <th>Status</th>
+                            <th class="text-right">Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var j in _report.RecentJobs)
+                        {
+                            <tr>
+                                <td>@(j.StartedAt?.ToLocalTime().ToString("MM-dd HH:mm:ss") ?? "—")</td>
+                                <td>@j.JobType</td>
+                                <td>@j.TriggerType</td>
+                                <td>
+                                    <CitusBadge Color="@StatusColor(j.Status)">@j.Status</CitusBadge>
+                                    @if (!string.IsNullOrWhiteSpace(j.ErrorMessage))
+                                    {
+                                        <div class="text-fg-subtle text-xs mt-1" style="max-width: 24rem;">
+                                            @TruncateError(j.ErrorMessage)
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                    @FormatDuration(j.StartedAt, j.FinishedAt)
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "AI activity",
+        Subtitle = "Every AI call + background job, platform-wide. Powered by ai_request_logs + ai_job_runs."
+    };
+
+    private string _window = "24h";
+    private bool _isLoading = true;
+    private AiActivityReportDto? _report;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _report = await ActivityClient.GetAsync(_window);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnWindowChanged(string window)
+    {
+        _window = window;
+        await LoadAsync();
+    }
+
+    private static string WindowLabel(string key) => key switch
+    {
+        "7d" => "last 7 days",
+        "30d" => "last 30 days",
+        _ => "last 24 hours",
+    };
+
+    private static StatTone SuccessTone(AiActivitySummaryDto s)
+    {
+        if (s.TotalCalls == 0) return StatTone.Neutral;
+        var pct = s.SucceededCalls * 100.0 / s.TotalCalls;
+        if (pct >= 99.0) return StatTone.Success;
+        if (pct >= 90.0) return StatTone.Info;
+        return StatTone.Warning;
+    }
+
+    private static string StatusColor(string status) => status.ToLowerInvariant() switch
+    {
+        "succeeded" or "completed" => "green",
+        "failed" or "error" => "red",
+        "invalid_output" => "orange",
+        "running" or "pending" => "blue",
+        _ => "default",
+    };
+
+    private static string FormatTokens(long total) =>
+        total >= 1_000_000 ? $"{total / 1_000_000.0:0.##}M" :
+        total >= 1_000 ? $"{total / 1_000.0:0.##}k" :
+        total.ToString("N0");
+
+    private static string FormatTokenPair(int? input, int? output)
+    {
+        if (input is null && output is null) return "—";
+        return $"{(input ?? 0):N0} / {(output ?? 0):N0}";
+    }
+
+    private static string FormatCost(decimal cost) =>
+        cost == 0m ? "$0.00" : $"${cost:N4}";
+
+    private static string FormatDuration(DateTimeOffset? start, DateTimeOffset? end)
+    {
+        if (start is null) return "—";
+        if (end is null) return "running…";
+        var span = end.Value - start.Value;
+        if (span.TotalSeconds < 1) return $"{span.TotalMilliseconds:0} ms";
+        if (span.TotalMinutes < 1) return $"{span.TotalSeconds:0.0} s";
+        return $"{span.TotalMinutes:0.0} min";
+    }
+
+    private static string TruncateError(string error)
+    {
+        var trimmed = error.Trim();
+        return trimmed.Length <= 200 ? trimmed : trimmed[..200] + "…";
+    }
+}

@@ -68,6 +68,15 @@ public interface IAiJobRunStore
         string? jobType,
         int limit,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Platform-wide variant for the SysAdmin AI Activity page —
+    /// returns recent runs across every company so an operator can
+    /// audit "what is the AI doing right now" at a glance.
+    /// </summary>
+    Task<IReadOnlyList<AiJobRunRecord>> GetRecentPlatformAsync(
+        int limit,
+        CancellationToken cancellationToken);
 }
 
 public interface IAiRequestLogStore
@@ -79,4 +88,35 @@ public interface IAiRequestLogStore
         string? taskType,
         int limit,
         CancellationToken cancellationToken);
+
+    /// <summary>Platform-wide recent calls for the SysAdmin AI Activity page.</summary>
+    Task<IReadOnlyList<AiRequestLogRecord>> GetRecentPlatformAsync(
+        int limit,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Counters + token / cost totals for a rolling window (typically
+    /// 24 h, 7 d, or 30 d). Powers the AI activity tile on SysAdmin
+    /// Overview and the period-summary cards on the AI Activity page.
+    /// </summary>
+    Task<AiActivitySummary> GetPlatformSummaryAsync(
+        DateTimeOffset windowStart,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Aggregated AI activity over a rolling window. Both succeeded and
+/// failed counts are exposed so the SysAdmin tile can render a
+/// success-rate ratio without re-querying.
+/// </summary>
+public sealed record AiActivitySummary(
+    DateTimeOffset WindowStart,
+    DateTimeOffset WindowEnd,
+    int TotalCalls,
+    int SucceededCalls,
+    int FailedCalls,
+    long TotalInputTokens,
+    long TotalOutputTokens,
+    decimal TotalEstimatedCost,
+    int? AvgLatencyMs,
+    DateTimeOffset? LastCallAt);

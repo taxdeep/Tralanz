@@ -9,6 +9,7 @@
 @inject SysAdminHealthClient SysAdminHealthClient
 @inject AccountingHealthClient AccountingHealthClient
 @inject PlatformRuntimeMetricsClient MetricsClient
+@inject AiActivityClient AiActivityClient
 
 <PageTitle>Overview | Tralanz SysAdmin</PageTitle>
 
@@ -97,7 +98,7 @@ else
                 }
             </span>
         </header>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-3">
             <CitusStatCard
                 Label="CPU"
                 Value="@FormatCpu(_metrics?.Cpu)"
@@ -122,6 +123,14 @@ else
                 Description="@FormatAttachmentDescription(_metrics?.Attachments)"
                 Icon="IconName.File"
                 Tone="@AttachmentTone(_metrics?.Attachments)" />
+            <a href="operations/ai-activity" class="contents">
+                <CitusStatCard
+                    Label="AI activity"
+                    Value="@FormatAiCalls(_aiSummary)"
+                    Description="@FormatAiDescription(_aiSummary)"
+                    Icon="IconName.Puzzle"
+                    Tone="@AiTone(_aiSummary)" />
+            </a>
         </div>
     </section>
 
@@ -223,6 +232,7 @@ else
     private ServiceHealthStatus? _sysAdminHealth;
     private ServiceHealthStatus? _accountingHealth;
     private PlatformRuntimeMetricsSnapshotDto? _metrics;
+    private AiActivitySummaryDto? _aiSummary;
     private System.Threading.Timer? _metricsTimer;
     private static readonly TimeSpan MetricsRefreshInterval = TimeSpan.FromSeconds(30);
 
@@ -263,6 +273,9 @@ else
         var sysAdminHealthTask = SysAdminHealthClient.GetHealthAsync();
         var accountingHealthTask = AccountingHealthClient.GetHealthAsync();
         var metricsTask = MetricsClient.GetSnapshotAsync();
+        // 24h-window AI summary feeds the tile; the dedicated AI Activity
+        // page can drill into 7d / 30d / recent-call detail.
+        var aiTask = AiActivityClient.GetAsync(window: "24h", recentLimit: 1);
 
         _overview = await overviewTask;
         _modules = await modulesTask;
@@ -270,15 +283,20 @@ else
         _sysAdminHealth = await sysAdminHealthTask;
         _accountingHealth = await accountingHealthTask;
         _metrics = await metricsTask;
+        _aiSummary = (await aiTask)?.Summary;
         _isLoading = false;
     }
 
     private async Task RefreshMetricsAsync()
     {
-        var snapshot = await MetricsClient.GetSnapshotAsync();
-        if (snapshot is null) return;
-        _metrics = snapshot;
-        await InvokeAsync(StateHasChanged);
+        var snapshotTask = MetricsClient.GetSnapshotAsync();
+        var aiTask = AiActivityClient.GetAsync(window: "24h", recentLimit: 1);
+        var snapshot = await snapshotTask;
+        var ai = await aiTask;
+        var changed = false;
+        if (snapshot is not null) { _metrics = snapshot; changed = true; }
+        if (ai is not null) { _aiSummary = ai.Summary; changed = true; }
+        if (changed) await InvokeAsync(StateHasChanged);
     }
 
     // Formatter helpers — every method gracefully handles null inputs so
@@ -377,6 +395,41 @@ else
         attachments is null ? StatTone.Neutral
         : attachments.IsProvisioned ? StatTone.Info
         : StatTone.Neutral;
+
+    // AI tile — uses the 24h platform summary. "Calls (24h)" as the
+    // headline, "last call N min ago · success%" as the subtitle.
+    private static string FormatAiCalls(AiActivitySummaryDto? ai)
+    {
+        if (ai is null) return "—";
+        return ai.TotalCalls.ToString("N0");
+    }
+
+    private static string FormatAiDescription(AiActivitySummaryDto? ai)
+    {
+        if (ai is null) return "Sampling AI activity…";
+        if (ai.TotalCalls == 0) return "Idle (24h). Click to open AI Activity →";
+        var pct = ai.SucceededCalls * 100.0 / ai.TotalCalls;
+        var lastSeen = ai.LastCallAt is { } t ? FormatRelative(t) : "no data";
+        return $"24h calls · last {lastSeen} · {pct:0.0}% ok";
+    }
+
+    private static StatTone AiTone(AiActivitySummaryDto? ai)
+    {
+        if (ai is null || ai.TotalCalls == 0) return StatTone.Neutral;
+        var pct = ai.SucceededCalls * 100.0 / ai.TotalCalls;
+        if (pct >= 99.0) return StatTone.Success;
+        if (pct >= 90.0) return StatTone.Info;
+        return StatTone.Warning;
+    }
+
+    private static string FormatRelative(DateTimeOffset when)
+    {
+        var span = DateTimeOffset.UtcNow - when;
+        if (span.TotalSeconds < 60) return $"{(int)span.TotalSeconds}s ago";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
 
     private static string FormatBytes(long bytes)
     {
