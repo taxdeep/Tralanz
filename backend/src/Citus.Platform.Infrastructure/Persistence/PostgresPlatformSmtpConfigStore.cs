@@ -145,7 +145,18 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
             (object?)newPasswordProtected ?? DBNull.Value);
         command.Parameters.AddWithValue("updated_by_user_id", updatedByUserId);
 
-        var updatedAt = (DateTimeOffset)(await command.ExecuteScalarAsync(cancellationToken))!;
+        // Npgsql 6+ reads timestamptz as DateTime (UTC kind) by default,
+        // not DateTimeOffset — the direct cast on the boxed scalar
+        // throws "Unable to cast object of type 'System.DateTime' to
+        // type 'System.DateTimeOffset'". Wrap in a zero-offset
+        // DateTimeOffset since the column is already UTC.
+        var rawUpdatedAt = await command.ExecuteScalarAsync(cancellationToken);
+        var updatedAt = rawUpdatedAt switch
+        {
+            DateTimeOffset dto => dto,
+            DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException("updated_at returned an unexpected scalar type."),
+        };
 
         return new PlatformSmtpConfigSnapshot(
             Provider: request.Provider.Trim().ToLowerInvariant(),
