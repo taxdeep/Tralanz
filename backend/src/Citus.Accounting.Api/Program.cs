@@ -301,8 +301,15 @@ builder.Services.AddSingleton<PlatformSchemaInitializer>();
 // branch; users with mfa_mode='none' (the default for wizard-created
 // owners) never trigger the sender, so missing SMTP config is harmless
 // until MFA is explicitly enabled.
-builder.Services.Configure<Citus.Platform.Infrastructure.Notifications.PlatformEmailDeliveryOptions>(
-    builder.Configuration.GetSection(Citus.Platform.Infrastructure.Notifications.PlatformEmailDeliveryOptions.SectionName));
+// SMTP config lives in the platform_smtp_config singleton row, read
+// through IPlatformEmailDeliveryConfigResolver. Both senders
+// (verification mail in SysAdmin + invoice mail in Accounting) hit the
+// same row, so configuring SMTP once in SysAdmin → Operations → SMTP
+// covers both paths.
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformSmtpConfigStore,
+    Citus.Platform.Infrastructure.Persistence.PostgresPlatformSmtpConfigStore>();
+builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformEmailDeliveryConfigResolver,
+    Citus.Platform.Infrastructure.Notifications.PlatformEmailDeliveryConfigResolver>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformVerificationNotificationSender,
     Citus.Platform.Infrastructure.Notifications.SmtpPlatformVerificationNotificationSender>();
 builder.Services.AddSingleton<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository,
@@ -393,6 +400,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var invoiceSendHistoryStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceSendHistoryStore>();
     var invoiceTemplateStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceTemplateStore>();
+    var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformSmtpConfigStore>();
     var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -420,6 +428,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     await invoiceSendHistoryStore.EnsureSchemaAsync(CancellationToken.None);
     await invoiceTemplateStore.EnsureSchemaAsync(CancellationToken.None);
+    await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
     await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);

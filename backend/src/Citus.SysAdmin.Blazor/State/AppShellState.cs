@@ -53,6 +53,7 @@ public sealed class AppShellState
                 new NavMenuItem { Title = "Users", Href = "users", Icon = IconName.Users },
                 new NavMenuItem { Title = "Audit", Href = "audit", Icon = IconName.Report },
                 new NavMenuItem { Title = "Security", Href = "security", Icon = IconName.ShieldLock },
+                new NavMenuItem { Title = "SMTP", Href = "operations/smtp", Icon = IconName.Tool },
                 new NavMenuItem { Title = "Maintenance", Href = "maintenance", Icon = IconName.Tool },
                 new NavMenuItem { Title = "Runtime Health", Href = "runtime-health", Icon = IconName.Activity }
             ]

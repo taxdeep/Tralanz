@@ -30,7 +30,12 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddSingleton(new PlatformPostgresConnectionFactory(connectionString));
 builder.Services.AddSingleton(new PostgreSqlConnectionFactory(connectionString));
 builder.Services.AddSingleton<SysAdminPasswordHasher>();
-builder.Services.Configure<PlatformEmailDeliveryOptions>(builder.Configuration.GetSection(PlatformEmailDeliveryOptions.SectionName));
+// SMTP config now lives in the platform_smtp_config singleton row, not
+// appsettings. Store + resolver decrypt the password through the
+// PlatformSecretProtector so the in-memory snapshot is plaintext-ready
+// for SmtpClient. See IPlatformEmailDeliveryConfigResolver.
+builder.Services.AddSingleton<IPlatformSmtpConfigStore, PostgresPlatformSmtpConfigStore>();
+builder.Services.AddSingleton<IPlatformEmailDeliveryConfigResolver, PlatformEmailDeliveryConfigResolver>();
 builder.Services.AddScoped<IPlatformMetadataRepository, PostgresPlatformMetadataRepository>();
 builder.Services.AddScoped<IPlatformMetadataService, PlatformMetadataService>();
 builder.Services.AddScoped<IPlatformBootstrapper, PlatformCoreBootstrapper>();
@@ -71,8 +76,11 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var authRepository = startupScope.ServiceProvider.GetRequiredService<ISysAdminAuthRepository>();
     var authOptions = startupScope.ServiceProvider.GetRequiredService<IOptions<SysAdminAuthOptions>>().Value;
 
+    var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformSmtpConfigStore>();
+
     await runtimeRepository.EnsureSchemaAsync(CancellationToken.None);
     await authRepository.EnsureSchemaAsync(CancellationToken.None);
+    await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
 
     if (authOptions.Bootstrap.IsActive(builder.Environment.IsDevelopment()))
     {
@@ -938,6 +946,109 @@ control.MapPut(
                 message = ex.Message
             });
         }
+    });
+
+// ---------------------------------------------------------------------------
+// SMTP configuration (SysAdmin → Operations → SMTP).
+//
+// Singleton-row store on top of platform_smtp_config. Password column
+// is AES-GCM ciphertext; the resolver decrypts at send time, the GET
+// endpoint never returns the envelope or the plaintext — only a
+// HasPassword flag so the UI can render "•••• configured".
+// ---------------------------------------------------------------------------
+control.MapGet(
+    "/operations/smtp",
+    async (IPlatformSmtpConfigStore store, CancellationToken cancellationToken) =>
+    {
+        var snapshot = await store.GetAsync(cancellationToken);
+        return Results.Ok(snapshot ?? new PlatformSmtpConfigSnapshot(
+            Provider: "disabled",
+            FromEmail: string.Empty,
+            FromDisplayName: "Tralanz Books",
+            Host: string.Empty,
+            Port: 587,
+            UseSsl: true,
+            Username: string.Empty,
+            HasPassword: false,
+            UpdatedAt: default,
+            UpdatedByUserId: null));
+    });
+
+control.MapPut(
+    "/operations/smtp",
+    async (
+        HttpContext httpContext,
+        SmtpConfigHttpRequest request,
+        IPlatformSmtpConfigStore store,
+        IPlatformEmailDeliveryConfigResolver resolver,
+        CancellationToken cancellationToken) =>
+    {
+        var operatorId = GetAuthenticatedSession(httpContext).SysAdminAccountId;
+
+        var upsert = new PlatformSmtpConfigUpsertRequest(
+            Provider: string.IsNullOrWhiteSpace(request.Provider) ? "disabled" : request.Provider,
+            FromEmail: request.FromEmail ?? string.Empty,
+            FromDisplayName: string.IsNullOrWhiteSpace(request.FromDisplayName)
+                ? "Tralanz Books"
+                : request.FromDisplayName,
+            Host: request.Host ?? string.Empty,
+            Port: request.Port ?? 587,
+            UseSsl: request.UseSsl ?? true,
+            Username: request.Username ?? string.Empty,
+            NewPassword: request.NewPassword,
+            ClearPassword: request.ClearPassword ?? false);
+
+        try
+        {
+            var snapshot = await store.UpsertAsync(upsert, operatorId, cancellationToken);
+            // Drop the resolver cache so the very next email send picks
+            // up the freshly-saved values.
+            resolver.Invalidate();
+            return Results.Ok(snapshot);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+control.MapPost(
+    "/operations/smtp/test",
+    async (
+        SmtpTestSendHttpRequest request,
+        IPlatformVerificationNotificationSender sender,
+        IPlatformEmailDeliveryConfigResolver resolver,
+        CancellationToken cancellationToken) =>
+    {
+        if (string.IsNullOrWhiteSpace(request.ToEmail) ||
+            !request.ToEmail.Contains('@', StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { message = "Test recipient email is required." });
+        }
+
+        // Force a fresh read so a save-then-test sequence sees the new
+        // values immediately.
+        resolver.Invalidate();
+
+        var result = await sender.SendVerificationAsync(
+            new PlatformVerificationNotificationMessage
+            {
+                DispatchId = Guid.NewGuid(),
+                UserId = Guid.Empty,
+                Purpose = "notification_test",
+                Destination = request.ToEmail.Trim(),
+                RecipientDisplayName = "SMTP test recipient",
+                VerificationCode = "000000",
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(5),
+            },
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            succeeded = result.Succeeded,
+            providerKey = result.ProviderKey,
+            failureMessage = result.FailureMessage,
+        });
     });
 
 app.Run();

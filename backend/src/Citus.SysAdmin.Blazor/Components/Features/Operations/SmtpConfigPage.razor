@@ -1,0 +1,358 @@
+@page "/operations/smtp"
+
+@inject AppShellState ShellState
+@inject CitusToastService Message
+@inject SmtpConfigClient SmtpClient
+
+<PageTitle>SMTP | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Form" />
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+    }
+
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <div class="flex flex-col gap-1">
+                <span>SMTP credentials are stored encrypted at rest with the platform secret protector. Both SysAdmin verification mail and Business invoice email use this configuration.</span>
+                @if (_config?.HasPassword == true)
+                {
+                    <span class="text-fg-muted text-xs">
+                        Password is configured. Leave the password field blank to keep the existing password; type a new value to replace it.
+                    </span>
+                }
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Provider</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">Provider</span>
+                    <select class="citus-form-field__input"
+                            value="@_draft.Provider"
+                            @onchange="@(e => _draft = _draft with { Provider = e.Value?.ToString() ?? "disabled" })">
+                        <option value="disabled" selected="@(_draft.Provider == "disabled")">Disabled (no email sent)</option>
+                        <option value="smtp" selected="@(_draft.Provider == "smtp")">SMTP</option>
+                    </select>
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">From email</span>
+                    <input type="email"
+                           class="citus-form-field__input"
+                           placeholder="ops@yourcompany.com"
+                           value="@_draft.FromEmail"
+                           @oninput="@(e => _draft = _draft with { FromEmail = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">From display name</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_draft.FromDisplayName"
+                           @oninput="@(e => _draft = _draft with { FromDisplayName = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+            </div>
+
+            <h2 class="citus-panel__title mt-6">SMTP server</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Host</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="smtp.example.com"
+                           value="@_draft.Host"
+                           @oninput="@(e => _draft = _draft with { Host = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Port</span>
+                    <input type="number"
+                           class="citus-form-field__input"
+                           min="1"
+                           max="65535"
+                           value="@_draft.Port"
+                           @oninput="@(e => _draft = _draft with { Port = ParsePort(e.Value?.ToString()) })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Username</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_draft.Username"
+                           @oninput="@(e => _draft = _draft with { Username = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">
+                        Password
+                        @if (_config?.HasPassword == true)
+                        {
+                            <span class="text-fg-subtle text-xs">(stored — leave blank to keep)</span>
+                        }
+                    </span>
+                    <input type="password"
+                           class="citus-form-field__input"
+                           autocomplete="new-password"
+                           placeholder="@(_config?.HasPassword == true ? "•••• configured" : "Enter SMTP password")"
+                           value="@_newPassword"
+                           @oninput="@(e => _newPassword = e.Value?.ToString() ?? string.Empty)" />
+                </label>
+
+                <label class="citus-form-field md:col-span-2">
+                    <input type="checkbox"
+                           class="mr-2"
+                           checked="@_draft.UseSsl"
+                           @onchange="@(e => _draft = _draft with { UseSsl = (bool)(e.Value ?? false) })" />
+                    <span>Use SSL / TLS</span>
+                </label>
+            </div>
+
+            <div class="flex items-center gap-3 mt-4">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isBusy"
+                             OnClick="SaveAsync">
+                    @(_isBusy ? "Saving…" : "Save changes")
+                </CitusButton>
+                @if (_config?.HasPassword == true)
+                {
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Disabled="_isBusy"
+                                 OnClick="ClearPasswordAsync">
+                        Remove password
+                    </CitusButton>
+                }
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Test send</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Verifies the saved SMTP configuration by sending a notification-test email.
+                Save your changes first — the test always uses the persisted row, not the
+                form draft.
+            </p>
+
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">Recipient</span>
+                <input type="email"
+                       class="citus-form-field__input"
+                       placeholder="you@yourcompany.com"
+                       value="@_testToEmail"
+                       @oninput="@(e => _testToEmail = e.Value?.ToString() ?? string.Empty)" />
+            </label>
+
+            <div class="flex items-center gap-3 mt-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isBusy || string.IsNullOrWhiteSpace(_testToEmail)"
+                             OnClick="SendTestAsync">
+                    @(_isBusy ? "Sending…" : "Send test email")
+                </CitusButton>
+            </div>
+
+            @if (_lastTestResult is { } test)
+            {
+                <CitusAlert Severity="@(test.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
+                            ShowIcon="true"
+                            Class="mt-4">
+                    <MessageTemplate>
+                        @if (test.Succeeded)
+                        {
+                            <span>Test email sent to <strong>@_testToEmail</strong>. Check the inbox.</span>
+                        }
+                        else
+                        {
+                            <span>Test send failed: @(test.ErrorMessage ?? "no detail returned by provider.")</span>
+                        }
+                    </MessageTemplate>
+                </CitusAlert>
+            }
+
+            @if (_config is not null && _config.UpdatedAt != default)
+            {
+                <p class="text-fg-subtle text-xs mt-4">
+                    Last saved @_config.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                </p>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "SMTP configuration",
+        Subtitle = "Outbound email server credentials. Drives both SysAdmin verification mail and Business invoice email."
+    };
+
+    private SmtpConfigDto? _config;
+    private SmtpDraft _draft = SmtpDraft.Empty();
+    private string _newPassword = string.Empty;
+    private string _testToEmail = string.Empty;
+    private SmtpTestSendOutcome? _lastTestResult;
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _config = await SmtpClient.GetAsync();
+            _draft = _config is null ? SmtpDraft.Empty() : SmtpDraft.From(_config);
+            _newPassword = string.Empty;
+            _lastTestResult = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        _error = null;
+        try
+        {
+            var request = new SmtpConfigUpsertDto(
+                Provider: _draft.Provider,
+                FromEmail: _draft.FromEmail.Trim(),
+                FromDisplayName: _draft.FromDisplayName.Trim(),
+                Host: _draft.Host.Trim(),
+                Port: _draft.Port,
+                UseSsl: _draft.UseSsl,
+                Username: _draft.Username.Trim(),
+                NewPassword: string.IsNullOrWhiteSpace(_newPassword) ? null : _newPassword,
+                ClearPassword: false);
+
+            var outcome = await SmtpClient.SaveAsync(request);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Save failed.";
+                return;
+            }
+
+            _config = outcome.Saved;
+            if (_config is not null) _draft = SmtpDraft.From(_config);
+            _newPassword = string.Empty;
+            await Message.SuccessAsync("SMTP configuration saved.");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ClearPasswordAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        try
+        {
+            var request = new SmtpConfigUpsertDto(
+                Provider: _draft.Provider,
+                FromEmail: _draft.FromEmail.Trim(),
+                FromDisplayName: _draft.FromDisplayName.Trim(),
+                Host: _draft.Host.Trim(),
+                Port: _draft.Port,
+                UseSsl: _draft.UseSsl,
+                Username: _draft.Username.Trim(),
+                NewPassword: null,
+                ClearPassword: true);
+
+            var outcome = await SmtpClient.SaveAsync(request);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Could not clear password.";
+                return;
+            }
+
+            _config = outcome.Saved;
+            if (_config is not null) _draft = SmtpDraft.From(_config);
+            await Message.SuccessAsync("SMTP password removed.");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SendTestAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        try
+        {
+            _lastTestResult = await SmtpClient.SendTestAsync(_testToEmail.Trim());
+            if (_lastTestResult.Succeeded)
+            {
+                await Message.SuccessAsync($"Test email sent to {_testToEmail.Trim()}.");
+            }
+            else
+            {
+                await Message.WarningAsync(
+                    $"Test send failed: {_lastTestResult.ErrorMessage ?? "no detail."}");
+            }
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static int ParsePort(string? raw) =>
+        int.TryParse(raw, out var port) && port > 0 ? port : 587;
+
+    private sealed record SmtpDraft(
+        string Provider,
+        string FromEmail,
+        string FromDisplayName,
+        string Host,
+        int Port,
+        bool UseSsl,
+        string Username)
+    {
+        public static SmtpDraft Empty() => new(
+            Provider: "disabled",
+            FromEmail: string.Empty,
+            FromDisplayName: "Tralanz Books",
+            Host: string.Empty,
+            Port: 587,
+            UseSsl: true,
+            Username: string.Empty);
+
+        public static SmtpDraft From(SmtpConfigDto dto) => new(
+            Provider: dto.Provider,
+            FromEmail: dto.FromEmail,
+            FromDisplayName: dto.FromDisplayName,
+            Host: dto.Host,
+            Port: dto.Port,
+            UseSsl: dto.UseSsl,
+            Username: dto.Username);
+    }
+}

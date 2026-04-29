@@ -2,18 +2,17 @@ using System.Net;
 using System.Net.Mail;
 using System.Net.Mime;
 using Citus.Accounting.Application.Invoices;
-using Citus.Platform.Infrastructure.Notifications;
+using Citus.Platform.Core.Abstractions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Citus.Accounting.Infrastructure.Invoices;
 
 /// <summary>
-/// SMTP sender for invoice email. Reuses the platform's
-/// <see cref="PlatformEmailDeliveryOptions"/> so operators configure SMTP
-/// in one place (PlatformNotifications:Smtp) and both verification mail
-/// (sysadmin) and business invoice mail share the same FromEmail / SMTP
-/// server / credentials.
+/// SMTP sender for invoice email. Reads SMTP configuration from
+/// <see cref="IPlatformEmailDeliveryConfigResolver"/> — the same
+/// platform_smtp_config row the SysAdmin verification sender uses, so
+/// SysAdmin verification mail and Business invoice mail always share
+/// one outbound configuration.
 ///
 /// Sends multi-part email — text/plain alternate view + text/html
 /// alternate view — with a single PDF attachment. Renders multiple
@@ -21,14 +20,14 @@ namespace Citus.Accounting.Infrastructure.Invoices;
 /// </summary>
 public sealed class SmtpInvoiceEmailSender : IInvoiceEmailSender
 {
-    private readonly IOptions<PlatformEmailDeliveryOptions> _options;
+    private readonly IPlatformEmailDeliveryConfigResolver _configResolver;
     private readonly ILogger<SmtpInvoiceEmailSender> _logger;
 
     public SmtpInvoiceEmailSender(
-        IOptions<PlatformEmailDeliveryOptions> options,
+        IPlatformEmailDeliveryConfigResolver configResolver,
         ILogger<SmtpInvoiceEmailSender> logger)
     {
-        _options = options;
+        _configResolver = configResolver;
         _logger = logger;
     }
 
@@ -38,18 +37,22 @@ public sealed class SmtpInvoiceEmailSender : IInvoiceEmailSender
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var configurationError = _options.Value.GetConfigurationError();
+        var snapshot = await _configResolver.RefreshAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return new InvoiceEmailSendResult(false,
+                "SMTP is not configured yet. Configure it in SysAdmin → Operations → SMTP first.");
+        }
+
+        var configurationError = snapshot.GetConfigurationError();
         if (!string.IsNullOrWhiteSpace(configurationError))
         {
             return new InvoiceEmailSendResult(false, configurationError);
         }
 
-        var current = _options.Value;
-        var smtp = current.Smtp;
-
         using var mail = new MailMessage
         {
-            From = new MailAddress(current.FromEmail.Trim(), current.FromDisplayName.Trim()),
+            From = new MailAddress(snapshot.FromEmail.Trim(), snapshot.FromDisplayName.Trim()),
             Subject = request.Subject,
         };
 
@@ -90,10 +93,10 @@ public sealed class SmtpInvoiceEmailSender : IInvoiceEmailSender
         var attachment = new Attachment(attachmentStream, request.AttachmentFileName, "application/pdf");
         mail.Attachments.Add(attachment);
 
-        using var client = new SmtpClient(smtp.Host.Trim(), smtp.Port)
+        using var client = new SmtpClient(snapshot.Host.Trim(), snapshot.Port)
         {
-            EnableSsl = smtp.UseSsl,
-            Credentials = new NetworkCredential(smtp.Username.Trim(), smtp.Password),
+            EnableSsl = snapshot.UseSsl,
+            Credentials = new NetworkCredential(snapshot.Username.Trim(), snapshot.Password),
         };
 
         try
