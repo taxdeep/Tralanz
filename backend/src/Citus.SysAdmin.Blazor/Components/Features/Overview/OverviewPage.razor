@@ -380,18 +380,20 @@ else
 
     private static string FormatBytes(long bytes)
     {
-        if (bytes < 1024) return $"{bytes} B";
+        // Plain if/else chain: a `<` switch-pattern arm (e.g. `< mb =>`)
+        // confuses the Razor source generator inside @code {} blocks —
+        // it parses the leading `<` as an HTML tag opener and the build
+        // then fails with RZ9980 / RZ1006 on Release. Same logic, no `<`
+        // at the start of any line below.
         const long kb = 1024L;
         const long mb = kb * 1024L;
         const long gb = mb * 1024L;
         const long tb = gb * 1024L;
-        return bytes switch
-        {
-            < mb => $"{bytes / (double)kb:F1} KB",
-            < gb => $"{bytes / (double)mb:F1} MB",
-            < tb => $"{bytes / (double)gb:F2} GB",
-            _ => $"{bytes / (double)tb:F2} TB",
-        };
+        if (bytes >= tb) return $"{bytes / (double)tb:F2} TB";
+        if (bytes >= gb) return $"{bytes / (double)gb:F2} GB";
+        if (bytes >= mb) return $"{bytes / (double)mb:F1} MB";
+        if (bytes >= kb) return $"{bytes / (double)kb:F1} KB";
+        return $"{bytes} B";
     }
 
     private async Task BootstrapCoreAsync()

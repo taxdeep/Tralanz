@@ -8,7 +8,8 @@
       "Bash(pnpm --version)",
       "Bash(npm --version)",
       "Bash(corepack enable *)",
-      "Bash(corepack prepare *)"
+      "Bash(corepack prepare *)",
+      "Bash(grep -v \"obj\\\\\\\\\\\\\\\\\\\\|bin\\\\\\\\\\\\\\\\\\\\|/obj/\\\\|/bin/\")"
     ]
   }
 }
