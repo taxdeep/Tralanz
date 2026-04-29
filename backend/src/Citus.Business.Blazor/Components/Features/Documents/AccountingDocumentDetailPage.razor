@@ -22,10 +22,104 @@
                 <CitusIcon Name="IconName.Download" Size="IconSize.Inline" />
                 <span>@(_isDownloadingPdf ? "Generating…" : "Download PDF")</span>
             </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Disabled="_isSendDialogOpen || _isSendingEmail"
+                         OnClick="OpenSendDialog">
+                <span>Send invoice</span>
+            </CitusButton>
         }
         <CitusBadge Color="@("blue")">Read-only review</CitusBadge>
     </Actions>
 </CitusPageHeader>
+
+@if (IsInvoice && _lastSent is { } lastSent)
+{
+    <CitusAlert Severity="@(lastSent.Status == "sent" ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            @if (lastSent.Status == "sent")
+            {
+                <span>Sent to <strong>@lastSent.ToEmail</strong> on @lastSent.SentAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm").</span>
+            }
+            else
+            {
+                <span>Last send attempt to <strong>@lastSent.ToEmail</strong> failed at @lastSent.SentAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(string.IsNullOrWhiteSpace(lastSent.ErrorMessage) ? "." : $": {lastSent.ErrorMessage}")</span>
+            }
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+@if (_isSendDialogOpen && _document is not null)
+{
+    <section class="citus-panel mb-4">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Send invoice @_document.DisplayNumber</h2>
+            <button type="button" class="citus-icon-button" title="Close" @onclick="CloseSendDialog">
+                <CitusIcon Name="IconName.X" Size="IconSize.Inline" />
+            </button>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_sendError))
+        {
+            <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_sendError" ShowIcon="true" Class="mb-3" />
+        }
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">To</span>
+                <input type="email"
+                       class="citus-form-field__input"
+                       placeholder="customer@example.com"
+                       value="@_sendTo"
+                       @oninput="@(e => _sendTo = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSendingEmail" />
+            </label>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">CC (optional, comma-separated)</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="cfo@example.com, ops@example.com"
+                       value="@_sendCc"
+                       @oninput="@(e => _sendCc = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSendingEmail" />
+            </label>
+            <label class="citus-form-field">
+                <span class="citus-form-field__label">BCC (optional)</span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="archive@yourcompany.com"
+                       value="@_sendBcc"
+                       @oninput="@(e => _sendBcc = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@_isSendingEmail" />
+            </label>
+            <label class="citus-form-field md:col-span-2">
+                <span class="citus-form-field__label">Personal message (optional)</span>
+                <textarea class="citus-form-field__input"
+                          rows="4"
+                          placeholder="Anything you want the customer to read in the email body. The PDF total + due date + payment instructions are already included automatically."
+                          @oninput="@(e => _sendMessage = e.Value?.ToString() ?? string.Empty)"
+                          disabled="@_isSendingEmail">@_sendMessage</textarea>
+            </label>
+        </div>
+
+        <div class="flex items-center gap-3 mt-4">
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Disabled="_isSendingEmail || string.IsNullOrWhiteSpace(_sendTo)"
+                         OnClick="SubmitSendAsync">
+                @(_isSendingEmail ? "Sending…" : "Send email")
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Disabled="_isSendingEmail"
+                         OnClick="CloseSendDialog">
+                Cancel
+            </CitusButton>
+            <span class="text-fg-subtle text-xs ml-auto">
+                Subject + body are composed from the invoice. The PDF is attached automatically.
+            </span>
+        </div>
+    </section>
+}
 
 @if (_isLoading)
 {
@@ -274,9 +368,95 @@
     private bool _isDownloadingPdf;
     private string? _error;
 
+    // Invoice send dialog state.
+    private bool _isSendDialogOpen;
+    private bool _isSendingEmail;
+    private string _sendTo = string.Empty;
+    private string _sendCc = string.Empty;
+    private string _sendBcc = string.Empty;
+    private string _sendMessage = string.Empty;
+    private string? _sendError;
+    private InvoiceSendHistoryEntry? _lastSent;
+
     private bool IsInvoice =>
         _document is not null
         && string.Equals(_document.SourceType, "invoice", StringComparison.OrdinalIgnoreCase);
+
+    private void OpenSendDialog()
+    {
+        if (_document is null) return;
+
+        // Default the Cc / Bcc to whatever was used last time so re-sends
+        // pick up the same internal recipients without retyping. Message
+        // intentionally clears so the operator types fresh context.
+        _sendTo = _lastSent?.ToEmail ?? string.Empty;
+        _sendCc = _lastSent?.CcEmails ?? string.Empty;
+        _sendBcc = _lastSent?.BccEmails ?? string.Empty;
+        _sendMessage = string.Empty;
+        _sendError = null;
+        _isSendDialogOpen = true;
+    }
+
+    private void CloseSendDialog()
+    {
+        _isSendDialogOpen = false;
+        _sendError = null;
+    }
+
+    private async Task SubmitSendAsync()
+    {
+        if (_document is null || _isSendingEmail) return;
+
+        var to = _sendTo.Trim();
+        if (string.IsNullOrWhiteSpace(to) || !to.Contains('@', StringComparison.Ordinal))
+        {
+            _sendError = "Enter a valid recipient email.";
+            return;
+        }
+
+        _isSendingEmail = true;
+        _sendError = null;
+        try
+        {
+            var outcome = await AccountingDocumentReviewClient.SendInvoiceAsync(
+                ShellState.ActiveCompany.Id,
+                _document.Id,
+                new InvoiceSendRequest(
+                    ToEmail: to,
+                    Cc: NullIfBlank(_sendCc),
+                    Bcc: NullIfBlank(_sendBcc),
+                    Message: NullIfBlank(_sendMessage)));
+
+            if (!outcome.Succeeded)
+            {
+                _sendError = outcome.ErrorMessage ?? "Email delivery failed.";
+                await LoadSendHistoryAsync();
+                return;
+            }
+
+            await LoadSendHistoryAsync();
+            _isSendDialogOpen = false;
+            await Message.SuccessAsync($"Invoice sent to {to}.");
+        }
+        finally
+        {
+            _isSendingEmail = false;
+        }
+    }
+
+    private async Task LoadSendHistoryAsync()
+    {
+        if (_document is null) return;
+
+        var history = await AccountingDocumentReviewClient.GetInvoiceSendHistoryAsync(
+            ShellState.ActiveCompany.Id,
+            _document.Id);
+
+        _lastSent = history.Count > 0 ? history[0] : null;
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private async Task DownloadInvoicePdfAsync()
     {
@@ -381,6 +561,18 @@
         if (relatedJournalEntry is not null)
         {
             _relatedJournalEntryHref = $"journal-entry/review/{relatedJournalEntry.Id:D}";
+        }
+
+        // Pull the latest send-history row so the "Last sent" badge can
+        // render alongside the document review fact rows. Best-effort —
+        // if the call fails we just don't show the badge.
+        if (IsInvoice)
+        {
+            await LoadSendHistoryAsync();
+        }
+        else
+        {
+            _lastSent = null;
         }
 
         _isLoading = false;

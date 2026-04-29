@@ -116,6 +116,18 @@ public sealed record ManualJournalLookupQuery(Guid CompanyId);
 
 public sealed record DocumentReviewLookupQuery(Guid CompanyId);
 
+/// <summary>
+/// HTTP body for POST /document-review/invoice/{id}/send. ToEmail is
+/// required and must contain '@'; everything else is optional. The
+/// composer fills sensible defaults from the invoice / customer when
+/// the operator leaves Cc / Bcc / Message blank.
+/// </summary>
+public sealed record InvoiceSendHttpRequest(
+    string ToEmail,
+    string? Cc,
+    string? Bcc,
+    string? Message);
+
 public sealed record DocumentLifecycleRequestReadinessQuery(
     Guid CompanyId,
     DateOnly? AsOfDate);

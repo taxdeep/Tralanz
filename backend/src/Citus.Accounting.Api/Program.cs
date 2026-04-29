@@ -211,6 +211,14 @@ builder.Services.AddSingleton<ICompanyProfileQuery, PostgresCompanyProfileQuery>
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 builder.Services.AddSingleton<IInvoicePdfRenderer, QuestPdfInvoiceRenderer>();
 
+// Invoice email send (Batch 2). The SMTP sender reuses the platform's
+// PlatformEmailDeliveryOptions so SysAdmin verification mail and
+// Business invoice mail share one outbound configuration. Send-history
+// rows go to a separate append-only ledger so the posting-engine
+// schema stays untouched.
+builder.Services.AddSingleton<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
+builder.Services.AddSingleton<IInvoiceSendHistoryStore, PostgresInvoiceSendHistoryStore>();
+
 // Vendor master data (per-company). AP-side mirror of ICustomerStore;
 // anchors bills, pay-bill settlement, and AP aging.
 builder.Services.AddSingleton<IVendorStore, PostgreSqlVendorStore>();
@@ -369,6 +377,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var purchaseOrderStore = startupScope.ServiceProvider.GetRequiredService<IPurchaseOrderStore>();
     var expenseStore = startupScope.ServiceProvider.GetRequiredService<IExpenseStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
+    var invoiceSendHistoryStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceSendHistoryStore>();
     var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -394,6 +403,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await purchaseOrderStore.EnsureSchemaAsync(CancellationToken.None);
     await expenseStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
+    await invoiceSendHistoryStore.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
     await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -3924,6 +3934,172 @@ accounting.MapGet(
             fileDownloadName: $"{review.DisplayNumber}.pdf");
     });
 
+// ---------------------------------------------------------------------------
+// Send invoice by email (Batch 2). Composes subject + HTML body + plain-text
+// body from the InvoiceRenderModel + an optional operator-typed note,
+// renders the same PDF the Download-PDF endpoint serves, ships through the
+// platform's SMTP options, and writes one row to invoice_send_history
+// regardless of outcome (so audit always captures both successful and
+// failed sends).
+// ---------------------------------------------------------------------------
+accounting.MapPost(
+    "/document-review/invoice/{documentId:guid}/send",
+    async (
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        InvoiceSendHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingDocumentReviewRepository reviewRepository,
+        ICustomerStore customerStore,
+        ICompanyProfileQuery companyProfileQuery,
+        IInvoicePdfRenderer renderer,
+        IInvoiceEmailSender emailSender,
+        IInvoiceSendHistoryStore historyStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ToEmail) ||
+            !request.ToEmail.Contains('@', StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { message = "A recipient email is required." });
+        }
+
+        var companyId = new CompanyId(query.CompanyId);
+
+        var review = await reviewRepository.GetSourceDocumentAsync(
+            companyId,
+            "invoice",
+            documentId,
+            cancellationToken);
+        if (review is null)
+        {
+            return Results.NotFound(new { message = "Invoice not found in the active company context." });
+        }
+
+        var company = await companyProfileQuery.GetByIdAsync(query.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            return Results.NotFound(new { message = "Company profile is not provisioned." });
+        }
+
+        CustomerRecord? customer = null;
+        if (review.CounterpartyId is { } counterpartyId)
+        {
+            customer = await customerStore.GetByIdAsync(query.CompanyId, counterpartyId, cancellationToken);
+        }
+
+        var projection = new InvoiceReviewProjection(
+            DisplayNumber: review.DisplayNumber,
+            EntityNumber: review.EntityNumber,
+            DocumentDate: review.DocumentDate,
+            DueDate: review.DueDate,
+            Status: review.Status,
+            CounterpartyDisplayName: customer?.DisplayName,
+            TransactionCurrencyCode: review.TransactionCurrencyCode,
+            SubtotalAmount: review.SubtotalAmount,
+            TaxAmount: review.TaxAmount,
+            TotalAmount: review.TotalAmount,
+            Memo: review.Memo,
+            Lines: review.Lines.Select(line => new InvoiceReviewLineProjection(
+                LineNumber: line.LineNumber,
+                Description: line.Description,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                LineAmount: line.LineAmount,
+                TaxAmount: line.TaxAmount)).ToArray());
+
+        var renderModel = InvoiceRenderModelBuilder.Build(projection, company, customer);
+        var pdfBytes = renderer.Render(renderModel);
+        var composition = InvoiceEmailComposer.Compose(renderModel, request.Message);
+
+        var ccList = SplitEmailList(request.Cc);
+        var bccList = SplitEmailList(request.Bcc);
+
+        var emailRequest = new InvoiceEmailRequest(
+            ToEmail: request.ToEmail.Trim(),
+            ToDisplayName: customer?.DisplayName ?? string.Empty,
+            CcEmails: ccList,
+            BccEmails: bccList,
+            Subject: composition.Subject,
+            HtmlBody: composition.HtmlBody,
+            PlainTextBody: composition.PlainTextBody,
+            AttachmentFileName: $"{review.DisplayNumber}.pdf",
+            AttachmentBytes: pdfBytes);
+
+        var sendResult = await emailSender.SendAsync(emailRequest, cancellationToken);
+
+        var historyRecord = await historyStore.RecordAsync(
+            new InvoiceSendHistoryDraft(
+                CompanyId: query.CompanyId,
+                InvoiceId: documentId,
+                SentByUserId: session.UserId,
+                ToEmail: emailRequest.ToEmail,
+                CcEmails: string.Join(", ", ccList),
+                BccEmails: string.Join(", ", bccList),
+                Subject: composition.Subject,
+                Status: sendResult.Succeeded ? "sent" : "failed",
+                ErrorMessage: sendResult.ErrorMessage),
+            cancellationToken);
+
+        if (!sendResult.Succeeded)
+        {
+            return Results.UnprocessableEntity(new
+            {
+                succeeded = false,
+                message = sendResult.ErrorMessage ?? "Email delivery failed.",
+                historyId = historyRecord.Id,
+                sentAt = historyRecord.SentAt,
+            });
+        }
+
+        return Results.Ok(new
+        {
+            succeeded = true,
+            historyId = historyRecord.Id,
+            sentAt = historyRecord.SentAt,
+            toEmail = historyRecord.ToEmail,
+            subject = historyRecord.Subject,
+        });
+    });
+
+// ---------------------------------------------------------------------------
+// Read-only view of the invoice's send history. Powers the "Last sent"
+// badge on the document detail page and (later) the timeline panel that
+// exposes failed attempts for re-send.
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/document-review/invoice/{documentId:guid}/send-history",
+    async (
+        Guid documentId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IInvoiceSendHistoryStore historyStore,
+        CancellationToken cancellationToken) =>
+    {
+        var rows = await historyStore.ListByInvoiceAsync(
+            query.CompanyId,
+            documentId,
+            limit: 50,
+            cancellationToken);
+
+        return Results.Ok(rows.Select(r => new
+        {
+            r.Id,
+            r.SentAt,
+            r.SentByUserId,
+            r.ToEmail,
+            r.CcEmails,
+            r.BccEmails,
+            r.Subject,
+            r.Status,
+            r.ErrorMessage,
+        }).ToArray());
+    });
+
 accounting.MapGet(
     "/journal-entries",
     async (
@@ -4826,6 +5002,26 @@ static string? ValidateQuoteInput(QuoteUpsertHttpRequest request)
         if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
     }
     return null;
+}
+
+// ---------------------------------------------------------------------------
+// Splits a comma / semicolon-separated email string ("a@x.com, b@x.com")
+// into a trimmed list, dropping anything without '@'. Used by the invoice
+// send endpoint so operators can paste recipient lists straight from a
+// CRM or email-thread copy without us caring about delimiter style.
+// ---------------------------------------------------------------------------
+static IReadOnlyList<string> SplitEmailList(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        return Array.Empty<string>();
+    }
+
+    return raw
+        .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(s => s.Contains('@', StringComparison.Ordinal))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 }
 
 static QuoteUpsertInput MapQuoteInput(QuoteUpsertHttpRequest request) => new(

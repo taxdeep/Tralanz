@@ -44,6 +44,53 @@ public sealed class AccountingDocumentReviewClient(HttpClient httpClient, ILogge
         }
     }
 
+    public async Task<InvoiceSendOutcome> SendInvoiceAsync(
+        Guid companyId,
+        Guid invoiceId,
+        InvoiceSendRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var requestUri = $"accounting/document-review/invoice/{invoiceId:D}/send?companyId={companyId:D}";
+        try
+        {
+            using var response = await httpClient.PostAsJsonAsync(requestUri, request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadFromJsonAsync<InvoiceSendOutcomeBody>(cancellationToken);
+                return new InvoiceSendOutcome(true, null, body?.SentAt);
+            }
+
+            var failureBody = await response.Content.ReadFromJsonAsync<InvoiceSendOutcomeBody>(cancellationToken);
+            return new InvoiceSendOutcome(
+                Succeeded: false,
+                ErrorMessage: failureBody?.Message ?? $"Server returned {(int)response.StatusCode}.",
+                SentAt: failureBody?.SentAt);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to send invoice {InvoiceId}.", invoiceId);
+            return new InvoiceSendOutcome(false, ex.Message, null);
+        }
+    }
+
+    public async Task<IReadOnlyList<InvoiceSendHistoryEntry>> GetInvoiceSendHistoryAsync(
+        Guid companyId,
+        Guid invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestUri = $"accounting/document-review/invoice/{invoiceId:D}/send-history?companyId={companyId:D}";
+        try
+        {
+            var entries = await httpClient.GetFromJsonAsync<InvoiceSendHistoryEntry[]>(requestUri, cancellationToken);
+            return entries ?? Array.Empty<InvoiceSendHistoryEntry>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to load invoice send history for {InvoiceId}.", invoiceId);
+            return Array.Empty<InvoiceSendHistoryEntry>();
+        }
+    }
+
     public async Task<AccountingDocumentReviewSummary?> GetDocumentAsync(
         Guid companyId,
         string sourceType,
