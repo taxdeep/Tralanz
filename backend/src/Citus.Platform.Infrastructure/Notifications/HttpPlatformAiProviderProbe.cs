@@ -8,15 +8,20 @@ using Microsoft.Extensions.Logging;
 namespace Citus.Platform.Infrastructure.Notifications;
 
 /// <summary>
-/// HttpClient-based "is this API key working?" probe. Hits each
-/// provider's cheapest auth-only endpoint:
-///   OpenAI       — GET /v1/models
-///   Anthropic    — POST /v1/messages with max_tokens=1 ("hi")
-///   Azure OpenAI — GET /openai/models?api-version=...
+/// HttpClient-based "is this API key working?" probe. Sends a minimal
+/// chat-completion request to each provider:
 ///
-/// Anthropic doesn't expose a free auth-only endpoint, so the probe
-/// pays for one minimal completion. Token cost ≈ negligible (≤ a few
-/// cents).
+///   OpenAI       — POST .../chat/completions with max_tokens=1 ("hi")
+///   Anthropic    — POST /v1/messages with max_tokens=1 ("hi")
+///   Azure OpenAI — GET /openai/models?api-version=... (no model invocation)
+///
+/// The OpenAI probe used to GET /v1/models for a free auth-only ping,
+/// but real-world setups often point the OpenAI provider at an OpenAI-
+/// COMPATIBLE backend (DeepSeek, Together, BigModel/智谱, OpenRouter,
+/// LM Studio, etc.) — many of which implement /chat/completions but
+/// not /models. Switching the probe to /chat/completions makes the
+/// "OpenAI" provider work for every compat backend in exchange for a
+/// fractional-cent cost per Test Connection click.
 /// </summary>
 public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
 {
@@ -54,7 +59,7 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
             return provider.Trim().ToLowerInvariant() switch
             {
                 PlatformAiProviderKeys.OpenAi =>
-                    await ProbeOpenAiAsync(http, baseUrl, apiKey, stopwatch, cancellationToken),
+                    await ProbeOpenAiAsync(http, baseUrl, model, apiKey, stopwatch, cancellationToken),
                 PlatformAiProviderKeys.Anthropic =>
                     await ProbeAnthropicAsync(http, apiKey, model, stopwatch, cancellationToken),
                 PlatformAiProviderKeys.AzureOpenAi =>
@@ -92,38 +97,76 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
     private static async Task<PlatformAiProbeResult> ProbeOpenAiAsync(
         HttpClient http,
         string? baseUrl,
+        string? model,
         string apiKey,
         Stopwatch stopwatch,
         CancellationToken cancellationToken)
     {
-        // OpenAI's docs always show URLs with /v1/ already in them, so an
-        // operator copy-pasting "https://api.openai.com/v1" as the base
-        // URL is overwhelmingly common. Strip any trailing /v1 (or /v1/)
-        // before composing — otherwise we hit /v1/v1/models and get a 404.
-        var rootUrl = NormalizeOpenAiBaseUrl(baseUrl);
-        var probeUrl = $"{rootUrl}/v1/models";
-        using var request = new HttpRequestMessage(HttpMethod.Get, probeUrl);
+        var probeUrl = ResolveOpenAiChatCompletionsUrl(baseUrl);
+        var modelToProbe = string.IsNullOrWhiteSpace(model)
+            ? "gpt-4o-mini"
+            : model!.Trim();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, probeUrl)
+        {
+            Content = JsonContent.Create(new
+            {
+                model = modelToProbe,
+                max_tokens = 1,
+                messages = new[]
+                {
+                    new { role = "user", content = "hi" }
+                }
+            })
+        };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
 
         using var response = await http.SendAsync(request, cancellationToken);
         stopwatch.Stop();
 
         return InterpretAuthStatus(response, stopwatch.Elapsed,
-            successMessage: $"Authenticated to OpenAI ({(int)response.StatusCode}).",
-            probedUrl: probeUrl);
+            successMessage: $"Authenticated to OpenAI-compatible endpoint ({(int)response.StatusCode}).",
+            probedUrl: $"{probeUrl} (model={modelToProbe})");
     }
 
-    private static string NormalizeOpenAiBaseUrl(string? baseUrl)
+    /// <summary>
+    /// Resolve the actual <c>/chat/completions</c> URL given whatever
+    /// the operator pasted into the Base URL field. Common shapes:
+    /// <list type="bullet">
+    ///   <item>(empty) → https://api.openai.com/v1/chat/completions</item>
+    ///   <item>https://api.openai.com → +/v1/chat/completions</item>
+    ///   <item>https://api.openai.com/v1 → +/chat/completions</item>
+    ///   <item>https://api.openai.com/v1/chat/completions → use as-is</item>
+    ///   <item>https://open.bigmodel.cn/api/paas/v4 → +/chat/completions</item>
+    ///   <item>https://open.bigmodel.cn/api/paas/v4/chat/completions → use as-is</item>
+    /// </list>
+    /// Heuristic: if the URL already ends with <c>/chat/completions</c>,
+    /// it's a complete endpoint — use it. Otherwise look for a trailing
+    /// version segment (<c>/v1</c>, <c>/v4</c>, …); if present, append
+    /// <c>/chat/completions</c>; if absent, fall back to the OpenAI
+    /// default of <c>/v1/chat/completions</c>.
+    /// </summary>
+    private static string ResolveOpenAiChatCompletionsUrl(string? baseUrl)
     {
-        if (string.IsNullOrWhiteSpace(baseUrl)) return "https://api.openai.com";
-        var root = baseUrl!.Trim().TrimEnd('/');
-        // Strip a trailing /v1 (case-insensitive) so the operator's
-        // "https://api.openai.com/v1" works as if it were the bare host.
-        if (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            root = root[..^3];
+            return "https://api.openai.com/v1/chat/completions";
         }
-        return root;
+
+        var root = baseUrl!.Trim().TrimEnd('/');
+        if (root.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+        {
+            return root;
+        }
+
+        // Trailing version segment? Match /v<digits> at the end.
+        if (System.Text.RegularExpressions.Regex.IsMatch(root, @"/v\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            return $"{root}/chat/completions";
+        }
+
+        // Bare host (no version segment) — assume OpenAI shape.
+        return $"{root}/v1/chat/completions";
     }
 
     private static async Task<PlatformAiProbeResult> ProbeAnthropicAsync(
