@@ -36,6 +36,13 @@ builder.Services.AddSingleton<SysAdminPasswordHasher>();
 // for SmtpClient. See IPlatformEmailDeliveryConfigResolver.
 builder.Services.AddSingleton<IPlatformSmtpConfigStore, PostgresPlatformSmtpConfigStore>();
 builder.Services.AddSingleton<IPlatformEmailDeliveryConfigResolver, PlatformEmailDeliveryConfigResolver>();
+
+// AI provider config — same singleton-row + encrypted-secret pattern.
+// API key is decrypted at probe time via the SysAdmin Test connection
+// flow; runtime IUnityAiProvider implementations land in a later batch.
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IPlatformAiProviderConfigStore, PostgresPlatformAiProviderConfigStore>();
+builder.Services.AddSingleton<IPlatformAiProviderProbe, HttpPlatformAiProviderProbe>();
 builder.Services.AddScoped<IPlatformMetadataRepository, PostgresPlatformMetadataRepository>();
 builder.Services.AddScoped<IPlatformMetadataService, PlatformMetadataService>();
 builder.Services.AddScoped<IPlatformBootstrapper, PlatformCoreBootstrapper>();
@@ -77,10 +84,12 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var authOptions = startupScope.ServiceProvider.GetRequiredService<IOptions<SysAdminAuthOptions>>().Value;
 
     var smtpConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformSmtpConfigStore>();
+    var aiProviderConfigStore = startupScope.ServiceProvider.GetRequiredService<IPlatformAiProviderConfigStore>();
 
     await runtimeRepository.EnsureSchemaAsync(CancellationToken.None);
     await authRepository.EnsureSchemaAsync(CancellationToken.None);
     await smtpConfigStore.EnsureSchemaAsync(CancellationToken.None);
+    await aiProviderConfigStore.EnsureSchemaAsync(CancellationToken.None);
 
     if (authOptions.Bootstrap.IsActive(builder.Environment.IsDevelopment()))
     {
@@ -1010,6 +1019,115 @@ control.MapPut(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+    });
+
+// ---------------------------------------------------------------------------
+// AI provider configuration (SysAdmin → Operations → AI provider).
+//
+// Same singleton-row + encrypted-secret pattern as SMTP. API key is
+// AES-GCM "secret-v1:..." in the api_key_protected column; the GET
+// endpoint never returns it, only HasApiKey. Test connection probes
+// the provider's cheapest auth-only endpoint.
+// ---------------------------------------------------------------------------
+control.MapGet(
+    "/operations/ai-provider",
+    async (IPlatformAiProviderConfigStore store, CancellationToken cancellationToken) =>
+    {
+        var snapshot = await store.GetAsync(cancellationToken);
+        return Results.Ok(snapshot ?? new PlatformAiProviderConfigSnapshot(
+            Provider: PlatformAiProviderKeys.Disabled,
+            BaseUrl: null,
+            Model: string.Empty,
+            MaxTokens: 1024,
+            Temperature: 0.7,
+            HasApiKey: false,
+            UpdatedAt: default,
+            UpdatedByUserId: null));
+    });
+
+control.MapPut(
+    "/operations/ai-provider",
+    async (
+        HttpContext httpContext,
+        AiProviderConfigHttpRequest request,
+        IPlatformAiProviderConfigStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var operatorId = GetAuthenticatedSession(httpContext).SysAdminAccountId;
+
+        var upsert = new PlatformAiProviderConfigUpsertRequest(
+            Provider: string.IsNullOrWhiteSpace(request.Provider) ? "disabled" : request.Provider,
+            BaseUrl: request.BaseUrl,
+            Model: request.Model ?? string.Empty,
+            MaxTokens: request.MaxTokens ?? 1024,
+            Temperature: request.Temperature ?? 0.7,
+            NewApiKey: request.NewApiKey,
+            ClearApiKey: request.ClearApiKey ?? false);
+
+        try
+        {
+            var snapshot = await store.UpsertAsync(upsert, operatorId, cancellationToken);
+            return Results.Ok(snapshot);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+control.MapPost(
+    "/operations/ai-provider/test",
+    async (
+        IPlatformAiProviderConfigStore store,
+        IPlatformAiProviderProbe probe,
+        IPlatformSecretProtector protector,
+        CancellationToken cancellationToken) =>
+    {
+        var snapshot = await store.GetAsync(cancellationToken);
+        if (snapshot is null)
+        {
+            return Results.BadRequest(new
+            {
+                succeeded = false,
+                message = "No AI provider has been configured yet. Save the form first."
+            });
+        }
+
+        if (snapshot.Provider == PlatformAiProviderKeys.Disabled)
+        {
+            return Results.BadRequest(new
+            {
+                succeeded = false,
+                message = "Provider is disabled. Pick OpenAI / Anthropic / Azure OpenAI to test."
+            });
+        }
+
+        if (!snapshot.HasApiKey)
+        {
+            return Results.BadRequest(new
+            {
+                succeeded = false,
+                message = "API key is not set. Save a key before testing."
+            });
+        }
+
+        var envelope = await store.GetRawApiKeyAsync(cancellationToken);
+        var plaintextKey = string.IsNullOrWhiteSpace(envelope) ? string.Empty : protector.Unprotect(envelope!);
+
+        var result = await probe.ProbeAsync(
+            snapshot.Provider,
+            snapshot.BaseUrl,
+            plaintextKey,
+            snapshot.Model,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            succeeded = result.Succeeded,
+            httpStatus = result.HttpStatus,
+            message = result.Message,
+            elapsedMs = result.Elapsed?.TotalMilliseconds,
+        });
     });
 
 control.MapPost(

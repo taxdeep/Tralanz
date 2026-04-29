@@ -1,0 +1,373 @@
+@page "/operations/ai-provider"
+
+@inject AppShellState ShellState
+@inject CitusToastService Message
+@inject AiProviderConfigClient AiClient
+
+<PageTitle>AI Provider | Tralanz SysAdmin</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Form" />
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+    }
+
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <div class="flex flex-col gap-1">
+                <span>API keys are stored encrypted at rest with the platform secret protector. Test connection probes the provider's auth endpoint to verify the key works.</span>
+                @if (_config?.HasApiKey == true)
+                {
+                    <span class="text-fg-muted text-xs">
+                        API key is configured. Leave the API-key field blank to keep it; type a new value to replace.
+                    </span>
+                }
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Provider</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">Provider</span>
+                    <select class="citus-form-field__input"
+                            value="@_draft.Provider"
+                            @onchange="@(e => OnProviderChanged(e.Value?.ToString() ?? "disabled"))">
+                        <option value="disabled" selected="@(_draft.Provider == "disabled")">Disabled (no AI calls)</option>
+                        <option value="openai" selected="@(_draft.Provider == "openai")">OpenAI</option>
+                        <option value="anthropic" selected="@(_draft.Provider == "anthropic")">Anthropic</option>
+                        <option value="azure_openai" selected="@(_draft.Provider == "azure_openai")">Azure OpenAI</option>
+                    </select>
+                </label>
+
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">
+                        Base URL
+                        @if (_draft.Provider == "azure_openai")
+                        {
+                            <span class="text-fg-subtle text-xs">(required)</span>
+                        }
+                        else
+                        {
+                            <span class="text-fg-subtle text-xs">(optional — for proxies / OpenAI-compatible endpoints)</span>
+                        }
+                    </span>
+                    <input type="url"
+                           class="citus-form-field__input"
+                           placeholder="@BaseUrlPlaceholder"
+                           value="@(_draft.BaseUrl ?? string.Empty)"
+                           @oninput="@(e => _draft = _draft with { BaseUrl = NullIfBlank(e.Value?.ToString()) })" />
+                </label>
+
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">Model</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="@ModelPlaceholder"
+                           value="@_draft.Model"
+                           @oninput="@(e => _draft = _draft with { Model = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">
+                        API key
+                        @if (_config?.HasApiKey == true)
+                        {
+                            <span class="text-fg-subtle text-xs">(stored — leave blank to keep)</span>
+                        }
+                    </span>
+                    <input type="password"
+                           class="citus-form-field__input"
+                           autocomplete="new-password"
+                           placeholder="@(_config?.HasApiKey == true ? "•••• configured" : "sk-... or anthropic key")"
+                           value="@_newApiKey"
+                           @oninput="@(e => _newApiKey = e.Value?.ToString() ?? string.Empty)" />
+                </label>
+            </div>
+
+            <h2 class="citus-panel__title mt-6">Generation defaults</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Max tokens</span>
+                    <input type="number"
+                           class="citus-form-field__input"
+                           min="1"
+                           max="200000"
+                           value="@_draft.MaxTokens"
+                           @oninput="@(e => _draft = _draft with { MaxTokens = ParseInt(e.Value?.ToString(), 1024) })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Temperature (0 – 2)</span>
+                    <input type="number"
+                           class="citus-form-field__input"
+                           min="0"
+                           max="2"
+                           step="0.1"
+                           value="@_draft.Temperature.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)"
+                           @oninput="@(e => _draft = _draft with { Temperature = ParseDouble(e.Value?.ToString(), 0.7) })" />
+                </label>
+            </div>
+
+            <div class="flex items-center gap-3 mt-4">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isBusy"
+                             OnClick="SaveAsync">
+                    @(_isBusy ? "Saving…" : "Save changes")
+                </CitusButton>
+                @if (_config?.HasApiKey == true)
+                {
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Disabled="_isBusy"
+                                 OnClick="ClearApiKeyAsync">
+                        Remove API key
+                    </CitusButton>
+                }
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Test connection</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Calls the provider's cheapest auth-only endpoint with the saved API key to confirm
+                it's accepted. Save your changes first — the test always uses the persisted row.
+            </p>
+
+            <div class="flex items-center gap-3 mt-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="_isBusy || !CanRunTest"
+                             OnClick="TestAsync">
+                    @(_isBusy ? "Testing…" : "Test connection")
+                </CitusButton>
+            </div>
+
+            @if (_lastTestResult is { } test)
+            {
+                <CitusAlert Severity="@(test.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
+                            ShowIcon="true"
+                            Class="mt-4">
+                    <MessageTemplate>
+                        <div class="flex flex-col gap-1">
+                            <span>@test.Message</span>
+                            @if (test.ElapsedMs is { } ms)
+                            {
+                                <span class="text-fg-subtle text-xs">Round-trip @ms.ToString("0") ms.</span>
+                            }
+                        </div>
+                    </MessageTemplate>
+                </CitusAlert>
+            }
+
+            @if (_config is not null && _config.UpdatedAt != default)
+            {
+                <p class="text-fg-subtle text-xs mt-4">
+                    Last saved @_config.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                </p>
+            }
+
+            <p class="text-fg-subtle text-xs mt-4">
+                Note: this batch ships configuration storage and the test probe only.
+                Actual AI calls during posting / search still go through the no-op
+                provider; runtime integration lands in a separate batch.
+            </p>
+        </section>
+    </div>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Operations",
+        Title = "AI provider",
+        Subtitle = "OpenAI / Anthropic / Azure OpenAI credentials, encrypted at rest. Drives platform AI features once runtime providers ship."
+    };
+
+    private AiProviderConfigDto? _config;
+    private AiDraft _draft = AiDraft.Empty();
+    private string _newApiKey = string.Empty;
+    private AiProviderTestOutcome? _lastTestResult;
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private string? _error;
+
+    private string BaseUrlPlaceholder => _draft.Provider switch
+    {
+        "azure_openai" => "https://your-resource.openai.azure.com",
+        "openai" => "https://api.openai.com (default)",
+        _ => "(leave blank for default)",
+    };
+
+    private bool CanRunTest =>
+        _config?.HasApiKey == true && _config.Provider != "disabled";
+
+    private string ModelPlaceholder => _draft.Provider switch
+    {
+        "openai" => "gpt-4o-mini",
+        "anthropic" => "claude-3-5-haiku-latest",
+        "azure_openai" => "your-deployment-name",
+        _ => "(disabled)",
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _config = await AiClient.GetAsync();
+            _draft = _config is null ? AiDraft.Empty() : AiDraft.From(_config);
+            _newApiKey = string.Empty;
+            _lastTestResult = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OnProviderChanged(string provider)
+    {
+        _draft = _draft with { Provider = provider };
+        // Clear last test result so a stale OK badge doesn't carry over
+        // when the operator switches providers.
+        _lastTestResult = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        _error = null;
+        try
+        {
+            var request = new AiProviderConfigUpsertDto(
+                Provider: _draft.Provider,
+                BaseUrl: _draft.BaseUrl,
+                Model: _draft.Model.Trim(),
+                MaxTokens: _draft.MaxTokens,
+                Temperature: _draft.Temperature,
+                NewApiKey: string.IsNullOrWhiteSpace(_newApiKey) ? null : _newApiKey,
+                ClearApiKey: false);
+
+            var outcome = await AiClient.SaveAsync(request);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Save failed.";
+                return;
+            }
+
+            _config = outcome.Saved;
+            if (_config is not null) _draft = AiDraft.From(_config);
+            _newApiKey = string.Empty;
+            await Message.SuccessAsync("AI provider configuration saved.");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ClearApiKeyAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        try
+        {
+            var request = new AiProviderConfigUpsertDto(
+                Provider: _draft.Provider,
+                BaseUrl: _draft.BaseUrl,
+                Model: _draft.Model.Trim(),
+                MaxTokens: _draft.MaxTokens,
+                Temperature: _draft.Temperature,
+                NewApiKey: null,
+                ClearApiKey: true);
+
+            var outcome = await AiClient.SaveAsync(request);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Could not clear API key.";
+                return;
+            }
+
+            _config = outcome.Saved;
+            if (_config is not null) _draft = AiDraft.From(_config);
+            await Message.SuccessAsync("API key removed.");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task TestAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        try
+        {
+            _lastTestResult = await AiClient.TestConnectionAsync();
+            if (_lastTestResult.Succeeded)
+            {
+                await Message.SuccessAsync(_lastTestResult.Message);
+            }
+            else
+            {
+                await Message.WarningAsync(_lastTestResult.Message);
+            }
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static int ParseInt(string? raw, int fallback) =>
+        int.TryParse(raw, out var v) && v > 0 ? v : fallback;
+
+    private static double ParseDouble(string? raw, double fallback) =>
+        double.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
+
+    private sealed record AiDraft(
+        string Provider,
+        string? BaseUrl,
+        string Model,
+        int MaxTokens,
+        double Temperature)
+    {
+        public static AiDraft Empty() => new(
+            Provider: "disabled",
+            BaseUrl: null,
+            Model: string.Empty,
+            MaxTokens: 1024,
+            Temperature: 0.7);
+
+        public static AiDraft From(AiProviderConfigDto dto) => new(
+            Provider: dto.Provider,
+            BaseUrl: dto.BaseUrl,
+            Model: dto.Model,
+            MaxTokens: dto.MaxTokens,
+            Temperature: dto.Temperature);
+    }
+}
