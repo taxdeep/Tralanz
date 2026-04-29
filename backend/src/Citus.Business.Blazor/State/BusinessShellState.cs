@@ -59,6 +59,7 @@ public sealed class BusinessShellState
             Title = "Sales & Get Paid",
             Items =
             [
+                new NavMenuItem { Title = "Overview", Href = "sales-overview", Icon = IconName.LayoutDashboard },
                 new NavMenuItem { Title = "Customers", Href = "customers", Icon = IconName.Users },
                 new NavMenuItem { Title = "Quotes", Href = "quotes", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Sales Orders", Href = "sales-orders", Icon = IconName.Receipt },

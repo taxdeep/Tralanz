@@ -23,3 +23,13 @@ public sealed record ArAgingLookupQuery(
 public sealed record ApAgingLookupQuery(
     Guid CompanyId,
     DateOnly? AsOfDate = null);
+
+public sealed record SalesCashFlowLookupQuery(
+    Guid CompanyId,
+    DateOnly? AsOfDate = null);
+
+public sealed record IncomeOverTimeLookupQuery(
+    Guid CompanyId,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    bool CompareToPreviousYear = false);

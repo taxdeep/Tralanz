@@ -586,6 +586,269 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             rows);
     }
 
+    public async Task<SalesCashFlowReport?> GetSalesCashFlowAsync(
+        GetSalesCashFlowQuery query,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
+            scope,
+            query.CompanyId.Value,
+            cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(baseCurrencyCode))
+        {
+            return null;
+        }
+
+        // Window: 10 historical months + current + 3 forecast = 14 buckets.
+        var asOfMonthStart = new DateOnly(query.AsOfDate.Year, query.AsOfDate.Month, 1);
+        var fromMonthStart = asOfMonthStart.AddMonths(-10);
+        var lastForecastMonthStart = asOfMonthStart.AddMonths(3);
+        var forecastWindowEnd = lastForecastMonthStart.AddMonths(1).AddDays(-1);
+
+        // Past + current: posted receive-payments grouped by payment_date
+        // month. fx_rate is stored on each row (document → base) so the
+        // sum is straight base-currency.
+        var receivedByMonth = new Dictionary<(int Year, int Month), decimal>();
+        await using (var command = scope.CreateCommand(
+            """
+            select date_trunc('month', rp.payment_date)::date as month_start,
+                   coalesce(sum(rp.total_amount * rp.fx_rate), 0)::numeric(20,6) as received_base
+              from receive_payments rp
+             where rp.company_id = @company_id
+               and rp.status = 'posted'
+               and rp.payment_date >= @from_date
+               and rp.payment_date <= @to_date
+             group by 1
+             order by 1;
+            """))
+        {
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("from_date", fromMonthStart);
+            command.Parameters.AddWithValue("to_date", asOfMonthStart.AddMonths(1).AddDays(-1));
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var monthStart = reader.GetFieldValue<DateOnly>(0);
+                var amount = reader.GetDecimal(1);
+                receivedByMonth[(monthStart.Year, monthStart.Month)] = amount;
+            }
+        }
+
+        // Forecast: open AR balance (signed, base) by due-date month.
+        // settlement_applications already considered up to as-of date so
+        // partial payments on existing invoices reduce the forecast.
+        var forecastByMonth = new Dictionary<(int Year, int Month), decimal>();
+        await using (var command = scope.CreateCommand(
+            """
+            with applied_as_of as (
+              select sa.target_open_item_id,
+                     coalesce(sum(sa.applied_amount_base), 0)::numeric(20,6) as applied_amount_base
+                from settlement_applications sa
+                left join receive_payments rp
+                  on sa.source_type = 'receive_payment'
+                 and rp.company_id = sa.company_id
+                 and rp.id = sa.source_id
+                left join credit_applications ca
+                  on sa.source_type = 'credit_application'
+                 and ca.company_id = sa.company_id
+                 and ca.id = sa.source_id
+               where sa.company_id = @company_id
+                 and sa.target_open_item_type = 'ar_open_item'
+                 and coalesce(rp.payment_date, ca.application_date) <= @as_of_date
+               group by sa.target_open_item_id
+            )
+            select date_trunc('month', oi.due_date)::date as month_start,
+                   coalesce(
+                     sum(
+                       greatest(oi.original_amount_base - coalesce(app.applied_amount_base, 0), 0)
+                       * case when oi.balance_side = 'credit' then -1 else 1 end
+                     ),
+                     0
+                   )::numeric(20,6) as forecast_base
+              from ar_open_items oi
+              left join applied_as_of app
+                on app.target_open_item_id = oi.id
+              left join invoices i
+                on oi.source_type = 'invoice'
+               and i.company_id = oi.company_id
+               and i.id = oi.source_id
+              left join credit_notes cn
+                on oi.source_type = 'credit_note'
+               and cn.company_id = oi.company_id
+               and cn.id = oi.source_id
+             where oi.company_id = @company_id
+               and oi.source_type in ('invoice', 'credit_note')
+               and oi.due_date is not null
+               and oi.due_date >= @forecast_from
+               and oi.due_date <= @forecast_to
+               and (
+                 (oi.source_type = 'invoice' and i.posted_at is not null)
+                 or
+                 (oi.source_type = 'credit_note' and cn.posted_at is not null)
+               )
+               and greatest(oi.original_amount_base - coalesce(app.applied_amount_base, 0), 0) > 0
+             group by 1
+             order by 1;
+            """))
+        {
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
+            command.Parameters.AddWithValue("forecast_from", asOfMonthStart.AddMonths(1));
+            command.Parameters.AddWithValue("forecast_to", forecastWindowEnd);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var monthStart = reader.GetFieldValue<DateOnly>(0);
+                var amount = reader.GetDecimal(1);
+                forecastByMonth[(monthStart.Year, monthStart.Month)] = amount;
+            }
+        }
+
+        // Materialize all 14 buckets so empty months still render in the
+        // UI. Past / current → received column; forecast → forecast column.
+        var buckets = new List<SalesCashFlowMonthBucket>(14);
+        for (var i = 0; i < 14; i++)
+        {
+            var monthStart = fromMonthStart.AddMonths(i);
+            var key = (monthStart.Year, monthStart.Month);
+            var isCurrent = monthStart == asOfMonthStart;
+            var isForecast = monthStart > asOfMonthStart;
+
+            buckets.Add(new SalesCashFlowMonthBucket
+            {
+                Year = monthStart.Year,
+                Month = monthStart.Month,
+                MonthStart = monthStart,
+                IsForecast = isForecast,
+                IsCurrent = isCurrent,
+                ReceivedAmountBase = isForecast ? 0m :
+                    (receivedByMonth.TryGetValue(key, out var rcv) ? rcv : 0m),
+                ForecastAmountBase = isForecast ?
+                    (forecastByMonth.TryGetValue(key, out var fcs) ? fcs : 0m) : 0m,
+            });
+        }
+
+        return new SalesCashFlowReport
+        {
+            CompanyId = query.CompanyId.Value,
+            AsOfDate = query.AsOfDate,
+            BaseCurrencyCode = baseCurrencyCode!.Trim().ToUpperInvariant(),
+            Months = buckets,
+        };
+    }
+
+    public async Task<IncomeOverTimeReport?> GetIncomeOverTimeAsync(
+        GetIncomeOverTimeQuery query,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (query.ToDate < query.FromDate)
+        {
+            throw new ArgumentException("ToDate must be on or after FromDate.", nameof(query));
+        }
+
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
+            scope,
+            query.CompanyId.Value,
+            cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(baseCurrencyCode))
+        {
+            return null;
+        }
+
+        var fromMonthStart = new DateOnly(query.FromDate.Year, query.FromDate.Month, 1);
+        var toMonthStart = new DateOnly(query.ToDate.Year, query.ToDate.Month, 1);
+
+        async Task<Dictionary<(int Year, int Month), decimal>> RunWindowAsync(
+            DateOnly windowFrom,
+            DateOnly windowTo)
+        {
+            var windowStart = new DateOnly(windowFrom.Year, windowFrom.Month, 1);
+            var windowEnd = new DateOnly(windowTo.Year, windowTo.Month, 1)
+                .AddMonths(1).AddDays(-1);
+
+            var byMonth = new Dictionary<(int Year, int Month), decimal>();
+            await using var command = scope.CreateCommand(
+                """
+                select date_trunc('month', i.invoice_date)::date as month_start,
+                       coalesce(sum(i.total_amount * i.fx_rate), 0)::numeric(20,6) as amount_base
+                  from invoices i
+                 where i.company_id = @company_id
+                   and i.status = 'posted'
+                   and i.invoice_date >= @from_date
+                   and i.invoice_date <= @to_date
+                 group by 1
+                 order by 1;
+                """);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("from_date", windowStart);
+            command.Parameters.AddWithValue("to_date", windowEnd);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var monthStart = reader.GetFieldValue<DateOnly>(0);
+                byMonth[(monthStart.Year, monthStart.Month)] = reader.GetDecimal(1);
+            }
+            return byMonth;
+        }
+
+        var current = await RunWindowAsync(fromMonthStart, toMonthStart);
+        var previous = query.CompareToPreviousYear
+            ? await RunWindowAsync(fromMonthStart.AddYears(-1), toMonthStart.AddYears(-1))
+            : new Dictionary<(int Year, int Month), decimal>();
+
+        static IReadOnlyList<IncomeOverTimeMonthBucket> Materialize(
+            DateOnly start,
+            DateOnly end,
+            Dictionary<(int Year, int Month), decimal> data)
+        {
+            var months = new List<IncomeOverTimeMonthBucket>();
+            for (var month = start; month <= end; month = month.AddMonths(1))
+            {
+                var key = (month.Year, month.Month);
+                months.Add(new IncomeOverTimeMonthBucket
+                {
+                    Year = month.Year,
+                    Month = month.Month,
+                    MonthStart = month,
+                    AmountBase = data.TryGetValue(key, out var amount) ? amount : 0m,
+                });
+            }
+            return months;
+        }
+
+        return new IncomeOverTimeReport
+        {
+            CompanyId = query.CompanyId.Value,
+            FromDate = query.FromDate,
+            ToDate = query.ToDate,
+            BaseCurrencyCode = baseCurrencyCode!.Trim().ToUpperInvariant(),
+            CompareToPreviousYear = query.CompareToPreviousYear,
+            Months = Materialize(fromMonthStart, toMonthStart, current),
+            PreviousYearMonths = query.CompareToPreviousYear
+                ? Materialize(fromMonthStart.AddYears(-1), toMonthStart.AddYears(-1), previous)
+                : Array.Empty<IncomeOverTimeMonthBucket>(),
+        };
+    }
+
     private static async Task<string?> TryGetBaseCurrencyCodeAsync(
         PostgresCommandScope scope,
         Guid companyId,

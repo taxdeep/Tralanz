@@ -1078,6 +1078,14 @@ public interface IAccountingReportRepository
     Task<ApAgingReport?> GetApAgingAsync(
         GetApAgingQuery query,
         CancellationToken cancellationToken);
+
+    Task<SalesCashFlowReport?> GetSalesCashFlowAsync(
+        GetSalesCashFlowQuery query,
+        CancellationToken cancellationToken);
+
+    Task<IncomeOverTimeReport?> GetIncomeOverTimeAsync(
+        GetIncomeOverTimeQuery query,
+        CancellationToken cancellationToken);
 }
 
 public interface IAccountingDocumentReviewRepository

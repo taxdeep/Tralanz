@@ -1,0 +1,633 @@
+@page "/sales-overview"
+
+@inject BusinessShellState ShellState
+@inject NavigationManager Nav
+@inject CustomerClient CustomerClient
+@inject ArAgingClient ArAgingClient
+@inject SalesOverviewClient OverviewClient
+
+<PageTitle>Sales Overview | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Disabled="_isLoading" OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else
+{
+    @* === Block 1: Flow diagram + Customer balances ====================== *@
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Sales flow</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Click any solid node to jump to that module. Dashed nodes mark
+                upcoming surfaces (Projects, Delivery Orders, Time Slips).
+            </p>
+            <div class="sales-flow-diagram">
+                @RenderFlowDiagram()
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="citus-panel__title m-0">Customers</h2>
+                <span class="text-fg-subtle text-xs">
+                    Balances as of @_asOfDate.ToString("yyyy-MM-dd")
+                </span>
+            </div>
+
+            <label class="inline-flex items-center gap-2 text-sm mb-3">
+                <input type="checkbox"
+                       checked="@_includeInactive"
+                       @onchange="@OnIncludeInactiveChanged" />
+                <span>Include inactive customers</span>
+            </label>
+
+            <div class="overflow-x-auto" style="max-height: 480px; overflow-y: auto;">
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th class="cursor-pointer select-none"
+                                @onclick="@(() => ToggleSort(CustomerSort.Name))">
+                                Customer Name @SortIndicator(CustomerSort.Name)
+                            </th>
+                            <th class="text-right cursor-pointer select-none"
+                                @onclick="@(() => ToggleSort(CustomerSort.Balance))">
+                                Balance @SortIndicator(CustomerSort.Balance)
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_displayedCustomers.Count == 0)
+                        {
+                            <tr><td colspan="2" class="text-fg-subtle text-sm py-4">No customers to show.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _displayedCustomers)
+                            {
+                                <tr>
+                                    <td>
+                                        <a class="citus-link" href="@($"customers/{row.CustomerId:D}")">
+                                            @row.DisplayName
+                                        </a>
+                                    </td>
+                                    <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                        @FormatCurrency(row.CurrencyCode, row.Balance)
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    @* === Block 2: Cash Flow band ======================================== *@
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Cash flow</h2>
+        <p class="text-fg-muted text-sm mb-3">
+            Past 10 months of cash received, the current month's running total,
+            and a 3-month forecast computed from open invoices' due dates
+            (invoice + payment term). All values in @_baseCurrencyCode.
+        </p>
+
+        @if (_cashFlow is null || _cashFlow.Months.Count == 0)
+        {
+            <p class="text-fg-subtle text-sm">No cash-flow data yet.</p>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="citus-data-table sales-cashflow-table">
+                    <thead>
+                        <tr>
+                            @foreach (var bucket in _cashFlow.Months)
+                            {
+                                <th class="@CashFlowHeaderClass(bucket)">
+                                    <div class="text-xs">@bucket.MonthStart.ToString("yyyy")</div>
+                                    <div>@bucket.MonthStart.ToString("MMM")</div>
+                                    @if (bucket.IsCurrent)
+                                    {
+                                        <div class="text-xs text-fg-subtle">Current</div>
+                                    }
+                                    else if (bucket.IsForecast)
+                                    {
+                                        <div class="text-xs text-fg-subtle">Forecast</div>
+                                    }
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            @foreach (var bucket in _cashFlow.Months)
+                            {
+                                var amount = bucket.IsForecast
+                                    ? bucket.ForecastAmountBase
+                                    : bucket.ReceivedAmountBase;
+                                <td class="@CashFlowCellClass(bucket)"
+                                    style="font-variant-numeric: tabular-nums;">
+                                    @FormatBaseAmount(amount)
+                                </td>
+                            }
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @* === Block 3: Income over time ====================================== *@
+    <section class="citus-panel">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 class="citus-panel__title m-0">Income over time</h2>
+            <div class="flex items-center gap-3 text-sm">
+                <label class="flex items-center gap-2">
+                    Duration:
+                    <select class="citus-form-field__input"
+                            style="min-width: 11rem;"
+                            value="@_duration"
+                            @onchange="@(e => OnDurationChanged(e.Value?.ToString() ?? "last_12_months"))">
+                        <option value="this_month">This month</option>
+                        <option value="this_quarter">This quarter</option>
+                        <option value="ytd">Year to date</option>
+                        <option value="last_12_months">Last 12 months</option>
+                    </select>
+                </label>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox"
+                           checked="@_compareToPreviousYear"
+                           @onchange="@OnCompareChanged" />
+                    Compare to previous year
+                </label>
+            </div>
+        </div>
+        <p class="text-fg-muted text-sm mb-3">
+            Posted invoice totals by month — accrual-basis revenue, base currency.
+        </p>
+
+        @if (_income is null)
+        {
+            <p class="text-fg-subtle text-sm">No income data yet.</p>
+        }
+        else
+        {
+            <RadzenChart Style="height: 320px;">
+                <RadzenLineSeries Data="@_incomePoints"
+                                  CategoryProperty="Label"
+                                  ValueProperty="Amount"
+                                  Title="@($"This year ({_baseCurrencyCode})")"
+                                  Smooth="true"
+                                  LineType="LineType.Solid">
+                    <RadzenMarkers MarkerType="MarkerType.Circle" />
+                </RadzenLineSeries>
+                @if (_compareToPreviousYear && _previousIncomePoints.Count > 0)
+                {
+                    <RadzenLineSeries Data="@_previousIncomePoints"
+                                      CategoryProperty="Label"
+                                      ValueProperty="Amount"
+                                      Title="Previous year"
+                                      Smooth="true"
+                                      LineType="LineType.Dashed">
+                        <RadzenMarkers MarkerType="MarkerType.Circle" />
+                    </RadzenLineSeries>
+                }
+                <RadzenCategoryAxis Padding="20" />
+                <RadzenValueAxis>
+                    <RadzenAxisTitle Text="@_baseCurrencyCode" />
+                </RadzenValueAxis>
+                <RadzenLegend Position="LegendPosition.Bottom" />
+            </RadzenChart>
+        }
+    </section>
+}
+
+<style>
+    .sales-flow-diagram {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .sales-flow-diagram svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-width: 720px;
+    }
+
+    .sales-flow-node circle {
+        fill: #2dd1f7;
+        stroke: #1ba5c4;
+        stroke-width: 1.5;
+        cursor: pointer;
+    }
+
+    .sales-flow-node--ghost circle {
+        fill: #f3f4f6;
+        stroke: #cbd5e0;
+        stroke-dasharray: 4 3;
+        cursor: not-allowed;
+    }
+
+    .sales-flow-node text {
+        font-size: 13px;
+        fill: #374151;
+        text-anchor: middle;
+        pointer-events: none;
+    }
+
+    .sales-flow-node--ghost text {
+        fill: #9ca3af;
+    }
+
+    .sales-flow-edge {
+        stroke: #cbd5e0;
+        stroke-width: 1.5;
+        fill: none;
+    }
+
+    .sales-cashflow-table th,
+    .sales-cashflow-table td {
+        text-align: right;
+        padding: 0.45rem 0.55rem !important;
+        white-space: nowrap;
+    }
+
+    .sales-cashflow-table th {
+        text-align: center;
+    }
+
+    .sales-cashflow-cell--forecast {
+        background: rgba(45, 209, 247, 0.06);
+    }
+
+    .sales-cashflow-cell--current {
+        background: rgba(34, 197, 94, 0.08);
+        font-weight: 600;
+    }
+</style>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Sales & Get Paid",
+        Title = "Overview",
+        Subtitle = "Sales workflow at a glance — flow, customer balances, cash band, and revenue trend."
+    };
+
+    private DateOnly _asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+    private string _baseCurrencyCode = string.Empty;
+
+    private IReadOnlyList<CustomerSummary> _customers = Array.Empty<CustomerSummary>();
+    private ArAgingReportSummary? _aging;
+    private SalesCashFlowSummary? _cashFlow;
+    private IncomeOverTimeSummary? _income;
+
+    private bool _isLoading = true;
+    private bool _includeInactive;
+    private bool _compareToPreviousYear;
+    private string _duration = "last_12_months";
+
+    private CustomerSort _sortKey = CustomerSort.Balance;
+    private bool _sortDescending = true;
+
+    private List<CustomerBalanceRow> _displayedCustomers = new();
+    private List<IncomeChartPoint> _incomePoints = new();
+    private List<IncomeChartPoint> _previousIncomePoints = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            var companyId = ShellState.ActiveCompany.Id;
+            _baseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode ?? string.Empty;
+
+            var customersTask = CustomerClient.ListAsync(includeInactive: _includeInactive);
+            var agingTask = ArAgingClient.GetReportAsync(companyId, _asOfDate);
+            var cashFlowTask = OverviewClient.GetCashFlowAsync(companyId, _asOfDate);
+            var (incomeFrom, incomeTo) = ResolveIncomeWindow();
+            var incomeTask = OverviewClient.GetIncomeOverTimeAsync(
+                companyId, incomeFrom, incomeTo, _compareToPreviousYear);
+
+            await Task.WhenAll(customersTask, agingTask, cashFlowTask, incomeTask);
+
+            _customers = customersTask.Result;
+            _aging = agingTask.Result;
+            _cashFlow = cashFlowTask.Result;
+            _income = incomeTask.Result;
+
+            if (_cashFlow is not null && !string.IsNullOrWhiteSpace(_cashFlow.BaseCurrencyCode))
+            {
+                _baseCurrencyCode = _cashFlow.BaseCurrencyCode;
+            }
+
+            RebuildCustomerRows();
+            RebuildIncomePoints();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnIncludeInactiveChanged(ChangeEventArgs e)
+    {
+        _includeInactive = e.Value is bool checkedValue && checkedValue;
+        // Refetch customers because the API may exclude inactive ones.
+        _customers = await CustomerClient.ListAsync(includeInactive: _includeInactive);
+        RebuildCustomerRows();
+    }
+
+    private async Task OnDurationChanged(string duration)
+    {
+        _duration = duration;
+        await ReloadIncomeAsync();
+    }
+
+    private async Task OnCompareChanged(ChangeEventArgs e)
+    {
+        _compareToPreviousYear = e.Value is bool checkedValue && checkedValue;
+        await ReloadIncomeAsync();
+    }
+
+    private async Task ReloadIncomeAsync()
+    {
+        var companyId = ShellState.ActiveCompany.Id;
+        var (incomeFrom, incomeTo) = ResolveIncomeWindow();
+        _income = await OverviewClient.GetIncomeOverTimeAsync(
+            companyId, incomeFrom, incomeTo, _compareToPreviousYear);
+        RebuildIncomePoints();
+    }
+
+    private (DateOnly From, DateOnly To) ResolveIncomeWindow()
+    {
+        var today = _asOfDate;
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        return _duration switch
+        {
+            "this_month" => (monthStart, today),
+            "this_quarter" => (
+                new DateOnly(today.Year, ((today.Month - 1) / 3) * 3 + 1, 1),
+                today),
+            "ytd" => (new DateOnly(today.Year, 1, 1), today),
+            _ => (monthStart.AddMonths(-11), today),
+        };
+    }
+
+    private void ToggleSort(CustomerSort key)
+    {
+        if (_sortKey == key)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortKey = key;
+            _sortDescending = key == CustomerSort.Balance;
+        }
+        RebuildCustomerRows();
+    }
+
+    private string SortIndicator(CustomerSort key) =>
+        _sortKey != key ? string.Empty : (_sortDescending ? " ▼" : " ▲");
+
+    private void RebuildCustomerRows()
+    {
+        // Index aging rows by customer id for O(1) lookup.
+        var agingByCustomer = (_aging?.CustomerRows ?? Array.Empty<ArAgingCustomerSummary>())
+            .ToDictionary(row => row.CustomerId);
+
+        var rows = new List<CustomerBalanceRow>(_customers.Count);
+        foreach (var c in _customers)
+        {
+            agingByCustomer.TryGetValue(c.Id, out var aging);
+
+            string currency = c.DefaultCurrencyCode;
+            decimal balance = 0m;
+
+            if (aging is not null && aging.OpenItems.Count > 0)
+            {
+                // Pick the dominant transaction currency among open items;
+                // sum signed-open-tx in that currency. Mixed-currency
+                // customers fall back to base-currency total.
+                var byCurrency = aging.OpenItems
+                    .GroupBy(i => i.DocumentCurrencyCode)
+                    .Select(g => new
+                    {
+                        Currency = g.Key,
+                        Total = g.Sum(i => i.SignedOpenAmountTx),
+                        Count = g.Count(),
+                    })
+                    .OrderByDescending(g => g.Count)
+                    .ToList();
+
+                if (byCurrency.Count == 1)
+                {
+                    currency = byCurrency[0].Currency;
+                    balance = byCurrency[0].Total;
+                }
+                else if (byCurrency.Count > 1)
+                {
+                    currency = _baseCurrencyCode;
+                    balance = aging.TotalOutstandingAmountBase;
+                }
+            }
+
+            rows.Add(new CustomerBalanceRow(
+                CustomerId: c.Id,
+                DisplayName: c.DisplayName,
+                CurrencyCode: string.IsNullOrWhiteSpace(currency) ? _baseCurrencyCode : currency,
+                Balance: balance,
+                IsActive: c.IsActive));
+        }
+
+        IEnumerable<CustomerBalanceRow> ordered = _sortKey switch
+        {
+            CustomerSort.Balance => _sortDescending
+                ? rows.OrderByDescending(r => r.Balance).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.Balance).ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+            _ => _sortDescending
+                ? rows.OrderByDescending(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+        };
+        _displayedCustomers = ordered.ToList();
+    }
+
+    private void RebuildIncomePoints()
+    {
+        _incomePoints = (_income?.Months ?? Array.Empty<IncomeOverTimeMonthSummary>())
+            .Select(m => new IncomeChartPoint(
+                Label: m.MonthStart.ToString("yyyy MMM"),
+                Amount: (double)m.AmountBase))
+            .ToList();
+        _previousIncomePoints = (_income?.PreviousYearMonths ?? Array.Empty<IncomeOverTimeMonthSummary>())
+            .Select(m => new IncomeChartPoint(
+                Label: m.MonthStart.AddYears(1).ToString("yyyy MMM"),
+                Amount: (double)m.AmountBase))
+            .ToList();
+    }
+
+    private static string CashFlowHeaderClass(SalesCashFlowMonthSummary bucket)
+    {
+        if (bucket.IsCurrent) return "sales-cashflow-cell--current";
+        if (bucket.IsForecast) return "sales-cashflow-cell--forecast";
+        return string.Empty;
+    }
+
+    private static string CashFlowCellClass(SalesCashFlowMonthSummary bucket) =>
+        CashFlowHeaderClass(bucket);
+
+    private string FormatBaseAmount(decimal amount) =>
+        FormatCurrency(_baseCurrencyCode, amount);
+
+    private static string FormatCurrency(string? currencyCode, decimal amount)
+    {
+        var prefix = ResolveCurrencySymbol(currencyCode);
+        var sign = amount < 0 ? "-" : string.Empty;
+        var abs = Math.Abs(amount);
+        return $"{sign}{prefix}{abs:N2}";
+    }
+
+    private static string ResolveCurrencySymbol(string? code) =>
+        (code ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "USD" => "US$",
+            "CAD" => "Can$",
+            "EUR" => "€",
+            "GBP" => "£",
+            "CNY" or "RMB" => "RMB",
+            "JPY" => "¥",
+            "AUD" => "A$",
+            "" => string.Empty,
+            var c => $"{c} ",
+        };
+
+    @* ===== Flow diagram (inline SVG, fixed coords for clarity) ========== *@
+    private RenderFragment RenderFlowDiagram() => builder =>
+    {
+        const int seq = 0;
+        var seqRef = seq;
+        builder.OpenElement(seqRef++, "svg");
+        builder.AddAttribute(seqRef++, "viewBox", "0 0 720 460");
+        builder.AddAttribute(seqRef++, "xmlns", "http://www.w3.org/2000/svg");
+        builder.AddAttribute(seqRef++, "role", "img");
+        builder.AddAttribute(seqRef++, "aria-label", "Sales workflow diagram");
+
+        // Defs: arrowhead marker.
+        builder.OpenElement(seqRef++, "defs");
+        builder.OpenElement(seqRef++, "marker");
+        builder.AddAttribute(seqRef++, "id", "sales-flow-arrow");
+        builder.AddAttribute(seqRef++, "viewBox", "0 0 10 10");
+        builder.AddAttribute(seqRef++, "refX", "9");
+        builder.AddAttribute(seqRef++, "refY", "5");
+        builder.AddAttribute(seqRef++, "markerWidth", "8");
+        builder.AddAttribute(seqRef++, "markerHeight", "8");
+        builder.AddAttribute(seqRef++, "orient", "auto-start-reverse");
+        builder.OpenElement(seqRef++, "path");
+        builder.AddAttribute(seqRef++, "d", "M0,0 L10,5 L0,10 z");
+        builder.AddAttribute(seqRef++, "fill", "#94a3b8");
+        builder.CloseElement(); // path
+        builder.CloseElement(); // marker
+        builder.CloseElement(); // defs
+
+        // Edges (drawn first so nodes overlay them).
+        DrawEdge(builder, ref seqRef, 150, 210, 290, 210);                 // Quotes -> Sales Orders
+        DrawEdge(builder, ref seqRef, 350, 210, 490, 210);                 // Sales Orders -> Delivery Orders
+        DrawEdge(builder, ref seqRef, 320, 240, 320, 360, 410, 360);       // Sales Orders -> Sales Invoices (down then right)
+        DrawEdge(builder, ref seqRef, 520, 240, 520, 340, 470, 360);       // Delivery Orders -> Sales Invoices (down then left)
+        DrawEdge(builder, ref seqRef, 150, 370, 410, 370);                 // Time Slips -> Sales Invoices
+        DrawEdge(builder, ref seqRef, 470, 370, 590, 370);                 // Sales Invoices -> Receipts
+
+        // Nodes.
+        DrawNode(builder, ref seqRef, 120, 60, "Customers", "customers");
+        DrawNode(builder, ref seqRef, 440, 60, "Projects", null, ghost: true);
+        DrawNode(builder, ref seqRef, 120, 210, "Quotes", "quotes");
+        DrawNode(builder, ref seqRef, 320, 210, "Sales Orders", "sales-orders");
+        DrawNode(builder, ref seqRef, 520, 210, "Delivery Orders", null, ghost: true);
+        DrawNode(builder, ref seqRef, 120, 370, "Time Slips", null, ghost: true);
+        DrawNode(builder, ref seqRef, 440, 370, "Sales Invoices", "invoices");
+        DrawNode(builder, ref seqRef, 620, 370, "Receipts", "receive-payment");
+
+        builder.CloseElement(); // svg
+    };
+
+    private void DrawEdge(
+        Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder,
+        ref int seq,
+        params int[] points)
+    {
+        if (points.Length < 4 || points.Length % 2 != 0) return;
+
+        var pathData = new System.Text.StringBuilder();
+        pathData.Append("M ").Append(points[0]).Append(' ').Append(points[1]);
+        for (var i = 2; i < points.Length; i += 2)
+        {
+            pathData.Append(" L ").Append(points[i]).Append(' ').Append(points[i + 1]);
+        }
+
+        builder.OpenElement(seq++, "path");
+        builder.AddAttribute(seq++, "class", "sales-flow-edge");
+        builder.AddAttribute(seq++, "d", pathData.ToString());
+        builder.AddAttribute(seq++, "marker-end", "url(#sales-flow-arrow)");
+        builder.CloseElement();
+    }
+
+    private void DrawNode(
+        Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder,
+        ref int seq,
+        int cx,
+        int cy,
+        string label,
+        string? href,
+        bool ghost = false)
+    {
+        builder.OpenElement(seq++, "g");
+        builder.AddAttribute(seq++, "class", ghost ? "sales-flow-node sales-flow-node--ghost" : "sales-flow-node");
+        if (!ghost && !string.IsNullOrEmpty(href))
+        {
+            var navHref = href;
+            builder.AddAttribute(seq++, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, _ => Nav.NavigateTo(navHref)));
+        }
+        if (ghost)
+        {
+            builder.AddAttribute(seq++, "title", "Coming soon");
+        }
+
+        builder.OpenElement(seq++, "circle");
+        builder.AddAttribute(seq++, "cx", cx.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(seq++, "cy", cy.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(seq++, "r", "26");
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "text");
+        builder.AddAttribute(seq++, "x", cx.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(seq++, "y", (cy + 50).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddContent(seq++, label);
+        builder.CloseElement();
+
+        builder.CloseElement(); // g
+    }
+
+    private enum CustomerSort { Name, Balance }
+
+    private sealed record CustomerBalanceRow(
+        Guid CustomerId,
+        string DisplayName,
+        string CurrencyCode,
+        decimal Balance,
+        bool IsActive);
+
+    private sealed record IncomeChartPoint(string Label, double Amount);
+}

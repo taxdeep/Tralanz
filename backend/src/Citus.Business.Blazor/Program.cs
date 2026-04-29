@@ -95,6 +95,13 @@ builder.Services.AddHttpClient<ApAgingClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<SalesOverviewClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<AccountingDocumentReviewClient>(
         (serviceProvider, client) =>
         {

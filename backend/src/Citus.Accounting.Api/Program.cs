@@ -2262,6 +2262,62 @@ accounting.MapGet(
         return ToCsvFileResult(file);
     });
 
+// ---------------------------------------------------------------------------
+// Sales Overview — Cash Flow band (10 past + current + 3 forecast months)
+// and Income Over Time (accrual-basis revenue chart). Both pull from the
+// same accounting tables already feeding the AR aging report; new endpoints
+// just layer monthly bucketing on top.
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/sales/cash-flow",
+    async ([AsParameters] SalesCashFlowLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    {
+        var report = await repository.GetSalesCashFlowAsync(
+            new GetSalesCashFlowQuery(
+                new(query.CompanyId),
+                query.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow)),
+            cancellationToken);
+
+        if (report is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "The active company is not provisioned in the accounting core yet."
+            });
+        }
+
+        return Results.Ok(MapSalesCashFlowReport(report));
+    });
+
+accounting.MapGet(
+    "/sales/income-over-time",
+    async ([AsParameters] IncomeOverTimeLookupQuery query, IAccountingReportRepository repository, CancellationToken cancellationToken) =>
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var to = query.ToDate ?? today;
+        // Default window: trailing 12 months ending on the as-of month.
+        var defaultFrom = new DateOnly(to.Year, to.Month, 1).AddMonths(-11);
+        var from = query.FromDate ?? defaultFrom;
+
+        var report = await repository.GetIncomeOverTimeAsync(
+            new GetIncomeOverTimeQuery(
+                new(query.CompanyId),
+                from,
+                to,
+                query.CompareToPreviousYear),
+            cancellationToken);
+
+        if (report is null)
+        {
+            return Results.NotFound(new
+            {
+                message = "The active company is not provisioned in the accounting core yet."
+            });
+        }
+
+        return Results.Ok(MapIncomeOverTimeReport(report));
+    });
+
 accounting.MapGet(
     "/open-items/ar/{openItemId:guid}",
     async (Guid openItemId, [AsParameters] OpenItemDrillDownLookupQuery query, IArOpenItemRepository openItemRepository, ISettlementApplicationRepository settlementRepository, CancellationToken cancellationToken) =>
@@ -10422,6 +10478,45 @@ static BalanceSheetAccountSummary MapBalanceSheetRow(BalanceSheetAccountAmount r
         PostedDebitTotal = row.PostedDebitTotal,
         PostedCreditTotal = row.PostedCreditTotal,
         DisplayAmount = row.DisplayAmount
+    };
+
+static SalesCashFlowSummary MapSalesCashFlowReport(SalesCashFlowReport report) =>
+    new()
+    {
+        CompanyId = report.CompanyId,
+        AsOfDate = report.AsOfDate,
+        BaseCurrencyCode = report.BaseCurrencyCode,
+        Months = report.Months.Select(month => new SalesCashFlowMonthSummary
+        {
+            Year = month.Year,
+            Month = month.Month,
+            MonthStart = month.MonthStart,
+            IsForecast = month.IsForecast,
+            IsCurrent = month.IsCurrent,
+            ReceivedAmountBase = month.ReceivedAmountBase,
+            ForecastAmountBase = month.ForecastAmountBase,
+        }).ToArray(),
+    };
+
+static IncomeOverTimeSummary MapIncomeOverTimeReport(IncomeOverTimeReport report) =>
+    new()
+    {
+        CompanyId = report.CompanyId,
+        FromDate = report.FromDate,
+        ToDate = report.ToDate,
+        BaseCurrencyCode = report.BaseCurrencyCode,
+        CompareToPreviousYear = report.CompareToPreviousYear,
+        Months = report.Months.Select(MapIncomeMonth).ToArray(),
+        PreviousYearMonths = report.PreviousYearMonths.Select(MapIncomeMonth).ToArray(),
+    };
+
+static IncomeOverTimeMonthSummary MapIncomeMonth(IncomeOverTimeMonthBucket bucket) =>
+    new()
+    {
+        Year = bucket.Year,
+        Month = bucket.Month,
+        MonthStart = bucket.MonthStart,
+        AmountBase = bucket.AmountBase,
     };
 
 static ArAgingCustomerSummary MapArAgingCustomer(ArAgingCustomerBalance row) =>
