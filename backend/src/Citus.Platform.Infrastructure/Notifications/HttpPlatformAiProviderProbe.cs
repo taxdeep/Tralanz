@@ -96,15 +96,34 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
         Stopwatch stopwatch,
         CancellationToken cancellationToken)
     {
-        var rootUrl = string.IsNullOrWhiteSpace(baseUrl) ? "https://api.openai.com" : baseUrl!.TrimEnd('/');
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{rootUrl}/v1/models");
+        // OpenAI's docs always show URLs with /v1/ already in them, so an
+        // operator copy-pasting "https://api.openai.com/v1" as the base
+        // URL is overwhelmingly common. Strip any trailing /v1 (or /v1/)
+        // before composing — otherwise we hit /v1/v1/models and get a 404.
+        var rootUrl = NormalizeOpenAiBaseUrl(baseUrl);
+        var probeUrl = $"{rootUrl}/v1/models";
+        using var request = new HttpRequestMessage(HttpMethod.Get, probeUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
 
         using var response = await http.SendAsync(request, cancellationToken);
         stopwatch.Stop();
 
         return InterpretAuthStatus(response, stopwatch.Elapsed,
-            successMessage: $"Authenticated to OpenAI ({(int)response.StatusCode}).");
+            successMessage: $"Authenticated to OpenAI ({(int)response.StatusCode}).",
+            probedUrl: probeUrl);
+    }
+
+    private static string NormalizeOpenAiBaseUrl(string? baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl)) return "https://api.openai.com";
+        var root = baseUrl!.Trim().TrimEnd('/');
+        // Strip a trailing /v1 (case-insensitive) so the operator's
+        // "https://api.openai.com/v1" works as if it were the bare host.
+        if (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+        {
+            root = root[..^3];
+        }
+        return root;
     }
 
     private static async Task<PlatformAiProbeResult> ProbeAnthropicAsync(
@@ -117,8 +136,9 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
         var modelToProbe = string.IsNullOrWhiteSpace(model)
             ? "claude-3-5-haiku-latest"
             : model.Trim();
+        const string probeUrl = "https://api.anthropic.com/v1/messages";
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
+        using var request = new HttpRequestMessage(HttpMethod.Post, probeUrl)
         {
             Content = JsonContent.Create(new
             {
@@ -137,7 +157,8 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
         stopwatch.Stop();
 
         return InterpretAuthStatus(response, stopwatch.Elapsed,
-            successMessage: $"Authenticated to Anthropic ({(int)response.StatusCode}).");
+            successMessage: $"Authenticated to Anthropic ({(int)response.StatusCode}).",
+            probedUrl: $"{probeUrl} (model={modelToProbe})");
     }
 
     private static async Task<PlatformAiProbeResult> ProbeAzureOpenAiAsync(
@@ -155,23 +176,37 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
                 null);
         }
 
-        var rootUrl = baseUrl!.TrimEnd('/');
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"{rootUrl}/openai/models?api-version=2024-02-01");
+        // Same trailing-segment forgiveness as OpenAI: a trailing /openai
+        // copy-pasted from the Azure portal would compose into
+        // /openai/openai/models otherwise.
+        var rootUrl = NormalizeAzureOpenAiBaseUrl(baseUrl);
+        var probeUrl = $"{rootUrl}/openai/models?api-version=2024-02-01";
+        using var request = new HttpRequestMessage(HttpMethod.Get, probeUrl);
         request.Headers.Add("api-key", apiKey.Trim());
 
         using var response = await http.SendAsync(request, cancellationToken);
         stopwatch.Stop();
 
         return InterpretAuthStatus(response, stopwatch.Elapsed,
-            successMessage: $"Authenticated to Azure OpenAI ({(int)response.StatusCode}).");
+            successMessage: $"Authenticated to Azure OpenAI ({(int)response.StatusCode}).",
+            probedUrl: probeUrl);
+    }
+
+    private static string NormalizeAzureOpenAiBaseUrl(string baseUrl)
+    {
+        var root = baseUrl.Trim().TrimEnd('/');
+        if (root.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
+        {
+            root = root[..^7];
+        }
+        return root;
     }
 
     private static PlatformAiProbeResult InterpretAuthStatus(
         HttpResponseMessage response,
         TimeSpan elapsed,
-        string successMessage)
+        string successMessage,
+        string probedUrl)
     {
         var status = (int)response.StatusCode;
         if (response.IsSuccessStatusCode)
@@ -179,21 +214,26 @@ public sealed class HttpPlatformAiProviderProbe : IPlatformAiProviderProbe
             return new PlatformAiProbeResult(true, status, successMessage, elapsed);
         }
 
+        // Always include the URL we actually hit on failure — saves the
+        // operator from guessing whether their base URL composed into
+        // something double-prefixed (/v1/v1/, /openai/openai/, etc).
         return response.StatusCode switch
         {
             HttpStatusCode.Unauthorized =>
-                new PlatformAiProbeResult(false, status, "API key rejected (401 Unauthorized).", elapsed),
+                new PlatformAiProbeResult(false, status,
+                    $"API key rejected (401 Unauthorized). Hit: {probedUrl}", elapsed),
             HttpStatusCode.Forbidden =>
-                new PlatformAiProbeResult(false, status, "API key lacks permission (403 Forbidden).", elapsed),
+                new PlatformAiProbeResult(false, status,
+                    $"API key lacks permission (403 Forbidden). Hit: {probedUrl}", elapsed),
             HttpStatusCode.NotFound =>
                 new PlatformAiProbeResult(false, status,
-                    "Endpoint or model not found (404). Check base URL and model name.", elapsed),
+                    $"Endpoint or model not found (404). Hit: {probedUrl}. Check the base URL (no trailing /v1 or /openai needed) and the model name.", elapsed),
             HttpStatusCode.TooManyRequests =>
                 new PlatformAiProbeResult(false, status,
                     "Rate-limited (429). Key looks valid, retry shortly.", elapsed),
             _ =>
                 new PlatformAiProbeResult(false, status,
-                    $"Provider returned {status} {response.ReasonPhrase}.", elapsed),
+                    $"Provider returned {status} {response.ReasonPhrase}. Hit: {probedUrl}", elapsed),
         };
     }
 }
