@@ -1,0 +1,383 @@
+@page "/settings/invoice-templates/new"
+@page "/settings/invoice-templates/{TemplateId:guid}"
+
+@inject BusinessShellState ShellState
+@inject InvoiceTemplateClient TemplateClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+<PageTitle>@_pageTitle | Tralanz Books</PageTitle>
+
+<div class="citus-page-narrow">
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="settings/invoice-templates">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to templates</span>
+        </a>
+        @if (_isExisting && !_template.IsDefault)
+        {
+            <CitusButton Variant="CitusButtonVariant.Ghost"
+                         Disabled="_isBusy"
+                         OnClick="MarkAsDefaultAsync">
+                Set as default
+            </CitusButton>
+        }
+        @if (_isExisting && _template.IsDefault)
+        {
+            <CitusBadge Color="@("green")">Default template</CitusBadge>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Form" />
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Brand</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">Template name</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_template.Name"
+                           @oninput="@(e => _template = _template with { Name = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Primary color</span>
+                    <div class="flex items-center gap-2">
+                        <input type="color"
+                               class="citus-form-field__input"
+                               style="width:3rem;padding:0;"
+                               value="@_template.PrimaryColorHex"
+                               @oninput="@(e => _template = _template with { PrimaryColorHex = e.Value?.ToString() ?? "#000000" })" />
+                        <input type="text"
+                               class="citus-form-field__input"
+                               value="@_template.PrimaryColorHex"
+                               @oninput="@(e => _template = _template with { PrimaryColorHex = e.Value?.ToString() ?? string.Empty })" />
+                    </div>
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Accent color</span>
+                    <div class="flex items-center gap-2">
+                        <input type="color"
+                               class="citus-form-field__input"
+                               style="width:3rem;padding:0;"
+                               value="@_template.AccentColorHex"
+                               @oninput="@(e => _template = _template with { AccentColorHex = e.Value?.ToString() ?? "#666666" })" />
+                        <input type="text"
+                               class="citus-form-field__input"
+                               value="@_template.AccentColorHex"
+                               @oninput="@(e => _template = _template with { AccentColorHex = e.Value?.ToString() ?? string.Empty })" />
+                    </div>
+                </label>
+
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">Logo URL (optional, public link)</span>
+                    <input type="url"
+                           class="citus-form-field__input"
+                           placeholder="https://cdn.example.com/logo.png"
+                           value="@(_template.LogoUrl ?? string.Empty)"
+                           @oninput="@(e => _template = _template with { LogoUrl = NullIfBlank(e.Value?.ToString()) })" />
+                </label>
+
+                <label class="citus-form-field md:col-span-2">
+                    <span class="citus-form-field__label">Tagline (optional)</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="e.g. Independent advisory and integration"
+                           value="@(_template.Tagline ?? string.Empty)"
+                           @oninput="@(e => _template = _template with { Tagline = NullIfBlank(e.Value?.ToString()) })" />
+                </label>
+            </div>
+
+            <h2 class="citus-panel__title mt-6">Body text</h2>
+            <div class="grid grid-cols-1 gap-3">
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Greeting (printed above the lines table)</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_template.Greeting"
+                           @oninput="@(e => _template = _template with { Greeting = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Payment instructions</span>
+                    <textarea class="citus-form-field__input"
+                              rows="3"
+                              placeholder="Wire / e-Transfer / cheque mailing address — anything you want above the customer's eyes."
+                              @oninput="@(e => _template = _template with { PaymentInstructions = e.Value?.ToString() ?? string.Empty })">@_template.PaymentInstructions</textarea>
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Footer note</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_template.FooterNote"
+                           @oninput="@(e => _template = _template with { FooterNote = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <input type="checkbox"
+                           class="mr-2"
+                           checked="@_template.ShowTaxColumn"
+                           @onchange="@(e => _template = _template with { ShowTaxColumn = (bool)(e.Value ?? false) })" />
+                    <span>Show tax row in invoice totals</span>
+                </label>
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Email</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Used by Send invoice. Use <span class="citus-inline-code">{invoiceNumber}</span>
+                and <span class="citus-inline-code">{companyName}</span> as placeholders.
+            </p>
+
+            <div class="grid grid-cols-1 gap-3">
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Subject</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           value="@_template.EmailSubjectTemplate"
+                           @oninput="@(e => _template = _template with { EmailSubjectTemplate = e.Value?.ToString() ?? string.Empty })" />
+                </label>
+
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Body intro (optional, shown above invoice details)</span>
+                    <textarea class="citus-form-field__input"
+                              rows="4"
+                              placeholder="Hello {customerName} — etc."
+                              @oninput="@(e => _template = _template with { EmailBodyTemplate = e.Value?.ToString() ?? string.Empty })">@_template.EmailBodyTemplate</textarea>
+                </label>
+            </div>
+
+            <h2 class="citus-panel__title mt-6">Live preview</h2>
+            <div class="citus-template-preview">
+                <div class="citus-template-preview__header" style="border-color:@_template.PrimaryColorHex">
+                    <strong style="color:@_template.PrimaryColorHex">Sample Invoice INV-2026-000001</strong>
+                    <span class="citus-template-preview__accent" style="color:@_template.AccentColorHex">
+                        @(_template.Tagline ?? "")
+                    </span>
+                </div>
+                <p class="citus-template-preview__greeting">@_template.Greeting</p>
+                <table class="citus-template-preview__table">
+                    <thead style="border-color:@_template.PrimaryColorHex">
+                        <tr><th>#</th><th>Description</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>Sample design retainer</td><td>100.00</td></tr>
+                        <tr><td>2</td><td>Sample hosting</td><td>75.00</td></tr>
+                    </tbody>
+                </table>
+                <div class="citus-template-preview__totals">
+                    <div>Subtotal: 175.00</div>
+                    @if (_template.ShowTaxColumn)
+                    {
+                        <div>Tax: 22.75</div>
+                    }
+                    <div style="border-color:@_template.PrimaryColorHex"><strong>Total: 197.75 CAD</strong></div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_template.PaymentInstructions))
+                {
+                    <p class="citus-template-preview__pay" style="color:@_template.AccentColorHex">
+                        <strong>Payment:</strong> @_template.PaymentInstructions
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_template.FooterNote))
+                {
+                    <p class="citus-template-preview__footer" style="color:@_template.AccentColorHex">
+                        @_template.FooterNote
+                    </p>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="flex items-center gap-3 mt-6">
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     Disabled="_isBusy || string.IsNullOrWhiteSpace(_template.Name)"
+                     OnClick="SaveAsync">
+            @(_isBusy ? "Saving…" : (_isExisting ? "Save changes" : "Create template"))
+        </CitusButton>
+        <a class="citus-button citus-button--ghost" href="settings/invoice-templates">Cancel</a>
+    </div>
+}
+</div>
+
+@code {
+    [Parameter]
+    public Guid? TemplateId { get; set; }
+
+    private InvoiceTemplateDraft _template = InvoiceTemplateDraft.Empty();
+    private bool _isLoading;
+    private bool _isBusy;
+    private bool _isExisting;
+    private string? _error;
+    private string _pageTitle = "Invoice template";
+
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Invoice template",
+        Subtitle = "Brand colors, payment instructions, and email subject for the company's invoices."
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            if (TemplateId is { } id)
+            {
+                var dto = await TemplateClient.GetAsync(ShellState.ActiveCompany.Id, id);
+                if (dto is null)
+                {
+                    _error = "Template not found in this company.";
+                    _template = InvoiceTemplateDraft.Empty();
+                    _isExisting = false;
+                }
+                else
+                {
+                    _template = InvoiceTemplateDraft.From(dto);
+                    _isExisting = true;
+                    _pageTitle = $"Edit {_template.Name}";
+                    _header = _header with { Title = $"Edit {_template.Name}" };
+                }
+            }
+            else
+            {
+                _template = InvoiceTemplateDraft.Empty();
+                _isExisting = false;
+                _pageTitle = "New invoice template";
+                _header = _header with { Title = "New invoice template" };
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_isBusy) return;
+        _isBusy = true;
+        _error = null;
+        try
+        {
+            var request = new InvoiceTemplateUpsertDto(
+                Name: _template.Name.Trim(),
+                LogoUrl: _template.LogoUrl,
+                PrimaryColorHex: _template.PrimaryColorHex,
+                AccentColorHex: _template.AccentColorHex,
+                Tagline: _template.Tagline,
+                Greeting: _template.Greeting,
+                PaymentInstructions: _template.PaymentInstructions,
+                FooterNote: _template.FooterNote,
+                ShowTaxColumn: _template.ShowTaxColumn,
+                EmailSubjectTemplate: _template.EmailSubjectTemplate,
+                EmailBodyTemplate: _template.EmailBodyTemplate);
+
+            var outcome = _isExisting
+                ? await TemplateClient.UpdateAsync(ShellState.ActiveCompany.Id, _template.Id, request)
+                : await TemplateClient.CreateAsync(ShellState.ActiveCompany.Id, request);
+
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Save failed.";
+                return;
+            }
+
+            await Message.SuccessAsync(_isExisting ? "Template updated." : "Template created.");
+            Navigation.NavigateTo("settings/invoice-templates");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task MarkAsDefaultAsync()
+    {
+        if (!_isExisting || _isBusy) return;
+        _isBusy = true;
+        try
+        {
+            var outcome = await TemplateClient.SetDefaultAsync(ShellState.ActiveCompany.Id, _template.Id);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Could not set as default.";
+                return;
+            }
+            await Message.SuccessAsync("Set as default.");
+            _template = _template with { IsDefault = true };
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record InvoiceTemplateDraft(
+        Guid Id,
+        string Name,
+        bool IsDefault,
+        string? LogoUrl,
+        string PrimaryColorHex,
+        string AccentColorHex,
+        string? Tagline,
+        string Greeting,
+        string PaymentInstructions,
+        string FooterNote,
+        bool ShowTaxColumn,
+        string EmailSubjectTemplate,
+        string EmailBodyTemplate)
+    {
+        public static InvoiceTemplateDraft Empty() => new(
+            Id: Guid.Empty,
+            Name: "Custom template",
+            IsDefault: false,
+            LogoUrl: null,
+            PrimaryColorHex: "#1f2937",
+            AccentColorHex: "#6b7280",
+            Tagline: null,
+            Greeting: "Thank you for your business.",
+            PaymentInstructions: string.Empty,
+            FooterNote: "Thank you for your business.",
+            ShowTaxColumn: true,
+            EmailSubjectTemplate: "Invoice {invoiceNumber} from {companyName}",
+            EmailBodyTemplate: string.Empty);
+
+        public static InvoiceTemplateDraft From(InvoiceTemplateDto dto) => new(
+            Id: dto.Id,
+            Name: dto.Name,
+            IsDefault: dto.IsDefault,
+            LogoUrl: dto.LogoUrl,
+            PrimaryColorHex: dto.PrimaryColorHex,
+            AccentColorHex: dto.AccentColorHex,
+            Tagline: dto.Tagline,
+            Greeting: dto.Greeting,
+            PaymentInstructions: dto.PaymentInstructions,
+            FooterNote: dto.FooterNote,
+            ShowTaxColumn: dto.ShowTaxColumn,
+            EmailSubjectTemplate: dto.EmailSubjectTemplate,
+            EmailBodyTemplate: dto.EmailBodyTemplate);
+    }
+}

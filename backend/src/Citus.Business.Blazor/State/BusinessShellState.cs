@@ -107,6 +107,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Payment Terms", Href = "settings/payment-terms", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Numbering", Href = "settings/numbering", Icon = IconName.FileInvoice },
+                new NavMenuItem { Title = "Invoice Templates", Href = "settings/invoice-templates", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Session", Href = "session", Icon = IconName.User }
             ]
         }

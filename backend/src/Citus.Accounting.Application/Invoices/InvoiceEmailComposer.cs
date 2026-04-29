@@ -12,11 +12,15 @@ public static class InvoiceEmailComposer
 {
     public static InvoiceEmailComposition Compose(
         InvoiceRenderModel model,
-        string? operatorMessage)
+        string? operatorMessage,
+        string? subjectTemplate = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        var subject = $"Invoice {model.Header.DisplayNumber} from {model.Issuer.CompanyName}";
+        var subject = ApplySubjectTemplate(
+            subjectTemplate,
+            model.Header.DisplayNumber,
+            model.Issuer.CompanyName);
         var totalLine = $"{model.Totals.Total:N2} {model.Totals.CurrencyCode}";
         var dueLine = model.Header.DueDate is { } due
             ? due.ToString("yyyy-MM-dd")
@@ -136,6 +140,27 @@ public static class InvoiceEmailComposer
     }
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
+
+    /// <summary>
+    /// Applies a {invoiceNumber} / {companyName} placeholder substitution
+    /// against a subject template. Falls back to the canonical "Invoice N
+    /// from C" form when the template is empty or null. Defensive against
+    /// missing closing braces by treating an unrecognized token as
+    /// literal text — never throws.
+    /// </summary>
+    private static string ApplySubjectTemplate(
+        string? template,
+        string invoiceNumber,
+        string companyName)
+    {
+        var raw = string.IsNullOrWhiteSpace(template)
+            ? "Invoice {invoiceNumber} from {companyName}"
+            : template!.Trim();
+
+        return raw
+            .Replace("{invoiceNumber}", invoiceNumber, StringComparison.OrdinalIgnoreCase)
+            .Replace("{companyName}", companyName, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed record InvoiceEmailComposition(

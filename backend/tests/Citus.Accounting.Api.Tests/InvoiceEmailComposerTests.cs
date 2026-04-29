@@ -69,9 +69,38 @@ public sealed class InvoiceEmailComposerTests
     }
 
     [Fact]
+    public void Compose_TemplateSubjectPlaceholdersGetSubstituted()
+    {
+        var model = BuildModel();
+
+        var result = InvoiceEmailComposer.Compose(
+            model,
+            operatorMessage: null,
+            subjectTemplate: "[{companyName}] Invoice {invoiceNumber} ready");
+
+        Assert.Equal("[Tralanz Studio Ltd.] Invoice INV-2026-000001 ready", result.Subject);
+    }
+
+    [Fact]
+    public void Compose_BlankTemplateFallsBackToDefaultSubject()
+    {
+        var model = BuildModel();
+
+        var result = InvoiceEmailComposer.Compose(
+            model,
+            operatorMessage: null,
+            subjectTemplate: "   ");
+
+        Assert.Equal("Invoice INV-2026-000001 from Tralanz Studio Ltd.", result.Subject);
+    }
+
+    [Fact]
     public void Compose_PaymentInstructionsBlockOnlyAppearsWhenSet()
     {
-        var modelWithoutPay = BuildModel() with { PaymentInstructions = string.Empty };
+        var modelWithoutPay = BuildModel() with
+        {
+            Branding = InvoiceBrandingSummary.Default with { PaymentInstructions = string.Empty }
+        };
         var resultEmpty = InvoiceEmailComposer.Compose(modelWithoutPay, operatorMessage: null);
         Assert.DoesNotContain("Payment instructions", resultEmpty.HtmlBody);
 
@@ -101,6 +130,9 @@ public sealed class InvoiceEmailComposerTests
             Memo: null),
         Lines = Array.Empty<InvoiceRenderLine>(),
         Totals = new InvoiceTotalsSummary(175m, 22.75m, 197.75m, "CAD"),
-        PaymentInstructions = "Pay via Interac e-Transfer to ops@tralanz.com.",
+        Branding = InvoiceBrandingSummary.Default with
+        {
+            PaymentInstructions = "Pay via Interac e-Transfer to ops@tralanz.com.",
+        },
     };
 }

@@ -109,6 +109,13 @@ builder.Services.AddHttpClient<JournalEntryReviewClient>(
             client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<InvoiceTemplateClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
 // UnitySearchPickerService — talks to /accounting/unity-search and the new
 // /accounting/unitysearch/usage endpoint. The session header handler attaches

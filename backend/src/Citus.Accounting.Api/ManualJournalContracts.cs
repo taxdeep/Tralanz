@@ -128,6 +128,25 @@ public sealed record InvoiceSendHttpRequest(
     string? Bcc,
     string? Message);
 
+/// <summary>
+/// HTTP body for POST / PUT /invoice-templates. All branding fields are
+/// optional in the wire shape — null / missing keys collapse to the
+/// canonical InvoiceTemplateConfig.Default. The endpoint validates
+/// non-null hex colors and required textual fields.
+/// </summary>
+public sealed record InvoiceTemplateUpsertHttpRequest(
+    string Name,
+    string? LogoUrl,
+    string? PrimaryColorHex,
+    string? AccentColorHex,
+    string? Tagline,
+    string? Greeting,
+    string? PaymentInstructions,
+    string? FooterNote,
+    bool? ShowTaxColumn,
+    string? EmailSubjectTemplate,
+    string? EmailBodyTemplate);
+
 public sealed record DocumentLifecycleRequestReadinessQuery(
     Guid CompanyId,
     DateOnly? AsOfDate);

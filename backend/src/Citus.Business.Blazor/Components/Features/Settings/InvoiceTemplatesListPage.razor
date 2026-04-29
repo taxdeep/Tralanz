@@ -1,0 +1,139 @@
+@page "/settings/invoice-templates"
+
+@inject BusinessShellState ShellState
+@inject InvoiceTemplateClient TemplateClient
+@inject CitusToastService Message
+@inject NavigationManager Navigation
+
+<PageTitle>Invoice templates | Tralanz Books</PageTitle>
+
+<div class="citus-page-narrow">
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="settings">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to Settings</span>
+        </a>
+        <a class="citus-button" href="settings/invoice-templates/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New template</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<CitusAlert Severity="CitusAlertSeverity.Info"
+            ShowIcon="true"
+            Message="The default template is used for every Download PDF and Send invoice action. Edit any template to change brand colors, payment instructions, and email subject. Three starters (Modern / Classic / Minimal) are pre-seeded for you."
+            Class="mb-4" />
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.List" RowCount="3" />
+}
+else if (_templates.Count == 0)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning"
+                ShowIcon="true"
+                Message="No templates yet. Refresh the page to seed the starters or click 'New template' to create one." />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        @foreach (var template in _templates)
+        {
+            <section class="citus-panel h-full">
+                <header class="citus-panel__header">
+                    <h2 class="citus-panel__title">@template.Name</h2>
+                    @if (template.IsDefault)
+                    {
+                        <CitusBadge Color="@("green")">Default</CitusBadge>
+                    }
+                </header>
+
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="citus-color-swatch" style="background:@template.PrimaryColorHex" title="Primary color"></span>
+                    <span class="citus-color-swatch" style="background:@template.AccentColorHex" title="Accent color"></span>
+                    <span class="text-fg-subtle text-xs">
+                        @template.PrimaryColorHex / @template.AccentColorHex
+                    </span>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(template.Tagline))
+                {
+                    <p class="text-fg-muted text-sm mb-2">@template.Tagline</p>
+                }
+
+                <p class="text-fg-subtle text-xs mb-4">
+                    Updated @template.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                </p>
+
+                <div class="flex items-center gap-2">
+                    <a class="citus-button citus-button--ghost" href="@($"settings/invoice-templates/{template.Id:D}")">
+                        <CitusIcon Name="IconName.Pencil" Size="IconSize.Inline" />
+                        <span>Edit</span>
+                    </a>
+                    @if (!template.IsDefault)
+                    {
+                        <CitusButton Variant="CitusButtonVariant.Primary"
+                                     Size="CitusButtonSize.Small"
+                                     Disabled="_isSettingDefault"
+                                     OnClick="@(() => SetDefaultAsync(template.Id))">
+                            Set as default
+                        </CitusButton>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+}
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Invoice templates",
+        Subtitle = "Branding presets that drive every invoice PDF and email."
+    };
+
+    private IReadOnlyList<InvoiceTemplateDto> _templates = Array.Empty<InvoiceTemplateDto>();
+    private bool _isLoading = true;
+    private bool _isSettingDefault;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _templates = await TemplateClient.ListAsync(ShellState.ActiveCompany.Id);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SetDefaultAsync(Guid templateId)
+    {
+        if (_isSettingDefault) return;
+        _isSettingDefault = true;
+        try
+        {
+            var outcome = await TemplateClient.SetDefaultAsync(ShellState.ActiveCompany.Id, templateId);
+            if (!outcome.Succeeded)
+            {
+                await Message.WarningAsync(outcome.ErrorMessage ?? "Could not set as default.");
+                return;
+            }
+
+            await Message.SuccessAsync($"{outcome.Saved!.Name} is now the default template.");
+            await ReloadAsync();
+        }
+        finally
+        {
+            _isSettingDefault = false;
+        }
+    }
+}

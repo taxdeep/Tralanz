@@ -15,10 +15,22 @@ public static class InvoiceRenderModelBuilder
     public static InvoiceRenderModel Build(
         InvoiceReviewProjection review,
         CompanyProfileSnapshot company,
-        CustomerRecord? customer)
+        CustomerRecord? customer,
+        InvoiceTemplateConfig? template = null)
     {
         ArgumentNullException.ThrowIfNull(review);
         ArgumentNullException.ThrowIfNull(company);
+
+        var config = template ?? InvoiceTemplateConfig.Default;
+        var branding = new InvoiceBrandingSummary(
+            LogoUrl: config.LogoUrl,
+            PrimaryColorHex: config.PrimaryColorHex,
+            AccentColorHex: config.AccentColorHex,
+            Tagline: config.Tagline,
+            Greeting: config.Greeting,
+            PaymentInstructions: config.PaymentInstructions,
+            FooterNote: config.FooterNote,
+            ShowTaxColumn: config.ShowTaxColumn);
 
         var issuer = new InvoiceIssuerSummary(
             CompanyName: company.LegalName,
@@ -76,7 +88,7 @@ public static class InvoiceRenderModelBuilder
             Header = header,
             Lines = lines,
             Totals = totals,
-            PaymentInstructions = string.Empty,
+            Branding = branding,
         };
     }
 

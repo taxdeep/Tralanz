@@ -219,6 +219,13 @@ builder.Services.AddSingleton<IInvoicePdfRenderer, QuestPdfInvoiceRenderer>();
 builder.Services.AddSingleton<IInvoiceEmailSender, SmtpInvoiceEmailSender>();
 builder.Services.AddSingleton<IInvoiceSendHistoryStore, PostgresInvoiceSendHistoryStore>();
 
+// Invoice templates (Batch 3). Each company gets three starter templates
+// (Modern / Classic / Minimal) seeded lazily on first access, with the
+// "Modern" preset auto-marked default. Operators customize via
+// Settings -> Invoice templates; the chosen default's branding flows
+// through every PDF download and email send.
+builder.Services.AddSingleton<IInvoiceTemplateStore, PostgresInvoiceTemplateStore>();
+
 // Vendor master data (per-company). AP-side mirror of ICustomerStore;
 // anchors bills, pay-bill settlement, and AP aging.
 builder.Services.AddSingleton<IVendorStore, PostgreSqlVendorStore>();
@@ -378,6 +385,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var expenseStore = startupScope.ServiceProvider.GetRequiredService<IExpenseStore>();
     var fxRateCache = startupScope.ServiceProvider.GetRequiredService<IFxRateCacheRepository>();
     var invoiceSendHistoryStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceSendHistoryStore>();
+    var invoiceTemplateStore = startupScope.ServiceProvider.GetRequiredService<IInvoiceTemplateStore>();
     var platformSchema = startupScope.ServiceProvider.GetRequiredService<PlatformSchemaInitializer>();
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -404,6 +412,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await expenseStore.EnsureSchemaAsync(CancellationToken.None);
     await fxRateCache.EnsureSchemaAsync(CancellationToken.None);
     await invoiceSendHistoryStore.EnsureSchemaAsync(CancellationToken.None);
+    await invoiceTemplateStore.EnsureSchemaAsync(CancellationToken.None);
     // business_sessions / mfa_challenges / mfa_enrollments tables need
     // to exist before /auth/login can issue tokens or fetch user records.
     await businessSessionRepository.EnsureSchemaAsync(CancellationToken.None);
@@ -3868,9 +3877,11 @@ accounting.MapGet(
     async (
         Guid documentId,
         [AsParameters] DocumentReviewLookupQuery query,
+        Guid? templateId,
         IAccountingDocumentReviewRepository reviewRepository,
         ICustomerStore customerStore,
         ICompanyProfileQuery companyProfileQuery,
+        IInvoiceTemplateStore templateStore,
         IInvoicePdfRenderer renderer,
         CancellationToken cancellationToken) =>
     {
@@ -3905,6 +3916,16 @@ accounting.MapGet(
             customer = await customerStore.GetByIdAsync(query.CompanyId, counterpartyId, cancellationToken);
         }
 
+        // Optional ?templateId override lets the template editor's
+        // "Download sample" button preview an unsaved draft against a
+        // real invoice. Default path uses the company's default template.
+        InvoiceTemplate? template = null;
+        if (templateId is { } overrideId)
+        {
+            template = await templateStore.GetByIdAsync(query.CompanyId, overrideId, cancellationToken);
+        }
+        template ??= await templateStore.GetDefaultAsync(query.CompanyId, cancellationToken);
+
         var projection = new InvoiceReviewProjection(
             DisplayNumber: review.DisplayNumber,
             EntityNumber: review.EntityNumber,
@@ -3925,7 +3946,7 @@ accounting.MapGet(
                 LineAmount: line.LineAmount,
                 TaxAmount: line.TaxAmount)).ToArray());
 
-        var renderModel = InvoiceRenderModelBuilder.Build(projection, company, customer);
+        var renderModel = InvoiceRenderModelBuilder.Build(projection, company, customer, template?.Config);
         var pdfBytes = renderer.Render(renderModel);
 
         return Results.File(
@@ -3952,6 +3973,7 @@ accounting.MapPost(
         IAccountingDocumentReviewRepository reviewRepository,
         ICustomerStore customerStore,
         ICompanyProfileQuery companyProfileQuery,
+        IInvoiceTemplateStore templateStore,
         IInvoicePdfRenderer renderer,
         IInvoiceEmailSender emailSender,
         IInvoiceSendHistoryStore historyStore,
@@ -3993,6 +4015,8 @@ accounting.MapPost(
             customer = await customerStore.GetByIdAsync(query.CompanyId, counterpartyId, cancellationToken);
         }
 
+        var template = await templateStore.GetDefaultAsync(query.CompanyId, cancellationToken);
+
         var projection = new InvoiceReviewProjection(
             DisplayNumber: review.DisplayNumber,
             EntityNumber: review.EntityNumber,
@@ -4013,9 +4037,12 @@ accounting.MapPost(
                 LineAmount: line.LineAmount,
                 TaxAmount: line.TaxAmount)).ToArray());
 
-        var renderModel = InvoiceRenderModelBuilder.Build(projection, company, customer);
+        var renderModel = InvoiceRenderModelBuilder.Build(projection, company, customer, template?.Config);
         var pdfBytes = renderer.Render(renderModel);
-        var composition = InvoiceEmailComposer.Compose(renderModel, request.Message);
+        var composition = InvoiceEmailComposer.Compose(
+            renderModel,
+            request.Message,
+            subjectTemplate: template?.Config.EmailSubjectTemplate);
 
         var ccList = SplitEmailList(request.Cc);
         var bccList = SplitEmailList(request.Bcc);
@@ -4098,6 +4125,115 @@ accounting.MapGet(
             r.Status,
             r.ErrorMessage,
         }).ToArray());
+    });
+
+// ---------------------------------------------------------------------------
+// Invoice templates (Batch 3). One per-company table with three lazy-
+// seeded starters (Modern / Classic / Minimal). The default flows
+// through every PDF / email send. Endpoints:
+//   GET  /invoice-templates                       -> list
+//   GET  /invoice-templates/{id}                  -> single
+//   POST /invoice-templates                       -> create (empty -> default config copy)
+//   PUT  /invoice-templates/{id}                  -> update name + config
+//   POST /invoice-templates/{id}/set-default      -> mark as default (single transaction)
+// ---------------------------------------------------------------------------
+accounting.MapGet(
+    "/invoice-templates",
+    async (
+        [AsParameters] DocumentReviewLookupQuery query,
+        IInvoiceTemplateStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var templates = await store.ListByCompanyAsync(query.CompanyId, cancellationToken);
+        return Results.Ok(templates.Select(MapInvoiceTemplate).ToArray());
+    });
+
+accounting.MapGet(
+    "/invoice-templates/{templateId:guid}",
+    async (
+        Guid templateId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IInvoiceTemplateStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var template = await store.GetByIdAsync(query.CompanyId, templateId, cancellationToken);
+        return template is null
+            ? Results.NotFound(new { message = "Invoice template not found in this company." })
+            : Results.Ok(MapInvoiceTemplate(template));
+    });
+
+accounting.MapPost(
+    "/invoice-templates",
+    async (
+        [AsParameters] DocumentReviewLookupQuery query,
+        InvoiceTemplateUpsertHttpRequest request,
+        IInvoiceTemplateStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var (config, validationError) = TryReadInvoiceTemplateConfig(request);
+        if (validationError is not null)
+        {
+            return Results.BadRequest(new { message = validationError });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return Results.BadRequest(new { message = "Template name is required." });
+        }
+
+        var created = await store.CreateAsync(
+            query.CompanyId,
+            new InvoiceTemplateUpsertRequest(request.Name.Trim(), config),
+            cancellationToken);
+
+        return Results.Created(
+            $"/accounting/invoice-templates/{created.Id:D}?companyId={query.CompanyId:D}",
+            MapInvoiceTemplate(created));
+    });
+
+accounting.MapPut(
+    "/invoice-templates/{templateId:guid}",
+    async (
+        Guid templateId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        InvoiceTemplateUpsertHttpRequest request,
+        IInvoiceTemplateStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var (config, validationError) = TryReadInvoiceTemplateConfig(request);
+        if (validationError is not null)
+        {
+            return Results.BadRequest(new { message = validationError });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return Results.BadRequest(new { message = "Template name is required." });
+        }
+
+        var updated = await store.UpdateAsync(
+            query.CompanyId,
+            templateId,
+            new InvoiceTemplateUpsertRequest(request.Name.Trim(), config),
+            cancellationToken);
+
+        return updated is null
+            ? Results.NotFound(new { message = "Invoice template not found in this company." })
+            : Results.Ok(MapInvoiceTemplate(updated));
+    });
+
+accounting.MapPost(
+    "/invoice-templates/{templateId:guid}/set-default",
+    async (
+        Guid templateId,
+        [AsParameters] DocumentReviewLookupQuery query,
+        IInvoiceTemplateStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var defaulted = await store.SetDefaultAsync(query.CompanyId, templateId, cancellationToken);
+        return defaulted is null
+            ? Results.NotFound(new { message = "Invoice template not found in this company." })
+            : Results.Ok(MapInvoiceTemplate(defaulted));
     });
 
 accounting.MapGet(
@@ -5002,6 +5138,95 @@ static string? ValidateQuoteInput(QuoteUpsertHttpRequest request)
         if (line.UnitPrice < 0) return "Line unit price must be 0 or greater.";
     }
     return null;
+}
+
+// ---------------------------------------------------------------------------
+// Maps an InvoiceTemplate domain record into the wire shape that the
+// Settings UI consumes. Flat structure (no nested config object) so a
+// JSON typed-deserialize on the client stays trivial.
+// ---------------------------------------------------------------------------
+static object MapInvoiceTemplate(InvoiceTemplate template) => new
+{
+    template.Id,
+    template.CompanyId,
+    template.Name,
+    template.IsDefault,
+    template.Config.LogoUrl,
+    template.Config.PrimaryColorHex,
+    template.Config.AccentColorHex,
+    template.Config.Tagline,
+    template.Config.Greeting,
+    template.Config.PaymentInstructions,
+    template.Config.FooterNote,
+    template.Config.ShowTaxColumn,
+    template.Config.EmailSubjectTemplate,
+    template.Config.EmailBodyTemplate,
+    template.CreatedAt,
+    template.UpdatedAt,
+};
+
+// ---------------------------------------------------------------------------
+// Validates and maps the wire-format upsert request into the Application-
+// layer InvoiceTemplateConfig. Returns the parsed config plus a non-null
+// error string when validation fails.
+// ---------------------------------------------------------------------------
+static (InvoiceTemplateConfig Config, string? Error) TryReadInvoiceTemplateConfig(
+    InvoiceTemplateUpsertHttpRequest request)
+{
+    var defaults = InvoiceTemplateConfig.Default;
+
+    var primary = string.IsNullOrWhiteSpace(request.PrimaryColorHex)
+        ? defaults.PrimaryColorHex
+        : request.PrimaryColorHex!.Trim();
+    if (!IsValidHexColor(primary))
+    {
+        return (defaults, $"Primary color '{primary}' is not a valid hex color (expected #RRGGBB).");
+    }
+
+    var accent = string.IsNullOrWhiteSpace(request.AccentColorHex)
+        ? defaults.AccentColorHex
+        : request.AccentColorHex!.Trim();
+    if (!IsValidHexColor(accent))
+    {
+        return (defaults, $"Accent color '{accent}' is not a valid hex color (expected #RRGGBB).");
+    }
+
+    var config = new InvoiceTemplateConfig(
+        LogoUrl: TrimToNull(request.LogoUrl),
+        PrimaryColorHex: primary,
+        AccentColorHex: accent,
+        Tagline: TrimToNull(request.Tagline),
+        Greeting: request.Greeting?.Trim() ?? defaults.Greeting,
+        PaymentInstructions: request.PaymentInstructions?.Trim() ?? string.Empty,
+        FooterNote: request.FooterNote?.Trim() ?? defaults.FooterNote,
+        ShowTaxColumn: request.ShowTaxColumn ?? defaults.ShowTaxColumn,
+        EmailSubjectTemplate: string.IsNullOrWhiteSpace(request.EmailSubjectTemplate)
+            ? defaults.EmailSubjectTemplate
+            : request.EmailSubjectTemplate!.Trim(),
+        EmailBodyTemplate: request.EmailBodyTemplate?.Trim() ?? string.Empty);
+
+    return (config, null);
+}
+
+static bool IsValidHexColor(string value)
+{
+    if (string.IsNullOrWhiteSpace(value)) return false;
+    if (!value.StartsWith('#')) return false;
+    if (value.Length is not (4 or 7 or 9)) return false;
+    for (var i = 1; i < value.Length; i++)
+    {
+        var c = value[i];
+        var ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+static string? TrimToNull(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value)) return null;
+    var trimmed = value.Trim();
+    return trimmed.Length == 0 ? null : trimmed;
 }
 
 // ---------------------------------------------------------------------------

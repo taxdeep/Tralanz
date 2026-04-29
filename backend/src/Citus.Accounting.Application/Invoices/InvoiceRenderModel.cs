@@ -23,11 +23,40 @@ public sealed record InvoiceRenderModel
     public required InvoiceTotalsSummary Totals { get; init; }
 
     /// <summary>
-    /// Free-text payment instructions / footer note. Empty in v1 (template
-    /// editor lands in batch 3). Caller may pre-populate from
-    /// company-level config later.
+    /// Branding + customizable text blocks. Sourced from the company's
+    /// default <see cref="InvoiceTemplate"/> in batch 3+; falls back to
+    /// <see cref="InvoiceBrandingSummary.Default"/> when no template is
+    /// available so existing call sites keep working.
     /// </summary>
-    public string PaymentInstructions { get; init; } = string.Empty;
+    public InvoiceBrandingSummary Branding { get; init; } = InvoiceBrandingSummary.Default;
+
+    /// <summary>
+    /// Convenience pass-through to <see cref="InvoiceBrandingSummary.PaymentInstructions"/>
+    /// for renderers that don't care about the rest of the branding
+    /// surface. Kept for source compatibility with batch 1 / 2 call sites.
+    /// </summary>
+    public string PaymentInstructions => Branding.PaymentInstructions;
+}
+
+public sealed record InvoiceBrandingSummary(
+    string? LogoUrl,
+    string PrimaryColorHex,
+    string AccentColorHex,
+    string? Tagline,
+    string Greeting,
+    string PaymentInstructions,
+    string FooterNote,
+    bool ShowTaxColumn)
+{
+    public static InvoiceBrandingSummary Default => new(
+        LogoUrl: null,
+        PrimaryColorHex: "#1f2937",
+        AccentColorHex: "#6b7280",
+        Tagline: null,
+        Greeting: "Thank you for your business.",
+        PaymentInstructions: string.Empty,
+        FooterNote: "Thank you for your business.",
+        ShowTaxColumn: true);
 }
 
 public sealed record InvoiceIssuerSummary(

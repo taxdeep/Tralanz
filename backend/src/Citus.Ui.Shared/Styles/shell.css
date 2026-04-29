@@ -1176,6 +1176,97 @@ input::-ms-clear {
     min-height: var(--citus-input-height);
 }
 
+/* ==========================================================================
+   Invoice template editor preview + color swatch.
+   Used by /settings/invoice-templates and the editor page. The preview is
+   a lightweight HTML stand-in for the QuestPDF output — same overall
+   shape (header / greeting / lines / totals / pay note / footer) but
+   styled with the operator's selected primary / accent colors so they
+   can iterate on the look without rendering a full PDF on every keystroke.
+   ========================================================================== */
+
+.citus-color-swatch {
+    display: inline-block;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    border: 1px solid var(--citus-color-border);
+    box-shadow: var(--citus-shadow-1);
+}
+
+.citus-template-preview {
+    margin-top: var(--citus-space-3);
+    padding: var(--citus-space-4);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+}
+
+.citus-template-preview__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: var(--citus-space-3);
+    border-bottom: 1.5px solid;
+    margin-bottom: var(--citus-space-3);
+}
+
+.citus-template-preview__accent {
+    font-size: var(--citus-text-xs);
+}
+
+.citus-template-preview__greeting {
+    margin: var(--citus-space-2) 0;
+    font-size: var(--citus-text-sm);
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-template-preview__table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: var(--citus-space-2) 0;
+    font-size: var(--citus-text-sm);
+}
+
+.citus-template-preview__table thead th {
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: var(--citus-text-xs);
+    color: var(--citus-color-fg-subtle);
+    padding: 4px 6px;
+    border-bottom: 1px solid;
+}
+
+.citus-template-preview__table tbody td {
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--citus-color-border);
+}
+
+.citus-template-preview__table tbody td:last-child {
+    text-align: right;
+}
+
+.citus-template-preview__totals {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    margin-top: var(--citus-space-2);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-template-preview__totals > div:last-child {
+    padding-top: 4px;
+    border-top: 1px solid;
+}
+
+.citus-template-preview__pay,
+.citus-template-preview__footer {
+    margin-top: var(--citus-space-2);
+    font-size: var(--citus-text-xs);
+}
+
 .citus-subpanel {
     background: var(--citus-color-bg);
     border: 1px solid var(--citus-color-border);

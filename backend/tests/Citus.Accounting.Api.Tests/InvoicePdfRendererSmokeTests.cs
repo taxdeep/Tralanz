@@ -40,7 +40,7 @@ public sealed class InvoicePdfRendererSmokeTests
         {
             BillTo = new InvoiceBillToSummary("Walk-in customer", null, null, null),
             Header = BuildSampleModel().Header with { Memo = null, DueDate = null },
-            PaymentInstructions = string.Empty,
+            Branding = InvoiceBrandingSummary.Default with { PaymentInstructions = string.Empty },
         };
         var renderer = new QuestPdfInvoiceRenderer();
 
@@ -141,6 +141,9 @@ public sealed class InvoicePdfRendererSmokeTests
             new InvoiceRenderLine(2, "Hosting", 3m, 25m, 75m, 9.75m),
         ],
         Totals = new InvoiceTotalsSummary(175m, 22.75m, 197.75m, "CAD"),
-        PaymentInstructions = "Pay via Interac e-Transfer to ops@tralanz.com.",
+        Branding = InvoiceBrandingSummary.Default with
+        {
+            PaymentInstructions = "Pay via Interac e-Transfer to ops@tralanz.com.",
+        },
     };
 }
