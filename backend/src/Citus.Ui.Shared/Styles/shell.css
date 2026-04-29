@@ -688,6 +688,76 @@
     text-transform: capitalize;
 }
 
+/* ---------- Company list (Account → My Companies) ---------- */
+
+.citus-company-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-3);
+}
+
+.citus-company-card {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-4);
+    padding: var(--citus-space-4) var(--citus-space-5);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-lg);
+    box-shadow: var(--citus-shadow-1);
+}
+
+.citus-company-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+    flex-shrink: 0;
+}
+
+.citus-company-card__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--citus-space-1);
+}
+
+.citus-company-card__title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-2);
+    flex-wrap: wrap;
+}
+
+.citus-company-card__name {
+    color: var(--citus-color-fg);
+    font-weight: 600;
+    font-size: var(--citus-text-base);
+}
+
+.citus-company-card__meta {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+}
+
+.citus-company-card__action {
+    flex-shrink: 0;
+}
+
+.citus-company-card__current {
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-sm);
+    font-weight: 500;
+}
+
 /* ---------- Page panel surfaces ---------- */
 
 .citus-panel {

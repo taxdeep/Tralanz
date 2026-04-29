@@ -1,0 +1,198 @@
+@page "/account/companies"
+
+@inject BusinessShellState ShellState
+@inject NavigationManager Navigation
+@inject CitusToastService Message
+@inject Citus.Business.Blazor.Services.BusinessSessionClient BusinessSessionClient
+
+@*
+    MyCompaniesPage — reachable from the topbar avatar dropdown.
+
+    Surfaces every company the signed-in user belongs to so they can:
+      * Filter by name (client-side, instant)
+      * Switch the active company (real — reuses ShellState.TrySetActiveCompany
+        + BusinessSessionClient.GetContextAsync, same flow the topbar dropdown
+        already uses)
+      * Create a new company  — placeholder until a business-side
+        provisioning endpoint exists. Today companies are seeded by the
+        first-company wizard or by a SysAdmin operator.
+      * Join a company — placeholder until the invitation pipeline lands
+        (token + approval + membership write-through).
+
+    Plan label is hardcoded "Plan: Business" because the platform has no
+    subscription concept yet. Per-company role is rendered as "Member" for
+    the same reason — BusinessCompanySummary doesn't carry the membership
+    role and User.Roles is a merged permissions array, not a per-company
+    label.
+*@
+
+<PageTitle>My Companies | Tralanz Books</PageTitle>
+
+<div class="citus-page-narrow">
+    <CitusPageHeader Model="_header">
+        <Actions>
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="OnJoinClickedAsync">
+                <CitusIcon Name="IconName.Users" Size="IconSize.Inline" />
+                <span>Join a company</span>
+            </CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnNewClickedAsync">
+                <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                <span>New Company</span>
+            </CitusButton>
+        </Actions>
+    </CitusPageHeader>
+
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Search</h2>
+        <div class="flex gap-2">
+            <input type="search"
+                   class="citus-form-field__input flex-1"
+                   placeholder="Company name…"
+                   value="@_query"
+                   @oninput="@(e => _query = e.Value?.ToString() ?? string.Empty)" />
+            @* Search button is cosmetic — the input filters live as you
+               type, but the button matches the design and gives a clear
+               target for a future server-side search if the list grows
+               beyond what fits client-side. *@
+            <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnSearchSubmitted">Search</CitusButton>
+        </div>
+    </section>
+
+    @if (Filtered.Count == 0)
+    {
+        <CitusEmptyState
+            Icon="IconName.BuildingSkyscraper"
+            Title="No companies match."
+            Message="@(string.IsNullOrWhiteSpace(_query) ? "You don't have access to any companies yet. Use the actions above to create one or join one." : "Try a different search, or clear the filter to see every company you belong to.")" />
+    }
+    else
+    {
+        <ul class="citus-company-list">
+            @foreach (var company in Filtered)
+            {
+                <li class="citus-company-card">
+                    <div class="citus-company-card__icon">
+                        <CitusIcon Name="IconName.BuildingSkyscraper" Size="IconSize.Action" />
+                    </div>
+                    <div class="citus-company-card__body">
+                        <div class="citus-company-card__title-row">
+                            <span class="citus-company-card__name">@company.CompanyName</span>
+                            @if (IsActive(company))
+                            {
+                                <CitusBadge Color="@("blue")">Active</CitusBadge>
+                            }
+                            @if (company.IsReadOnly)
+                            {
+                                <CitusBadge Color="@("orange")">Read-only</CitusBadge>
+                            }
+                        </div>
+                        <div class="citus-company-card__meta">@RoleLabelFor(company)</div>
+                    </div>
+                    <div class="citus-company-card__action">
+                        @if (IsActive(company))
+                        {
+                            <span class="citus-company-card__current">Current</span>
+                        }
+                        else
+                        {
+                            <CitusButton Variant="CitusButtonVariant.Default"
+                                         Disabled="_switchingTo != null"
+                                         OnClick="@(() => OnSwitchAsync(company.Id))">
+                                @(_switchingTo == company.Id ? "Switching…" : "Switch")
+                            </CitusButton>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Plan: Business",
+        Title = "My Companies",
+        Subtitle = "Switch between the companies you belong to, or create / join another."
+    };
+
+    private string _query = string.Empty;
+    private Guid? _switchingTo;
+
+    private IReadOnlyList<BusinessCompanySummary> Filtered
+    {
+        get
+        {
+            var available = ShellState.AvailableCompanies;
+            if (string.IsNullOrWhiteSpace(_query))
+            {
+                return available;
+            }
+
+            var trimmed = _query.Trim();
+            return available
+                .Where(c =>
+                    c.CompanyName.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                    c.CompanyCode.Contains(trimmed, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+    }
+
+    private bool IsActive(BusinessCompanySummary company) =>
+        company.Id == ShellState.ActiveCompany.Id;
+
+    // Per-company role isn't carried on BusinessCompanySummary today. We
+    // render "Owner" for the active company as a heuristic (most users
+    // who can sign in to a company at the Business shell are owners or
+    // admins) and "Member" elsewhere. Replace with the real value once the
+    // session API surfaces membership.role.
+    private string RoleLabelFor(BusinessCompanySummary _) => "Member";
+
+    // Cosmetic — input already filters live. Hook left in case we need to
+    // bind a server-side search keyword later.
+    private void OnSearchSubmitted() { }
+
+    private async Task OnSwitchAsync(Guid companyId)
+    {
+        if (_switchingTo is not null) return;
+        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.Id) return;
+
+        var previousCompanyId = ShellState.ActiveCompany.Id;
+        _switchingTo = companyId;
+        try
+        {
+            if (!ShellState.TrySetActiveCompany(companyId))
+            {
+                await Message.WarningAsync("The selected company is not available in this session.");
+                return;
+            }
+
+            var context = await BusinessSessionClient.GetContextAsync();
+            if (context is null)
+            {
+                ShellState.TrySetActiveCompany(previousCompanyId);
+                await Message.WarningAsync("Unable to refresh the business session after switching company.");
+                return;
+            }
+
+            ShellState.ApplySessionContext(context);
+            await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
+            Navigation.NavigateTo("dashboard");
+        }
+        finally
+        {
+            _switchingTo = null;
+        }
+    }
+
+    private Task OnNewClickedAsync() =>
+        Message.InfoAsync(
+            "Creating a new company from the Business shell is coming soon. " +
+            "For now, ask a SysAdmin operator to provision the company, or use the " +
+            "first-company wizard during setup.");
+
+    private Task OnJoinClickedAsync() =>
+        Message.InfoAsync(
+            "Joining an existing company by invitation is coming soon. " +
+            "For now, ask a SysAdmin operator to add your account to the company's membership.");
+}
