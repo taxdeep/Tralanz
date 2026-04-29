@@ -134,43 +134,30 @@ else
         }
         else
         {
-            <div class="overflow-x-auto">
-                <table class="citus-data-table sales-cashflow-table">
-                    <thead>
-                        <tr>
-                            @foreach (var bucket in _cashFlow.Months)
-                            {
-                                <th class="@CashFlowHeaderClass(bucket)">
-                                    <div class="text-xs">@bucket.MonthStart.ToString("yyyy")</div>
-                                    <div>@bucket.MonthStart.ToString("MMM")</div>
-                                    @if (bucket.IsCurrent)
-                                    {
-                                        <div class="text-xs text-fg-subtle">Current</div>
-                                    }
-                                    else if (bucket.IsForecast)
-                                    {
-                                        <div class="text-xs text-fg-subtle">Forecast</div>
-                                    }
-                                </th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            @foreach (var bucket in _cashFlow.Months)
-                            {
-                                var amount = bucket.IsForecast
-                                    ? bucket.ForecastAmountBase
-                                    : bucket.ReceivedAmountBase;
-                                <td class="@CashFlowCellClass(bucket)"
-                                    style="font-variant-numeric: tabular-nums;">
-                                    @FormatBaseAmount(amount)
-                                </td>
-                            }
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <RadzenChart Style="height: 320px;">
+                <RadzenColumnSeries Data="@_cashFlowReceivedPoints"
+                                    CategoryProperty="Label"
+                                    ValueProperty="Amount"
+                                    Title="@($"Received ({_baseCurrencyCode})")"
+                                    Fill="#0ea5b7">
+                    <RadzenSeriesDataLabels Visible="true" />
+                </RadzenColumnSeries>
+                <RadzenColumnSeries Data="@_cashFlowForecastPoints"
+                                    CategoryProperty="Label"
+                                    ValueProperty="Amount"
+                                    Title="@($"Forecast ({_baseCurrencyCode})")"
+                                    Fill="#94d8e2">
+                    <RadzenSeriesDataLabels Visible="true" />
+                </RadzenColumnSeries>
+                <RadzenColumnOptions Radius="2" />
+                <RadzenCategoryAxis Padding="20">
+                    <RadzenAxisTitle Text="" />
+                </RadzenCategoryAxis>
+                <RadzenValueAxis>
+                    <RadzenAxisTitle Text="@_baseCurrencyCode" />
+                </RadzenValueAxis>
+                <RadzenLegend Position="LegendPosition.Bottom" />
+            </RadzenChart>
         }
     </section>
 
@@ -329,26 +316,6 @@ else
     .sales-flow__node--ghost .sales-flow__node-label {
         color: var(--citus-color-fg-subtle);
     }
-
-    .sales-cashflow-table th,
-    .sales-cashflow-table td {
-        text-align: right;
-        padding: 0.45rem 0.55rem !important;
-        white-space: nowrap;
-    }
-
-    .sales-cashflow-table th {
-        text-align: center;
-    }
-
-    .sales-cashflow-cell--forecast {
-        background: rgba(45, 209, 247, 0.06);
-    }
-
-    .sales-cashflow-cell--current {
-        background: rgba(34, 197, 94, 0.08);
-        font-weight: 600;
-    }
 </style>
 
 @code {
@@ -378,6 +345,8 @@ else
     private List<CustomerBalanceRow> _displayedCustomers = new();
     private List<IncomeChartPoint> _incomePoints = new();
     private List<IncomeChartPoint> _previousIncomePoints = new();
+    private List<CashFlowChartPoint> _cashFlowReceivedPoints = new();
+    private List<CashFlowChartPoint> _cashFlowForecastPoints = new();
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -411,6 +380,7 @@ else
 
             RebuildCustomerRows();
             RebuildIncomePoints();
+            RebuildCashFlowPoints();
         }
         finally
         {
@@ -555,18 +525,37 @@ else
             .ToList();
     }
 
-    private static string CashFlowHeaderClass(SalesCashFlowMonthSummary bucket)
+    private void RebuildCashFlowPoints()
     {
-        if (bucket.IsCurrent) return "sales-cashflow-cell--current";
-        if (bucket.IsForecast) return "sales-cashflow-cell--forecast";
-        return string.Empty;
+        // Two parallel series so Radzen renders Received + Forecast in
+        // distinct colors with their own legend entries. Both arrays
+        // span all 14 months so the x-axis stays aligned; entries that
+        // don't apply to a bucket get null so the chart skips them
+        // (no zero-height column drawn).
+        var received = new List<CashFlowChartPoint>();
+        var forecast = new List<CashFlowChartPoint>();
+
+        if (_cashFlow is null)
+        {
+            _cashFlowReceivedPoints = received;
+            _cashFlowForecastPoints = forecast;
+            return;
+        }
+
+        foreach (var bucket in _cashFlow.Months)
+        {
+            var label = bucket.MonthStart.ToString("MMM yy");
+            received.Add(new CashFlowChartPoint(
+                Label: label,
+                Amount: bucket.IsForecast ? null : (double?)bucket.ReceivedAmountBase));
+            forecast.Add(new CashFlowChartPoint(
+                Label: label,
+                Amount: bucket.IsForecast ? (double?)bucket.ForecastAmountBase : null));
+        }
+
+        _cashFlowReceivedPoints = received;
+        _cashFlowForecastPoints = forecast;
     }
-
-    private static string CashFlowCellClass(SalesCashFlowMonthSummary bucket) =>
-        CashFlowHeaderClass(bucket);
-
-    private string FormatBaseAmount(decimal amount) =>
-        FormatCurrency(_baseCurrencyCode, amount);
 
     private static string FormatCurrency(string? currencyCode, decimal amount)
     {
@@ -647,4 +636,6 @@ else
         bool IsActive);
 
     private sealed record IncomeChartPoint(string Label, double Amount);
+
+    private sealed record CashFlowChartPoint(string Label, double? Amount);
 }
