@@ -838,7 +838,17 @@ public sealed record ReceivePaymentDraftPreparation(
     DateOnly PaymentDate,
     Guid? AcceptedFxSnapshotId,
     string? Memo,
-    IReadOnlyList<SettlementDraftLine> Lines);
+    IReadOnlyList<SettlementDraftLine> Lines,
+    /// <summary>
+    /// Slice of cash deposited that wasn't applied to any AR open item
+    /// and is being parked as a Customer Deposit (future credit on this
+    /// customer). The repository validates
+    /// <c>sum(Lines) + ExtraDepositAmount == cash_deposited</c>, then
+    /// creates a customer_deposits row + the matching ar_open_items
+    /// row in the same transaction. Default 0 — when the form's Total
+    /// to Bank exactly matches Applied total, no deposit is created.
+    /// </summary>
+    decimal ExtraDepositAmount = 0m);
 
 public sealed record PayBillDraftPreparation(
     CompanyId CompanyId,

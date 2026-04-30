@@ -494,7 +494,11 @@ public sealed record PrepareReceivePaymentDraftHttpRequest(
     DateOnly PaymentDate,
     Guid? AcceptedFxSnapshotId,
     string? Memo,
-    IReadOnlyList<PrepareSettlementDraftLineHttpRequest> Lines);
+    IReadOnlyList<PrepareSettlementDraftLineHttpRequest> Lines,
+    /// <summary>Overpayment slice the form parked as a Customer Deposit.
+    /// Defaults to 0 — keeps existing single-payment-per-invoice flows
+    /// behaving exactly as before. The repo creates the deposit when > 0.</summary>
+    decimal ExtraDepositAmount = 0m);
 
 public sealed record OpenReceivablesLookupQuery(Guid CompanyId);
 

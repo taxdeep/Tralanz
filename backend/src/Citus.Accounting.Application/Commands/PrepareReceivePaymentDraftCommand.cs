@@ -11,7 +11,10 @@ public sealed record PrepareReceivePaymentDraftCommand(
     DateOnly PaymentDate,
     Guid? AcceptedFxSnapshotId,
     string? Memo,
-    IReadOnlyList<SettlementDraftLine> Lines);
+    IReadOnlyList<SettlementDraftLine> Lines,
+    /// <summary>Overpayment slice parked as a Customer Deposit. See
+    /// <see cref="ReceivePaymentDraftPreparation.ExtraDepositAmount"/>.</summary>
+    decimal ExtraDepositAmount = 0m);
 
 public sealed record PrepareReceivePaymentDraftCommandResult(
     Guid DocumentId,

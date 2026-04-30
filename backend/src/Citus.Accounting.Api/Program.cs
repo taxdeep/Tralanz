@@ -105,6 +105,11 @@ builder.Services.AddScoped<IReceiptDocumentRepository, PostgresReceiptDocumentRe
 builder.Services.AddScoped<IPurchaseOrderDocumentRepository, PostgresPurchaseOrderDocumentRepository>();
 builder.Services.AddScoped<IVendorCreditDocumentRepository, PostgresVendorCreditDocumentRepository>();
 builder.Services.AddScoped<IReceivePaymentDocumentRepository, PostgresReceivePaymentDocumentRepository>();
+// Self-heals dev / test DBs to the customer_deposits + extra_deposit_amount
+// shape introduced for the overpay → Customer Deposit feature. Production
+// runs the canonical CITUS_POSTGRESQL_MIGRATION_DRAFT.sql; this is just a
+// safety net so app start works without a manual migration step.
+builder.Services.AddSingleton<PostgresCustomerDepositSchemaBootstrap>();
 builder.Services.AddScoped<ICreditApplicationDocumentRepository, PostgresCreditApplicationDocumentRepository>();
 builder.Services.AddScoped<IPayBillDocumentRepository, PostgresPayBillDocumentRepository>();
 builder.Services.AddScoped<IVendorCreditApplicationDocumentRepository, PostgresVendorCreditApplicationDocumentRepository>();
@@ -475,7 +480,9 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var businessSessionRepository = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessSessionRepository>();
     var businessPasswordResetService = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService>();
     var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
+    var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
+    await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
@@ -10069,7 +10076,8 @@ accounting.MapPost(
                     request.PaymentDate,
                     request.AcceptedFxSnapshotId,
                     request.Memo,
-                    request.Lines.Select(line => new SettlementDraftLine(line.TargetOpenItemId, line.AppliedAmountTx)).ToArray()),
+                    request.Lines.Select(line => new SettlementDraftLine(line.TargetOpenItemId, line.AppliedAmountTx)).ToArray(),
+                    request.ExtraDepositAmount),
                 cancellationToken);
 
             return Results.Ok(result);
