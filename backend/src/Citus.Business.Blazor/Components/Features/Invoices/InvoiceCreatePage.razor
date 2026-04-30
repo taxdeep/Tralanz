@@ -1,7 +1,11 @@
 @page "/invoices/new"
 
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject CustomerClient CustomerClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -50,17 +54,36 @@
                     <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Style="width: 100%;" />
                 </div>
                 <div>
-                    <label class="text-sm font-medium block mb-1">Customer (id)</label>
-                    <CitusInput TValue="string" @bind-Value="_customerIdInput" Placeholder="@("00000000-0000-0000-0000-000000000000")" />
-                    <p class="text-fg-subtle text-xs mt-1">Lookup goes here once /accounting/customers HTTP endpoint exists.</p>
+                    <label class="text-sm font-medium block mb-1">Customer</label>
+                    <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                       Context="@SearchScopeContext.QuoteCustomerPicker"
+                                       Placeholder="Search customers…"
+                                       Take="8"
+                                       SourceRoute="/invoices/new"
+                                       SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
+                                       SelectedDisplayText="@_customerDisplay"
+                                       OnOptionSelected="OnCustomerSelected"
+                                       OnCleared="OnCustomerCleared" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Transaction currency</label>
                     <CitusInput TValue="string"
                                 @bind-Value="_currency"
                                 Placeholder="USD"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
+                                Disabled="@(_isCurrencyLocked || !ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    @if (_isCurrencyLocked)
+                    {
+                        @* Per the per-customer single-currency rule: once an
+                           invoice is bound to a customer, its transaction
+                           currency must match that customer's default. A
+                           customer trading in two currencies lives as two
+                           separate customer records. *@
+                        <p class="text-fg-subtle text-xs mt-1">
+                            Locked to <strong>@_currency</strong> — this customer's default currency.
+                        </p>
+                    }
+                    else if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
                     {
                         <p class="text-fg-subtle text-xs mt-1">
                             Multi-currency is off — enable in Settings to choose another currency.
@@ -172,8 +195,16 @@
 
     private DateTime? _documentDate = DateTime.Today;
     private DateTime? _dueDate = DateTime.Today.AddDays(30);
-    private string _customerIdInput = string.Empty;
+    private Guid _customerId;
+    private string _customerDisplay = string.Empty;
     private string _currency = string.Empty;
+    /// <summary>
+    /// Pinned to the picked customer's default currency. Same rule the
+    /// Receive Payment page enforces — one customer, one currency. A
+    /// customer with mixed-currency dealings is modelled as separate
+    /// customer records (Acme — USD / Acme — CAD).
+    /// </summary>
+    private bool _isCurrencyLocked;
     private decimal? _fxRate;
     private string _memo = string.Empty;
     private readonly List<DocumentLineDraft> _lines = new() { new DocumentLineDraft { Quantity = 1m } };
@@ -185,6 +216,31 @@
 
     protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
 
+    private async Task OnCustomerSelected(UnitySearchPickerOption option)
+    {
+        _customerId = option.SourceId;
+        _customerDisplay = option.DisplayText;
+
+        // Best-effort lookup: if the call fails, leave currency on
+        // whatever it was so the form stays usable. The invoice still
+        // can't post without a valid customer id, so the lock state
+        // becomes correct once the next pick succeeds.
+        var customer = await CustomerClient.GetByIdAsync(_customerId);
+        if (customer is not null && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+        {
+            _currency = customer.DefaultCurrencyCode;
+            _isCurrencyLocked = true;
+        }
+    }
+
+    private void OnCustomerCleared()
+    {
+        _customerId = Guid.Empty;
+        _customerDisplay = string.Empty;
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        _isCurrencyLocked = false;
+    }
+
     private void AddLine() => _lines.Add(new DocumentLineDraft { Quantity = 1m });
     private void RemoveLine(int i) { if (i >= 0 && i < _lines.Count) _lines.RemoveAt(i); }
     private void Update(int i, Func<DocumentLineDraft, DocumentLineDraft> mutate) { if (i >= 0 && i < _lines.Count) _lines[i] = mutate(_lines[i]); }
@@ -194,13 +250,11 @@
         _validation = null;
         _lastResult = null;
 
+        if (_customerId == Guid.Empty) { _validation = "Pick a customer first."; return; }
         if (_lines.Count == 0) { _validation = "Add at least one invoice line."; return; }
         if (_lines.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
         if (_lines.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs a revenue account code."; return; }
         if (_total <= 0) { _validation = "Invoice total must be greater than zero."; return; }
-
-        Guid? customerId = null;
-        if (!string.IsNullOrWhiteSpace(_customerIdInput) && Guid.TryParse(_customerIdInput, out var parsed)) customerId = parsed;
 
         _isSubmitting = true;
         try
@@ -209,7 +263,7 @@
             {
                 DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
                 DueDate = _dueDate.HasValue ? DateOnly.FromDateTime(_dueDate.Value.Date) : null,
-                CustomerId = customerId,
+                CustomerId = _customerId,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
