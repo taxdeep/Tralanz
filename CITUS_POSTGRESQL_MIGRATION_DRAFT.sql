@@ -923,6 +923,12 @@ CREATE TABLE receive_payments (
   fx_effective_date date NOT NULL,
   fx_source text NOT NULL DEFAULT 'identity',
   total_amount numeric(20,6) NOT NULL DEFAULT 0,
+  -- Slice of total_amount that was *not* applied to AR open items and is
+  -- being parked as a Customer Deposit. Populated when the New Receive
+  -- Payment form has Cash > Applied. The CR side of the deposit hits
+  -- account 24700 (Customer Deposits); the matching customer_deposits
+  -- row + ar_open_items row are inserted in the same transaction.
+  extra_deposit_amount numeric(20,6) NOT NULL DEFAULT 0,
   memo text,
   posted_at timestamptz,
   created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -932,7 +938,51 @@ CREATE TABLE receive_payments (
   CONSTRAINT receive_payments_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT receive_payments_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT receive_payments_total_amount_nonnegative_chk CHECK (total_amount >= 0),
+  CONSTRAINT receive_payments_extra_deposit_nonnegative_chk CHECK (extra_deposit_amount >= 0),
   CONSTRAINT receive_payments_unique_company_payment_number UNIQUE (company_id, payment_number)
+);
+
+-- ---------------------------------------------------------------------------
+-- Customer Deposits — overpayment parked as a future credit. One row is
+-- inserted per receive_payment that has extra_deposit_amount > 0; that row
+-- spawns a matching ar_open_items row with source_type='customer_deposit'
+-- and balance_side='credit' so the deposit can later be consumed against
+-- new invoices via a Receive Payment / Credit Application flow.
+--
+-- Lifecycle: deposits are immutable once created — they're always tied to
+-- a receive_payment and any modification would unwind that posting. The
+-- only edit/void path is for "orphan" deposits (source_receive_payment_id
+-- is NULL), reserved for a future "manual deposit entry" flow that doesn't
+-- exist today.
+-- ---------------------------------------------------------------------------
+CREATE TABLE customer_deposits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  entity_number text NOT NULL UNIQUE,
+  display_number text NOT NULL,
+  status text NOT NULL DEFAULT 'open',
+  deposit_date date NOT NULL,
+  transaction_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  fx_rate_snapshot_id uuid REFERENCES company_fx_rate_snapshots(id) ON DELETE RESTRICT,
+  fx_rate numeric(20,10) NOT NULL DEFAULT 1,
+  fx_requested_date date NOT NULL,
+  fx_effective_date date NOT NULL,
+  fx_source text NOT NULL DEFAULT 'identity',
+  original_amount_tx numeric(20,6) NOT NULL,
+  original_amount_base numeric(20,6) NOT NULL,
+  source_receive_payment_id uuid REFERENCES receive_payments(id) ON DELETE RESTRICT,
+  memo text,
+  posted_at timestamptz,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT customer_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT customer_deposits_status_chk CHECK (status IN ('open', 'partially_applied', 'closed', 'voided')),
+  CONSTRAINT customer_deposits_fx_rate_positive_chk CHECK (fx_rate > 0),
+  CONSTRAINT customer_deposits_amount_positive_chk CHECK (original_amount_tx > 0 AND original_amount_base > 0),
+  CONSTRAINT customer_deposits_unique_company_display_number UNIQUE (company_id, display_number)
 );
 
 CREATE TABLE receive_payment_lines (
