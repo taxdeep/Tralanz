@@ -6,6 +6,7 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject AccountClient AccountClient
+@inject CustomerClient CustomerClient
 @inject OpenReceivablesClient OpenReceivablesClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
@@ -67,7 +68,25 @@
                        value="@_currency"
                        placeholder="USD"
                        @oninput="@(e => _currency = e.Value?.ToString() ?? string.Empty)"
-                       disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                       disabled="@(_isCurrencyLocked || !ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                @if (_isCurrencyLocked)
+                {
+                    @* Per the spec: each customer is single-currency. When the
+                       operator picks a customer, the form locks Currency to
+                       that customer's default — a customer who needs both USD
+                       and CAD lives as two separate customer records (e.g.
+                       "Acme — USD" and "Acme — CAD"). Keeps cash math, FX,
+                       and AR balances unambiguous downstream. *@
+                    <p class="text-fg-subtle text-xs mt-1">
+                        Locked to <strong>@_currency</strong> — this customer's default currency.
+                    </p>
+                }
+                else if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
+                {
+                    <p class="text-fg-subtle text-xs mt-1">
+                        Multi-currency is off — enable in Settings to choose another currency.
+                    </p>
+                }
             </div>
         </div>
     </section>
@@ -227,6 +246,13 @@
 
     private DateTime? _date = DateTime.Today;
     private string _currency = string.Empty;
+    /// <summary>
+    /// True once a customer is selected — the form pins Currency to that
+    /// customer's default and disables the input. Per the per-customer
+    /// single-currency rule, a customer with mixed-currency dealings is
+    /// modelled as separate customer records.
+    /// </summary>
+    private bool _isCurrencyLocked;
     private string _memo = string.Empty;
     private Guid _customerId;
     private string _customerDisplay = string.Empty;
@@ -317,6 +343,18 @@
     {
         _customerId = option.SourceId;
         _customerDisplay = option.DisplayText;
+
+        // Lock currency to the customer's default. The fetch is best-effort:
+        // if the lookup fails (transient network blip), fall back to base
+        // currency so the form stays usable, but keep the lock indicator
+        // off so the operator knows what's going on.
+        var customer = await CustomerClient.GetByIdAsync(_customerId);
+        if (customer is not null && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+        {
+            _currency = customer.DefaultCurrencyCode;
+            _isCurrencyLocked = true;
+        }
+
         await LoadOpenItemsAsync();
     }
 
@@ -327,6 +365,10 @@
         _items = new List<ApplyRow>();
         _tickOrder.Clear();
         _lockedPayments.Clear();
+        // Restore base currency + unlock: the operator might pick a
+        // different customer next, with its own default currency.
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        _isCurrencyLocked = false;
         Reallocate();
     }
 
