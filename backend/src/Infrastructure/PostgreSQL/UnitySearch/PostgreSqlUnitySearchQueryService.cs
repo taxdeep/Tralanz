@@ -109,6 +109,16 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                and prior.entity_type = doc.entity_type
               where doc.company_id = @company_id
                 and doc.entity_type = any(@entity_types)
+                -- Voided / reversed documents are noise in every search
+                -- context the app currently has (topbar, transactions
+                -- search, all pickers). The projection writer sets
+                -- is_voided=true for status in ('voided','reversed') on
+                -- invoice / bill / credit_note / vendor_credit / journal_entry
+                -- and 'cancelled' on PO, so this single guard hides them
+                -- everywhere without per-policy bookkeeping. If a future
+                -- audit-style surface needs to see them, add an opt-in
+                -- flag — never make this unfiltered the default.
+                and not doc.is_voided
                 and (not @enforce_active_only or doc.is_active)
                 and (not @enforce_business_eligibility or (doc.is_active and not doc.is_voided))
                 and (

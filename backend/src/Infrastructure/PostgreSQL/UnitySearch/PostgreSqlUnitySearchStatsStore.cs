@@ -79,6 +79,11 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
             where stats.company_id = @company_id
               and stats.user_id = @user_id
               and stats.context = @context
+              -- Voided / reversed docs leak through the click history even
+              -- though the live search result panel hides them, because
+              -- the click stat row was written before the doc was voided.
+              -- Filter the same way the live search does.
+              and not doc.is_voided
             order by stats.last_clicked_at_utc desc, stats.click_count desc
             limit @take;
             """;
