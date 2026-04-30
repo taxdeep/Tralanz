@@ -45,12 +45,16 @@
             Description="@(_review.PostedAt?.ToString("HH:mm 'UTC'") ?? "posted_at unavailable")"
             Icon="IconName.Clock"
             Tone="StatTone.Info" />
+        @* Header total stays anchored on the *transaction-currency* truth (what the user
+           typed). Base-currency total + FX rate hang off the description so reconciliation
+           is one glance away without burying the user's mental model. Single-currency
+           companies see only the transaction line; the base parenthetical is omitted. *@
         <CitusStatCard
-            Label="Base total"
-            Value="@FormatAmount(_review.TotalDebit)"
-            Description="@($"Credit {FormatAmount(_review.TotalCredit)} {_review.BaseCurrencyCode}")"
+            Label="Total"
+            Value="@($"{FormatAmount(_review.TotalTxDebit)} {_review.TransactionCurrencyCode}")"
+            Description="@BuildHeaderTotalDescription(_review)"
             Icon="IconName.BuildingBank"
-            Tone="@(_review.TotalDebit == _review.TotalCredit ? StatTone.Success : StatTone.Danger)" />
+            Tone="@(_review.TotalTxDebit == _review.TotalTxCredit ? StatTone.Success : StatTone.Danger)" />
         <CitusStatCard
             Label="FX snapshot"
             Value="@_review.ExchangeRate.ToString("0.######")"
@@ -228,6 +232,21 @@
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string BuildHeaderTotalDescription(JournalEntryReviewSummary review)
+    {
+        var creditPart = $"Credit {FormatAmount(review.TotalTxCredit)} {review.TransactionCurrencyCode}";
+        var multiCurrency = !string.Equals(
+            review.TransactionCurrencyCode,
+            review.BaseCurrencyCode,
+            StringComparison.OrdinalIgnoreCase);
+        if (!multiCurrency)
+        {
+            return creditPart;
+        }
+        var basePart = $"= {FormatAmount(review.TotalDebit)} {review.BaseCurrencyCode} @ {review.ExchangeRate.ToString("0.######")}";
+        return $"{creditPart} · {basePart}";
+    }
 
     private static string DisplayDescription(string description) =>
         string.IsNullOrWhiteSpace(description) ? "No description" : description;

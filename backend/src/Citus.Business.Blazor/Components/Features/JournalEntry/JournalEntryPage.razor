@@ -105,15 +105,31 @@
                                               Width="180px">
                             <Template Context="item">@(item.PostedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Pending")</Template>
                         </RadzenDataGridColumn>
+                        @* Debit / Credit columns lead with the *transaction-currency* total
+                           (what the user typed) labelled with its ISO code; the base-currency
+                           equivalent only renders in a muted sub-line when the entry isn't
+                           single-currency, so the grid stays compact for the common case. *@
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
-                                              Property="@nameof(JournalEntryReviewListItemSummary.TotalDebit)"
-                                              Title="Debit" TextAlign="TextAlign.Right" Width="130px">
-                            <Template Context="item">@FormatAmount(item.TotalDebit)</Template>
+                                              Property="@nameof(JournalEntryReviewListItemSummary.TotalTxDebit)"
+                                              Title="Debit" TextAlign="TextAlign.Right" Width="160px">
+                            <Template Context="item">
+                                <div>@FormatAmount(item.TotalTxDebit) <span class="text-fg-subtle">@item.TransactionCurrencyCode</span></div>
+                                @if (IsMultiCurrency(item))
+                                {
+                                    <div class="text-fg-subtle text-xs">@FormatAmount(item.TotalDebit) @item.BaseCurrencyCode</div>
+                                }
+                            </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
-                                              Property="@nameof(JournalEntryReviewListItemSummary.TotalCredit)"
-                                              Title="Credit" TextAlign="TextAlign.Right" Width="130px">
-                            <Template Context="item">@FormatAmount(item.TotalCredit)</Template>
+                                              Property="@nameof(JournalEntryReviewListItemSummary.TotalTxCredit)"
+                                              Title="Credit" TextAlign="TextAlign.Right" Width="160px">
+                            <Template Context="item">
+                                <div>@FormatAmount(item.TotalTxCredit) <span class="text-fg-subtle">@item.TransactionCurrencyCode</span></div>
+                                @if (IsMultiCurrency(item))
+                                {
+                                    <div class="text-fg-subtle text-xs">@FormatAmount(item.TotalCredit) @item.BaseCurrencyCode</div>
+                                }
+                            </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="JournalEntryReviewListItemSummary"
                                               Property="@nameof(JournalEntryReviewListItemSummary.LineCount)"
@@ -220,6 +236,11 @@
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static bool IsMultiCurrency(JournalEntryReviewListItemSummary item) =>
+        !string.IsNullOrWhiteSpace(item.TransactionCurrencyCode)
+        && !string.IsNullOrWhiteSpace(item.BaseCurrencyCode)
+        && !string.Equals(item.TransactionCurrencyCode, item.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase);
 
     private static string GetLifecycleSummary(JournalEntryReviewListItemSummary item) =>
         item.Status switch
