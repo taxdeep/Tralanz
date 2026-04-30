@@ -1,7 +1,12 @@
 @page "/receive-payment"
 
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
+@inject AccountClient AccountClient
+@inject OpenReceivablesClient OpenReceivablesClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -21,7 +26,9 @@
 
 @if (_lastResult is not null)
 {
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
+    <CitusAlert Severity="@(_lastResult.Succeeded ? CitusAlertSeverity.Success : CitusAlertSeverity.Info)"
+                ShowIcon="true"
+                Class="mb-4">
         <MessageTemplate>
             <strong>@_lastResult.Operation</strong>
             <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
@@ -29,127 +36,185 @@
     </CitusAlert>
 }
 
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Payment header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-sm font-medium block mb-1">Date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_date" Style="width: 100%;" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Currency</label>
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Placeholder="USD"
-                                Disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
-                    {
-                        <p class="text-fg-subtle text-xs mt-1">
-                            Multi-currency is off — enable in Settings to choose another currency.
-                        </p>
-                    }
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Customer (id)</label>
-                    <CitusInput TValue="string" @bind-Value="_customerIdInput" Placeholder="@("00000000-0000-0000-0000-000000000000")" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Amount received</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_amount" Min="0" Style="width: 100%;" />
-                </div>
-                <div>
-                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_date ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-sm font-medium block mb-1">Memo</label>
-                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Reference / cheque number / wire memo" />
-                </div>
+<div class="flex flex-col gap-6">
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Customer & date</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+                <label class="citus-form-field__label">Customer *</label>
+                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="@SearchScopeContext.QuoteCustomerPicker"
+                                   Placeholder="Search customers…"
+                                   Take="8"
+                                   SourceRoute="/receive-payment"
+                                   SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
+                                   SelectedDisplayText="@_customerDisplay"
+                                   OnOptionSelected="OnCustomerSelected"
+                                   OnCleared="OnCustomerCleared" />
             </div>
-        </section>
+            <div>
+                <label class="citus-form-field__label">Payment date</label>
+                <input type="date"
+                       class="citus-form-field__input"
+                       value="@(_date?.ToString("yyyy-MM-dd"))"
+                       @onchange="OnDateChanged" />
+            </div>
+            <div>
+                <label class="citus-form-field__label">Currency</label>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_currency"
+                       placeholder="USD"
+                       @oninput="@(e => _currency = e.Value?.ToString() ?? string.Empty)"
+                       disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+            </div>
+        </div>
+    </section>
 
-        <section class="citus-panel">
-            <header class="citus-panel__header">
-                <h2 class="citus-panel__title">Apply to open invoices</h2>
-                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddApplication">Add application</CitusButton>
-            </header>
+    <section class="citus-panel">
+        <h2 class="citus-panel__title">Deposit</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+                <label class="citus-form-field__label">Deposit to (Bank) *</label>
+                <select class="citus-form-field__input"
+                        value="@_bankAccountId"
+                        @onchange="OnBankAccountChanged">
+                    <option value="">— Select —</option>
+                    @foreach (var account in _bankAccounts)
+                    {
+                        <option value="@account.Id">@account.Code @account.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="citus-form-field__label">Total to Bank *</label>
+                <input type="text"
+                       inputmode="decimal"
+                       class="citus-form-field__input"
+                       value="@FormatDecimalForInput(_totalToBank)"
+                       @oninput="OnTotalToBankInput" />
+                <p class="text-fg-subtle text-xs mt-1">
+                    @* Auto-calculated from ticked invoice balances when blank;
+                       once you type a number, the system switches to cash-driven
+                       mode and allocates that total to the invoices you tick. *@
+                    @(_isCashDriven
+                        ? "Cash-driven: clear this field to switch back to selection-driven."
+                        : "Selection-driven: tick invoices below and this fills automatically.")
+                </p>
+            </div>
+            <div>
+                <label class="citus-form-field__label">Extra → New Deposit</label>
+                <input type="text"
+                       readonly
+                       class="citus-form-field__input"
+                       value="@FormatAmount(_extraNewDeposit)" />
+                <p class="text-fg-subtle text-xs mt-1">
+                    Overpayment parked as a future credit for this customer.
+                </p>
+            </div>
+            <div class="md:col-span-3">
+                <label class="citus-form-field__label">Memo</label>
+                <input type="text"
+                       class="citus-form-field__input"
+                       placeholder="Optional reference note"
+                       value="@_memo"
+                       @oninput="@(e => _memo = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+        </div>
+    </section>
 
-            <p class="text-fg-muted text-sm mb-3">
-                Each row applies a portion of the payment to a specific A/R open item. Backend ensures the open item exists and tracks remaining balance.
-            </p>
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Apply to invoices</h2>
+            <span class="text-fg-muted text-sm">
+                Tick rows to apply payment. Tick order = priority — the first invoice
+                you tick gets cash first, the next gets whatever's left, capped at each
+                invoice's balance.
+            </span>
+        </header>
 
+        @if (_customerId == Guid.Empty)
+        {
+            <p class="text-fg-muted text-sm">Pick a customer first to load their open invoices.</p>
+        }
+        else if (_isLoadingItems)
+        {
+            <CitusLoadingBar />
+        }
+        else if (_items.Count == 0)
+        {
+            <p class="text-fg-muted text-sm">No open invoices for this customer.</p>
+        }
+        else
+        {
             <table class="citus-data-table">
                 <thead>
                     <tr>
-                        <th>Invoice</th>
-                        <th style="width: 14rem">Open item id</th>
-                        <th class="text-right" style="width: 10rem">Applied</th>
-                        <th style="width: 3rem"></th>
+                        <th style="width: 2.5rem"></th>
+                        <th>Document No.</th>
+                        <th style="width: 7rem">Type</th>
+                        <th style="width: 7rem">Date</th>
+                        <th style="width: 7rem">Due Date</th>
+                        <th class="text-right" style="width: 8rem">Original</th>
+                        <th class="text-right" style="width: 8rem">Balance</th>
+                        <th class="text-right" style="width: 10rem">Payment</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @for (var index = 0; index < _applications.Count; index++)
+                    @foreach (var row in _items)
                     {
-                        var i = index;
-                        var app = _applications[i];
+                        var captured = row;
                         <tr>
-                            <td><CitusInput TValue="string" Value="@app.DocumentDisplayNumber" ValueChanged="@(v => Update(i, a => a with { DocumentDisplayNumber = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="INV-000123" /></td>
-                            <td><CitusInput TValue="string" Value="@(app.OpenItemId == Guid.Empty ? string.Empty : app.OpenItemId.ToString("D"))" ValueChanged="@(v => Update(i, a => a with { OpenItemId = ParseGuid(v) }))" Size="CitusButtonSize.Small" Placeholder="@("uuid")" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@app.AppliedAmount" ValueChanged="@(v => Update(i, a => a with { AppliedAmount = v }))" Min="0" Style="width: 100%;" /></td>
                             <td>
-                                <button type="button" class="citus-icon-button" title="Remove" @onclick="() => RemoveApplication(i)">
-                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
-                                </button>
+                                <input type="checkbox"
+                                       checked="@captured.IsTicked"
+                                       @onchange="@(e => OnRowTicked(captured.OpenItemId, (bool)(e.Value ?? false)))" />
+                            </td>
+                            <td><span class="citus-inline-code">@captured.DisplayNumber</span></td>
+                            <td><CitusBadge Color="@("blue")">@HumanizeSourceType(captured.SourceType)</CitusBadge></td>
+                            <td>@captured.DocumentDate.ToString("yyyy-MM-dd")</td>
+                            <td>@(captured.DueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                            <td class="text-right">@FormatAmount(captured.OriginalAmountTx)</td>
+                            <td class="text-right font-semibold">@FormatAmount(captured.OpenAmountTx)</td>
+                            <td>
+                                <input type="text"
+                                       inputmode="decimal"
+                                       class="citus-form-field__input text-right"
+                                       value="@FormatDecimalForInput(captured.Payment)"
+                                       disabled="@(!captured.IsTicked)"
+                                       @oninput="@(e => OnPaymentEdited(captured.OpenItemId, e.Value?.ToString()))" />
                             </td>
                         </tr>
                     }
                     <tr class="citus-data-table__total">
-                        <td colspan="2" class="text-right font-medium">Applied total</td>
+                        <td colspan="6" class="text-right font-medium">Totals</td>
+                        <td class="text-right font-semibold">@FormatAmount(_items.Where(r => r.IsTicked).Sum(r => r.OpenAmountTx))</td>
                         <td class="text-right font-semibold">@FormatAmount(_appliedTotal)</td>
-                        <td></td>
                     </tr>
                 </tbody>
             </table>
+        }
+    </section>
 
-            @if (_amount > 0 && _appliedTotal != _amount)
-            {
-                <p class="text-warning text-sm mt-3">
-                    Difference: <span class="citus-inline-code">@FormatAmount(_amount - _appliedTotal)</span>. Posting requires applied total to match the payment amount.
-                </p>
-            }
-        </section>
-    </div>
-
-    <div class="lg:col-span-4 flex flex-col gap-6">
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Summary</h2>
-            <table class="citus-keyvalue">
-                <tbody>
-                    <tr><th>Customer</th><td>@(_customerIdInput.Length > 8 ? _customerIdInput[..8] + "..." : "(not set)")</td></tr>
-                    <tr><th>Amount</th><td>@FormatAmount(_amount) @_currency.ToUpperInvariant()</td></tr>
-                    <tr><th>Applied</th><td>@FormatAmount(_appliedTotal)</td></tr>
-                    <tr><th>Remaining</th><td>@FormatAmount(_amount - _appliedTotal)</td></tr>
-                </tbody>
-            </table>
-        </section>
-
-        <section class="citus-panel">
-            <h2 class="citus-panel__title">Post payment</h2>
-            <p class="text-fg-muted text-sm mb-3">
-                Posting closes the AR open items proportional to applied amounts. Unapplied cash sits as a customer credit.
-            </p>
-            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
-                         Disabled="@(_amount <= 0 || _applications.Count == 0 || ShellState.AreWritesBlocked || _isSubmitting)"
+    <section class="citus-panel">
+        <header class="citus-panel__header">
+            <h2 class="citus-panel__title">Post</h2>
+            <span class="text-fg-muted text-sm">
+                Posting closes the AR open items by the applied amount. Any Extra → New Deposit
+                gets parked as a customer credit (Commit B will wire that side; today the form
+                still routes through the existing stub for shape verification).
+            </span>
+        </header>
+        <div class="flex items-center justify-end gap-3">
+            <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="ResetForm">Reset</CitusButton>
+            <CitusButton Variant="CitusButtonVariant.Primary"
+                         Disabled="@(_customerId == Guid.Empty || _bankAccountId == Guid.Empty || _appliedTotal <= 0 || ShellState.AreWritesBlocked || _isSubmitting)"
                          OnClick="PostAsync">
-                @(_isSubmitting ? "Posting..." : "Post receive payment")
+                @(_isSubmitting ? "Posting…" : "Post receive payment")
             </CitusButton>
-        </section>
-    </div>
+        </div>
+    </section>
 </div>
 
 @code {
@@ -157,62 +222,370 @@
     {
         Eyebrow = "Sales & Get Paid",
         Title = "Receive payment",
-        Subtitle = "Apply customer cash to one or more open invoices. Backend tracks remaining balances and reservation."
+        Subtitle = "Apply customer cash to one or more open invoices. Tick order drives allocation priority."
     };
 
     private DateTime? _date = DateTime.Today;
-    private string _customerIdInput = string.Empty;
     private string _currency = string.Empty;
-    private decimal? _fxRate;
-    private decimal _amount;
     private string _memo = string.Empty;
-    private readonly List<SettlementApplicationDraft> _applications = new() { new SettlementApplicationDraft() };
+    private Guid _customerId;
+    private string _customerDisplay = string.Empty;
+    private Guid _bankAccountId;
+    private IReadOnlyList<AccountSummary> _bankAccounts = Array.Empty<AccountSummary>();
+
+    private decimal _totalToBank;
+    /// <summary>
+    /// Cash-driven mode is on whenever the user has typed a positive Total
+    /// to Bank. In that mode, ticking an invoice doesn't sum into Total —
+    /// it draws cash from Total in tick order, capped at the invoice's
+    /// balance, and the remainder lands on Extra → New Deposit.
+    ///
+    /// Selection-driven mode (the default when Total is blank or zero) does
+    /// the opposite: each tick adds the invoice's balance to Total and the
+    /// Payment column auto-fills with the full balance.
+    /// </summary>
+    private bool _isCashDriven;
+
+    private List<ApplyRow> _items = new();
+    private bool _isLoadingItems;
+
+    /// <summary>
+    /// Tick order = priority. We push to this list in the order the user
+    /// ticked invoices; allocation walks it head-first so the *first* tick
+    /// gets full cash, the next gets the remainder, and so on.
+    /// </summary>
+    private readonly List<Guid> _tickOrder = new();
+
+    /// <summary>
+    /// Open-item ids whose Payment cell the user has manually edited. The
+    /// allocator skips these (preserving the user's override) and only
+    /// re-allocates over the unlocked rows. Cleared when the form resets
+    /// or when Total is cleared back to selection-driven mode.
+    /// </summary>
+    private readonly HashSet<Guid> _lockedPayments = new();
+
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
 
-    private decimal _appliedTotal => _applications.Sum(a => a.AppliedAmount);
+    private decimal _appliedTotal => _items.Where(r => r.IsTicked).Sum(r => r.Payment);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    private decimal _extraNewDeposit
+    {
+        get
+        {
+            if (!_isCashDriven) return 0m;
+            var diff = _totalToBank - _appliedTotal;
+            return diff > 0 ? diff : 0m;
+        }
+    }
 
-    private void AddApplication() => _applications.Add(new SettlementApplicationDraft());
-    private void RemoveApplication(int i) { if (i >= 0 && i < _applications.Count) _applications.RemoveAt(i); }
-    private void Update(int i, Func<SettlementApplicationDraft, SettlementApplicationDraft> mutate) { if (i >= 0 && i < _applications.Count) _applications[i] = mutate(_applications[i]); }
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        await LoadBankAccountsAsync();
+    }
 
-    private static Guid ParseGuid(string? s) => Guid.TryParse(s, out var g) ? g : Guid.Empty;
+    private async Task LoadBankAccountsAsync()
+    {
+        // Receive Payment lands cash in a bank, cash, or credit-card account
+        // (the same set Expense's Payment Account picker uses, scoped here
+        // by client-side filter so we don't need a dedicated endpoint).
+        var all = await AccountClient.ListAsync(rootType: "asset", includeInactive: false);
+        _bankAccounts = all
+            .Where(a => a.AllowManualPosting)
+            .Where(a => a.DetailType is "bank" or "cash" or "credit_card")
+            .OrderBy(a => a.Code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private void OnDateChanged(ChangeEventArgs args)
+    {
+        if (DateTime.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            _date = parsed;
+        }
+    }
+
+    private void OnBankAccountChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        _bankAccountId = Guid.TryParse(raw, out var parsed) ? parsed : Guid.Empty;
+    }
+
+    private async Task OnCustomerSelected(UnitySearchPickerOption option)
+    {
+        _customerId = option.SourceId;
+        _customerDisplay = option.DisplayText;
+        await LoadOpenItemsAsync();
+    }
+
+    private void OnCustomerCleared()
+    {
+        _customerId = Guid.Empty;
+        _customerDisplay = string.Empty;
+        _items = new List<ApplyRow>();
+        _tickOrder.Clear();
+        _lockedPayments.Clear();
+        Reallocate();
+    }
+
+    private async Task LoadOpenItemsAsync()
+    {
+        _isLoadingItems = true;
+        _tickOrder.Clear();
+        _lockedPayments.Clear();
+        try
+        {
+            var rows = await OpenReceivablesClient.ListAsync(ShellState.ActiveCompany.Id, _customerId);
+            _items = rows
+                // v1 scope: invoices only (positive credit-side balances).
+                // Customer deposits (negative-side rows) are deferred to the
+                // commit that wires submit + auto-creates a Deposit on
+                // overpayment — they need their own +/- math in the table.
+                .Where(r => r.OpenAmountTx > 0m)
+                .OrderBy(r => r.DocumentDate)
+                .Select(r => new ApplyRow(r))
+                .ToList();
+        }
+        finally
+        {
+            _isLoadingItems = false;
+            Reallocate();
+        }
+    }
+
+    private void OnRowTicked(Guid openItemId, bool isTicked)
+    {
+        var row = _items.FirstOrDefault(r => r.OpenItemId == openItemId);
+        if (row is null) return;
+
+        row.IsTicked = isTicked;
+        if (isTicked)
+        {
+            // Tick order is priority for cash-driven allocation. Append to
+            // the list (ignoring re-ticks of already-recorded ids).
+            if (!_tickOrder.Contains(openItemId))
+            {
+                _tickOrder.Add(openItemId);
+            }
+        }
+        else
+        {
+            _tickOrder.Remove(openItemId);
+            _lockedPayments.Remove(openItemId);
+            row.Payment = 0m;
+        }
+
+        Reallocate();
+    }
+
+    private void OnTotalToBankInput(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        var parsed = ParseDecimal(raw);
+        _totalToBank = parsed;
+        // Mode flips on every keystroke: any positive value puts us in
+        // cash-driven mode; clearing back to zero / blank reverts to
+        // selection-driven and wipes manual locks so the next tick
+        // round starts clean.
+        var nowCashDriven = parsed > 0m;
+        if (!nowCashDriven && _isCashDriven)
+        {
+            _lockedPayments.Clear();
+        }
+        _isCashDriven = nowCashDriven;
+        Reallocate();
+    }
+
+    private void OnPaymentEdited(Guid openItemId, string? raw)
+    {
+        var row = _items.FirstOrDefault(r => r.OpenItemId == openItemId);
+        if (row is null || !row.IsTicked) return;
+
+        var typed = ParseDecimal(raw);
+        // Cap manual entry at the invoice's open balance — over-paying a
+        // single line on the Apply table doesn't make sense; if the user
+        // wants to send extra cash, that goes on Extra → New Deposit via
+        // a higher Total to Bank.
+        if (typed > row.OpenAmountTx) typed = row.OpenAmountTx;
+        if (typed < 0m) typed = 0m;
+
+        row.Payment = typed;
+        _lockedPayments.Add(openItemId);
+        Reallocate();
+    }
+
+    /// <summary>
+    /// Walks the ticked rows and fills the Payment column according to the
+    /// active mode:
+    ///
+    /// * Selection-driven: every unlocked ticked row gets its full balance.
+    ///   Total to Bank = sum of payments (we mirror the user's tick choices
+    ///   straight into the total).
+    ///
+    /// * Cash-driven: walk in tick order; each unlocked row gets
+    ///   min(remaining_cash, balance), then remaining shrinks. After the
+    ///   walk, anything left in remaining lands on Extra → New Deposit.
+    ///   Locked rows (the user manually edited their Payment) keep their
+    ///   value and consume cash up-front.
+    /// </summary>
+    private void Reallocate()
+    {
+        if (!_isCashDriven)
+        {
+            foreach (var row in _items)
+            {
+                if (!row.IsTicked)
+                {
+                    row.Payment = 0m;
+                    continue;
+                }
+                if (_lockedPayments.Contains(row.OpenItemId))
+                {
+                    continue; // user override — leave alone
+                }
+                row.Payment = row.OpenAmountTx;
+            }
+            _totalToBank = _items.Where(r => r.IsTicked).Sum(r => r.Payment);
+            return;
+        }
+
+        // Cash-driven path. Reserve cash for locked rows first so they're
+        // honored verbatim, then distribute the remainder in tick order.
+        var lockedSum = _items
+            .Where(r => r.IsTicked && _lockedPayments.Contains(r.OpenItemId))
+            .Sum(r => r.Payment);
+        var remaining = _totalToBank - lockedSum;
+        if (remaining < 0m) remaining = 0m;
+
+        foreach (var openItemId in _tickOrder)
+        {
+            var row = _items.FirstOrDefault(r => r.OpenItemId == openItemId);
+            if (row is null || !row.IsTicked) continue;
+            if (_lockedPayments.Contains(openItemId)) continue;
+
+            var allocate = Math.Min(row.OpenAmountTx, remaining);
+            if (allocate < 0m) allocate = 0m;
+            row.Payment = allocate;
+            remaining -= allocate;
+        }
+
+        // Anything not ticked stays at 0.
+        foreach (var row in _items)
+        {
+            if (!row.IsTicked) row.Payment = 0m;
+        }
+    }
 
     private async Task PostAsync()
     {
         _validation = null;
         _lastResult = null;
 
-        if (_amount <= 0) { _validation = "Payment amount must be greater than zero."; return; }
-        if (_applications.Count == 0) { _validation = "Apply the payment to at least one open invoice."; return; }
-        if (_appliedTotal != _amount) { _validation = "Applied total must equal the payment amount."; return; }
-        if (_applications.Any(a => a.OpenItemId == Guid.Empty)) { _validation = "Every application row needs an open-item id."; return; }
-
-        Guid? customerId = null;
-        if (Guid.TryParse(_customerIdInput, out var parsed)) customerId = parsed;
+        if (_customerId == Guid.Empty) { _validation = "Pick a customer first."; return; }
+        if (_bankAccountId == Guid.Empty) { _validation = "Pick the bank/cash account the deposit lands in."; return; }
+        var ticked = _items.Where(r => r.IsTicked && r.Payment > 0m).ToArray();
+        if (ticked.Length == 0) { _validation = "Tick at least one invoice with a payment amount."; return; }
 
         _isSubmitting = true;
         try
         {
+            // Submit still routes through the existing stub for v1. Commit B
+            // will swap this for a /receive-payments/prepare → /post chain
+            // and have the backend auto-create a Deposit when Extra > 0.
             var draft = new ReceivePaymentDraft
             {
                 Date = DateOnly.FromDateTime((_date ?? DateTime.Today).Date),
-                CustomerId = customerId,
-                Amount = _amount,
+                CustomerId = _customerId,
+                Amount = _totalToBank,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
-                FxRate = _fxRate,
                 Memo = _memo.Trim(),
-                Applications = _applications.ToArray()
+                Applications = ticked.Select(r => new SettlementApplicationDraft
+                {
+                    OpenItemId = r.OpenItemId,
+                    AppliedAmount = r.Payment,
+                    DocumentDisplayNumber = r.DisplayNumber,
+                }).ToArray()
             };
             _lastResult = await WriteFlow.PostReceivePaymentAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Payment posted."); NavigationManager.NavigateTo("dashboard"); }
-            else { await Message.InfoAsync(_lastResult.Message); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Payment posted.");
+                NavigationManager.NavigateTo("dashboard");
+            }
+            else
+            {
+                await Message.InfoAsync(_lastResult.Message);
+            }
         }
-        finally { _isSubmitting = false; }
+        finally
+        {
+            _isSubmitting = false;
+        }
     }
 
+    private void ResetForm()
+    {
+        _totalToBank = 0m;
+        _isCashDriven = false;
+        _memo = string.Empty;
+        _tickOrder.Clear();
+        _lockedPayments.Clear();
+        foreach (var row in _items)
+        {
+            row.IsTicked = false;
+            row.Payment = 0m;
+        }
+        _validation = null;
+        _lastResult = null;
+    }
+
+    private static decimal ParseDecimal(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return 0m;
+        return decimal.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0m;
+    }
+
+    private static string FormatDecimalForInput(decimal amount) =>
+        amount == 0m ? string.Empty : amount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    private static string HumanizeSourceType(string sourceType) => sourceType switch
+    {
+        "invoice" => "Invoice",
+        "credit_note" => "Credit",
+        "customer_deposit" => "Deposit",
+        _ => sourceType,
+    };
+
+    private sealed class ApplyRow
+    {
+        public ApplyRow(OpenReceivableSummary summary)
+        {
+            OpenItemId = summary.OpenItemId;
+            DisplayNumber = summary.DisplayNumber;
+            SourceType = summary.SourceType;
+            DocumentDate = summary.DocumentDate;
+            DueDate = summary.DueDate;
+            OriginalAmountTx = summary.OriginalAmountTx;
+            OpenAmountTx = summary.OpenAmountTx;
+            CurrencyCode = summary.DocumentCurrencyCode;
+        }
+
+        public Guid OpenItemId { get; }
+        public string DisplayNumber { get; }
+        public string SourceType { get; }
+        public DateOnly DocumentDate { get; }
+        public DateOnly? DueDate { get; }
+        public decimal OriginalAmountTx { get; }
+        public decimal OpenAmountTx { get; }
+        public string CurrencyCode { get; }
+
+        public bool IsTicked { get; set; }
+        public decimal Payment { get; set; }
+    }
 }
