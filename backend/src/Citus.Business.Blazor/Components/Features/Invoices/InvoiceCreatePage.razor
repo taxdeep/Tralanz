@@ -67,28 +67,29 @@
                                        OnCleared="OnCustomerCleared" />
                 </div>
                 <div>
+                    @* Transaction currency is fully derived from the picked
+                       customer (per the per-customer single-currency rule),
+                       so this is a read-only label, not an input — pick the
+                       customer and the right currency follows. Before a
+                       customer is picked, the slot stays muted. *@
                     <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                    <CitusInput TValue="string"
-                                @bind-Value="_currency"
-                                Placeholder="USD"
-                                Disabled="@(_isCurrencyLocked || !ShellState.ActiveCompany.MultiCurrencyEnabled)" />
-                    @if (_isCurrencyLocked)
-                    {
-                        @* Per the per-customer single-currency rule: once an
-                           invoice is bound to a customer, its transaction
-                           currency must match that customer's default. A
-                           customer trading in two currencies lives as two
-                           separate customer records. *@
-                        <p class="text-fg-subtle text-xs mt-1">
-                            Locked to <strong>@_currency</strong> — this customer's default currency.
-                        </p>
-                    }
-                    else if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
-                    {
-                        <p class="text-fg-subtle text-xs mt-1">
-                            Multi-currency is off — enable in Settings to choose another currency.
-                        </p>
-                    }
+                    <div class="citus-form-field__input flex items-center"
+                         style="background: var(--citus-color-bg-muted); cursor: default;">
+                        @if (_customerId == Guid.Empty)
+                        {
+                            <span class="text-fg-subtle">Pick a customer first</span>
+                        }
+                        else
+                        {
+                            <strong>@_currency.ToUpperInvariant()</strong>
+                            @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <span class="text-fg-subtle text-xs ml-2">
+                                    foreign — base is @ShellState.ActiveCompany.BaseCurrencyCode
+                                </span>
+                            }
+                        }
+                    </div>
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Exchange rate</label>
@@ -197,14 +198,12 @@
     private DateTime? _dueDate = DateTime.Today.AddDays(30);
     private Guid _customerId;
     private string _customerDisplay = string.Empty;
-    private string _currency = string.Empty;
     /// <summary>
-    /// Pinned to the picked customer's default currency. Same rule the
-    /// Receive Payment page enforces — one customer, one currency. A
-    /// customer with mixed-currency dealings is modelled as separate
-    /// customer records (Acme — USD / Acme — CAD).
+    /// Always tracks the picked customer's default currency, falling back
+    /// to the company base when no customer is picked yet. The form has
+    /// no input for it — Currency is a read-only display now.
     /// </summary>
-    private bool _isCurrencyLocked;
+    private string _currency = string.Empty;
     private decimal? _fxRate;
     private string _memo = string.Empty;
     private readonly List<DocumentLineDraft> _lines = new() { new DocumentLineDraft { Quantity = 1m } };
@@ -221,15 +220,14 @@
         _customerId = option.SourceId;
         _customerDisplay = option.DisplayText;
 
-        // Best-effort lookup: if the call fails, leave currency on
-        // whatever it was so the form stays usable. The invoice still
-        // can't post without a valid customer id, so the lock state
-        // becomes correct once the next pick succeeds.
+        // Best-effort lookup. Transient failure leaves _currency on its
+        // previous value (base or the previous customer's default) — the
+        // operator can re-pick to retry. The invoice can't post without
+        // a valid customer id either way.
         var customer = await CustomerClient.GetByIdAsync(_customerId);
         if (customer is not null && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
         {
             _currency = customer.DefaultCurrencyCode;
-            _isCurrencyLocked = true;
         }
     }
 
@@ -238,7 +236,6 @@
         _customerId = Guid.Empty;
         _customerDisplay = string.Empty;
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
-        _isCurrencyLocked = false;
     }
 
     private void AddLine() => _lines.Add(new DocumentLineDraft { Quantity = 1m });
