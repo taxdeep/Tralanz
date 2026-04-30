@@ -10,10 +10,13 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         UnitySearchQuery query,
         SearchPolicyDefinition policy,
         string normalizedQuery,
+        UnitySearchQueryHints hints,
         CancellationToken cancellationToken)
     {
         var take = Math.Clamp(query.Take, 1, 50);
         var results = new List<SearchDocumentRecord>();
+        var hasNumeric = hints.IsNumeric;
+        var numericValue = hints.NumericValue ?? 0m;
 
         await using var connection = await connections.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -38,6 +41,14 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                 doc.rank_boost,
                 doc.version,
                 (
+                  -- L1 amount-exact (200) and L2 amount-tolerance (120) tiers.
+                  -- Capped well above text-match scores so an amount hit
+                  -- always outranks a text/code hit, regardless of priors.
+                  case
+                    when @has_numeric and doc.amount is not null and doc.amount = @numeric_query then 200
+                    when @has_numeric and doc.amount is not null and abs(doc.amount - @numeric_query) < 0.005 then 120
+                    else 0
+                  end +
                   case
                     when doc.exact_code_norm = @normalized_query then 140
                     when doc.exact_code_norm like @exact_prefix then 90
@@ -62,6 +73,26 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                   case
                     when stats.last_clicked_at_utc >= now() - interval '7 day' then 5
                     else 0
+                  end +
+                  -- Per-user query-class prior. Bounded by ln() so a
+                  -- thousand clicks add ~55 points — strictly less than
+                  -- the L1/L2 gap (80) so an amount-exact match on a
+                  -- never-clicked entity still beats a tolerance match
+                  -- on the user's favorite entity.
+                  coalesce(ln(1 + prior.click_count::numeric) * 8, 0) +
+                  case
+                    when prior.last_clicked_at_utc >= now() - interval '30 day' then 4
+                    else 0
+                  end +
+                  -- Cold-start default for numeric queries: bias toward
+                  -- entities the user typically searches by amount when
+                  -- they have no per-user prior yet. Authority comment in
+                  -- this same SQL: numeric_decimal → JE > AR/AP > credits.
+                  case
+                    when @query_class = 'numeric_decimal' and doc.entity_type = 'journal_entry' then 8
+                    when @query_class = 'numeric_decimal' and doc.entity_type in ('invoice','bill') then 5
+                    when @query_class = 'numeric_decimal' and doc.entity_type in ('credit_note','vendor_credit') then 3
+                    else 0
                   end
                 ) as computed_score
               from search_documents doc
@@ -71,6 +102,11 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                and stats.context = @context
                and stats.entity_type = doc.entity_type
                and stats.source_id = doc.source_id
+              left join search_query_class_priors prior
+                on prior.company_id = doc.company_id
+               and prior.user_id = @user_id
+               and prior.query_class = @query_class
+               and prior.entity_type = doc.entity_type
               where doc.company_id = @company_id
                 and doc.entity_type = any(@entity_types)
                 and (not @enforce_active_only or doc.is_active)
@@ -81,6 +117,11 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
                   or lower(doc.primary_text) like @text_contains
                   or lower(doc.secondary_text) like @text_contains
                   or lower(doc.search_text) like @text_contains
+                  or (
+                    @has_numeric
+                    and doc.amount is not null
+                    and (doc.amount = @numeric_query or abs(doc.amount - @numeric_query) < 0.005)
+                  )
                 )
             )
             select
@@ -118,6 +159,9 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         command.Parameters.AddWithValue("exact_prefix", $"{normalizedQuery}%");
         command.Parameters.AddWithValue("text_prefix", $"{normalizedQuery}%");
         command.Parameters.AddWithValue("text_contains", $"%{normalizedQuery}%");
+        command.Parameters.AddWithValue("has_numeric", hasNumeric);
+        command.Parameters.AddWithValue("numeric_query", numericValue);
+        command.Parameters.AddWithValue("query_class", hints.QueryClassTag);
         command.Parameters.AddWithValue("take", take);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

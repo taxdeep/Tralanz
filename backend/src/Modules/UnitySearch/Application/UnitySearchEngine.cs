@@ -43,7 +43,10 @@ public sealed class UnitySearchEngine(
         var policy = policyRegistry.Resolve(query.Context);
         await projectionStore.EnsureProjectionFreshAsync(query.CompanyId, cancellationToken);
 
-        var documents = await queryService.SearchDocumentsAsync(query, policy, normalizedQuery, cancellationToken);
+        var classification = UnitySearchQueryClassifier.Classify(normalizedQuery);
+        var hints = new UnitySearchQueryHints(classification.Tag, classification.NumericValue);
+
+        var documents = await queryService.SearchDocumentsAsync(query, policy, normalizedQuery, hints, cancellationToken);
         if (query.UserId.HasValue)
         {
             await statsStore.RecordQueryAsync(query.CompanyId, query.UserId.Value, query.Context, normalizedQuery, cancellationToken);

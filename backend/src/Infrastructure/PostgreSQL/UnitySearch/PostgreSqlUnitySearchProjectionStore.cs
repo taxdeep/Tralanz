@@ -59,6 +59,32 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
             create index if not exists ix_search_documents_search_vector
               on search_documents using gin (search_vector);
 
+            -- Numeric-amount lookup path. The topbar's amount search resolves
+            -- "11039.18" to a JE / Invoice / Bill via doc.amount; B-tree on
+            -- (company_id, amount) keeps the L1 exact and L2 tolerance probes
+            -- index-only even on multi-million-row charts.
+            create index if not exists ix_search_documents_company_amount
+              on search_documents (company_id, amount)
+              where amount is not null;
+
+            -- Per-user (per-company) priors keyed by query class. When a
+            -- numeric_decimal query matches both a JE and a Bill at the
+            -- same amount, the SQL ranker uses these counts as a tiebreaker.
+            -- Cold-start defaults live in the SQL formula directly — this
+            -- table only stores the user's *learned* deviation from default.
+            create table if not exists search_query_class_priors (
+              company_id uuid not null,
+              user_id uuid not null,
+              query_class text not null,
+              entity_type text not null,
+              click_count bigint not null default 0,
+              last_clicked_at_utc timestamptz null,
+              primary key (company_id, user_id, query_class, entity_type)
+            );
+
+            create index if not exists ix_search_query_class_priors_lookup
+              on search_query_class_priors (company_id, user_id, query_class);
+
             create table if not exists search_recent_queries (
               company_id uuid not null,
               user_id uuid not null,

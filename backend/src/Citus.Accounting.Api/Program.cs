@@ -353,6 +353,9 @@ builder.Services.AddSingleton<IUnitysearchUsageStatStore, PostgreSqlUnitysearchU
 builder.Services.AddSingleton<IUnitysearchPairStatStore, PostgreSqlUnitysearchPairStatStore>();
 builder.Services.AddSingleton<IUnitysearchRecentQueryStore, PostgreSqlUnitysearchRecentQueryStore>();
 builder.Services.AddSingleton<IUnitysearchRankingHintStore, PostgreSqlUnitysearchRankingHintStore>();
+builder.Services.AddSingleton<
+    Citus.Modules.UnitySearch.Application.Contracts.IUnitySearchQueryClassPriorStore,
+    Infrastructure.PostgreSQL.UnitySearch.PostgreSqlUnitySearchQueryClassPriorStore>();
 builder.Services.AddSingleton<IUnitysearchDecisionTraceStore, PostgreSqlUnitysearchDecisionTraceStore>();
 builder.Services.AddSingleton<IUnitysearchRankingEngine, UnitysearchRankingEngine>();
 // Register the reranking decorator as the IUnitySearchEngine the rest of
@@ -6746,6 +6749,7 @@ accounting.MapPost(
         IUnitysearchUsageStatStore usageStore,
         IUnitysearchPairStatStore pairStore,
         IUnitysearchRecentQueryStore recentQueries,
+        Citus.Modules.UnitySearch.Application.Contracts.IUnitySearchQueryClassPriorStore queryClassPriors,
         UnityAiFeatureFlagAccessor flags,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken) =>
@@ -6822,6 +6826,20 @@ accounting.MapPost(
                         clickedEntityId: request.SelectedEntityId,
                         resultCount: request.ResultCount,
                         createdAt: now,
+                        cancellationToken);
+                }
+
+                // Per-user query-class prior for the next search ranker.
+                // Skips empty/text classes inside the store; numeric/code
+                // selections are what move the needle.
+                if (userId.HasValue)
+                {
+                    var classification = Citus.Modules.UnitySearch.Application.UnitySearchQueryClassifier.Classify(normalizedQuery);
+                    await queryClassPriors.RecordSelectAsync(
+                        companyId,
+                        userId.Value,
+                        classification.Tag,
+                        request.EntityType.Trim(),
                         cancellationToken);
                 }
             }
