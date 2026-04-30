@@ -693,7 +693,12 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               '/documents/invoice/draft-editor?id=' || i.id::text,
               jsonb_build_object('status', i.status, 'customerId', i.customer_id, 'customerName', c.display_name),
               i.invoice_date,
-              i.total_amount_base,
+              -- Transaction-currency amount: human habit is to recall and
+              -- search for the original number they typed (e.g. "100 USD"),
+              -- not the base-currency converted value. Single-currency
+              -- companies see no difference; multi-currency users still
+              -- find the row they remember entering.
+              i.total_amount,
               true,
               i.status in ('voided', 'reversed'),
               44,
@@ -736,7 +741,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               '/documents/bill/draft-editor?id=' || b.id::text,
               jsonb_build_object('status', b.status, 'vendorId', b.vendor_id, 'vendorName', v.display_name),
               b.bill_date,
-              b.total_amount_base,
+              -- Transaction-currency amount; see invoice seeder for rationale.
+              b.total_amount,
               true,
               b.status in ('voided', 'reversed'),
               44,
@@ -779,7 +785,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               '/documents/credit-note/draft-editor?id=' || note.id::text,
               jsonb_build_object('status', note.status, 'customerId', note.customer_id, 'customerName', c.display_name),
               note.credit_note_date,
-              note.total_amount_base,
+              -- Transaction-currency amount; see invoice seeder for rationale.
+              note.total_amount,
               true,
               note.status in ('voided', 'reversed'),
               40,
@@ -822,7 +829,8 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               '/documents/vendor-credit/draft-editor?id=' || vc.id::text,
               jsonb_build_object('status', vc.status, 'vendorId', vc.vendor_id, 'vendorName', v.display_name),
               vc.credit_date,
-              vc.total_amount_base,
+              -- Transaction-currency amount; see invoice seeder for rationale.
+              vc.total_amount,
               true,
               vc.status in ('voided', 'reversed'),
               40,
@@ -865,7 +873,12 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               '/gl/journal-entry/review/' || je.id::text,
               jsonb_build_object('status', je.status, 'sourceType', je.source_type, 'fxSnapshotId', je.fx_rate_snapshot_id),
               je.posting_date,
-              je.total_debit,
+              -- Transaction-currency debit total. journal_entries also
+              -- exposes total_debit (base currency), but topbar amount
+              -- search aligns with what the user typed on the JE form,
+              -- not the FX-converted base value. Single-currency companies
+              -- see no difference.
+              je.total_tx_debit,
               true,
               je.status in ('voided', 'reversed'),
               42,
