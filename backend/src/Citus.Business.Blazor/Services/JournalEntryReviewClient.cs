@@ -53,6 +53,51 @@ public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<Jour
     }
 
     /// <summary>
+    /// Void a posted journal entry. The lifecycle workflow inserts a
+    /// compensating reverse-side entry and marks the original as voided —
+    /// nothing is deleted, so the audit trail stays intact. Returns an
+    /// outcome with <c>Succeeded=false</c> + a human-readable message
+    /// on failure so the page can surface it without parsing exceptions.
+    /// </summary>
+    public async Task<JournalEntryLifecycleOutcome> VoidAsync(
+        Guid journalEntryId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsync(
+                $"accounting/journal-entries/{journalEntryId:D}/void",
+                content: null,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadFromJsonAsync<LifecycleErrorBody>(cancellationToken);
+                return new JournalEntryLifecycleOutcome(
+                    Succeeded: false,
+                    Message: error?.Message ?? $"Could not void the journal entry (HTTP {(int)response.StatusCode}).",
+                    Result: null);
+            }
+
+            var body = await response.Content.ReadFromJsonAsync<JournalEntryLifecyclePayload>(cancellationToken);
+            return new JournalEntryLifecycleOutcome(
+                Succeeded: true,
+                Message: body is null
+                    ? "Journal entry voided."
+                    : $"Voided. Compensation entry {body.CompensationDisplayNumber} created.",
+                Result: body);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Void journal entry call failed for {JournalEntryId}.", journalEntryId);
+            return new JournalEntryLifecycleOutcome(
+                Succeeded: false,
+                Message: "Could not reach the server. Please retry.",
+                Result: null);
+        }
+    }
+
+    /// <summary>
     /// Peek at the next journal display number the system will assign on
     /// save. Returns null on transport / parse failure — callers should fall
     /// back to a "Auto" placeholder so the form stays usable when offline.
@@ -74,8 +119,6 @@ public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<Jour
             return null;
         }
     }
-
-    private sealed record NextDisplayNumberResponse(string DisplayNumber);
 
     public async Task<JournalEntryReviewListItemSummary?> FindBySourceAsync(
         Guid companyId,
@@ -103,4 +146,22 @@ public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<Jour
             return null;
         }
     }
+
+    private sealed record NextDisplayNumberResponse(string DisplayNumber);
+
+    private sealed record LifecycleErrorBody(string? Message);
 }
+
+public sealed record JournalEntryLifecyclePayload(
+    Guid OriginalJournalEntryId,
+    string OriginalDisplayNumber,
+    string OriginalStatus,
+    DateTimeOffset LifecycleAt,
+    Guid CompensationJournalEntryId,
+    string CompensationDisplayNumber,
+    string CompensationSourceType);
+
+public sealed record JournalEntryLifecycleOutcome(
+    bool Succeeded,
+    string Message,
+    JournalEntryLifecyclePayload? Result);

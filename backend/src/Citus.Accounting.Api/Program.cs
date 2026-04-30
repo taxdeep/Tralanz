@@ -4703,6 +4703,49 @@ accounting.MapGet(
         return Results.Ok(new { displayNumber });
     });
 
+// Void a posted journal entry. Lifecycle workflow doesn't delete the
+// original — it marks the JE as voided and inserts a compensating
+// reverse-side entry so the audit trail stays intact. Returned payload
+// names both the original and the compensation so the UI can deep-link
+// to either after the operation.
+accounting.MapPost(
+    "/journal-entries/{journalEntryId:guid}/void",
+    async (
+        Guid journalEntryId,
+        BusinessSessionContextAccessor sessionAccessor,
+        Modules.GL.JournalEntry.IJournalEntryLifecycleWorkflow lifecycleWorkflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty || session.UserId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var result = await lifecycleWorkflow.VoidAsync(
+                session.ActiveCompanyId,
+                journalEntryId,
+                session.UserId,
+                cancellationToken);
+            return Results.Ok(new
+            {
+                originalJournalEntryId = result.OriginalJournalEntryId,
+                originalDisplayNumber = result.OriginalDisplayNumber,
+                originalStatus = result.OriginalStatus,
+                lifecycleAt = result.LifecycleAt,
+                compensationJournalEntryId = result.CompensationJournalEntryId,
+                compensationDisplayNumber = result.CompensationDisplayNumber,
+                compensationSourceType = result.CompensationSourceType,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
+    });
+
 accounting.MapGet(
     "/unity-search",
     async (

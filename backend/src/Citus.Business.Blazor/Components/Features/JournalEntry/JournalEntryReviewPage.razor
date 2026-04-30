@@ -2,6 +2,8 @@
 
 @inject BusinessShellState ShellState
 @inject JournalEntryReviewClient JournalEntryReviewClient
+@inject NavigationManager NavigationManager
+@inject CitusToastService Message
 
 <PageTitle>@($"{_header.Title} | Tralanz Books")</PageTitle>
 
@@ -146,13 +148,111 @@
             <section class="citus-panel">
                 <h2 class="citus-panel__title">Why this page exists</h2>
                 <ul class="citus-bullet-list">
-                    <li>Journal review is a control surface, not an edit surface.</li>
+                    <li>Edits happen via compensating entries, not by mutating posted journal rows — the audit trail stays whole.</li>
                     <li>FX snapshot data stays visible on the same page as line truth.</li>
                     <li>Source linkage stays explicit so business truth and accounting truth do not drift apart.</li>
                 </ul>
             </section>
         </div>
     </div>
+
+    @* Lifecycle actions. Posted entries can be voided (compensating entry
+       is auto-generated, original marked as voided) or "edited" — which is
+       just a void followed by re-entering on the create form. Buttons hide
+       once the entry is already voided / reversed. *@
+    @if (string.Equals(_review.Status, "posted", StringComparison.OrdinalIgnoreCase))
+    {
+        <section class="citus-panel mt-6">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Lifecycle actions</h2>
+                <span class="text-fg-muted text-sm">
+                    Both options preserve the posted row by inserting a compensating entry —
+                    they never delete journal lines.
+                </span>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(_lifecycleError))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error"
+                            Message="@_lifecycleError"
+                            ShowIcon="true"
+                            Class="mb-3" />
+            }
+
+            @if (_pendingAction is "void")
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Warning"
+                            ShowIcon="true"
+                            Class="mb-3">
+                    <MessageTemplate>
+                        <strong>Void this journal entry?</strong>
+                        <div class="text-fg-muted text-sm mt-1">
+                            A compensating reverse-side entry will be posted and
+                            <span class="citus-inline-code">@_review.DisplayNumber</span>
+                            will be marked as voided. This cannot be undone from the UI.
+                        </div>
+                    </MessageTemplate>
+                </CitusAlert>
+                <div class="flex items-center gap-3">
+                    <CitusButton Variant="CitusButtonVariant.Primary"
+                                 Danger="true"
+                                 Disabled="@_isMutating"
+                                 OnClick="ConfirmVoidAsync">
+                        @(_isMutating ? "Voiding…" : "Confirm void")
+                    </CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Disabled="@_isMutating"
+                                 OnClick="CancelPending">
+                        Cancel
+                    </CitusButton>
+                </div>
+            }
+            else if (_pendingAction is "edit")
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Info"
+                            ShowIcon="true"
+                            Class="mb-3">
+                    <MessageTemplate>
+                        <strong>Edit by re-entering?</strong>
+                        <div class="text-fg-muted text-sm mt-1">
+                            Posted journal rows aren't modified in place. The current entry
+                            will be voided (a compensating entry is auto-posted) and you'll
+                            be sent to a fresh New Journal Entry form to re-enter the
+                            corrected version. The original stays in the audit trail.
+                        </div>
+                    </MessageTemplate>
+                </CitusAlert>
+                <div class="flex items-center gap-3">
+                    <CitusButton Variant="CitusButtonVariant.Primary"
+                                 Disabled="@_isMutating"
+                                 OnClick="ConfirmEditAsync">
+                        @(_isMutating ? "Voiding…" : "Void and start a new entry")
+                    </CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 Disabled="@_isMutating"
+                                 OnClick="CancelPending">
+                        Cancel
+                    </CitusButton>
+                </div>
+            }
+            else
+            {
+                <div class="flex items-center gap-3">
+                    <CitusButton Variant="CitusButtonVariant.Primary"
+                                 Danger="true"
+                                 LeadingIcon="IconName.X"
+                                 OnClick="@(() => RequestPending("void"))">
+                        Void
+                    </CitusButton>
+                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                 LeadingIcon="IconName.Pencil"
+                                 OnClick="@(() => RequestPending("edit"))">
+                        Edit
+                    </CitusButton>
+                </div>
+            }
+        </section>
+    }
 }
 
 @code {
@@ -172,6 +272,15 @@
     private string? _sourceDocumentHref;
     private IReadOnlyList<FactRow> _factRows = Array.Empty<FactRow>();
     private IReadOnlyList<FactRow> _sourceRows = Array.Empty<FactRow>();
+
+    /// <summary>
+    /// "void" or "edit" while the user is staring at the inline confirm
+    /// banner; null when no lifecycle action is in flight. Drives which
+    /// affordance the page renders below the line table.
+    /// </summary>
+    private string? _pendingAction;
+    private bool _isMutating;
+    private string? _lifecycleError;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -250,6 +359,66 @@
 
     private static string DisplayDescription(string description) =>
         string.IsNullOrWhiteSpace(description) ? "No description" : description;
+
+    private void RequestPending(string action)
+    {
+        _pendingAction = action;
+        _lifecycleError = null;
+    }
+
+    private void CancelPending()
+    {
+        _pendingAction = null;
+        _lifecycleError = null;
+    }
+
+    private async Task ConfirmVoidAsync()
+    {
+        if (_review is null) return;
+        await ExecuteVoidAsync(navigateToCreate: false);
+    }
+
+    private async Task ConfirmEditAsync()
+    {
+        if (_review is null) return;
+        await ExecuteVoidAsync(navigateToCreate: true);
+    }
+
+    private async Task ExecuteVoidAsync(bool navigateToCreate)
+    {
+        if (_review is null || _isMutating)
+        {
+            return;
+        }
+
+        _isMutating = true;
+        _lifecycleError = null;
+
+        try
+        {
+            var outcome = await JournalEntryReviewClient.VoidAsync(JournalEntryId);
+            if (!outcome.Succeeded)
+            {
+                _lifecycleError = outcome.Message;
+                return;
+            }
+
+            await Message.SuccessAsync(outcome.Message);
+
+            if (navigateToCreate)
+            {
+                NavigationManager.NavigateTo("journal-entry/new");
+            }
+            else
+            {
+                NavigationManager.NavigateTo("journal-entry");
+            }
+        }
+        finally
+        {
+            _isMutating = false;
+        }
+    }
 
     private static string GetLifecycleAlert(JournalEntryReviewSummary review) =>
         review.Status switch
