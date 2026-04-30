@@ -239,109 +239,92 @@
     }
 </section>
 
-@if (_isFormOpen)
-{
-    <section class="citus-panel mt-6">
-        <header class="citus-panel__header">
-            <h2 class="citus-panel__title">@(_editingId is null ? "New account" : "Edit account")</h2>
-        </header>
+<CitusDrawer @bind-IsOpen="_isFormOpen"
+             Title="@(_editingId is null ? "New account" : "Edit account")"
+             SaveLabel="@(_isMutating ? "Saving…" : "Save")"
+             SaveDisabled="_isMutating"
+             Width="CitusDrawerWidth.Medium"
+             OnSave="OnSaveAsync"
+             OnCancel="CancelForm">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Code</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   value="@_formCode"
+                   @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
+                   maxlength="32"
+                   placeholder="1000, 4100, 6300, …"
+                   disabled="@_isMutating" />
+        </label>
 
-        <form class="grid grid-cols-1 md:grid-cols-2 gap-4"
-              @onsubmit="OnSaveAsync"
-              @onsubmit:preventDefault>
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Code</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formCode"
-                       @oninput="@(e => _formCode = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="32"
-                       placeholder="1000, 4100, 6300, …"
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Name</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   value="@_formName"
+                   @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
+                   maxlength="200"
+                   placeholder="Cash, Accounts Receivable, Office Expense, …"
+                   disabled="@_isMutating" />
+        </label>
+
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Root type</span>
+            <select class="citus-form-field__input"
+                    value="@_formRootType"
+                    @onchange="@(e => _formRootType = e.Value?.ToString() ?? "asset")"
+                    disabled="@_isMutating">
+                @foreach (var type in RootTypeOptions)
+                {
+                    <option value="@type.Value">@type.Label</option>
+                }
+            </select>
+        </label>
+
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Detail type (optional)</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   value="@_formDetailType"
+                   @oninput="@(e => _formDetailType = e.Value?.ToString() ?? string.Empty)"
+                   maxlength="80"
+                   placeholder="bank, receivable, equipment, …"
+                   disabled="@_isMutating" />
+        </label>
+
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Currency (optional, ISO 4217)</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   value="@_formCurrencyCode"
+                   @oninput="@(e => _formCurrencyCode = e.Value?.ToString() ?? string.Empty)"
+                   maxlength="3"
+                   placeholder="@($"Defaults to {ShellState.ActiveCompany.BaseCurrencyCode}")"
+                   disabled="@_isMutating" />
+        </label>
+
+        <label class="citus-form-field">
+            <span class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_formAllowManualPosting"
+                       @onchange="@(e => _formAllowManualPosting = (bool)(e.Value ?? false))"
                        disabled="@_isMutating" />
-            </label>
+                Allow manual posting (uncheck to make this a rollup-only account)
+            </span>
+        </label>
 
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Name</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formName"
-                       @oninput="@(e => _formName = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="200"
-                       placeholder="Cash, Accounts Receivable, Office Expense, …"
+        <label class="citus-form-field md:col-span-2">
+            <span class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                       checked="@_formIsActive"
+                       @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
                        disabled="@_isMutating" />
-            </label>
-
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Root type</span>
-                <select class="citus-form-field__input"
-                        value="@_formRootType"
-                        @onchange="@(e => _formRootType = e.Value?.ToString() ?? "asset")"
-                        disabled="@_isMutating">
-                    @foreach (var type in RootTypeOptions)
-                    {
-                        <option value="@type.Value">@type.Label</option>
-                    }
-                </select>
-            </label>
-
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Detail type (optional)</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formDetailType"
-                       @oninput="@(e => _formDetailType = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="80"
-                       placeholder="bank, receivable, equipment, …"
-                       disabled="@_isMutating" />
-            </label>
-
-            <label class="citus-form-field">
-                <span class="citus-form-field__label">Currency (optional, ISO 4217)</span>
-                <input type="text"
-                       class="citus-form-field__input"
-                       value="@_formCurrencyCode"
-                       @oninput="@(e => _formCurrencyCode = e.Value?.ToString() ?? string.Empty)"
-                       maxlength="3"
-                       placeholder="@($"Defaults to {ShellState.ActiveCompany.BaseCurrencyCode}")"
-                       disabled="@_isMutating" />
-            </label>
-
-            <label class="citus-form-field">
-                <span class="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox"
-                           checked="@_formAllowManualPosting"
-                           @onchange="@(e => _formAllowManualPosting = (bool)(e.Value ?? false))"
-                           disabled="@_isMutating" />
-                    Allow manual posting (uncheck to make this a rollup-only account)
-                </span>
-            </label>
-
-            <label class="citus-form-field md:col-span-2">
-                <span class="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox"
-                           checked="@_formIsActive"
-                           @onchange="@(e => _formIsActive = (bool)(e.Value ?? false))"
-                           disabled="@_isMutating" />
-                    Active (available for selection on new transactions)
-                </span>
-            </label>
-
-            <div class="md:col-span-2 flex items-center gap-3">
-                <CitusButton Variant="CitusButtonVariant.Primary"
-                             HtmlType="@("submit")"
-                             Disabled="@_isMutating"
-                             OnClick="OnSaveAsync">
-                    @(_isMutating ? "Saving…" : "Save")
-                </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost"
-                             Disabled="@_isMutating"
-                             OnClick="CancelForm">
-                    Cancel
-                </CitusButton>
-            </div>
-        </form>
-    </section>
-}
+                Active (available for selection on new transactions)
+            </span>
+        </label>
+    </div>
+</CitusDrawer>
 
 @code {
     private readonly PageHeaderModel _header = new()
