@@ -2049,6 +2049,23 @@ html[data-theme="dark"] .citus-shell__sider {
    thin subdued row. Pickers slot in via .unity-picker without
    wrappers — they already drive their own colours through tokens. */
 
+/* ---------- UnitySearchPicker text-fill safety net ----------
+   The canonical colour rules for .unity-picker__input live in the
+   component's scoped razor.css. They work, but Blazor's scoped CSS
+   bundle is cache-busted via a build-time hash that browsers
+   sometimes serve stale (long after a fresh deploy). The same
+   chromium / edge -webkit-text-fill-color trap that bit the JE cell
+   inputs and the topbar search applies to every UnitySearchPicker
+   instance — invoice / receive payment / quote / picker-of-the-week.
+   This unscoped rule lands the colour pin in shell.css too, so a
+   stale scoped bundle doesn't leave the operator typing into thin
+   air. !important wins past any cached defaults. */
+.unity-picker__input {
+    color: var(--citus-color-fg) !important;
+    -webkit-text-fill-color: var(--citus-color-fg) !important;
+    caret-color: var(--citus-color-fg);
+}
+
 .citus-journal-lines {
     table-layout: fixed;
     width: 100%;
