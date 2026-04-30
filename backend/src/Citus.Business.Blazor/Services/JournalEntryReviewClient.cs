@@ -52,6 +52,31 @@ public sealed class JournalEntryReviewClient(HttpClient httpClient, ILogger<Jour
         }
     }
 
+    /// <summary>
+    /// Peek at the next journal display number the system will assign on
+    /// save. Returns null on transport / parse failure — callers should fall
+    /// back to a "Auto" placeholder so the form stays usable when offline.
+    /// PEEK only — the actual number is reserved at post time, so concurrent
+    /// operators may end up with a different value than the preview shown.
+    /// </summary>
+    public async Task<string?> GetNextDisplayNumberAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var payload = await httpClient.GetFromJsonAsync<NextDisplayNumberResponse>(
+                "accounting/journal-entries/next-number",
+                cancellationToken);
+            return payload?.DisplayNumber;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to peek the next journal display number.");
+            return null;
+        }
+    }
+
+    private sealed record NextDisplayNumberResponse(string DisplayNumber);
+
     public async Task<JournalEntryReviewListItemSummary?> FindBySourceAsync(
         Guid companyId,
         string sourceType,

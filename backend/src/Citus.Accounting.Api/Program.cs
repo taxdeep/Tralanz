@@ -4669,6 +4669,30 @@ accounting.MapGet(
         return Results.Ok(MapJournalEntryReview(review));
     });
 
+// Preview-only peek at the next journal display number for the active
+// company. Used by the New Journal Entry form so the user sees the number
+// the system will assign on save (and can override it inline). PEEK only —
+// no reservation here; the actual number is reserved at post time so the
+// preview is best-effort across concurrent operators.
+accounting.MapGet(
+    "/journal-entries/next-number",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        Engines.Numbering.JournalEntry.IJournalEntryNumberLookup lookup,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var displayNumber = await lookup.GetNextDisplayNumberAsync(
+            session.ActiveCompanyId,
+            cancellationToken);
+        return Results.Ok(new { displayNumber });
+    });
+
 accounting.MapGet(
     "/unity-search",
     async (

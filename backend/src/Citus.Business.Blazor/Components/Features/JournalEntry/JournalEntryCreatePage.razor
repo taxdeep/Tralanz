@@ -6,6 +6,7 @@
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject TaxCodeClient TaxCodeClient
+@inject JournalEntryReviewClient JournalEntryReviewClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -51,7 +52,21 @@
 <div class="flex flex-col gap-6">
     <section class="citus-panel">
         <h2 class="citus-panel__title">Header</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                @* Journal No. — pre-filled with the next system-assigned
+                   number on form load, but the operator can override inline.
+                   Backend honors the override if it doesn't collide; if the
+                   field is cleared, the post handler falls back to the
+                   numbering engine's reserve path. *@
+                <label class="citus-form-field">
+                    <span class="citus-form-field__label">Journal No.</span>
+                    <input type="text"
+                           class="citus-form-field__input"
+                           placeholder="@(_isLoadingJournalNumber ? "Loading…" : "Auto-assigned on save")"
+                           value="@_journalNumber"
+                           @oninput="@(e => _journalNumber = e.Value?.ToString() ?? string.Empty)"
+                           maxlength="32" />
+                </label>
                 <label class="citus-form-field">
                     <span class="citus-form-field__label">Date</span>
                     <input type="date"
@@ -87,8 +102,8 @@
                         </label>
                     }
                 </div>
-                <label class="citus-form-field md:col-span-3">
-                    <span class="citus-form-field__label">Description</span>
+                <label class="citus-form-field md:col-span-4">
+                    <span class="citus-form-field__label">Description <span class="text-fg-subtle text-xs">(optional)</span></span>
                     <input type="text"
                            class="citus-form-field__input"
                            placeholder="What is this journal recording?"
@@ -298,6 +313,8 @@
 
     private DateTime? _date = DateTime.Today;
     private string _description = string.Empty;
+    private string _journalNumber = string.Empty;
+    private bool _isLoadingJournalNumber;
     private string _currency = string.Empty;
     private decimal? _exchangeRate;
     private readonly List<JournalLineEditState> _lines = new();
@@ -317,12 +334,31 @@
             _lines.Add(new JournalLineEditState());
         }
 
-        // Load active tax codes that apply to sales (manual journals tend to
-        // adjust revenue; "sales" filter also surfaces "both"-scope codes).
+        // Two independent loads — start both, await in parallel. The number
+        // peek is best-effort: a transport failure leaves the field empty
+        // with the "Auto-assigned on save" placeholder, which is also a
+        // valid state (the post handler will reserve a number then).
+        _isLoadingJournalNumber = true;
         _isLoadingTaxCodes = true;
+        var numberTask = JournalEntryReviewClient.GetNextDisplayNumberAsync();
+        var taxCodesTask = TaxCodeClient.ListAsync(appliesTo: "sales");
+
         try
         {
-            var rows = await TaxCodeClient.ListAsync(appliesTo: "sales");
+            var nextNumber = await numberTask;
+            if (!string.IsNullOrWhiteSpace(nextNumber))
+            {
+                _journalNumber = nextNumber!;
+            }
+        }
+        finally
+        {
+            _isLoadingJournalNumber = false;
+        }
+
+        try
+        {
+            var rows = await taxCodesTask;
             _taxCodes = rows
                 .Where(r => r.IsActive)
                 .OrderBy(r => r.Code)
@@ -462,11 +498,9 @@
         _validationMessage = null;
         _lastResult = null;
 
-        if (string.IsNullOrWhiteSpace(_description))
-        {
-            _validationMessage = "Description is required.";
-            return;
-        }
+        // Description is intentionally optional — a balanced entry is the
+        // posting-engine's only hard requirement. Operators frequently file
+        // routine adjustments where the line memos already say enough.
 
         var meaningful = _lines.Where(l => !IsEmpty(l)).ToArray();
         if (meaningful.Length == 0)
@@ -496,6 +530,7 @@
             var draft = new ManualJournalDraft
             {
                 Date = DateOnly.FromDateTime((_date ?? DateTime.Today).Date),
+                DisplayNumber = _journalNumber.Trim(),
                 Description = _description.Trim(),
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
                 ExchangeRate = _exchangeRate,
@@ -525,7 +560,7 @@
         }
     }
 
-    private Task ResetAsync()
+    private async Task ResetAsync()
     {
         _lines.Clear();
         for (var i = 0; i < 4; i++)
@@ -538,7 +573,24 @@
         _exchangeRate = null;
         _validationMessage = null;
         _lastResult = null;
-        return Task.CompletedTask;
+
+        // Re-peek the next number so a follow-up entry on the same browser
+        // session shows the correct preview (the previous one is now used /
+        // burned and the sequence has likely advanced).
+        _journalNumber = string.Empty;
+        _isLoadingJournalNumber = true;
+        try
+        {
+            var nextNumber = await JournalEntryReviewClient.GetNextDisplayNumberAsync();
+            if (!string.IsNullOrWhiteSpace(nextNumber))
+            {
+                _journalNumber = nextNumber!;
+            }
+        }
+        finally
+        {
+            _isLoadingJournalNumber = false;
+        }
     }
 
     private static decimal ParseDecimal(string? raw)

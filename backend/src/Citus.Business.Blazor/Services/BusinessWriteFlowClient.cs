@@ -128,6 +128,15 @@ public sealed record WriteFlowResult(
 public sealed record ManualJournalDraft
 {
     public DateOnly Date { get; init; }
+    /// <summary>
+    /// Display number the user wants for this journal. Pre-filled from
+    /// <c>GET /accounting/journal-entries/next-number</c> on form load so
+    /// the operator sees what the system would assign. Editable —
+    /// the backend will honor the override if it doesn't collide with an
+    /// existing journal in the active company; if the user clears the field,
+    /// the backend falls back to <c>ReserveNextDisplayNumberAsync</c>.
+    /// </summary>
+    public string DisplayNumber { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public string TransactionCurrencyCode { get; init; } = string.Empty;
     public decimal? ExchangeRate { get; init; }
