@@ -57,7 +57,14 @@
                     @ChildContent
                 </div>
 
-                @if (FooterContent is not null)
+                @if (HideFooter)
+                {
+                    @* Drawer body owns commit semantics (e.g. inline
+                       per-row "Add" buttons in MultiCurrencyDrawer);
+                       suppress the footer entirely so it doesn't render
+                       a stray border-top with no controls. *@
+                }
+                else if (FooterContent is not null)
                 {
                     <footer class="citus-drawer__footer">
                         @FooterContent
@@ -114,6 +121,15 @@
     /// IsOpenChanged(false) after save.
     /// </summary>
     [Parameter] public RenderFragment? FooterContent { get; set; }
+
+    /// <summary>
+    /// Suppress the footer entirely. Use when the drawer's body owns
+    /// its own commit affordances (e.g. inline per-row "Add" buttons
+    /// in MultiCurrencyDrawer) and a global Save/Cancel pair would be
+    /// misleading. Wins over <see cref="FooterContent"/> when both are
+    /// set.
+    /// </summary>
+    [Parameter] public bool HideFooter { get; set; }
 
     [Parameter] public EventCallback OnSave { get; set; }
 

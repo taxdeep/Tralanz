@@ -6,123 +6,123 @@
     accounts that the seeder allocated. Removing currencies is intentionally
     parked (Coming soon button) until the engine knows how to retire FX
     open items safely.
+
+    Migrated from a hand-rolled `.citus-drawer` overlay onto the canonical
+    CitusDrawer atom so all drawers in the app share one positioning /
+    backdrop / ESC / discard story. Body keeps its inline "Add" affordance
+    so we pass HideFooter=true (no global Save makes sense here — currencies
+    are committed one at a time).
 *@
 
 @inject CompanyCurrencyClient CurrencyClient
 @inject CitusToastService Toast
 
-<div class="citus-drawer-backdrop @(IsOpen ? "is-open" : null)"
-     @onclick="OnBackdropClick"></div>
+<CitusDrawer @bind-IsOpen="_isOpen"
+             Title="Multi-currency"
+             Width="CitusDrawerWidth.Medium"
+             HideFooter="true"
+             OnCancel="HandleCancel">
+    <p class="text-fg-muted text-sm" style="margin: 0 0 var(--citus-space-4);">
+        Adding a currency seeds AR/AP control accounts for that currency.
+    </p>
 
-<aside class="citus-drawer citus-drawer--right @(IsOpen ? "is-open" : null)"
-       aria-hidden="@(IsOpen ? "false" : "true")">
-    <header class="citus-drawer__header">
-        <div>
-            <h2 class="citus-drawer__title">Multi-currency</h2>
-            <p class="citus-drawer__subtitle">
-                Adding a currency seeds AR/AP control accounts for that currency.
-            </p>
-        </div>
-        <button type="button"
-                class="citus-drawer__close"
-                aria-label="Close"
-                @onclick="CloseAsync">
-            <CitusIcon Name="IconName.X" Size="IconSize.Action" />
-        </button>
-    </header>
+    @if (_loading)
+    {
+        <p class="text-fg-muted text-sm">Loading currencies…</p>
+    }
+    else if (_profile is null)
+    {
+        <p class="text-danger text-sm">
+            Could not load currencies. Please try again.
+        </p>
+    }
+    else
+    {
+        <section class="flex flex-col gap-2 mb-4">
+            <h3 class="text-fg-muted text-xs font-semibold uppercase" style="letter-spacing: 0.04em; margin: 0;">
+                Base currency
+            </h3>
+            <div class="citus-currency-row">
+                <span class="citus-currency-row__code">@_profile.BaseCurrencyCode</span>
+                <span class="citus-currency-row__name">
+                    @BaseCurrencyName(_profile)
+                </span>
+                <CitusBadge Color="@("geekblue")">Base</CitusBadge>
+            </div>
+        </section>
 
-    <div class="citus-drawer__body">
-        @if (_loading)
-        {
-            <p class="citus-drawer__loading">Loading currencies…</p>
-        }
-        else if (_profile is null)
-        {
-            <p class="citus-drawer__error">
-                Could not load currencies. Please try again.
-            </p>
-        }
-        else
-        {
-            <section class="citus-drawer__section">
-                <h3 class="citus-drawer__section-title">Base currency</h3>
-                <div class="citus-currency-row">
-                    <span class="citus-currency-row__code">@_profile.BaseCurrencyCode</span>
-                    <span class="citus-currency-row__name">
-                        @BaseCurrencyName(_profile)
-                    </span>
-                    <CitusBadge Color="@("geekblue")">Base</CitusBadge>
-                </div>
-            </section>
-
-            <section class="citus-drawer__section">
-                <h3 class="citus-drawer__section-title">Enabled foreign currencies</h3>
-                @if (EnabledForeign(_profile).Count == 0)
-                {
-                    <p class="citus-drawer__empty">
-                        No additional currencies yet. Pick one below to enable AR/AP per currency.
-                    </p>
-                }
-                else
-                {
-                    <ul class="citus-currency-list">
-                        @foreach (var currency in EnabledForeign(_profile))
-                        {
-                            <li class="citus-currency-row">
-                                <span class="citus-currency-row__code">@currency.CurrencyCode</span>
-                                <span class="citus-currency-row__name">@currency.CurrencyName</span>
-                                <button type="button"
-                                        class="citus-currency-row__remove"
-                                        disabled
-                                        title="Removing currencies will be supported once balance checks land.">
-                                    Remove
-                                </button>
-                            </li>
-                        }
-                    </ul>
-                }
-            </section>
-
-            <section class="citus-drawer__section">
-                <h3 class="citus-drawer__section-title">Add a currency</h3>
-                @{
-                    var available = AvailableForAdd(_profile);
-                }
-                @if (available.Count == 0)
-                {
-                    <p class="citus-drawer__empty">
-                        All catalog currencies are already enabled.
-                    </p>
-                }
-                else
-                {
-                    <div class="citus-drawer__add">
-                        <RadzenDropDown TValue="string"
-                                        Data="@available"
-                                        @bind-Value="_selectedCurrencyCode"
-                                        TextProperty="DisplayText"
-                                        ValueProperty="CurrencyCode"
-                                        Placeholder="Select a currency…"
-                                        Style="flex: 1;" />
-                        <RadzenButton Text="Add"
-                                      Disabled="@(_saving || string.IsNullOrEmpty(_selectedCurrencyCode))"
-                                      Click="AddAsync" />
-                    </div>
-                    @if (!string.IsNullOrEmpty(_lastError))
+        <section class="flex flex-col gap-2 mb-4">
+            <h3 class="text-fg-muted text-xs font-semibold uppercase" style="letter-spacing: 0.04em; margin: 0;">
+                Enabled foreign currencies
+            </h3>
+            @if (EnabledForeign(_profile).Count == 0)
+            {
+                <p class="text-fg-muted text-sm" style="margin: 0;">
+                    No additional currencies yet. Pick one below to enable AR/AP per currency.
+                </p>
+            }
+            else
+            {
+                <ul class="citus-currency-list">
+                    @foreach (var currency in EnabledForeign(_profile))
                     {
-                        <p class="citus-drawer__error">@_lastError</p>
+                        <li class="citus-currency-row">
+                            <span class="citus-currency-row__code">@currency.CurrencyCode</span>
+                            <span class="citus-currency-row__name">@currency.CurrencyName</span>
+                            <button type="button"
+                                    class="citus-currency-row__remove"
+                                    disabled
+                                    title="Removing currencies will be supported once balance checks land.">
+                                Remove
+                            </button>
+                        </li>
                     }
+                </ul>
+            }
+        </section>
+
+        <section class="flex flex-col gap-2">
+            <h3 class="text-fg-muted text-xs font-semibold uppercase" style="letter-spacing: 0.04em; margin: 0;">
+                Add a currency
+            </h3>
+            @{
+                var available = AvailableForAdd(_profile);
+            }
+            @if (available.Count == 0)
+            {
+                <p class="text-fg-muted text-sm" style="margin: 0;">
+                    All catalog currencies are already enabled.
+                </p>
+            }
+            else
+            {
+                <div class="flex items-center gap-2">
+                    <RadzenDropDown TValue="string"
+                                    Data="@available"
+                                    @bind-Value="_selectedCurrencyCode"
+                                    TextProperty="DisplayText"
+                                    ValueProperty="CurrencyCode"
+                                    Placeholder="Select a currency…"
+                                    Style="flex: 1;" />
+                    <RadzenButton Text="Add"
+                                  Disabled="@(_saving || string.IsNullOrEmpty(_selectedCurrencyCode))"
+                                  Click="AddAsync" />
+                </div>
+                @if (!string.IsNullOrEmpty(_lastError))
+                {
+                    <p class="text-danger text-sm" style="margin: 0;">@_lastError</p>
                 }
-            </section>
-        }
-    </div>
-</aside>
+            }
+        </section>
+    }
+</CitusDrawer>
 
 @code {
     [Parameter] public EventCallback<CompanyCurrencyProfileSummary> ProfileChanged { get; set; }
 
-    public bool IsOpen { get; private set; }
+    public bool IsOpen => _isOpen;
 
+    private bool _isOpen;
     private CompanyCurrencyProfileSummary? _profile;
     private bool _loading;
     private bool _saving;
@@ -131,7 +131,7 @@
 
     public async Task OpenAsync()
     {
-        IsOpen = true;
+        _isOpen = true;
         _lastError = null;
         StateHasChanged();
         await LoadAsync();
@@ -139,12 +139,12 @@
 
     public Task CloseAsync()
     {
-        IsOpen = false;
+        _isOpen = false;
         StateHasChanged();
         return Task.CompletedTask;
     }
 
-    private Task OnBackdropClick() => CloseAsync();
+    private Task HandleCancel() => CloseAsync();
 
     private async Task LoadAsync()
     {

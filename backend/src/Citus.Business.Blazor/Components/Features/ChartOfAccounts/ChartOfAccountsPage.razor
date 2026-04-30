@@ -273,7 +273,7 @@
             <span class="citus-form-field__label">Root type</span>
             <select class="citus-form-field__input"
                     value="@_formRootType"
-                    @onchange="@(e => _formRootType = e.Value?.ToString() ?? "asset")"
+                    @onchange="OnRootTypeChanged"
                     disabled="@_isMutating">
                 @foreach (var type in RootTypeOptions)
                 {
@@ -284,13 +284,25 @@
 
         <label class="citus-form-field">
             <span class="citus-form-field__label">Detail type (optional)</span>
-            <input type="text"
-                   class="citus-form-field__input"
-                   value="@_formDetailType"
-                   @oninput="@(e => _formDetailType = e.Value?.ToString() ?? string.Empty)"
-                   maxlength="80"
-                   placeholder="bank, receivable, equipment, …"
-                   disabled="@_isMutating" />
+            <select class="citus-form-field__input"
+                    value="@_formDetailType"
+                    @onchange="@(e => _formDetailType = e.Value?.ToString() ?? string.Empty)"
+                    disabled="@_isMutating">
+                <option value="">—</option>
+                @foreach (var detail in DetailTypeOptionsFor(_formRootType))
+                {
+                    <option value="@detail.Value">@detail.Label</option>
+                }
+                @* Backward compat: when editing a row whose stored detail type
+                   isn't in the canonical list (legacy free-text values), keep
+                   it visible so the user doesn't silently lose it on save. *@
+                @if (!string.IsNullOrWhiteSpace(_formDetailType)
+                     && DetailTypeOptionsFor(_formRootType).All(d =>
+                         !string.Equals(d.Value, _formDetailType, StringComparison.OrdinalIgnoreCase)))
+                {
+                    <option value="@_formDetailType">@_formDetailType (legacy)</option>
+                }
+            </select>
         </label>
 
         <label class="citus-form-field">
@@ -343,6 +355,105 @@
         ("cost_of_sales", "Cost of sales"),
         ("expense", "Expense"),
     };
+
+    /// <summary>
+    /// System-defined detail-type catalog, grouped by root type. Values
+    /// mirror the strings used by <c>StaticCoaTemplateRegistry</c>'s seed
+    /// templates (so a custom-created account picks up the same posting /
+    /// reporting routing as a templated one with the same detail type).
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<(string Value, string Label)>> DetailTypeCatalog =
+        new Dictionary<string, IReadOnlyList<(string Value, string Label)>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["asset"] = new (string, string)[]
+            {
+                ("cash", "Cash"),
+                ("bank", "Bank"),
+                ("accounts_receivable", "Accounts receivable"),
+                ("undeposited_funds", "Undeposited funds"),
+                ("short_term_investments", "Short-term investments"),
+                ("employee_advances", "Employee advances"),
+                ("prepaids", "Prepaids"),
+                ("inventory", "Inventory"),
+                ("fixed_asset", "Fixed asset"),
+                ("contra_asset", "Contra asset"),
+                ("other_asset", "Other asset"),
+            },
+            ["liability"] = new (string, string)[]
+            {
+                ("accounts_payable", "Accounts payable"),
+                ("credit_card", "Credit card"),
+                ("shareholder_loan", "Shareholder loan"),
+                ("customer_deposits", "Customer deposits"),
+                ("tax", "Tax"),
+                ("payroll_liability", "Payroll liability"),
+                ("long_term_debt", "Long-term debt"),
+            },
+            ["equity"] = new (string, string)[]
+            {
+                ("opening_balance", "Opening balance"),
+                ("capital_stock", "Capital stock"),
+                ("dividends", "Dividends"),
+                ("owners_draw", "Owner's draw"),
+                ("retained_earnings", "Retained earnings"),
+            },
+            ["revenue"] = new (string, string)[]
+            {
+                ("sales", "Sales"),
+                ("service_revenue", "Service revenue"),
+                ("uncategorized", "Uncategorized"),
+            },
+            ["cost_of_sales"] = new (string, string)[]
+            {
+                ("cogs", "COGS"),
+                ("freight", "Freight"),
+            },
+            ["expense"] = new (string, string)[]
+            {
+                ("advertising", "Advertising"),
+                ("auto", "Auto"),
+                ("bad_debt", "Bad debt"),
+                ("bank_fees", "Bank fees"),
+                ("depreciation", "Depreciation"),
+                ("insurance", "Insurance"),
+                ("interest", "Interest"),
+                ("meals", "Meals & entertainment"),
+                ("office", "Office"),
+                ("payroll", "Payroll"),
+                ("printing", "Printing"),
+                ("professional_fees", "Professional fees"),
+                ("rent", "Rent"),
+                ("repairs", "Repairs"),
+                ("taxes_licenses", "Taxes & licenses"),
+                ("technology", "Technology"),
+                ("telephone", "Telephone"),
+                ("training", "Training"),
+                ("travel", "Travel"),
+                ("utilities", "Utilities"),
+                ("uncategorized", "Uncategorized"),
+                ("asset_disposal", "Asset disposal"),
+                ("other_expense", "Other expense"),
+                ("income_tax", "Income tax"),
+                ("fx", "FX gain / loss"),
+            },
+        };
+
+    private static IReadOnlyList<(string Value, string Label)> DetailTypeOptionsFor(string rootType) =>
+        DetailTypeCatalog.TryGetValue(rootType, out var options)
+            ? options
+            : Array.Empty<(string, string)>();
+
+    /// <summary>
+    /// Switching root type usually invalidates the previously-selected
+    /// detail type (an "asset → cash" detail makes no sense once the user
+    /// flips the row to "expense"). Reset it so the user is forced to pick
+    /// from the new catalog instead of persisting a mismatched value.
+    /// </summary>
+    private void OnRootTypeChanged(ChangeEventArgs args)
+    {
+        _formRootType = args.Value?.ToString() ?? "asset";
+        _formDetailType = string.Empty;
+    }
 
     private bool _isLoading = true;
     private bool _isMutating;
