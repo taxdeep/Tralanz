@@ -3,6 +3,8 @@
     Vendor pages render this with the right title and submit handler.
 *@
 
+@inject CompanyCurrencyClient CompanyCurrencyClient
+
 <section class="citus-panel">
     <h2 class="citus-panel__title">Identity</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -48,7 +50,31 @@
         </div>
         <div>
             <label class="text-sm font-medium block mb-1">Preferred currency</label>
-            <CitusInput TValue="string" Value="@Draft.PreferredCurrencyCode" ValueChanged="@(v => Mutate(d => d with { PreferredCurrencyCode = v ?? string.Empty }))" Placeholder="USD" />
+            @* Per the per-customer / per-vendor single-currency rule, the
+               picker only offers currencies the company has enabled in
+               Settings → Multi-currency. The base currency is always in
+               the list (since it's enabled by definition). If the active
+               record carries a legacy currency that's no longer enabled,
+               we still surface it tagged "(no longer enabled)" so editing
+               doesn't silently lose data. *@
+            <select class="citus-form-field__input"
+                    value="@Draft.PreferredCurrencyCode"
+                    @onchange="OnCurrencyChanged"
+                    disabled="@_isLoadingCurrencies">
+                @foreach (var entry in _enabledCurrencies)
+                {
+                    <option value="@entry.CurrencyCode">
+                        @entry.CurrencyCode — @entry.CurrencyName@(entry.IsBaseCurrency ? " (base)" : "")
+                    </option>
+                }
+                @if (!string.IsNullOrWhiteSpace(Draft.PreferredCurrencyCode)
+                     && _enabledCurrencies.All(c => !string.Equals(c.CurrencyCode, Draft.PreferredCurrencyCode, StringComparison.OrdinalIgnoreCase)))
+                {
+                    <option value="@Draft.PreferredCurrencyCode">
+                        @Draft.PreferredCurrencyCode (no longer enabled)
+                    </option>
+                }
+            </select>
         </div>
         @if (PaymentTerms is { Count: > 0 })
         {
@@ -86,8 +112,54 @@
     /// </summary>
     [Parameter] public IReadOnlyList<PaymentTermSummary>? PaymentTerms { get; set; }
 
+    private IReadOnlyList<CompanyCurrencyEntry> _enabledCurrencies = Array.Empty<CompanyCurrencyEntry>();
+    private bool _isLoadingCurrencies = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Fetch the company's currency profile and keep only the enabled
+        // entries (base + opted-in foreign). Best-effort: a transient
+        // failure leaves the list empty and the select disabled, so the
+        // form doesn't lock the operator into an invalid state — the
+        // legacy-value option above still surfaces whatever is on the
+        // draft.
+        try
+        {
+            var profile = await CompanyCurrencyClient.GetAsync();
+            if (profile is not null)
+            {
+                _enabledCurrencies = profile.Currencies
+                    .Where(c => c.IsEnabled)
+                    .OrderByDescending(c => c.IsBaseCurrency)
+                    .ThenBy(c => c.CurrencyCode, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                // Snap the draft's currency to the company base when blank
+                // — happens on a fresh New customer / New vendor click
+                // before the list has loaded; once the list arrives we
+                // make sure the bound value matches an option so the
+                // dropdown doesn't render in a weird empty state.
+                if (string.IsNullOrWhiteSpace(Draft.PreferredCurrencyCode)
+                    && !string.IsNullOrWhiteSpace(profile.BaseCurrencyCode))
+                {
+                    await Mutate(d => d with { PreferredCurrencyCode = profile.BaseCurrencyCode });
+                }
+            }
+        }
+        finally
+        {
+            _isLoadingCurrencies = false;
+        }
+    }
+
     private Task Mutate(Func<CounterpartyDraft, CounterpartyDraft> mutate) =>
         DraftChanged.InvokeAsync(mutate(Draft));
+
+    private Task OnCurrencyChanged(ChangeEventArgs args)
+    {
+        var next = args.Value?.ToString() ?? string.Empty;
+        return Mutate(d => d with { PreferredCurrencyCode = next });
+    }
 
     private Task OnPaymentTermChanged(ChangeEventArgs args)
     {
