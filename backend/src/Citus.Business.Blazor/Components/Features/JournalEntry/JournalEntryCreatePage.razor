@@ -32,6 +32,21 @@
                      Class="mb-4" />
 }
 
+@if (!string.IsNullOrWhiteSpace(_prefilledFromDisplayNumber))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <strong>Pre-filled from @_prefilledFromDisplayNumber.</strong>
+            <div class="text-fg-muted text-sm mt-1">
+                The original entry has been voided (a compensating entry was auto-posted).
+                Adjust the lines below and submit to record the corrected version.
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+}
+
 @if (!string.IsNullOrWhiteSpace(_validationMessage))
 {
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validationMessage" ShowIcon="true" Class="mb-4" />
@@ -318,6 +333,15 @@
         return $"{tax.Code} ({rate}%) — {tax.Name}";
     }
 
+    /// <summary>
+    /// Optional ?from={journalEntryId} query param. When the operator clicks
+    /// "Edit" on the JE review page, that page voids the entry and routes
+    /// here with this parameter set so we can pre-fill the form with the
+    /// voided entry's lines instead of forcing a re-type.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "from")]
+    public Guid? FromJournalEntryId { get; set; }
+
     private DateTime? _date = DateTime.Today;
     private string _description = string.Empty;
     private string _journalNumber = string.Empty;
@@ -328,6 +352,9 @@
     private bool _isSubmitting;
     private string? _validationMessage;
     private WriteFlowResult? _lastResult;
+    /// <summary>Display number of the source JE when this form was opened
+    /// via Edit ("from=..." in the URL). Drives the info banner at the top.</summary>
+    private string? _prefilledFromDisplayNumber;
 
     private decimal _totalDebit => _lines.Sum(l => l.Debit);
     private decimal _totalCredit => _lines.Sum(l => l.Credit);
@@ -336,7 +363,39 @@
     protected override async Task OnInitializedAsync()
     {
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
-        for (var i = 0; i < 4; i++)
+
+        // When opened via the JE review page's "Edit" action the URL carries
+        // ?from={journalEntryId}. Fetch that entry up-front and pre-fill the
+        // form with its lines so the operator only edits the cells that
+        // actually need correcting. Date stays today (we're recording a
+        // correction now, not back-dating).
+        if (FromJournalEntryId is { } fromId && fromId != Guid.Empty)
+        {
+            var source = await JournalEntryReviewClient.GetAsync(ShellState.ActiveCompany.Id, fromId);
+            if (source is not null && source.Lines.Count > 0)
+            {
+                _prefilledFromDisplayNumber = source.DisplayNumber;
+                _currency = source.TransactionCurrencyCode;
+                if (!string.Equals(source.TransactionCurrencyCode, source.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    _exchangeRate = source.ExchangeRate;
+                }
+                foreach (var line in source.Lines.OrderBy(l => l.LineNumber))
+                {
+                    _lines.Add(new JournalLineEditState(
+                        AccountCode: line.AccountCode,
+                        AccountDisplay: $"{line.AccountCode} {line.AccountName}",
+                        AccountId: line.AccountId,
+                        Description: line.Description,
+                        Debit: line.TxDebit,
+                        Credit: line.TxCredit));
+                }
+            }
+        }
+
+        // Pad up to 4 visible rows so the grid feels the same regardless of
+        // whether the form opened blank or pre-filled.
+        while (_lines.Count < 4)
         {
             _lines.Add(new JournalLineEditState());
         }

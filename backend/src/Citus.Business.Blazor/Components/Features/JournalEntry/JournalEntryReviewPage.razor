@@ -407,7 +407,10 @@
 
             if (navigateToCreate)
             {
-                NavigationManager.NavigateTo("journal-entry/new");
+                // Pass the just-voided JE id along so the create form can
+                // fetch its lines and pre-fill — saves the operator from
+                // retyping a multi-row entry just to fix a single amount.
+                NavigationManager.NavigateTo($"journal-entry/new?from={JournalEntryId:D}");
             }
             else
             {

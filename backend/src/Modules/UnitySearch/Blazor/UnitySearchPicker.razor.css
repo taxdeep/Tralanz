@@ -31,6 +31,13 @@
     border-radius: 10px;
     background: var(--citus-color-bg-elevated);
     color: var(--citus-color-fg);
+    /* Same belt-and-suspenders trick the JE cell input uses: Chromium /
+       Edge paint <input type="search"> text via -webkit-text-fill-color,
+       not `color`. Without pinning it, the typed query stays invisible
+       (matches a system-derived colour close to the input bg). !important
+       protects against any later cascade pile-up. */
+    -webkit-text-fill-color: var(--citus-color-fg) !important;
+    caret-color: var(--citus-color-fg);
     font-size: 0.92rem;
     outline: none;
     transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
