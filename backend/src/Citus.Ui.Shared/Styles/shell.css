@@ -2153,8 +2153,16 @@ html[data-theme="dark"] .citus-shell__sider {
     border-radius: var(--citus-radius-sm);
     background: transparent;
     color: var(--citus-color-fg);
+    /* Webkit / Chromium / Edge paint <input> text via -webkit-text-fill-color,
+       not `color`. Without pinning it, the typed value resolves to the browser
+       default (often a system colour that ends up matching our muted bg in
+       both themes — invisible to the user). caret-color is set for the same
+       reason. */
+    -webkit-text-fill-color: var(--citus-color-fg);
+    caret-color: var(--citus-color-fg);
     font: inherit;
     font-size: var(--citus-text-sm);
+    line-height: 1.4;
     outline: none;
 }
 
