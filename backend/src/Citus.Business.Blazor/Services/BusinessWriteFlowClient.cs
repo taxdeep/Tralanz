@@ -109,8 +109,107 @@ public sealed class BusinessWriteFlowClient
     public Task<WriteFlowResult> PostBillAsync(BillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostBillAsync), draft);
 
-    public Task<WriteFlowResult> PostReceivePaymentAsync(ReceivePaymentDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostReceivePaymentAsync), draft);
+    public async Task<WriteFlowResult> PostReceivePaymentAsync(ReceivePaymentDraft draft, CancellationToken cancellationToken = default)
+    {
+        // Two-step server flow:
+        //   1. POST /receive-payments/prepare  → saves the draft + reserves AR
+        //      open-item amounts, returns a document id.
+        //   2. POST /receive-payments/{id}/post → runs the posting engine,
+        //      writes the JE rows, settles the open items.
+        // We collapse them into one client call so the form doesn't have to
+        // know about the document id round-trip.
+        var preparePayload = new
+        {
+            companyId = draft.CompanyId,
+            userId = draft.UserId,
+            customerId = draft.CustomerId ?? Guid.Empty,
+            bankAccountId = draft.BankAccountId,
+            paymentDate = draft.Date,
+            acceptedFxSnapshotId = (Guid?)null,
+            memo = draft.Memo,
+            lines = draft.Applications.Select(a => new
+            {
+                targetOpenItemId = a.OpenItemId,
+                appliedAmountTx = a.AppliedAmount,
+            }).ToArray(),
+        };
+
+        try
+        {
+            using var prepareResponse = await _httpClient.PostAsJsonAsync(
+                "accounting/receive-payments/prepare",
+                preparePayload,
+                cancellationToken);
+
+            if (!prepareResponse.IsSuccessStatusCode)
+            {
+                var error = await prepareResponse.Content.ReadFromJsonAsync<ReceivePaymentErrorBody>(cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error?.Message ?? $"Could not prepare the payment (HTTP {(int)prepareResponse.StatusCode}).",
+                    Operation: nameof(PostReceivePaymentAsync),
+                    DraftEcho: draft);
+            }
+
+            var prepared = await prepareResponse.Content.ReadFromJsonAsync<ReceivePaymentPreparedBody>(cancellationToken);
+            if (prepared is null || prepared.DocumentId == Guid.Empty)
+            {
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: "Server prepared the payment but did not return a document id.",
+                    Operation: nameof(PostReceivePaymentAsync),
+                    DraftEcho: draft);
+            }
+
+            var postPayload = new
+            {
+                companyId = draft.CompanyId,
+                userId = draft.UserId,
+                acceptedFxSnapshotId = (Guid?)null,
+                idempotencyKey = (string?)null,
+            };
+
+            using var postResponse = await _httpClient.PostAsJsonAsync(
+                $"accounting/receive-payments/{prepared.DocumentId:D}/post",
+                postPayload,
+                cancellationToken);
+
+            if (!postResponse.IsSuccessStatusCode)
+            {
+                var error = await postResponse.Content.ReadFromJsonAsync<ReceivePaymentErrorBody>(cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error?.Message ?? $"Prepared the payment but posting failed (HTTP {(int)postResponse.StatusCode}). Document id: {prepared.DocumentId:D}.",
+                    Operation: nameof(PostReceivePaymentAsync),
+                    DraftEcho: draft);
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Payment {prepared.DisplayNumber} posted.",
+                Operation: nameof(PostReceivePaymentAsync),
+                DraftEcho: prepared);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Receive payment prepare/post call failed.");
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to post the payment. Please retry.",
+                Operation: nameof(PostReceivePaymentAsync),
+                DraftEcho: draft);
+        }
+    }
+
+    private sealed record ReceivePaymentPreparedBody(
+        Guid DocumentId,
+        string EntityNumber,
+        string DisplayNumber,
+        int PreparedLineCount,
+        decimal TotalAmount,
+        string Status);
+
+    private sealed record ReceivePaymentErrorBody(string? Message);
 
     public Task<WriteFlowResult> PostPayBillAsync(PayBillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostPayBillAsync), draft);
@@ -259,6 +358,19 @@ public sealed record BillDraft
 
 public sealed record ReceivePaymentDraft
 {
+    /// <summary>Active company id. The page reads this from
+    /// <c>BusinessShellState.ActiveCompany.Id</c>; the API endpoint
+    /// expects it in the prepare-draft request body.</summary>
+    public Guid CompanyId { get; init; }
+
+    /// <summary>The acting user id from the same source.</summary>
+    public Guid UserId { get; init; }
+
+    /// <summary>Asset account that receives the cash. Picked from the
+    /// page's "Deposit to (Bank)" dropdown, filtered by detail_type
+    /// ∈ {bank, cash, credit_card}.</summary>
+    public Guid BankAccountId { get; init; }
+
     public DateOnly Date { get; init; }
     public Guid? CustomerId { get; init; }
     public decimal Amount { get; init; }

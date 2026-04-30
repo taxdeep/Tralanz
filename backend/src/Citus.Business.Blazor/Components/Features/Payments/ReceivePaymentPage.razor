@@ -201,9 +201,9 @@
         <header class="citus-panel__header">
             <h2 class="citus-panel__title">Post</h2>
             <span class="text-fg-muted text-sm">
-                Posting closes the AR open items by the applied amount. Any Extra → New Deposit
-                gets parked as a customer credit (Commit B will wire that side; today the form
-                still routes through the existing stub for shape verification).
+                Posting prepares + posts the receive-payment document and settles the
+                ticked AR open items by the applied amount. Overpayment as Customer Deposit
+                is pending in the next release — for now keep Total to Bank ≤ applied total.
             </span>
         </header>
         <div class="flex items-center justify-end gap-3">
@@ -488,14 +488,29 @@
         var ticked = _items.Where(r => r.IsTicked && r.Payment > 0m).ToArray();
         if (ticked.Length == 0) { _validation = "Tick at least one invoice with a payment amount."; return; }
 
+        // Prepare endpoint validates that sum(lines) == receive-payment total
+        // — overpayment isn't accepted by the existing pipeline. Until a
+        // Customer Deposit document type ships (Commit C), block submit when
+        // Extra > 0 and tell the user how to proceed. The Apply table still
+        // shows the breakdown so they can either lower Total to Bank or
+        // apply more invoices to absorb the cash.
+        if (_isCashDriven && _extraNewDeposit > 0m)
+        {
+            _validation =
+                $"Overpayment of {FormatAmount(_extraNewDeposit)} {_currency.ToUpperInvariant()} would create a Customer Deposit, " +
+                "which is pending in the next release. For now, lower Total to Bank to match the applied total, " +
+                "or tick additional invoices to absorb the cash.";
+            return;
+        }
+
         _isSubmitting = true;
         try
         {
-            // Submit still routes through the existing stub for v1. Commit B
-            // will swap this for a /receive-payments/prepare → /post chain
-            // and have the backend auto-create a Deposit when Extra > 0.
             var draft = new ReceivePaymentDraft
             {
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
+                BankAccountId = _bankAccountId,
                 Date = DateOnly.FromDateTime((_date ?? DateTime.Today).Date),
                 CustomerId = _customerId,
                 Amount = _totalToBank,
@@ -511,7 +526,7 @@
             _lastResult = await WriteFlow.PostReceivePaymentAsync(draft);
             if (_lastResult.Succeeded)
             {
-                await Message.SuccessAsync("Payment posted.");
+                await Message.SuccessAsync(_lastResult.Message);
                 NavigationManager.NavigateTo("dashboard");
             }
             else
