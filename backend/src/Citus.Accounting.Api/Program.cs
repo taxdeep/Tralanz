@@ -119,6 +119,16 @@ builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresRece
 builder.Services.AddSingleton<JournalEntryNumberLookup, PostgreSqlJournalEntryNumberLookup>();
 builder.Services.AddSingleton<GlIJournalEntryLifecycleStore, PostgreSqlJournalEntryLifecycleStore>();
 builder.Services.AddSingleton<GlIJournalEntryLifecycleWorkflow, GlJournalEntryLifecycleWorkflow>();
+// Manual-journal save + post wiring. The Modules.GL.JournalEntry workflow
+// orchestrates draft persistence, FX snapshot resolution, and the PostingStore
+// hand-off in one call; the API endpoint POST /accounting/manual-journals/save-and-post
+// is the single consumer today.
+builder.Services.AddSingleton<Engines.FX.FxRateLookup.IFxRateStore, Infrastructure.PostgreSQL.FX.PostgreSqlFxRateStore>();
+builder.Services.AddSingleton<Engines.FX.FxRateLookup.IFxRateSelectionService, Engines.FX.FxRateLookup.FxRateSelectionService>();
+builder.Services.AddSingleton<Modules.GL.JournalEntry.IJournalEntryAccountCatalog, Infrastructure.PostgreSQL.GL.PostgreSqlJournalEntryAccountCatalog>();
+builder.Services.AddSingleton<Modules.GL.JournalEntry.IJournalEntryDraftStore, Infrastructure.PostgreSQL.GL.PostgreSqlJournalEntryDraftStore>();
+builder.Services.AddSingleton<Modules.GL.JournalEntry.IJournalEntryPostingStore, Infrastructure.PostgreSQL.GL.PostgreSqlJournalEntryPostingStore>();
+builder.Services.AddSingleton<Modules.GL.JournalEntry.IJournalEntryWorkflow, Modules.GL.JournalEntry.JournalEntryWorkflow>();
 builder.Services.AddScoped<IFxSnapshotRepository, PostgresFxSnapshotRepository>();
 builder.Services.AddScoped<ICompanyBookPolicyStore, PostgreSqlCompanyBookPolicyStore>();
 builder.Services.AddScoped<ICompanyBookPolicyWorkflow, CompanyBookPolicyWorkflow>();
@@ -7456,6 +7466,134 @@ accounting.MapPost(
         }
     });
 
+// Single-shot save + post for the New Journal Entry form. Builds a
+// JournalEntryDraft from the wire payload, looks up each line's account
+// to verify it exists in the company / allows manual posting, then hands
+// off to JournalEntryWorkflow.PostDraftAsync which (a) saves the draft,
+// (b) resolves an FX snapshot when the entry is foreign-currency, and
+// (c) posts via the PostingStore. Atomic: a failure at any step rolls
+// back the whole submit.
+//
+// Note: the displayNumber the form previews is informational only —
+// the posting store always reserves a fresh number from the sequence
+// at post time. Honoring user overrides would require extending the
+// PostingStore signature; deferred until there's a real demand for it.
+accounting.MapPost(
+    "/manual-journals/save-and-post",
+    async (
+        ManualJournalSaveAndPostHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountStore accountStore,
+        Modules.GL.JournalEntry.IJournalEntryWorkflow workflow,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty || session.UserId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (request.Lines is null || request.Lines.Count == 0)
+        {
+            return Results.BadRequest(new { message = "At least one journal line is required." });
+        }
+
+        var companyId = session.ActiveCompanyId;
+        var baseCurrencyCode = string.IsNullOrWhiteSpace(request.BaseCurrencyCode)
+            ? request.TransactionCurrencyCode
+            : request.BaseCurrencyCode;
+
+        var draft = new Modules.GL.JournalEntry.JournalEntryDraft
+        {
+            CompanyId = companyId,
+            JournalDate = request.Date,
+            CurrencyCode = request.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+            BaseCurrencyCode = baseCurrencyCode.Trim().ToUpperInvariant(),
+            Memo = request.Description ?? string.Empty,
+        };
+
+        var isForeignCurrency = !string.Equals(draft.CurrencyCode, draft.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase);
+        if (isForeignCurrency)
+        {
+            if (request.ExchangeRate is not { } rate || rate <= 0m)
+            {
+                return Results.BadRequest(new { message = "An exchange rate is required for foreign-currency journal entries." });
+            }
+            draft.FxRate = rate;
+            draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Manual;
+            // FxEffectiveDate / FxSnapshotId stay default — the workflow's
+            // EnsureGovernedFxSnapshotAsync persists a manual snapshot when
+            // semantics are Manual without an existing snapshot.
+        }
+        else
+        {
+            draft.FxRate = 1m;
+            draft.FxSourceSemantics = SharedKernel.FX.FxSourceSemantics.Identity;
+        }
+
+        // Resolve each line's account once. The frontend AccountPicker
+        // already filters to is_active + allow_manual_posting, but the
+        // backend re-verifies so a tampered request can't sneak past.
+        var lineNumber = 0;
+        foreach (var lineRequest in request.Lines)
+        {
+            lineNumber++;
+            if (lineRequest.AccountId == Guid.Empty)
+            {
+                return Results.BadRequest(new { message = $"Line {lineNumber} is missing an account." });
+            }
+
+            var account = await accountStore.GetByIdAsync(companyId, lineRequest.AccountId, cancellationToken);
+            if (account is null)
+            {
+                return Results.BadRequest(new { message = $"Line {lineNumber} references an account that does not exist in the active company." });
+            }
+            if (!account.IsActive || !account.AllowManualPosting)
+            {
+                return Results.BadRequest(new { message = $"Line {lineNumber} references an account that is inactive or not allowed for manual posting." });
+            }
+
+            draft.Lines.Add(new Modules.GL.JournalEntry.JournalEntryDraftLine
+            {
+                LineNumber = lineNumber,
+                Account = new Modules.GL.JournalEntry.JournalEntryAccountOption
+                {
+                    AccountId = account.Id,
+                    Code = account.Code,
+                    Name = account.Name,
+                    RootType = account.RootType,
+                    DetailType = account.DetailType ?? string.Empty,
+                    TypeLabel = account.RootType,
+                    CurrencyCode = account.CurrencyCode ?? draft.BaseCurrencyCode,
+                    AllowManualPosting = account.AllowManualPosting,
+                },
+                DebitAmount = lineRequest.Debit > 0m ? lineRequest.Debit : null,
+                CreditAmount = lineRequest.Credit > 0m ? lineRequest.Credit : null,
+                Description = lineRequest.Description ?? string.Empty,
+            });
+        }
+
+        try
+        {
+            var result = await workflow.PostDraftAsync(draft, session.UserId, cancellationToken);
+            return Results.Ok(new
+            {
+                documentId = result.DocumentId,
+                documentNumber = result.DocumentNumber,
+                journalEntryId = result.JournalEntryId,
+                journalDisplayNumber = result.JournalDisplayNumber,
+            });
+        }
+        catch (Modules.GL.JournalEntry.JournalEntryWorkflowException ex)
+        {
+            return Results.BadRequest(new { errorCode = ex.ErrorCode, message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
+    });
+
 accounting.MapGet(
     "/invoices/drafts/{documentId:guid}",
     async (Guid documentId, [AsParameters] InvoiceLookupQuery query, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
@@ -11198,4 +11336,24 @@ internal sealed record class UnitySearchClickHttpRequest
     public string EntityType { get; init; } = string.Empty;
 
     public Guid SourceId { get; init; }
+}
+
+internal sealed record class ManualJournalSaveAndPostHttpRequest
+{
+    public DateOnly Date { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string? BaseCurrencyCode { get; init; }
+    public decimal? ExchangeRate { get; init; }
+    public string? Description { get; init; }
+    public string? DisplayNumber { get; init; }
+    public IReadOnlyList<ManualJournalSaveAndPostLineHttpRequest> Lines { get; init; } =
+        Array.Empty<ManualJournalSaveAndPostLineHttpRequest>();
+}
+
+internal sealed record class ManualJournalSaveAndPostLineHttpRequest
+{
+    public Guid AccountId { get; init; }
+    public string? Description { get; init; }
+    public decimal Debit { get; init; }
+    public decimal Credit { get; init; }
 }

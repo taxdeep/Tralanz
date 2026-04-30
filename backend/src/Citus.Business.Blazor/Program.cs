@@ -39,7 +39,17 @@ if (!string.IsNullOrWhiteSpace(businessDbConnectionString))
     builder.Services.AddSingleton<BusinessNumberingClient>();
 }
 
-builder.Services.AddScoped<BusinessWriteFlowClient>();
+// BusinessWriteFlowClient now talks to /accounting/manual-journals/save-and-post
+// directly, so it gets a typed HttpClient with the same base URL + business
+// session header handler used by every other accounting client. Keeping the
+// scoped lifetime — it caches no per-request state.
+builder.Services.AddHttpClient<BusinessWriteFlowClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<BusinessAuthenticationClient>(
     (serviceProvider, client) =>
     {

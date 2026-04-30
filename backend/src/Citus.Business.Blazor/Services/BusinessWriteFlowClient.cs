@@ -1,3 +1,7 @@
+using System.Net.Http;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Logging;
+
 namespace Citus.Business.Blazor.Services;
 
 /// <summary>
@@ -23,15 +27,81 @@ public sealed class BusinessWriteFlowClient
 
     private readonly CustomerClient _customers;
     private readonly VendorClient _vendors;
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<BusinessWriteFlowClient> _logger;
 
-    public BusinessWriteFlowClient(CustomerClient customers, VendorClient vendors)
+    public BusinessWriteFlowClient(
+        CustomerClient customers,
+        VendorClient vendors,
+        HttpClient httpClient,
+        ILogger<BusinessWriteFlowClient> logger)
     {
         _customers = customers ?? throw new ArgumentNullException(nameof(customers));
         _vendors = vendors ?? throw new ArgumentNullException(nameof(vendors));
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task<WriteFlowResult> PostManualJournalAsync(ManualJournalDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostManualJournalAsync), draft);
+    public async Task<WriteFlowResult> PostManualJournalAsync(ManualJournalDraft draft, CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            date = draft.Date,
+            transactionCurrencyCode = draft.TransactionCurrencyCode,
+            exchangeRate = draft.ExchangeRate,
+            description = draft.Description,
+            displayNumber = draft.DisplayNumber,
+            lines = draft.Lines.Select(line => new
+            {
+                accountId = line.AccountId,
+                description = line.Description,
+                debit = line.Debit,
+                credit = line.Credit,
+            }).ToArray(),
+        };
+
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync(
+                "accounting/manual-journals/save-and-post",
+                payload,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadFromJsonAsync<ManualJournalErrorBody>(cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error?.Message ?? $"Could not post the journal entry (HTTP {(int)response.StatusCode}).",
+                    Operation: nameof(PostManualJournalAsync),
+                    DraftEcho: draft);
+            }
+
+            var body = await response.Content.ReadFromJsonAsync<ManualJournalSaveAndPostResponse>(cancellationToken);
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: $"Journal entry {body?.JournalDisplayNumber ?? "(unknown)"} posted.",
+                Operation: nameof(PostManualJournalAsync),
+                DraftEcho: body ?? (object)draft);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Manual journal save+post call failed.");
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to post the journal entry. Please retry.",
+                Operation: nameof(PostManualJournalAsync),
+                DraftEcho: draft);
+        }
+    }
+
+    private sealed record ManualJournalSaveAndPostResponse(
+        Guid DocumentId,
+        string DocumentNumber,
+        Guid JournalEntryId,
+        string JournalDisplayNumber);
+
+    private sealed record ManualJournalErrorBody(string? ErrorCode, string? Message);
 
     public Task<WriteFlowResult> PostInvoiceAsync(InvoiceDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostInvoiceAsync), draft);
@@ -145,6 +215,12 @@ public sealed record ManualJournalDraft
 
 public sealed record ManualJournalLineDraft
 {
+    /// <summary>
+    /// Account-id resolved by the AccountPicker. Required — the backend
+    /// looks up each line's account by id (not code) so a tampered request
+    /// can't reference rows from another company by guessing codes.
+    /// </summary>
+    public Guid AccountId { get; init; }
     public string AccountCode { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public decimal Debit { get; init; }

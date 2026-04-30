@@ -536,6 +536,7 @@
                 ExchangeRate = _exchangeRate,
                 Lines = meaningful.Select(l => new ManualJournalLineDraft
                 {
+                    AccountId = l.AccountId ?? Guid.Empty,
                     AccountCode = l.AccountCode.Trim(),
                     Description = l.Description,
                     Debit = l.Debit,
