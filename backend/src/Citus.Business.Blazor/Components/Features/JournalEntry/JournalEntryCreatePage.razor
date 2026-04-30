@@ -158,18 +158,25 @@
                                                OnAccountSelected="@(account => OnAccountPicked(i, account))"
                                                OnCleared="@(() => ClearAccount(i))" />
                             </td>
+                            @* type="text" + inputmode="decimal" instead of type="number":
+                               type="number" pulls in Chromium's native numeric-input
+                               renderer, which on these cells was painting the value with
+                               a system-derived -webkit-text-fill-color that ended up
+                               matching the cell background (invisible in both light and
+                               dark mode). Plain text inputs paint via our own colour
+                               tokens; mobile keyboards still get the decimal pad via
+                               inputmode. ParseDecimal already tolerates whatever the
+                               user types. *@
                             <td>
-                                <input type="number"
-                                       step="0.01"
-                                       min="0"
+                                <input type="text"
+                                       inputmode="decimal"
                                        class="citus-journal-lines__cell-input citus-journal-lines__amount-input"
                                        value="@FormatDecimalForInput(line.Debit)"
                                        @oninput="@(e => UpdateDebit(i, e.Value?.ToString()))" />
                             </td>
                             <td>
-                                <input type="number"
-                                       step="0.01"
-                                       min="0"
+                                <input type="text"
+                                       inputmode="decimal"
                                        class="citus-journal-lines__cell-input citus-journal-lines__amount-input"
                                        value="@FormatDecimalForInput(line.Credit)"
                                        @oninput="@(e => UpdateCredit(i, e.Value?.ToString()))" />

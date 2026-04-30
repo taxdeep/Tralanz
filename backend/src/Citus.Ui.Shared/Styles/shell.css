@@ -2152,13 +2152,14 @@ html[data-theme="dark"] .citus-shell__sider {
     border: 1px solid transparent;
     border-radius: var(--citus-radius-sm);
     background: transparent;
-    color: var(--citus-color-fg);
-    /* Webkit / Chromium / Edge paint <input> text via -webkit-text-fill-color,
-       not `color`. Without pinning it, the typed value resolves to the browser
-       default (often a system colour that ends up matching our muted bg in
-       both themes — invisible to the user). caret-color is set for the same
-       reason. */
-    -webkit-text-fill-color: var(--citus-color-fg);
+    /* !important on the colour pair: a previous attempt without it left the
+       typed value invisible (still painting via some browser-derived colour
+       that matched the cell bg). Together with the type="text" change on the
+       Debit / Credit inputs in the page, this is belt-and-suspenders — one
+       of them is enough on its own, but neither was robust by itself across
+       theme switches. */
+    color: var(--citus-color-fg) !important;
+    -webkit-text-fill-color: var(--citus-color-fg) !important;
     caret-color: var(--citus-color-fg);
     font: inherit;
     font-size: var(--citus-text-sm);
