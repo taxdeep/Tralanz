@@ -1096,6 +1096,12 @@
     box-shadow: var(--citus-shadow-1);
 }
 
+:where(.grid) > :where(.citus-panel, .citus-domain-card),
+:where(.grid) > :where(section, article).citus-panel {
+    height: 100%;
+    align-self: stretch;
+}
+
 .citus-panel + .citus-panel {
     margin-top: var(--citus-space-4);
 }
@@ -1174,6 +1180,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--citus-space-2);
+    min-height: 100%;
 }
 
 .citus-domain-card__header {
@@ -1267,6 +1274,7 @@ a.citus-domain-card--linked:active {
     border-bottom: 1px solid var(--citus-color-border);
     color: var(--citus-color-fg);
     font-variant-numeric: var(--citus-tabular-nums);
+    vertical-align: middle;
 }
 
 .citus-data-table tbody tr:last-child td {
@@ -1280,6 +1288,16 @@ a.citus-domain-card--linked:active {
 .citus-data-table__total td {
     background: var(--citus-color-bg-muted);
     border-top: 2px solid var(--citus-color-border-strong);
+}
+
+.citus-data-table :where(.citus-input, .unity-picker, .rz-dropdown, .rz-numeric, .rz-datepicker) {
+    width: 100%;
+}
+
+.citus-data-table :where(.citus-input__row, .unity-picker__input, .rz-dropdown, .rz-numeric, .rz-datepicker) {
+    box-sizing: border-box;
+    height: var(--citus-input-height);
+    min-height: var(--citus-input-height);
 }
 
 .citus-icon-button {
@@ -1307,6 +1325,7 @@ a.citus-domain-card--linked:active {
 /* ---------- SysAdmin login ---------- */
 
 .sys-login {
+    --citus-auth-control-width: 18rem;
     max-width: 28rem;
     margin: var(--citus-space-12) auto var(--citus-space-8);
     background: var(--citus-color-bg-elevated);
@@ -1353,8 +1372,19 @@ a.citus-domain-card--linked:active {
    stays 28rem; the form sits centered at ~18rem inside it. */
 .sys-login__form {
     width: 100%;
-    max-width: 18rem;
+    max-width: var(--citus-auth-control-width);
     align-self: center;
+}
+
+.sys-login__form .citus-form-field,
+.sys-login__form .citus-form-field__input,
+.sys-login__form .citus-button {
+    width: 100%;
+    max-width: 100%;
+}
+
+.sys-login__form .citus-button--block {
+    align-self: stretch;
 }
 
 /* ---------------------------------------------------------------
@@ -1790,7 +1820,9 @@ input[type="number"] {
        read as one dense bar. */
     --citus-input-height: 2rem;
     --citus-input-padding-x: 0.625rem;
-    --citus-input-padding-y: 0.4375rem;
+    --citus-input-padding-y: 0.375rem;
+    --citus-input-line-height: 1.25rem;
+    --citus-topbar-control-height: var(--citus-input-height);
 }
 
 /* Native HTML form fields wearing our class (login pages, wizards,
@@ -1798,7 +1830,10 @@ input[type="number"] {
    line-height; pinning min-height makes it exact and survives different
    font metrics. */
 .citus-form-field__input {
+    box-sizing: border-box;
+    height: var(--citus-input-height);
     min-height: var(--citus-input-height);
+    line-height: var(--citus-input-line-height);
 }
 
 /* Defensive: every native form control (text / password / email / number /
@@ -1812,14 +1847,15 @@ input[type="number"] {
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="hidden"]),
 select,
 textarea {
-    min-height: var(--citus-input-height);
     box-sizing: border-box;
+    min-height: var(--citus-input-height);
     background: var(--citus-color-bg-elevated);
     color: var(--citus-color-fg);
     border: 1px solid var(--citus-color-border);
     border-radius: var(--citus-radius-md);
     font: inherit;
     font-size: var(--citus-text-sm);
+    line-height: var(--citus-input-line-height);
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="hidden"]):focus,
@@ -1836,8 +1872,13 @@ textarea::placeholder {
 }
 
 textarea {
+    height: auto;
     min-height: calc(var(--citus-input-height) * 2.25);
     resize: vertical;
+}
+
+textarea.citus-form-field__input {
+    height: auto;
 }
 
 /* CitusInput wrapper. Collapse all three size variants (--sm / --md /
@@ -1847,6 +1888,8 @@ textarea {
 .citus-input--sm .citus-input__row,
 .citus-input--md .citus-input__row,
 .citus-input--lg .citus-input__row {
+    box-sizing: border-box;
+    height: var(--citus-input-height);
     min-height: var(--citus-input-height);
     padding: var(--citus-input-padding-y) var(--citus-input-padding-x);
 }
@@ -1859,6 +1902,7 @@ textarea {
 .rz-dropdown,
 .rz-numeric,
 .rz-datepicker {
+    height: var(--citus-input-height);
     min-height: var(--citus-input-height);
     box-sizing: border-box;
     background: var(--citus-color-bg-elevated) !important;
@@ -1866,6 +1910,8 @@ textarea {
     border-color: var(--citus-color-border) !important;
     border-radius: var(--citus-radius-md);
     font: inherit;
+    font-size: var(--citus-text-sm);
+    line-height: var(--citus-input-line-height);
 }
 
 /* Interior <input> of compound Radzen controls (numeric spinner, date
@@ -1876,7 +1922,9 @@ textarea {
 .rz-numeric > input,
 .rz-numeric .rz-spinner-input,
 .rz-datepicker .rz-inputtext {
-    min-height: var(--citus-input-height);
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
     background: transparent !important;
     color: var(--citus-color-fg) !important;
 }
@@ -1886,7 +1934,21 @@ textarea {
 .rz-numeric .rz-spinner-input,
 .rz-datepicker .rz-inputtext {
     padding-block: 0;
+    line-height: var(--citus-input-line-height);
     color: var(--citus-color-fg) !important;
+}
+
+.rz-dropdown .rz-dropdown-label {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    min-height: 0;
+}
+
+.rz-textarea,
+textarea.rz-inputtext {
+    height: auto;
+    min-height: calc(var(--citus-input-height) * 2.25);
 }
 
 .rz-dropdown .rz-dropdown-trigger,
@@ -2142,16 +2204,16 @@ html[data-theme="dark"] .citus-shell__sider {
 }
 
 /* Navbar density: the topbar lives in a 56 px header and the search
-   sits between dense controls (theme toggle, avatar). A canonical
-   32 px input reads bulky here — modern app navbars (GitHub, Notion,
-   Linear) all run their global search at 28 px. Drop the picker
-   height + horizontal padding for the topbar instance only; form
-   pages keep the canonical 32 px so amount / picker rows still
-   align. */
+   must align with the company dropdown, theme toggle, and user trigger.
+   Force height, not just min-height, because UnitySearchPicker's scoped
+   CSS is emitted later and can otherwise re-expand the field. */
 .citus-topbar__search > .unity-picker .unity-picker__input {
-    min-height: 1.75rem;
-    padding: 0 2rem;
-    font-size: var(--citus-text-sm);
+    box-sizing: border-box !important;
+    height: var(--citus-topbar-control-height) !important;
+    min-height: var(--citus-topbar-control-height) !important;
+    padding: 0 2rem !important;
+    font-size: var(--citus-text-sm) !important;
+    line-height: var(--citus-input-line-height) !important;
 }
 
 .citus-topbar__search > .unity-picker .unity-picker__icon {
@@ -2507,8 +2569,11 @@ select.citus-journal-lines__cell-input {
     background: transparent !important;
     color: var(--citus-color-fg) !important;
     box-shadow: none !important;
+    height: auto !important;
+    min-height: 0 !important;
     padding: 0 !important;
     font: inherit !important;
+    line-height: var(--citus-input-line-height) !important;
 }
 
 .citus-input__field:focus {

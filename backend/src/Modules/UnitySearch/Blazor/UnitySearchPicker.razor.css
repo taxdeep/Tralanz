@@ -25,6 +25,8 @@
 
 .unity-picker__input {
     width: 100%;
+    box-sizing: border-box;
+    height: var(--citus-input-height);
     min-height: var(--citus-input-height);
     /* Horizontal padding stays at 2.25rem to leave room for the search icon
        (left) and clear button (right); vertical padding tracks the canonical
@@ -43,6 +45,7 @@
     -webkit-text-fill-color: var(--citus-color-fg) !important;
     caret-color: var(--citus-color-fg);
     font-size: var(--citus-text-sm);
+    line-height: var(--citus-input-line-height);
     outline: none;
     transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
