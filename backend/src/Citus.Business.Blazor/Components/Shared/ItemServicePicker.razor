@@ -1,0 +1,33 @@
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
+<UnitySearchPicker CompanyId="@CompanyId"
+                   UserId="@UserId"
+                   Context="@SearchScopeContext.SalesItemServicePicker"
+                   SelectedId="@SelectedId"
+                   SelectedDisplayText="@SelectedDisplayText"
+                   Placeholder="@Placeholder"
+                   Disabled="@Disabled"
+                   AllowClear="@AllowClear"
+                   Take="@Take"
+                   EntityType="@SearchDocumentType.ProductService"
+                   CreateEntityLabel="item or service"
+                   SourceRoute="@SourceRoute"
+                   OnOptionSelected="@OnItemSelected"
+                   OnCleared="@OnCleared"
+                   OnCreateRequested="@OnCreateRequested" />
+
+@code {
+    [Parameter, EditorRequired] public Guid CompanyId { get; set; }
+    [Parameter] public Guid? UserId { get; set; }
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public string? SelectedDisplayText { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Search items...";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool AllowClear { get; set; } = true;
+    [Parameter] public int Take { get; set; } = 8;
+    [Parameter] public string? SourceRoute { get; set; }
+    [Parameter] public EventCallback<UnitySearchPickerOption> OnItemSelected { get; set; }
+    [Parameter] public EventCallback OnCleared { get; set; }
+    [Parameter] public EventCallback<string> OnCreateRequested { get; set; }
+}

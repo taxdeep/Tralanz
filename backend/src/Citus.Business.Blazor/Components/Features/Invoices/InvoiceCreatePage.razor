@@ -55,15 +55,14 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Customer</label>
-                    <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                        UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                                       Context="@SearchScopeContext.QuoteCustomerPicker"
                                        Placeholder="Search customers…"
                                        Take="8"
                                        SourceRoute="/invoices/new"
                                        SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
                                        SelectedDisplayText="@_customerDisplay"
-                                       OnOptionSelected="OnCustomerSelected"
+                                       OnCustomerSelected="OnCustomerSelected"
                                        OnCleared="OnCustomerCleared" />
                 </div>
                 <div>
@@ -135,28 +134,45 @@
                                 </button>
                             </td>
                             <td>
-                                @* Item / Service picker. Reuses the InvoiceItemPicker context
+                                @* Item / Service picker. Uses the shared sales item-service wrapper
                                    (active product_service + inventory_item rows). On select
                                    we copy the display text into Description as a starting
                                    point — operators can refine. Pre-fill of unit price /
                                    account from the item master is a future iteration; for
                                    now Description seeds and the rest is manual. *@
-                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
                                                    UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                                                   Context="@SearchScopeContext.InvoiceItemPicker"
                                                    Placeholder="Search items…"
                                                    Take="6"
                                                    SourceRoute="/invoices/new"
                                                    SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
                                                    SelectedDisplayText="@line.ItemDisplay"
-                                                   OnOptionSelected="@(option => OnItemPicked(i, option))"
+                                                   OnItemSelected="@(option => OnItemPicked(i, option))"
                                                    OnCleared="@(() => OnItemCleared(i))" />
                             </td>
                             <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => Update(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="4000" /></td>
-                            <td><CitusInput TValue="string" Value="@line.TaxCode" ValueChanged="@(v => Update(i, l => l with { TaxCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="HST" /></td>
+                            <td>
+                                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               Context="@SearchScopeContext.AccountPicker"
+                                               AllowedRootTypes="revenue"
+                                               SelectedId="@line.AccountId"
+                                               SelectedDisplayText="@line.AccountDisplay"
+                                               Placeholder="Revenue account..."
+                                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                               OnAccountSelected="@(account => OnAccountSelected(i, account))"
+                                               OnCleared="@(() => OnAccountCleared(i))" />
+                            </td>
+                            <td>
+                                <TaxCodePicker SelectedId="@line.TaxCodeId"
+                                               SelectedDisplayText="@line.TaxCode"
+                                               AppliesTo="sales"
+                                               Placeholder="Tax"
+                                               OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
+                                               OnCleared="@(() => OnTaxCodeCleared(i))" />
+                            </td>
                             <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                             <td>
                                 <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
@@ -243,7 +259,10 @@
         string Description = "",
         decimal Quantity = 1m,
         decimal UnitPrice = 0m,
+        Guid? AccountId = null,
+        string AccountDisplay = "",
         string AccountCode = "",
+        Guid? TaxCodeId = null,
         string TaxCode = "")
     {
         public bool HasContent =>
@@ -350,6 +369,35 @@
     private void OnItemCleared(int i)
     {
         Update(i, l => l with { ItemId = Guid.Empty, ItemDisplay = string.Empty });
+    }
+
+    private void OnAccountSelected(int i, AccountSummary account)
+    {
+        Update(i, l => l with
+        {
+            AccountId = account.Id,
+            AccountDisplay = $"{account.Code} {account.Name}",
+            AccountCode = account.Code
+        });
+    }
+
+    private void OnAccountCleared(int i)
+    {
+        Update(i, l => l with { AccountId = null, AccountDisplay = string.Empty, AccountCode = string.Empty });
+    }
+
+    private void OnTaxCodeSelected(int i, TaxCodeSummary tax)
+    {
+        Update(i, l => l with
+        {
+            TaxCodeId = tax.Id,
+            TaxCode = tax.Code
+        });
+    }
+
+    private void OnTaxCodeCleared(int i)
+    {
+        Update(i, l => l with { TaxCodeId = null, TaxCode = string.Empty });
     }
 
     private async Task PostAsync()

@@ -17,17 +17,31 @@
                value="@_searchText"
                placeholder="@Placeholder"
                disabled="@Disabled"
+               @ref="_inputRef"
                @oninput="HandleInputAsync"
                @onfocus="HandleFocus"
-               @onblur="HandleBlurAsync" />
+               @onblur="HandleBlurAsync"
+               @onkeydown="HandleKeyDownAsync" />
 
         @if (AllowClear && !Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
         {
             <button type="button"
                     class="unity-picker__clear"
+                    @onmousedown:preventDefault
                     @onclick="ClearAsync"
                     aria-label="Clear selection">
                 <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+        }
+
+        @if (ShowDropdownButton && !Disabled)
+        {
+            <button type="button"
+                    class="unity-picker__dropdown"
+                    @onmousedown:preventDefault
+                    @onclick="ToggleDropdownAsync"
+                    aria-label="Show options">
+                <i class="ti ti-chevron-down" aria-hidden="true"></i>
             </button>
         }
     </div>
@@ -35,17 +49,23 @@
     @if (_showResults && _options.Count > 0)
     {
         <div class="unity-picker__panel" role="listbox">
+            @{ var optionIndex = 0; }
             @foreach (var option in _options)
             {
+                var i = optionIndex++;
                 <button type="button"
-                        class="unity-picker__option"
+                        class="unity-picker__option @(i == _highlightedIndex ? "is-active" : null)"
                         @onmousedown:preventDefault
-                        @onclick="@(() => SelectAsync(option))">
-                    <span class="unity-picker__option-primary">@RenderHighlighted(option.PrimaryText)</span>
-                    @if (!string.IsNullOrWhiteSpace(option.SecondaryText))
-                    {
-                        <span class="unity-picker__option-secondary">@RenderHighlighted(option.SecondaryText)</span>
-                    }
+                        @onclick="@(() => SelectAsync(option))"
+                        @onmouseover="@(() => _highlightedIndex = i)">
+                    <span class="unity-picker__option-copy">
+                        <span class="unity-picker__option-primary">@RenderHighlighted(option.PrimaryText)</span>
+                        @if (!string.IsNullOrWhiteSpace(option.SecondaryText))
+                        {
+                            <span class="unity-picker__option-secondary">@RenderHighlighted(option.SecondaryText)</span>
+                        }
+                    </span>
+                    <span class="unity-picker__option-kind">@FormatEntityType(option.EntityType)</span>
                 </button>
             }
 
@@ -109,6 +129,12 @@
     public int Take { get; set; } = 8;
 
     [Parameter]
+    public bool OpenOnFocus { get; set; } = true;
+
+    [Parameter]
+    public bool ShowDropdownButton { get; set; } = true;
+
+    [Parameter]
     public string? CreateEntityLabel { get; set; }
 
     /// <summary>
@@ -150,6 +176,8 @@
     private bool _showResults;
     private bool _isFocused;
     private IReadOnlyList<UnitySearchPickerOption> _options = Array.Empty<UnitySearchPickerOption>();
+    private ElementReference _inputRef;
+    private int _highlightedIndex = -1;
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _blurCts;
     private bool CanCreateFromSearch =>
@@ -166,24 +194,34 @@
         }
     }
 
-    private void HandleFocus(FocusEventArgs _)
+    private async Task HandleFocus(FocusEventArgs _)
     {
         _isFocused = true;
         _blurCts?.Cancel();
         _blurCts?.Dispose();
         _blurCts = null;
+
+        if (OpenOnFocus)
+        {
+            await SearchAsync(_searchText.Trim(), allowEmptyQuery: true);
+        }
     }
 
     private async Task HandleInputAsync(ChangeEventArgs args)
     {
         _searchText = args.Value?.ToString() ?? string.Empty;
+        _highlightedIndex = -1;
+        await SearchAsync(_searchText.Trim(), allowEmptyQuery: false);
+    }
+
+    private async Task SearchAsync(string query, bool allowEmptyQuery)
+    {
         _searchCts?.Cancel();
         _searchCts?.Dispose();
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
 
-        var query = _searchText.Trim();
-        if (Disabled || CompanyId == Guid.Empty || query.Length < 2)
+        if (Disabled || CompanyId == Guid.Empty || (!allowEmptyQuery && query.Length < 2))
         {
             _showResults = CanCreateFromSearch;
             await InvokeAsync(StateHasChanged);
@@ -195,7 +233,11 @@
 
         try
         {
-            await Task.Delay(180, cts.Token);
+            if (!allowEmptyQuery)
+            {
+                await Task.Delay(180, cts.Token);
+            }
+
             var options = await PickerService.SearchAsync(
                 CompanyId,
                 UserId,
@@ -208,10 +250,11 @@
             {
                 _options = options;
                 _showResults = true;
+                _highlightedIndex = options.Count > 0 ? 0 : -1;
                 _lastSearchedQuery = query;
                 _lastSearchResultCount = options.Count;
 
-                if (options.Count == 0 && !string.IsNullOrWhiteSpace(EntityType))
+                if (options.Count == 0 && !string.IsNullOrWhiteSpace(query) && !string.IsNullOrWhiteSpace(EntityType))
                 {
                     _ = PickerService.RecordUsageAsync(BuildUsageEvent(
                         eventType: "no_match",
@@ -226,6 +269,25 @@
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private async Task ToggleDropdownAsync()
+    {
+        if (Disabled)
+        {
+            return;
+        }
+
+        if (_showResults)
+        {
+            _showResults = false;
+            _options = Array.Empty<UnitySearchPickerOption>();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        await _inputRef.FocusAsync();
+        await SearchAsync(_searchText.Trim(), allowEmptyQuery: true);
     }
 
     private async Task HandleBlurAsync(FocusEventArgs _)
@@ -244,6 +306,7 @@
             {
                 _showResults = false;
                 _options = Array.Empty<UnitySearchPickerOption>();
+                _highlightedIndex = -1;
                 _searchText = SelectedDisplayText ?? _searchText;
                 await InvokeAsync(StateHasChanged);
             }
@@ -269,6 +332,7 @@
 
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
+        _highlightedIndex = -1;
         _searchText = option.DisplayText;
 
         // Fire-and-forget the unityAI usage event. Tracking failures must not
@@ -290,6 +354,7 @@
     {
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
+        _highlightedIndex = -1;
         _searchText = string.Empty;
         await OnCleared.InvokeAsync();
         await InvokeAsync(StateHasChanged);
@@ -305,6 +370,7 @@
 
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
+        _highlightedIndex = -1;
 
         if (!string.IsNullOrWhiteSpace(EntityType))
         {
@@ -321,6 +387,41 @@
 
     private string? _lastSearchedQuery;
     private int? _lastSearchResultCount;
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _showResults = false;
+            _options = Array.Empty<UnitySearchPickerOption>();
+            _highlightedIndex = -1;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!_showResults || _options.Count == 0)
+        {
+            return;
+        }
+
+        if (e.Key == "ArrowDown")
+        {
+            _highlightedIndex = Math.Min(_highlightedIndex + 1, _options.Count - 1);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "Enter" && _highlightedIndex >= 0 && _highlightedIndex < _options.Count)
+        {
+            await SelectAsync(_options[_highlightedIndex]);
+        }
+    }
+
+    private static string FormatEntityType(string entityType) =>
+        entityType.Trim().Replace('_', ' ');
 
     /// <summary>
     /// Wraps the matched substring in a highlight span so users can see

@@ -1326,11 +1326,11 @@ a.citus-domain-card--linked:active {
     border-top: 2px solid var(--citus-color-border-strong);
 }
 
-.citus-data-table :where(.citus-input, .unity-picker, .rz-dropdown, .rz-numeric, .rz-datepicker) {
+.citus-data-table :where(.citus-input, .unity-picker, .citus-account-picker, .citus-tax-picker, .rz-dropdown, .rz-numeric, .rz-datepicker) {
     width: 100%;
 }
 
-.citus-data-table :where(.citus-input__row, .unity-picker__input, .rz-dropdown, .rz-numeric, .rz-datepicker) {
+.citus-data-table :where(.citus-input__row, .unity-picker__input, .citus-account-picker__control, .citus-tax-picker__control, .rz-dropdown, .rz-numeric, .rz-datepicker) {
     box-sizing: border-box;
     height: var(--citus-input-height);
     min-height: var(--citus-input-height);
@@ -3094,6 +3094,126 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     color: var(--citus-color-danger);
     font-size: var(--citus-text-xs);
     margin: 0;
+}
+
+/* ---------- Inline TaxCodePicker ---------- */
+
+.citus-tax-picker {
+    position: relative;
+    width: 100%;
+}
+
+.citus-tax-picker--disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.citus-tax-picker__control {
+    display: flex;
+    align-items: center;
+    gap: var(--citus-space-1);
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    padding: 0 var(--citus-space-1) 0 var(--citus-space-2);
+    min-height: var(--citus-input-height);
+    cursor: text;
+}
+
+.citus-tax-picker__control:focus-within {
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
+
+.citus-tax-picker__input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--citus-color-fg);
+    font: inherit;
+    padding: var(--citus-space-1) 0;
+}
+
+.citus-tax-picker__input::placeholder {
+    color: var(--citus-color-fg-subtle);
+}
+
+.citus-tax-picker__chevron,
+.citus-tax-picker__clear {
+    color: var(--citus-color-fg-muted);
+}
+
+.citus-tax-picker__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.citus-tax-picker__panel {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 90;
+    background: var(--citus-color-bg-elevated);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-sm);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.citus-tax-picker__option {
+    display: grid;
+    grid-template-columns: minmax(4rem, auto) 1fr minmax(4rem, auto);
+    align-items: baseline;
+    gap: var(--citus-space-3);
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--citus-color-fg);
+    padding: var(--citus-space-2) var(--citus-space-3);
+    cursor: pointer;
+    font-size: var(--citus-text-sm);
+    text-align: left;
+}
+
+.citus-tax-picker__option:hover,
+.citus-tax-picker__option.is-active {
+    background: var(--citus-color-bg-muted);
+}
+
+.citus-tax-picker__option-code {
+    color: var(--citus-color-fg);
+    font-weight: 600;
+}
+
+.citus-tax-picker__option-name {
+    color: var(--citus-color-fg);
+}
+
+.citus-tax-picker__option-meta {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-xs);
+    text-align: right;
+}
+
+.citus-tax-picker__match {
+    color: var(--citus-color-primary);
+    font-weight: 600;
+}
+
+.citus-tax-picker__empty {
+    color: var(--citus-color-fg-muted);
+    font-size: var(--citus-text-sm);
+    padding: var(--citus-space-2) var(--citus-space-3);
 }
 
 /* ---------- Sidebar "+ Create new" button + popover ---------- */

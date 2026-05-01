@@ -32,7 +32,7 @@
        (left) and clear button (right); vertical padding tracks the canonical
        input token so the picker shares the 32 px row rhythm with bare
        inputs / Radzen primitives / CitusButton. */
-    padding: var(--citus-input-padding-y) 2.25rem;
+    padding: var(--citus-input-padding-y) 4rem var(--citus-input-padding-y) 2.25rem;
     border: 1px solid var(--citus-color-border);
     border-radius: var(--citus-radius-md);
     background: var(--citus-color-bg-elevated);
@@ -61,7 +61,7 @@
 
 .unity-picker__clear {
     position: absolute;
-    right: 0.55rem;
+    right: 2rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -72,6 +72,25 @@
     background: transparent;
     color: var(--citus-color-fg-subtle);
     cursor: pointer;
+}
+
+.unity-picker__dropdown {
+    position: absolute;
+    right: 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 0;
+    border-left: 1px solid var(--citus-color-border);
+    background: transparent;
+    color: var(--citus-color-fg-subtle);
+    cursor: pointer;
+}
+
+.unity-picker__dropdown:hover {
+    color: var(--citus-color-fg);
 }
 
 .unity-picker__clear:hover {
@@ -101,6 +120,8 @@
 
 .unity-picker__option {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     width: 100%;
     gap: 0.18rem;
     padding: 0.72rem 0.8rem;
@@ -112,8 +133,15 @@
     cursor: pointer;
 }
 
-.unity-picker__option:hover {
+.unity-picker__option:hover,
+.unity-picker__option.is-active {
     background: var(--citus-color-primary-bg);
+}
+
+.unity-picker__option-copy {
+    display: grid;
+    min-width: 0;
+    gap: 0.18rem;
 }
 
 .unity-picker__option-primary {
@@ -125,6 +153,12 @@
 .unity-picker__option-secondary {
     color: var(--citus-color-fg-muted);
     font-size: 0.78rem;
+}
+
+.unity-picker__option-kind {
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
+    text-transform: capitalize;
 }
 
 /* Highlight the matched query substring inside a suggestion. Token-driven

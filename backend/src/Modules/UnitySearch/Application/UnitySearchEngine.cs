@@ -12,6 +12,9 @@ public sealed class UnitySearchEngine(
     public async Task<UnitySearchResult> SearchAsync(UnitySearchQuery query, CancellationToken cancellationToken)
     {
         var normalizedQuery = UnitySearchCanonicalizer.Normalize(query.SearchText);
+        var policy = policyRegistry.Resolve(query.Context);
+        await projectionStore.EnsureProjectionFreshAsync(query.CompanyId, cancellationToken);
+
         if (string.IsNullOrWhiteSpace(normalizedQuery))
         {
             var recentQueries = query.UserId.HasValue
@@ -31,17 +34,35 @@ public sealed class UnitySearchEngine(
                     cancellationToken)
                 : Array.Empty<UnitySearchRecentSelectionRecord>();
 
+            if (recentSelections.Count > 0)
+            {
+                return new UnitySearchResult
+                {
+                    QueryText = string.Empty,
+                    Context = query.Context,
+                    RecentQueries = recentQueries,
+                    RecentSelections = recentSelections
+                };
+            }
+
+            var defaultDocuments = await queryService.SearchDocumentsAsync(
+                query,
+                policy,
+                normalizedQuery,
+                UnitySearchQueryHints.None,
+                cancellationToken);
+
+            var defaultGroups = BuildGroups(defaultDocuments);
             return new UnitySearchResult
             {
                 QueryText = string.Empty,
                 Context = query.Context,
                 RecentQueries = recentQueries,
-                RecentSelections = recentSelections
+                RecentSelections = recentSelections,
+                Groups = defaultGroups,
+                TotalCount = defaultDocuments.Count
             };
         }
-
-        var policy = policyRegistry.Resolve(query.Context);
-        await projectionStore.EnsureProjectionFreshAsync(query.CompanyId, cancellationToken);
 
         var classification = UnitySearchQueryClassifier.Classify(normalizedQuery);
         var hints = new UnitySearchQueryHints(classification.Tag, classification.NumericValue);
@@ -52,7 +73,19 @@ public sealed class UnitySearchEngine(
             await statsStore.RecordQueryAsync(query.CompanyId, query.UserId.Value, query.Context, normalizedQuery, cancellationToken);
         }
 
-        var grouped = documents
+        var grouped = BuildGroups(documents);
+
+        return new UnitySearchResult
+        {
+            QueryText = query.SearchText.Trim(),
+            Context = query.Context,
+            Groups = grouped,
+            TotalCount = documents.Count
+        };
+    }
+
+    private static UnitySearchGroupResult[] BuildGroups(IReadOnlyList<SearchDocumentRecord> documents) =>
+        documents
             .GroupBy(static document => document.GroupKey, StringComparer.OrdinalIgnoreCase)
             .Select(group => new UnitySearchGroupResult
             {
@@ -76,15 +109,6 @@ public sealed class UnitySearchEngine(
             })
             .OrderBy(group => ResolveGroupOrder(group.GroupKey))
             .ToArray();
-
-        return new UnitySearchResult
-        {
-            QueryText = query.SearchText.Trim(),
-            Context = query.Context,
-            Groups = grouped,
-            TotalCount = documents.Count
-        };
-    }
 
     public Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(
         Guid companyId,

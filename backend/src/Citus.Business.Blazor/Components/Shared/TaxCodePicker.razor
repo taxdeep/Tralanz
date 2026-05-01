@@ -1,0 +1,274 @@
+@inject TaxCodeClient TaxCodeClient
+
+<div class="citus-tax-picker @(Disabled ? "citus-tax-picker--disabled" : null)">
+    <div class="citus-tax-picker__control" @onclick="HandleControlClickAsync">
+        <input class="citus-tax-picker__input"
+               type="text"
+               autocomplete="off"
+               value="@_searchText"
+               placeholder="@Placeholder"
+               disabled="@Disabled"
+               @ref="_inputRef"
+               @oninput="HandleInputAsync"
+               @onfocus="HandleFocusAsync"
+               @onblur="HandleBlurAsync"
+               @onkeydown="HandleKeyDownAsync" />
+        <i class="ti ti-chevron-down citus-tax-picker__chevron" aria-hidden="true"></i>
+        @if (!Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
+        {
+            <button type="button"
+                    class="citus-tax-picker__clear"
+                    @onmousedown:preventDefault
+                    @onclick="ClearAsync"
+                    aria-label="Clear">
+                <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+        }
+    </div>
+
+    @if (_showResults)
+    {
+        <div class="citus-tax-picker__panel" role="listbox">
+            @if (_loading)
+            {
+                <div class="citus-tax-picker__empty">Loading...</div>
+            }
+            else if (_visibleRows.Count == 0)
+            {
+                <div class="citus-tax-picker__empty">No matching tax codes.</div>
+            }
+            else
+            {
+                @for (var idx = 0; idx < _visibleRows.Count; idx++)
+                {
+                    var i = idx;
+                    var row = _visibleRows[i];
+                    <button type="button"
+                            class="citus-tax-picker__option @(i == _highlightedIndex ? "is-active" : null)"
+                            @onmousedown:preventDefault
+                            @onclick="@(() => SelectAsync(row))"
+                            @onmouseover="@(() => _highlightedIndex = i)">
+                        <span class="citus-tax-picker__option-code">@RenderHighlight(row.Code)</span>
+                        <span class="citus-tax-picker__option-name">@RenderHighlight(row.Name)</span>
+                        <span class="citus-tax-picker__option-meta">@row.RatePercent.ToString("0.####")%</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public string? SelectedDisplayText { get; set; }
+    [Parameter] public string AppliesTo { get; set; } = "sales";
+    [Parameter] public string Placeholder { get; set; } = "Tax";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<TaxCodeSummary> OnTaxCodeSelected { get; set; }
+    [Parameter] public EventCallback OnCleared { get; set; }
+
+    private ElementReference _inputRef;
+    private string _searchText = string.Empty;
+    private bool _isFocused;
+    private bool _showResults;
+    private bool _loading;
+    private bool _hasLoadedOnce;
+    private int _highlightedIndex = -1;
+    private IReadOnlyList<TaxCodeSummary> _allRows = Array.Empty<TaxCodeSummary>();
+    private IReadOnlyList<TaxCodeSummary> _visibleRows = Array.Empty<TaxCodeSummary>();
+    private CancellationTokenSource? _blurCts;
+
+    protected override void OnParametersSet()
+    {
+        if (!_isFocused)
+        {
+            _searchText = SelectedDisplayText ?? string.Empty;
+        }
+    }
+
+    private async Task EnsureLoadedAsync()
+    {
+        if (_hasLoadedOnce || Disabled)
+        {
+            return;
+        }
+
+        _hasLoadedOnce = true;
+        _loading = true;
+        try
+        {
+            _allRows = (await TaxCodeClient.ListAsync(AppliesTo))
+                .Where(static row => row.IsActive)
+                .OrderBy(static row => row.Code, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleFocusAsync(FocusEventArgs _)
+    {
+        _isFocused = true;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        _blurCts = null;
+        await EnsureLoadedAsync();
+        ApplyFilter(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private async Task HandleControlClickAsync()
+    {
+        if (Disabled)
+        {
+            return;
+        }
+
+        if (!_showResults)
+        {
+            await _inputRef.FocusAsync();
+            await HandleFocusAsync(default!);
+        }
+    }
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _highlightedIndex = -1;
+        await EnsureLoadedAsync();
+        ApplyFilter(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private void ApplyFilter(string query)
+    {
+        var trimmed = query.Trim();
+        var rows = string.IsNullOrEmpty(trimmed)
+            ? _allRows
+            : _allRows.Where(row =>
+                row.Code.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                row.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                row.AppliesTo.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
+
+        _visibleRows = rows
+            .OrderByDescending(row => row.Code.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(row => row.Code, StringComparer.OrdinalIgnoreCase)
+            .Take(15)
+            .ToArray();
+
+        _highlightedIndex = _visibleRows.Count > 0 ? 0 : -1;
+    }
+
+    private async Task HandleBlurAsync(FocusEventArgs _)
+    {
+        _isFocused = false;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _blurCts = cts;
+
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                _showResults = false;
+                _highlightedIndex = -1;
+                _searchText = SelectedDisplayText ?? _searchText;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _showResults = false;
+            _highlightedIndex = -1;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!_showResults || _visibleRows.Count == 0)
+        {
+            return;
+        }
+
+        if (e.Key == "ArrowDown")
+        {
+            _highlightedIndex = Math.Min(_highlightedIndex + 1, _visibleRows.Count - 1);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "Enter" && _highlightedIndex >= 0 && _highlightedIndex < _visibleRows.Count)
+        {
+            await SelectAsync(_visibleRows[_highlightedIndex]);
+        }
+    }
+
+    private async Task SelectAsync(TaxCodeSummary row)
+    {
+        _showResults = false;
+        _highlightedIndex = -1;
+        _searchText = FormatLabel(row);
+        await OnTaxCodeSelected.InvokeAsync(row);
+        StateHasChanged();
+    }
+
+    private async Task ClearAsync()
+    {
+        _searchText = string.Empty;
+        _showResults = false;
+        _highlightedIndex = -1;
+        await OnCleared.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private static string FormatLabel(TaxCodeSummary row) => $"{row.Code} - {row.RatePercent:0.####}%";
+
+    private RenderFragment RenderHighlight(string text) => builder =>
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        var query = _searchText.Trim();
+        var idx = string.IsNullOrEmpty(query)
+            ? -1
+            : text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+
+        if (idx > 0)
+        {
+            builder.AddContent(1, text[..idx]);
+        }
+
+        builder.OpenElement(2, "strong");
+        builder.AddAttribute(3, "class", "citus-tax-picker__match");
+        builder.AddContent(4, text.Substring(idx, query.Length));
+        builder.CloseElement();
+
+        var tail = idx + query.Length;
+        if (tail < text.Length)
+        {
+            builder.AddContent(5, text[tail..]);
+        }
+    };
+}

@@ -93,6 +93,21 @@ public sealed class UnitySearchPolicyRegistry
                 new[] { SearchDocumentType.Warehouse },
                 EnforceActiveOnly: true,
                 EnforceBusinessEligibility: true),
+            [SearchScopeContext.SalesCustomerPicker] = new(
+                SearchScopeContext.SalesCustomerPicker,
+                new[] { SearchDocumentType.Customer },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.SalesItemServicePicker] = new(
+                SearchScopeContext.SalesItemServicePicker,
+                new[] { SearchDocumentType.ProductService, SearchDocumentType.InventoryItem },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
+            [SearchScopeContext.AccountPicker] = new(
+                SearchScopeContext.AccountPicker,
+                new[] { SearchDocumentType.Account },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
             [SearchScopeContext.QuoteProductServicePicker] = new(
                 SearchScopeContext.QuoteProductServicePicker,
                 new[] { SearchDocumentType.ProductService },

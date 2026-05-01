@@ -35,8 +35,27 @@ public sealed class UnitySearchPickerService(HttpClient httpClient, ILogger<Unit
                 return Array.Empty<UnitySearchPickerOption>();
             }
 
-            return payload.Groups
+            var groupedOptions = payload.Groups
                 .SelectMany(static group => group.Items)
+                .Select(static item => new UnitySearchPickerOption
+                {
+                    SourceId = item.SourceId,
+                    EntityType = item.EntityType,
+                    PrimaryText = item.PrimaryText,
+                    SecondaryText = item.SecondaryText,
+                    DisplayText = string.IsNullOrWhiteSpace(item.SecondaryText)
+                        ? item.PrimaryText
+                        : $"{item.PrimaryText} - {item.SecondaryText}",
+                    NavigationHref = item.NavigationHref
+                })
+                .ToArray();
+
+            if (groupedOptions.Length > 0)
+            {
+                return groupedOptions;
+            }
+
+            return payload.RecentSelections
                 .Select(static item => new UnitySearchPickerOption
                 {
                     SourceId = item.SourceId,

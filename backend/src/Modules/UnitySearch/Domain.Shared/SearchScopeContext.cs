@@ -11,6 +11,9 @@ public static class SearchScopeContext
     public const string InventoryTransferWarehousePicker = "inventory.transfer_warehouse_picker";
     public const string InventoryAdjustmentItemPicker = "inventory.adjustment_item_picker";
     public const string InventoryAdjustmentWarehousePicker = "inventory.adjustment_warehouse_picker";
+    public const string SalesCustomerPicker = "sales.customer_picker";
+    public const string SalesItemServicePicker = "sales.item_service_picker";
+    public const string AccountPicker = "account.picker";
     public const string QuoteCustomerPicker = "quote.customer_picker";
     public const string QuoteProductServicePicker = "quote.product_service_picker";
     public const string QuoteInventoryItemPicker = "quote.inventory_item_picker";

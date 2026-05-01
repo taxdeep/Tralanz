@@ -43,15 +43,14 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
                 <label class="citus-form-field__label">Customer *</label>
-                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
                                    UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                                   Context="@SearchScopeContext.QuoteCustomerPicker"
                                    Placeholder="Search customers…"
                                    Take="8"
                                    SourceRoute="/receive-payment"
                                    SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
                                    SelectedDisplayText="@_customerDisplay"
-                                   OnOptionSelected="OnCustomerSelected"
+                                   OnCustomerSelected="OnCustomerSelected"
                                    OnCleared="OnCustomerCleared" />
             </div>
             <div>
