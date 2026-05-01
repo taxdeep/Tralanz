@@ -1,9 +1,7 @@
 .je-workbench {
     min-height: 100vh;
-    background:
-        radial-gradient(circle at top left, rgba(122, 182, 217, 0.08), transparent 22%),
-        linear-gradient(180deg, #0c1218 0%, #0b1015 100%);
-    color: #d9e2ea;
+    background: linear-gradient(180deg, var(--citus-bg, #080d14) 0%, var(--citus-bg-strong, #0b111a) 100%);
+    color: var(--citus-text, #d9e2ea);
 }
 
 .je-workbench-shell {
@@ -21,7 +19,7 @@
 }
 
 .je-workbench-title__eyebrow {
-    color: #7ab6d9;
+    color: var(--citus-primary, #7ab6d9);
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -30,13 +28,14 @@
 
 .je-workbench-title h1 {
     margin: 4px 0 6px;
-    color: #eef5fb;
+    color: var(--citus-text, #eef5fb);
     font-size: 1.8rem;
+    letter-spacing: 0;
 }
 
 .je-workbench-title p {
     margin: 0;
-    color: #97a8b7;
+    color: var(--citus-text-muted, #97a8b7);
 }
 
 .je-workbench-title__actions,
@@ -57,9 +56,9 @@
     display: grid;
     gap: 6px;
     padding: 16px 18px;
-    border: 1px solid rgba(151, 168, 183, 0.18);
+    border: 1px solid var(--citus-border-subtle, rgba(151, 168, 183, 0.18));
     border-radius: 8px;
-    background: rgba(16, 24, 33, 0.92);
+    background: var(--citus-surface, rgba(16, 24, 33, 0.92));
 }
 
 .je-workbench-kpi--warning {
@@ -89,16 +88,16 @@
     align-items: center;
     margin-bottom: 16px;
     padding: 14px;
-    border: 1px solid rgba(151, 168, 183, 0.16);
+    border: 1px solid var(--citus-border-subtle, rgba(151, 168, 183, 0.16));
     border-radius: 8px;
-    background: rgba(13, 20, 28, 0.84);
+    background: var(--citus-surface, rgba(13, 20, 28, 0.84));
 }
 
 .je-workbench-table {
-    border: 1px solid rgba(151, 168, 183, 0.18);
+    border: 1px solid var(--citus-border-subtle, rgba(151, 168, 183, 0.18));
     border-radius: 8px;
     overflow: hidden;
-    background: rgba(16, 24, 33, 0.92);
+    background: var(--citus-surface, rgba(16, 24, 33, 0.92));
 }
 
 .je-workbench-ledger,
@@ -109,11 +108,9 @@
 
 .je-workbench-fx {
     padding: 18px;
-    border: 1px solid rgba(122, 182, 217, 0.22);
+    border: 1px solid var(--citus-border-subtle, rgba(122, 182, 217, 0.22));
     border-radius: 8px;
-    background:
-        linear-gradient(135deg, rgba(122, 182, 217, 0.09), transparent 42%),
-        rgba(16, 24, 33, 0.94);
+    background: var(--citus-surface, rgba(16, 24, 33, 0.94));
 }
 
 .je-workbench-fx__grid {
@@ -218,8 +215,9 @@
 
 .je-workbench-section-head h2 {
     margin: 0 0 4px;
-    color: #eef5fb;
+    color: var(--citus-text, #eef5fb);
     font-size: 1.15rem;
+    letter-spacing: 0;
 }
 
 .je-workbench-section-head p {

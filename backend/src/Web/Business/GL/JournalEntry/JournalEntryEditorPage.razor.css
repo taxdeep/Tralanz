@@ -1,17 +1,15 @@
 .je-editor {
     min-height: 100vh;
-    background:
-        radial-gradient(circle at top right, rgba(72, 115, 148, 0.18), transparent 24rem),
-        linear-gradient(180deg, #0e141b 0%, #131b22 38%, #0d131a 100%);
-    color: #d9e2ea;
+    background: linear-gradient(180deg, var(--citus-bg, #080d14) 0%, var(--citus-bg-strong, #0b111a) 100%);
+    color: var(--citus-text, #d9e2ea);
     padding: 1.5rem;
 }
 
 .je-editor-shell {
-    background: rgba(12, 18, 24, 0.82);
-    border: 1px solid rgba(124, 149, 168, 0.18);
-    border-radius: 18px;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+    background: var(--citus-surface, rgba(12, 18, 24, 0.82));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.18));
+    border-radius: 8px;
+    box-shadow: var(--citus-shadow-card, none);
     overflow: hidden;
 }
 
@@ -30,7 +28,7 @@
     gap: 0.5rem;
     font-size: 1rem;
     font-weight: 600;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
 }
 
 .je-workbench-title__meta {
@@ -58,8 +56,8 @@
     place-items: center;
     min-height: 7.25rem;
     border: 1px dashed rgba(140, 165, 184, 0.35);
-    border-radius: 10px;
-    background: rgba(20, 28, 36, 0.72);
+    border-radius: 8px;
+    background: var(--citus-surface-muted, rgba(20, 28, 36, 0.72));
     text-align: center;
     gap: 0.25rem;
 }
@@ -103,8 +101,8 @@
     grid-template-columns: 1fr minmax(20rem, 46rem);
     gap: 1rem;
     padding: 1rem 1.25rem;
-    background: linear-gradient(180deg, rgba(26, 35, 44, 0.94), rgba(19, 27, 35, 0.88));
-    border-bottom: 1px solid rgba(124, 149, 168, 0.16);
+    background: var(--citus-surface, rgba(19, 27, 35, 0.88));
+    border-bottom: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.16));
 }
 
 .je-editor ::deep .je-header-band__left {
@@ -141,9 +139,9 @@
     gap: 0.45rem;
     min-width: 24rem;
     padding: 0.75rem 0.9rem;
-    background: rgba(15, 22, 29, 0.84);
-    border: 1px solid rgba(124, 149, 168, 0.16);
-    border-radius: 12px;
+    background: var(--citus-surface-muted, rgba(15, 22, 29, 0.84));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.16));
+    border-radius: 8px;
 }
 
 .je-editor ::deep .je-fx-card__rate {
@@ -190,18 +188,18 @@
     gap: 1rem;
     align-items: center;
     padding: 0.9rem 1rem;
-    background: rgba(14, 21, 28, 0.68);
-    border: 1px solid rgba(124, 149, 168, 0.14);
-    border-radius: 12px;
+    background: var(--citus-surface-muted, rgba(14, 21, 28, 0.68));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.14));
+    border-radius: 8px;
 }
 
 .je-editor ::deep .je-fx-selection-panel__section {
     display: grid;
     gap: 0.45rem;
     padding: 0.9rem 1rem;
-    background: rgba(14, 21, 28, 0.68);
-    border: 1px solid rgba(124, 149, 168, 0.14);
-    border-radius: 12px;
+    background: var(--citus-surface-muted, rgba(14, 21, 28, 0.68));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.14));
+    border-radius: 8px;
 }
 
 .je-editor ::deep .je-fx-selection-panel__title,
@@ -223,9 +221,9 @@
     gap: 1rem;
     align-items: center;
     padding: 0.6rem 0.75rem;
-    background: rgba(20, 29, 37, 0.8);
-    border: 1px solid rgba(124, 149, 168, 0.1);
-    border-radius: 10px;
+    background: var(--citus-surface, rgba(20, 29, 37, 0.8));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.1));
+    border-radius: 8px;
 }
 
 .je-editor ::deep .je-fx-option-row--current {
@@ -302,9 +300,9 @@
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: 0.65rem;
     padding: 0.9rem 1rem;
-    background: rgba(14, 21, 28, 0.68);
-    border: 1px solid rgba(124, 149, 168, 0.14);
-    border-radius: 12px;
+    background: var(--citus-surface-muted, rgba(14, 21, 28, 0.68));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.14));
+    border-radius: 8px;
 }
 
 .je-editor ::deep .je-fx-review-cell {
@@ -330,9 +328,9 @@
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    background: rgba(14, 20, 27, 0.78);
-    border: 1px solid rgba(124, 149, 168, 0.18);
-    border-radius: 14px;
+    background: var(--citus-surface, rgba(14, 20, 27, 0.78));
+    border: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.18));
+    border-radius: 8px;
     overflow: hidden;
 }
 
@@ -363,8 +361,8 @@
 
 .je-editor ::deep .je-grid tbody td {
     padding: 0.16rem;
-    border-bottom: 1px solid rgba(124, 149, 168, 0.1);
-    background: rgba(15, 21, 28, 0.82);
+    border-bottom: 1px solid var(--citus-border-subtle, rgba(124, 149, 168, 0.1));
+    background: var(--citus-surface, rgba(15, 21, 28, 0.82));
 }
 
 .je-editor ::deep .je-grid-row__index,

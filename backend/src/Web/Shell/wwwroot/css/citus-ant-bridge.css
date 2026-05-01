@@ -1,38 +1,51 @@
-/* Citus UI migration bridge.
-   Ant Design Blazor is the target component system. MudBlazor remains a legacy runtime
-   compatibility layer while pages are migrated in small, safe slices. */
+/* Citus UI bridge.
+   Authority target: Blazor Web App + Radzen.Blazor + Tailwind CSS + Tabler icons.
+   MudBlazor and Ant-style class names remain compatibility layers while pages migrate
+   in small, safe slices. */
 :root {
     --citus-bg: #f6f8fb;
     --citus-bg-strong: #eef3f9;
     --citus-surface: rgba(255, 255, 255, .96);
     --citus-surface-muted: #f8fafc;
+    --citus-surface-raised: #ffffff;
+    --citus-surface-field: #ffffff;
     --citus-surface-dark: #101827;
     --citus-text: #172033;
     --citus-text-muted: #667085;
     --citus-border-subtle: rgba(31, 45, 61, .11);
+    --citus-border-strong: rgba(31, 45, 61, .18);
     --citus-shadow-card: 0 18px 42px rgba(15, 23, 42, .08);
     --citus-primary: #1677ff;
+    --citus-primary-hover: #0958d9;
+    --citus-primary-soft: rgba(22, 119, 255, .1);
     --citus-success: #16a34a;
     --citus-warning: #d48806;
     --citus-danger: #dc2626;
     --citus-info: #0891b2;
-    --citus-radius-sm: 10px;
-    --citus-radius-md: 14px;
-    --citus-radius-lg: 20px;
+    --citus-radius-sm: 6px;
+    --citus-radius-md: 8px;
+    --citus-radius-lg: 10px;
     --citus-control-height: 40px;
+    --citus-control-height-compact: 34px;
+    --citus-control-padding-x: .78rem;
     --citus-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .bz-shell--dark {
-    --citus-bg: #0d1524;
-    --citus-bg-strong: #09111f;
-    --citus-surface: rgba(14, 25, 43, .94);
-    --citus-surface-muted: rgba(8, 17, 31, .82);
-    --citus-text: #dbe8f7;
-    --citus-text-muted: #94a8bf;
-    --citus-border-subtle: rgba(125, 184, 255, .16);
-    --citus-shadow-card: 0 18px 48px rgba(0, 0, 0, .28);
-    --citus-primary: #7cc4ff;
+    --citus-bg: #080d14;
+    --citus-bg-strong: #0b111a;
+    --citus-surface: #101720;
+    --citus-surface-muted: #0c121a;
+    --citus-surface-raised: #141c27;
+    --citus-surface-field: #0b1119;
+    --citus-text: #e4edf7;
+    --citus-text-muted: #9aaabe;
+    --citus-border-subtle: rgba(148, 163, 184, .18);
+    --citus-border-strong: rgba(148, 163, 184, .28);
+    --citus-shadow-card: none;
+    --citus-primary: #6aa9ff;
+    --citus-primary-hover: #8abcff;
+    --citus-primary-soft: rgba(106, 169, 255, .12);
     --citus-success: #6ee7b7;
     --citus-warning: #f8c76d;
     --citus-danger: #fca5a5;
@@ -44,11 +57,16 @@
     --citus-bg-strong: #eef3f9;
     --citus-surface: rgba(255, 255, 255, .96);
     --citus-surface-muted: #f8fafc;
+    --citus-surface-raised: #ffffff;
+    --citus-surface-field: #ffffff;
     --citus-text: #172033;
     --citus-text-muted: #667085;
     --citus-border-subtle: rgba(31, 45, 61, .11);
+    --citus-border-strong: rgba(31, 45, 61, .18);
     --citus-shadow-card: 0 18px 42px rgba(15, 23, 42, .08);
     --citus-primary: #1677ff;
+    --citus-primary-hover: #0958d9;
+    --citus-primary-soft: rgba(22, 119, 255, .1);
     --citus-success: #16a34a;
     --citus-warning: #d48806;
     --citus-danger: #dc2626;
@@ -64,8 +82,44 @@ body {
     color: var(--citus-text);
 }
 
+.bz-main,
+.bz-main * {
+    box-sizing: border-box;
+}
+
 .bz-main a {
     color: var(--citus-primary);
+}
+
+.bz-main h1,
+.bz-main h2,
+.bz-main h3,
+.bz-main h4,
+.bz-main h5,
+.bz-main h6 {
+    letter-spacing: 0 !important;
+}
+
+.bz-main :where(input, select, textarea, button) {
+    font: inherit;
+}
+
+.bz-main :where(input, select, textarea, .ant-input) {
+    min-height: var(--citus-control-height);
+    border-color: var(--citus-border-subtle);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-surface-field);
+    color: var(--citus-text);
+}
+
+.bz-main :where(input, select, textarea, .ant-input)::placeholder {
+    color: color-mix(in srgb, var(--citus-text-muted) 78%, transparent);
+}
+
+.bz-main :where(input, select, textarea, .ant-input):focus {
+    border-color: color-mix(in srgb, var(--citus-primary) 62%, var(--citus-border-strong));
+    box-shadow: 0 0 0 3px var(--citus-primary-soft);
+    outline: none;
 }
 
 .bz-main .ant-btn,
@@ -83,34 +137,51 @@ body {
 
 .bz-main .ant-card {
     border-color: var(--citus-border-subtle);
-    border-radius: var(--citus-radius-lg);
+    border-radius: var(--citus-radius-md);
     box-shadow: var(--citus-shadow-card);
 }
 
 .bz-main .ant-btn {
-    border-radius: 10px;
+    min-height: var(--citus-control-height);
+    border-color: var(--citus-border-subtle);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-surface-raised);
+    color: var(--citus-text);
     font-weight: 700;
+}
+
+.bz-main .ant-btn-primary {
+    border-color: var(--citus-primary);
+    background: var(--citus-primary);
+    color: #fff;
 }
 
 .bz-main .ant-table,
 .bz-main table.ant-table {
     border-radius: var(--citus-radius-md);
+    background: var(--citus-surface);
+    color: var(--citus-text);
 }
 
 .bz-main .ant-table-thead > tr > th,
 .bz-main table.ant-table th {
-    color: #526173;
-    background: #f8fafc;
+    color: var(--citus-text-muted);
+    background: var(--citus-surface-muted);
     font-size: .74rem;
     font-weight: 800;
     letter-spacing: .04em;
     text-transform: uppercase;
 }
 
+.bz-main table.ant-table td {
+    border-bottom: 1px solid var(--citus-border-subtle);
+    color: var(--citus-text);
+}
+
 /* Legacy Mud visual alignment. Keep behavior intact; only normalize density and surface. */
 .bz-main .mud-paper {
     border: 1px solid var(--citus-border-subtle);
-    border-radius: var(--citus-radius-lg);
+    border-radius: var(--citus-radius-md);
     background-color: var(--citus-surface);
     box-shadow: var(--citus-shadow-card);
 }
@@ -121,7 +192,8 @@ body {
 }
 
 .bz-main .mud-button-root {
-    border-radius: 10px;
+    min-height: var(--citus-control-height);
+    border-radius: var(--citus-radius-md);
     font-weight: 750;
     text-transform: none;
 }
@@ -132,8 +204,32 @@ body {
 }
 
 .bz-main .mud-input-root {
-    border-radius: 10px;
+    min-height: var(--citus-control-height);
+    border-radius: var(--citus-radius-md);
+    background-color: var(--citus-surface-field);
+    color: var(--citus-text);
     font-size: .88rem;
+}
+
+.bz-main .mud-input-slot {
+    min-height: var(--citus-control-height);
+}
+
+.bz-main .mud-input-outlined .mud-input-outlined-border {
+    border-color: var(--citus-border-subtle);
+    border-radius: var(--citus-radius-md);
+}
+
+.bz-main .mud-input-outlined:hover .mud-input-outlined-border,
+.bz-main .mud-input-outlined.mud-input-focused .mud-input-outlined-border {
+    border-color: color-mix(in srgb, var(--citus-primary) 62%, var(--citus-border-strong));
+    box-shadow: 0 0 0 3px var(--citus-primary-soft);
+}
+
+.bz-main .mud-input-label,
+.bz-main .mud-input-adornment,
+.bz-main .mud-icon-root {
+    color: var(--citus-text-muted);
 }
 
 .bz-main .mud-table-container {
@@ -143,8 +239,8 @@ body {
 }
 
 .bz-main .mud-table-root th {
-    color: #526173;
-    background: #f8fafc;
+    color: var(--citus-text-muted);
+    background: var(--citus-surface-muted);
     font-size: .74rem;
     font-weight: 800;
     letter-spacing: .04em;
@@ -152,7 +248,8 @@ body {
 }
 
 .bz-main .mud-table-root td {
-    color: #334155;
+    border-bottom-color: var(--citus-border-subtle);
+    color: var(--citus-text);
 }
 
 .bz-main .mud-chip {
@@ -168,18 +265,115 @@ body {
 .bz-shell--dark .bz-main .ant-table-thead > tr > th,
 .bz-shell--dark .bz-main table.ant-table th,
 .bz-shell--dark .bz-main .mud-table-root th {
+    border-bottom-color: var(--citus-border-strong);
     color: #9fb2c8;
-    background: rgba(8, 17, 31, .92);
+    background: #0c121a;
 }
 
+.bz-shell--dark .bz-main .ant-table,
+.bz-shell--dark .bz-main table.ant-table,
+.bz-shell--dark .bz-main table.ant-table tbody,
+.bz-shell--dark .bz-main table.ant-table tr,
+.bz-shell--dark .bz-main .mud-table,
+.bz-shell--dark .bz-main .mud-table-container,
+.bz-shell--dark .bz-main .mud-table-root,
+.bz-shell--dark .bz-main .mud-table-root tbody,
+.bz-shell--dark .bz-main .mud-table-root tr {
+    background: var(--citus-surface);
+    color: var(--citus-text);
+}
+
+.bz-shell--dark .bz-main table.ant-table td,
 .bz-shell--dark .bz-main .mud-table-root td {
+    border-bottom-color: var(--citus-border-subtle);
+    background: var(--citus-surface);
     color: #dbe8f7;
+}
+
+.bz-shell--dark .bz-main table.ant-table tr:hover td,
+.bz-shell--dark .bz-main .mud-table-root tr:hover td {
+    background: #141e2b;
+}
+
+.bz-shell--dark .bz-main .mud-table-root tr:nth-child(even) td,
+.bz-shell--dark .bz-main table.ant-table tr:nth-child(even) td {
+    background: #111a25;
+}
+
+.bz-shell--dark .bz-main .mud-table-root tr:nth-child(even):hover td,
+.bz-shell--dark .bz-main table.ant-table tr:nth-child(even):hover td {
+    background: #172233;
+}
+
+.bz-shell--dark .bz-main table:not(.ant-table):not(.mud-table-root) {
+    border-color: var(--citus-border-subtle) !important;
+    background: var(--citus-surface) !important;
+    color: var(--citus-text) !important;
+}
+
+.bz-shell--dark .bz-main table:not(.ant-table):not(.mud-table-root) thead th {
+    border-color: var(--citus-border-strong) !important;
+    background: #0c121a !important;
+    color: #9fb2c8 !important;
+}
+
+.bz-shell--dark .bz-main table:not(.ant-table):not(.mud-table-root) tbody tr,
+.bz-shell--dark .bz-main table:not(.ant-table):not(.mud-table-root) tbody td {
+    border-color: var(--citus-border-subtle) !important;
+    background: var(--citus-surface) !important;
+    color: var(--citus-text) !important;
+}
+
+.bz-shell--dark .bz-main table:not(.ant-table):not(.mud-table-root) tbody tr:nth-child(even) td {
+    background: #111a25 !important;
+}
+
+.bz-shell--dark .bz-main .bg-white,
+.bz-shell--dark .bz-main .surface-card,
+.bz-shell--dark .bz-main .surface-muted {
+    border-color: var(--citus-border-subtle) !important;
+    background: var(--citus-surface) !important;
+    color: var(--citus-text) !important;
+}
+
+.bz-shell--dark .bz-main .mud-input-root,
+.bz-shell--dark .bz-main .mud-input,
+.bz-shell--dark .bz-main .mud-select,
+.bz-shell--dark .bz-main .mud-picker-input-button,
+.bz-shell--dark .bz-main .ant-input,
+.bz-shell--dark .bz-main input,
+.bz-shell--dark .bz-main select,
+.bz-shell--dark .bz-main textarea {
+    background-color: var(--citus-surface-field);
+    color: var(--citus-text);
+}
+
+.bz-shell--dark .bz-main .mud-input-root.Mud-disabled,
+.bz-shell--dark .bz-main .mud-input-root.mud-disabled,
+.bz-shell--dark .bz-main .mud-disabled,
+.bz-shell--dark .bz-main input:disabled,
+.bz-shell--dark .bz-main select:disabled,
+.bz-shell--dark .bz-main textarea:disabled {
+    border-color: rgba(148, 163, 184, .14);
+    background-color: #151b23 !important;
+    color: #7f8ea3 !important;
+    opacity: 1;
+}
+
+.bz-shell--dark .bz-main .mud-popover,
+.bz-shell--dark .bz-main .mud-list,
+.bz-shell--dark .bz-main .mud-picker,
+.bz-shell--dark .bz-main .mud-picker-container,
+.bz-shell--dark .bz-main .mud-menu {
+    border-color: var(--citus-border-subtle);
+    background: var(--citus-surface-raised);
+    color: var(--citus-text);
 }
 
 /* Old dark pages remain readable while their inner controls adopt the Ant density. */
 .bz-main [style*="color:#d9e2ea"] .mud-paper,
 .bz-main [style*="color: #d9e2ea"] .mud-paper {
-    background: rgba(255, 255, 255, .94);
+    background: var(--citus-surface);
     color: var(--citus-text);
 }
 
@@ -501,7 +695,7 @@ body {
     color: var(--citus-text);
     font-size: clamp(1.8rem, 2.5vw, 2.7rem);
     font-weight: 850;
-    letter-spacing: -.045em;
+    letter-spacing: 0;
 }
 
 .citus-page__summary {
@@ -530,7 +724,7 @@ body {
     min-height: 10rem;
     padding: 1.35rem;
     border: 1px solid var(--citus-border-subtle);
-    border-radius: var(--citus-radius-lg);
+    border-radius: var(--citus-radius-md);
     background: var(--citus-surface);
     box-shadow: var(--citus-shadow-card);
 }
@@ -542,7 +736,7 @@ body {
     justify-content: center;
     padding: .45rem 1rem;
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--citus-radius-md);
     font-size: .88rem;
     font-weight: 800;
     line-height: 1;
@@ -562,7 +756,7 @@ body {
 
 .citus-btn--primary:hover {
     color: #fff;
-    background: #0958d9;
+    background: var(--citus-primary-hover);
 }
 
 .citus-btn--secondary {

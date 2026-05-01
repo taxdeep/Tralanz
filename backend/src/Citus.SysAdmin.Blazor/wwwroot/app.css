@@ -1,11 +1,25 @@
 html,
 body {
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--citus-font);
+}
+
+:root {
+    --citus-bg: #f6f8fb;
+    --citus-bg-strong: #eef3f9;
+    --citus-surface: #ffffff;
+    --citus-surface-muted: #f8fafc;
+    --citus-text: #172033;
+    --citus-text-muted: #667085;
+    --citus-border-subtle: rgba(31, 45, 61, .11);
+    --citus-primary: #1677ff;
+    --citus-radius-md: 8px;
+    --citus-control-height: 40px;
+    --citus-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body {
     margin: 0;
-    color: #0f172a;
+    color: var(--citus-text);
 }
 
 h1:focus {
@@ -13,7 +27,7 @@ h1:focus {
 }
 
 .text-secondary {
-    color: #64748b;
+    color: var(--citus-text-muted);
 }
 
 .citus-stat-card {
@@ -23,8 +37,8 @@ h1:focus {
 }
 
 .citus-empty-state {
-    border: 1px dashed rgba(14, 116, 144, 0.25);
-    background: rgba(255, 255, 255, 0.85);
+    border: 1px dashed var(--citus-border-subtle);
+    background: var(--citus-surface);
 }
 
 .citus-table-note {

@@ -29,7 +29,7 @@
 ::deep(.source-entry__metric-card),
 .source-entry__balance-card {
     border: 1px solid var(--entry-border);
-    border-radius: 22px;
+    border-radius: 8px;
     background: var(--entry-card);
     box-shadow: 0 18px 48px rgba(19, 38, 64, .08);
 }
@@ -73,7 +73,7 @@
     color: var(--entry-text);
     font-size: clamp(2rem, 3vw, 3.1rem);
     line-height: .96;
-    letter-spacing: -.05em;
+    letter-spacing: 0;
 }
 
 .source-entry__hero-copy p {
@@ -87,7 +87,7 @@
 .source-entry__balance-card {
     height: 100%;
     padding: 1.25rem;
-    background: linear-gradient(145deg, #09264d, #1677ff);
+    background: #12345d;
     color: #fff;
 }
 
@@ -139,7 +139,7 @@
     width: 2rem;
     height: 2rem;
     place-items: center;
-    border-radius: 12px;
+    border-radius: 8px;
     color: #fff;
     background: var(--entry-accent);
     font-weight: 800;
@@ -167,7 +167,7 @@
 
 .source-entry__party-field {
     border: 1px solid rgba(22, 119, 255, .16);
-    border-radius: 16px;
+    border-radius: 8px;
     padding: .8rem;
     background: linear-gradient(180deg, rgba(22, 119, 255, .06), rgba(255, 255, 255, .6));
 }
@@ -219,7 +219,7 @@
 
 ::deep(.source-entry__lines-card .mud-table-container) {
     border: 1px solid rgba(20, 41, 68, .08);
-    border-radius: 14px;
+    border-radius: 8px;
 }
 
 ::deep(.mud-table-root th) {
@@ -236,6 +236,32 @@
 ::deep(.mud-select),
 ::deep(.mud-picker-input-button) {
     font-size: .86rem;
+}
+
+.bz-shell--dark .source-entry {
+    --entry-bg: #080d14;
+    --entry-card: #101720;
+    --entry-border: rgba(148, 163, 184, .18);
+    --entry-text: #e4edf7;
+    --entry-muted: #9aaabe;
+    --entry-accent: #6aa9ff;
+    --entry-accent-soft: rgba(106, 169, 255, .12);
+    background: linear-gradient(180deg, #080d14 0%, #0b111a 100%);
+}
+
+.bz-shell--dark .source-entry__party-field {
+    background: #0b1119;
+}
+
+.bz-shell--dark .source-entry__action-bar {
+    background: rgba(8, 13, 20, .92);
+}
+
+.bz-shell--dark ::deep(.source-entry__lines-card .mud-table-container),
+.bz-shell--dark ::deep(.source-entry__section-card),
+.bz-shell--dark ::deep(.source-entry__metric-card) {
+    border-color: var(--entry-border);
+    background: var(--entry-card);
 }
 
 @media (max-width: 980px) {

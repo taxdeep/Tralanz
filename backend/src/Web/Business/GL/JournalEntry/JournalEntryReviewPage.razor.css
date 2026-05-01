@@ -1,10 +1,7 @@
 .je-review {
     min-height: 100vh;
-    background:
-        radial-gradient(circle at top left, rgba(122, 182, 217, 0.08), transparent 22%),
-        radial-gradient(circle at top right, rgba(111, 207, 151, 0.06), transparent 18%),
-        linear-gradient(180deg, #0c1218 0%, #0b1015 100%);
-    color: #d9e2ea;
+    background: linear-gradient(180deg, var(--citus-bg, #080d14) 0%, var(--citus-bg-strong, #0b111a) 100%);
+    color: var(--citus-text, #d9e2ea);
 }
 
 .je-review-shell {
@@ -45,10 +42,10 @@
 
 .je-review-card,
 .je-review-panel {
-    border: 1px solid rgba(151, 168, 183, 0.18);
-    background: rgba(16, 24, 33, 0.92);
-    border-radius: 14px;
-    box-shadow: 0 20px 38px rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--citus-border-subtle, rgba(151, 168, 183, 0.18));
+    background: var(--citus-surface, rgba(16, 24, 33, 0.92));
+    border-radius: 8px;
+    box-shadow: var(--citus-shadow-card, none);
 }
 
 .je-review-card {
@@ -59,20 +56,20 @@
     font-size: 0.74rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #97a8b7;
+    color: var(--citus-text-muted, #97a8b7);
     margin-bottom: 8px;
 }
 
 .je-review-card__value {
     font-size: 1.15rem;
     font-weight: 600;
-    color: #eef5fb;
+    color: var(--citus-text, #eef5fb);
 }
 
 .je-review-card__hint {
     margin-top: 6px;
     font-size: 0.78rem;
-    color: #97a8b7;
+    color: var(--citus-text-muted, #97a8b7);
 }
 
 .je-review-layout {
@@ -102,13 +99,13 @@
 .je-review-panel__title {
     font-size: 1rem;
     font-weight: 600;
-    color: #eef5fb;
+    color: var(--citus-text, #eef5fb);
 }
 
 .je-review-panel__caption {
     margin-top: 4px;
     font-size: 0.8rem;
-    color: #97a8b7;
+    color: var(--citus-text-muted, #97a8b7);
 }
 
 .je-review-facts {
@@ -119,9 +116,9 @@
 
 .je-review-fact {
     padding: 12px 13px;
-    border: 1px solid rgba(151, 168, 183, 0.14);
-    border-radius: 12px;
-    background: rgba(10, 16, 22, 0.72);
+    border: 1px solid var(--citus-border-subtle, rgba(151, 168, 183, 0.14));
+    border-radius: 8px;
+    background: var(--citus-surface-muted, rgba(10, 16, 22, 0.72));
 }
 
 .je-review-fact--wide {
