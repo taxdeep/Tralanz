@@ -1045,6 +1045,7 @@ accounting.MapPost(
         CustomerUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ICustomerStore store,
+        Citus.Modules.UnitySearch.Application.Contracts.IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1077,6 +1078,10 @@ accounting.MapPost(
                     Notes: request.Notes,
                     PaymentTermId: request.PaymentTermId),
                 cancellationToken);
+            // Invalidate the unity-search projection so the new customer
+            // shows up in the topbar / customer pickers immediately
+            // (otherwise operators wait out the 5-min refresh window).
+            await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
             return Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23505")
@@ -1099,6 +1104,7 @@ accounting.MapPut(
         CustomerUpsertHttpRequest request,
         BusinessSessionContextAccessor sessionAccessor,
         ICustomerStore store,
+        Citus.Modules.UnitySearch.Application.Contracts.IUnitySearchProjectionStore unitySearchProjectionStore,
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
@@ -1132,6 +1138,12 @@ accounting.MapPut(
                     Notes: request.Notes,
                     PaymentTermId: request.PaymentTermId),
                 cancellationToken);
+            if (saved is not null)
+            {
+                // Display-name / status edits flow into the search index so
+                // the projection cache needs to drop too.
+                await unitySearchProjectionStore.InvalidateAsync(session.ActiveCompanyId, cancellationToken);
+            }
             return saved is null ? Results.NotFound() : Results.Ok(saved);
         }
         catch (PostgresException ex) when (ex.SqlState == "23503")

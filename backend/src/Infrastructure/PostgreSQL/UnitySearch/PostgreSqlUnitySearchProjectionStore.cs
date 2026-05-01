@@ -115,6 +115,18 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
         Volatile.Write(ref _schemaEnsured, 1);
     }
 
+    /// <summary>
+    /// Drops the cached refresh timestamp for a company so the next
+    /// search call rebuilds the projection on the spot. Backs the
+    /// <see cref="InvalidateAsync"/> contract — see that doc comment
+    /// for the why.
+    /// </summary>
+    public Task InvalidateAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        _companyRefreshTimestamps.TryRemove(companyId, out _);
+        return Task.CompletedTask;
+    }
+
     public async Task EnsureProjectionFreshAsync(Guid companyId, CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken);
