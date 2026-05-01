@@ -534,6 +534,42 @@
     border-radius: var(--citus-radius-md);
 }
 
+/* Blazor runtime error banner.
+   The framework toggles this element to visible when an unhandled
+   interactive error occurs. Keep it hidden by default; without this rule
+   the raw fallback text leaks into the bottom-left corner of every shell. */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    right: var(--citus-space-4);
+    bottom: var(--citus-space-4);
+    left: var(--citus-space-4);
+    z-index: 1100;
+    max-width: 38rem;
+    margin: 0 auto;
+    padding: var(--citus-space-3) var(--citus-space-10) var(--citus-space-3) var(--citus-space-4);
+    background: var(--citus-color-danger-bg);
+    color: var(--citus-color-danger-fg);
+    border: 1px solid var(--citus-color-danger);
+    border-radius: var(--citus-radius-md);
+    box-shadow: var(--citus-shadow-3);
+    font-size: var(--citus-text-sm);
+}
+
+#blazor-error-ui .reload {
+    color: var(--citus-color-primary);
+    font-weight: 600;
+    margin-left: var(--citus-space-2);
+}
+
+#blazor-error-ui .dismiss {
+    position: absolute;
+    top: var(--citus-space-2);
+    right: var(--citus-space-3);
+    cursor: pointer;
+    color: var(--citus-color-fg-muted);
+}
+
 .citus-page-header {
     display: flex;
     align-items: flex-start;
