@@ -221,7 +221,7 @@
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
 
-        if (Disabled || CompanyId == Guid.Empty || (!allowEmptyQuery && query.Length < 2))
+        if (Disabled || CompanyId == Guid.Empty || (!allowEmptyQuery && query.Length < 1))
         {
             _showResults = CanCreateFromSearch;
             await InvokeAsync(StateHasChanged);
