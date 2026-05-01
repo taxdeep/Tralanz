@@ -109,6 +109,18 @@ public sealed class BusinessWriteFlowClient
     public Task<WriteFlowResult> PostBillAsync(BillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostBillAsync), draft);
 
+    /// <summary>
+    /// Sales receipt = invoice + receive-payment in one shot. The cash
+    /// (or bank / credit-card / wallet) account picked as <c>DepositTo</c>
+    /// is debited the gross amount; the line revenue accounts and the
+    /// tax-payable account are credited. No AR open item is created —
+    /// the customer doesn't owe anything because they paid at the point
+    /// of sale. Backend route for this stub will live at
+    /// <c>/accounting/sales-receipts/save-and-post</c> when wired.
+    /// </summary>
+    public Task<WriteFlowResult> PostSalesReceiptAsync(SalesReceiptDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostSalesReceiptAsync), draft);
+
     public async Task<WriteFlowResult> PostReceivePaymentAsync(ReceivePaymentDraft draft, CancellationToken cancellationToken = default)
     {
         // Two-step server flow:
@@ -340,6 +352,39 @@ public sealed record InvoiceDraft
     /// currency equals the base currency.
     /// </summary>
     public decimal? FxRate { get; init; }
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+/// <summary>
+/// Wire shape for the cash-in-hand sale flow. Distinct from
+/// <see cref="InvoiceDraft"/> in three ways: there is no <c>DueDate</c>
+/// (the customer pays now), the form carries an explicit
+/// <see cref="DepositToAccountId"/> (the cash / bank / credit-card /
+/// wallet account that receives the money), and the
+/// <see cref="PaymentMethod"/> + <see cref="ReferenceNo"/> are mandatory
+/// metadata for the bank reconciliation step downstream.
+/// </summary>
+public sealed record SalesReceiptDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public Guid? CustomerId { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+
+    /// <summary>Per-document FX rate (transaction → base). Same semantics as <see cref="InvoiceDraft.FxRate"/>.</summary>
+    public decimal? FxRate { get; init; }
+
+    /// <summary>Asset account that receives the cash. Picked from the
+    /// <c>AccountPicker</c> with <c>AllowedRootTypes="asset"</c>.</summary>
+    public Guid? DepositToAccountId { get; init; }
+    public string DepositToAccountCode { get; init; } = string.Empty;
+
+    /// <summary>cash / cheque / credit_card / wire / eft / direct_deposit / other.</summary>
+    public string PaymentMethod { get; init; } = string.Empty;
+
+    /// <summary>Cheque #, wire trace, EFT reference, etc. Conditionally required by <see cref="PaymentMethod"/>.</summary>
+    public string ReferenceNo { get; init; } = string.Empty;
+
     public string Memo { get; init; } = string.Empty;
     public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
 }

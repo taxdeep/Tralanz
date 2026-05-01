@@ -1,0 +1,546 @@
+@page "/sales-receipts/new"
+
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+
+@inject BusinessShellState ShellState
+@inject BusinessWriteFlowClient WriteFlow
+@inject CustomerClient CustomerClient
+@inject NavigationManager NavigationManager
+@inject CitusToastService Message
+
+@*
+    SalesReceiptCreatePage — cash-in-hand sale flow.
+
+    Domain difference vs InvoiceCreatePage:
+      • No DueDate. The customer pays at the point of sale; there is
+        nothing to wait for.
+      • No AR open item. Posting credits revenue + tax-payable directly
+        and debits a deposit account (cash / bank / credit-card / wallet).
+      • Header carries Payment Method + Reference No + Deposit To so the
+        bank-reconciliation step downstream knows where the money landed
+        and on which channel.
+
+    Lines, item picker, account picker, tax-code picker, totals, and
+    the auto-grow / insert-below UX are deliberately identical to the
+    invoice flow so the "row of mixed controls" rhythm reads the same
+    across the Sales section. This file mirrors InvoiceCreatePage's
+    structure on purpose; touch them together when changing line shape.
+*@
+
+<PageTitle>New Sales Receipt | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="sales-overview">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to sales</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (ShellState.AreWritesBlocked)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_lastResult is not null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>@_lastResult.Operation</strong>
+            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-8 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Header</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Receipt date</label>
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Customer</label>
+                    <CustomerPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                       UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                       Placeholder="Search customers…"
+                                       Take="8"
+                                       SourceRoute="/sales-receipts/new"
+                                       SelectedId="@(_customerId == Guid.Empty ? null : _customerId)"
+                                       SelectedDisplayText="@_customerDisplay"
+                                       OnCustomerSelected="OnCustomerSelected"
+                                       OnCleared="OnCustomerCleared" />
+                </div>
+                <div>
+                    @* FxRateInline mirrors invoice / bill: muted placeholder
+                       until customer is picked, then the live D-1 rate from
+                       fx_rates_daily with manual override. Currency is read-
+                       only, locked to the picked customer's default. *@
+                    <label class="text-sm font-medium block mb-1">Exchange rate</label>
+                    @if (_customerId == Guid.Empty)
+                    {
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
+                            <span class="text-fg-subtle">Pick a customer first</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    }
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Memo</label>
+                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the receipt; optional." />
+                </div>
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Payment</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Payment method</label>
+                    <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
+                        <option value="cash">Cash</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="credit_card">Credit Card</option>
+                        <option value="wire">Wire</option>
+                        <option value="direct_deposit">Direct Deposit</option>
+                        <option value="eft">EFT</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div>
+                    @* Reference field is conditional on payment method —
+                       cash needs nothing, cheque needs a number, wire / EFT
+                       need a trace, credit_card / other take an optional
+                       reference. Same convention as ExpenseCreatePage so
+                       operators don't relearn the rules per page. *@
+                    @if (_paymentMethod == "cheque")
+                    {
+                        <label class="text-sm font-medium block mb-1">Cheque # <span class="text-fg-danger">*</span></label>
+                        <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="e.g. 1042" />
+                    }
+                    else if (_paymentMethod is "wire" or "direct_deposit" or "eft")
+                    {
+                        <label class="text-sm font-medium block mb-1">Reference # <span class="text-fg-danger">*</span></label>
+                        <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="Bank trace / SWIFT MT103 / etc." />
+                    }
+                    else if (_paymentMethod is "credit_card" or "other")
+                    {
+                        <label class="text-sm font-medium block mb-1">Reference #</label>
+                        <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="Optional" />
+                    }
+                    else
+                    {
+                        <label class="text-sm font-medium block mb-1">&nbsp;</label>
+                        <div class="text-fg-muted text-sm">Cash payments don't need a reference.</div>
+                    }
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Deposit to</label>
+                    @* AccountPicker filtered to asset accounts — the cash /
+                       bank / credit-card / payment-processor row that
+                       receives the funds. Asset is the only correct root
+                       type here; revenue / expense / liability would all be
+                       categorically wrong "where did the money land?"
+                       answers. *@
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="sales_receipt.deposit_to"
+                                   AllowedRootTypes="asset"
+                                   SelectedId="@_depositToAccountId"
+                                   SelectedDisplayText="@_depositToAccountDisplay"
+                                   Placeholder="Select bank / cash / credit card…"
+                                   DefaultCurrencyCode="@_currency"
+                                   OnAccountSelected="OnDepositAccountSelected"
+                                   OnCleared="OnDepositAccountCleared" />
+                </div>
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Lines</h2>
+                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddLine">Add line</CitusButton>
+            </header>
+
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 2.25rem"></th>
+                        <th style="width: 16rem">Item / Service</th>
+                        <th>Description</th>
+                        <th class="text-right" style="width: 6rem">Qty</th>
+                        <th class="text-right" style="width: 9rem">Unit price</th>
+                        <th style="width: 7rem">Account</th>
+                        <th style="width: 6rem">Tax</th>
+                        <th class="text-right" style="width: 9rem">Line total</th>
+                        <th style="width: 3rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var index = 0; index < _lines.Count; index++)
+                    {
+                        var i = index;
+                        var line = _lines[i];
+                        <tr>
+                            <td>
+                                <button type="button"
+                                        class="citus-icon-button"
+                                        title="Insert line below"
+                                        @onclick="() => InsertLineAfter(i)">
+                                    <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                            <td>
+                                <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   Placeholder="Search items…"
+                                                   Take="6"
+                                                   SourceRoute="/sales-receipts/new"
+                                                   SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                                   SelectedDisplayText="@line.ItemDisplay"
+                                                   OnItemSelected="@(option => OnItemPicked(i, option))"
+                                                   OnCleared="@(() => OnItemCleared(i))" />
+                            </td>
+                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
+                            <td>
+                                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                               Context="sales_receipt.line.revenue"
+                                               AllowedRootTypes="revenue"
+                                               SelectedId="@line.AccountId"
+                                               SelectedDisplayText="@line.AccountDisplay"
+                                               Placeholder="Revenue account..."
+                                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                               OnAccountSelected="@(account => OnAccountSelected(i, account))"
+                                               OnCleared="@(() => OnAccountCleared(i))" />
+                            </td>
+                            <td>
+                                <TaxCodePicker SelectedId="@line.TaxCodeId"
+                                               SelectedDisplayText="@line.TaxCode"
+                                               AppliesTo="sales"
+                                               Placeholder="Tax"
+                                               OnTaxCodeSelected="@(tax => OnTaxCodeSelected(i, tax))"
+                                               OnCleared="@(() => OnTaxCodeCleared(i))" />
+                            </td>
+                            <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
+                            <td>
+                                <button type="button" class="citus-icon-button" title="Remove line" @onclick="() => RemoveLine(i)">
+                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="citus-data-table__total">
+                        <td colspan="7" class="text-right font-medium">Total</td>
+                        <td class="text-right font-semibold">@FormatAmount(_total)</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="lg:col-span-4 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Summary</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Lines</th><td>@_lines.Count</td></tr>
+                    <tr><th>Subtotal</th><td>@FormatAmount(_total)</td></tr>
+                    <tr><th>Currency</th><td>@_currency.ToUpperInvariant()</td></tr>
+                    @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        <tr>
+                            <th>FX rate</th>
+                            <td>@(_fxRate.HasValue ? _fxRate.Value.ToString("0.000000") : "—")</td>
+                        </tr>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_depositToAccountDisplay))
+                    {
+                        <tr><th>Deposit to</th><td>@_depositToAccountDisplay</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Post sales receipt</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Posting debits the deposit account, credits the line revenue
+                accounts plus tax-payable, and reserves the receipt number.
+                No AR open item is created — the customer paid at the point
+                of sale.
+            </p>
+            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
+                         Disabled="@(_lines.Count == 0 || _total <= 0 || _depositToAccountId is null || ShellState.AreWritesBlocked || _isSubmitting)"
+                         OnClick="PostAsync">
+                @(_isSubmitting ? "Posting..." : "Post sales receipt")
+            </CitusButton>
+        </section>
+    </div>
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Sales & Get Paid",
+        Title = "New sales receipt",
+        Subtitle = "Cash-in-hand sale. Posting moves the money to the deposit account and credits revenue in one step — no AR open item."
+    };
+
+    private DateTime? _documentDate = DateTime.Today;
+    private Guid _customerId;
+    private string _customerDisplay = string.Empty;
+    /// <summary>
+    /// Tracks the picked customer's default currency, falling back to
+    /// the company base when no customer is picked yet. Read-only — the
+    /// per-customer single-currency rule (memory:
+    /// <c>feedback_amount_search_transaction_currency</c>) means the
+    /// operator cannot override on the sales receipt itself.
+    /// </summary>
+    private string _currency = string.Empty;
+    private decimal? _fxRate;
+    private string _memo = string.Empty;
+
+    // Payment metadata — cash receipt is more than just an invoice that
+    // posts immediately; it carries the channel (method) and where the
+    // money lands (deposit_to). Both feed the bank-reconciliation step
+    // downstream so the operator can match this receipt to a bank
+    // statement line later.
+    private string _paymentMethod = "cash";
+    private string _referenceNo = string.Empty;
+    private Guid? _depositToAccountId;
+    private string _depositToAccountDisplay = string.Empty;
+    private string _depositToAccountCode = string.Empty;
+
+    private sealed record SalesReceiptLineEditState(
+        Guid ItemId = default,
+        string ItemDisplay = "",
+        string Description = "",
+        decimal Quantity = 1m,
+        decimal UnitPrice = 0m,
+        Guid? AccountId = null,
+        string AccountDisplay = "",
+        string AccountCode = "",
+        Guid? TaxCodeId = null,
+        string TaxCode = "")
+    {
+        public bool HasContent =>
+            ItemId != Guid.Empty
+            || !string.IsNullOrWhiteSpace(Description)
+            || !string.IsNullOrWhiteSpace(AccountCode)
+            || !string.IsNullOrWhiteSpace(TaxCode)
+            || UnitPrice > 0m;
+    }
+
+    private readonly List<SalesReceiptLineEditState> _lines = new() { new SalesReceiptLineEditState() };
+    private bool _isSubmitting;
+    private string? _validation;
+    private WriteFlowResult? _lastResult;
+
+    private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
+
+    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+
+    private async Task OnCustomerSelected(UnitySearchPickerOption option)
+    {
+        _customerId = option.SourceId;
+        _customerDisplay = option.DisplayText;
+
+        var customer = await CustomerClient.GetByIdAsync(_customerId);
+        if (customer is not null && !string.IsNullOrWhiteSpace(customer.DefaultCurrencyCode))
+        {
+            _currency = customer.DefaultCurrencyCode;
+        }
+    }
+
+    private void OnCustomerCleared()
+    {
+        _customerId = Guid.Empty;
+        _customerDisplay = string.Empty;
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    }
+
+    private void OnPaymentMethodChanged(ChangeEventArgs e)
+    {
+        _paymentMethod = e.Value?.ToString() ?? "cash";
+        if (_paymentMethod == "cash")
+        {
+            _referenceNo = string.Empty;
+        }
+    }
+
+    private void OnDepositAccountSelected(AccountSummary account)
+    {
+        _depositToAccountId = account.Id;
+        _depositToAccountDisplay = $"{account.Code} {account.Name}";
+        _depositToAccountCode = account.Code;
+    }
+
+    private void OnDepositAccountCleared()
+    {
+        _depositToAccountId = null;
+        _depositToAccountDisplay = string.Empty;
+        _depositToAccountCode = string.Empty;
+    }
+
+    private void AddLine() => _lines.Add(new SalesReceiptLineEditState());
+
+    private void RemoveLine(int i)
+    {
+        if (i < 0 || i >= _lines.Count) return;
+        _lines.RemoveAt(i);
+        if (_lines.Count == 0) _lines.Add(new SalesReceiptLineEditState());
+    }
+
+    private void InsertLineAfter(int i)
+    {
+        if (i < 0 || i >= _lines.Count) return;
+        _lines.Insert(i + 1, new SalesReceiptLineEditState());
+    }
+
+    private void Update(int i, Func<SalesReceiptLineEditState, SalesReceiptLineEditState> mutate)
+    {
+        if (i < 0 || i >= _lines.Count) return;
+        _lines[i] = mutate(_lines[i]);
+        EnsureTrailingBlankLine();
+    }
+
+    /// <summary>
+    /// Same auto-grow rule as JE / Invoice / Bill: the moment the
+    /// previously-trailing row gains content, append a fresh blank one
+    /// so the operator always has a place to type without hunting the
+    /// "Add line" button.
+    /// </summary>
+    private void EnsureTrailingBlankLine()
+    {
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new SalesReceiptLineEditState());
+            return;
+        }
+        if (_lines[^1].HasContent)
+        {
+            _lines.Add(new SalesReceiptLineEditState());
+        }
+    }
+
+    private void OnItemPicked(int i, UnitySearchPickerOption option)
+    {
+        Update(i, l => l with
+        {
+            ItemId = option.SourceId,
+            ItemDisplay = option.DisplayText,
+            Description = string.IsNullOrWhiteSpace(l.Description) ? option.PrimaryText : l.Description,
+        });
+    }
+
+    private void OnItemCleared(int i)
+    {
+        Update(i, l => l with { ItemId = Guid.Empty, ItemDisplay = string.Empty });
+    }
+
+    private void OnAccountSelected(int i, AccountSummary account)
+    {
+        Update(i, l => l with
+        {
+            AccountId = account.Id,
+            AccountDisplay = $"{account.Code} {account.Name}",
+            AccountCode = account.Code
+        });
+    }
+
+    private void OnAccountCleared(int i)
+    {
+        Update(i, l => l with { AccountId = null, AccountDisplay = string.Empty, AccountCode = string.Empty });
+    }
+
+    private void OnTaxCodeSelected(int i, TaxCodeSummary tax)
+    {
+        Update(i, l => l with
+        {
+            TaxCodeId = tax.Id,
+            TaxCode = tax.Code
+        });
+    }
+
+    private void OnTaxCodeCleared(int i)
+    {
+        Update(i, l => l with { TaxCodeId = null, TaxCode = string.Empty });
+    }
+
+    private async Task PostAsync()
+    {
+        _validation = null;
+        _lastResult = null;
+
+        if (_customerId == Guid.Empty) { _validation = "Pick a customer first."; return; }
+        if (_depositToAccountId is null) { _validation = "Pick a deposit account."; return; }
+
+        // cheque / wire / direct_deposit / eft must have a reference no
+        // for downstream bank-reconciliation matching. credit_card and
+        // other take a reference but it's optional. Cash needs nothing.
+        var requiresRef = _paymentMethod is "cheque" or "wire" or "direct_deposit" or "eft";
+        if (requiresRef && string.IsNullOrWhiteSpace(_referenceNo))
+        {
+            _validation = $"A reference number is required for {_paymentMethod.Replace('_', ' ')} payments.";
+            return;
+        }
+
+        var meaningful = _lines.Where(l => l.HasContent).ToArray();
+        if (meaningful.Length == 0) { _validation = "Add at least one line."; return; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs a revenue account code."; return; }
+        var total = meaningful.Sum(l => l.Quantity * l.UnitPrice);
+        if (total <= 0) { _validation = "Sales receipt total must be greater than zero."; return; }
+
+        _isSubmitting = true;
+        try
+        {
+            var draft = new SalesReceiptDraft
+            {
+                DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
+                CustomerId = _customerId,
+                TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+                FxRate = _fxRate,
+                DepositToAccountId = _depositToAccountId,
+                DepositToAccountCode = _depositToAccountCode,
+                PaymentMethod = _paymentMethod,
+                ReferenceNo = _referenceNo.Trim(),
+                Memo = _memo.Trim(),
+                Lines = meaningful.Select(l => new DocumentLineDraft
+                {
+                    Description = l.Description,
+                    Quantity = l.Quantity,
+                    UnitPrice = l.UnitPrice,
+                    AccountCode = l.AccountCode,
+                    TaxCode = l.TaxCode,
+                }).ToArray()
+            };
+            _lastResult = await WriteFlow.PostSalesReceiptAsync(draft);
+            if (_lastResult.Succeeded) { await Message.SuccessAsync("Sales receipt posted."); NavigationManager.NavigateTo("sales-overview"); }
+            else { await Message.InfoAsync(_lastResult.Message); }
+        }
+        finally { _isSubmitting = false; }
+    }
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+}
