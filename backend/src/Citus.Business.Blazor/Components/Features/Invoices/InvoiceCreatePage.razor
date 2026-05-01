@@ -67,36 +67,28 @@
                                        OnCleared="OnCustomerCleared" />
                 </div>
                 <div>
-                    @* Transaction currency is fully derived from the picked
-                       customer (per the per-customer single-currency rule),
-                       so this is a read-only label, not an input — pick the
-                       customer and the right currency follows. Before a
-                       customer is picked, the slot stays muted. *@
-                    <label class="text-sm font-medium block mb-1">Transaction currency</label>
-                    <div class="citus-form-field__input flex items-center"
-                         style="background: var(--citus-color-bg-muted); cursor: default;">
-                        @if (_customerId == Guid.Empty)
-                        {
-                            <span class="text-fg-subtle">Pick a customer first</span>
-                        }
-                        else
-                        {
-                            <strong>@_currency.ToUpperInvariant()</strong>
-                            @if (!string.Equals(_currency, ShellState.ActiveCompany.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
-                            {
-                                <span class="text-fg-subtle text-xs ml-2">
-                                    foreign — base is @ShellState.ActiveCompany.BaseCurrencyCode
-                                </span>
-                            }
-                        }
-                    </div>
-                </div>
-                <div>
+                    @* The "Transaction currency" label / display is gone —
+                       it was redundant with the FxRateInline rate widget,
+                       which already shows the quote currency code + flag.
+                       FxRateInline self-handles all three states:
+                         - no customer picked → muted "Pick a customer first"
+                         - customer in base currency → "Base currency — no FX rate needed"
+                         - customer in foreign currency → "1 USD = 1.357893 CAD" with flags + override input *@
                     <label class="text-sm font-medium block mb-1">Exchange rate</label>
-                    <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
-                                  BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                  QuoteCurrencyCode="@_currency"
-                                  @bind-Rate="_fxRate" />
+                    @if (_customerId == Guid.Empty)
+                    {
+                        <div class="citus-form-field__input flex items-center"
+                             style="background: var(--citus-color-bg-muted); cursor: default;">
+                            <span class="text-fg-subtle">Pick a customer first</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <FxRateInline DocumentDate="@(DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date))"
+                                      BaseCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                      QuoteCurrencyCode="@_currency"
+                                      @bind-Rate="_fxRate" />
+                    }
                 </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Memo</label>

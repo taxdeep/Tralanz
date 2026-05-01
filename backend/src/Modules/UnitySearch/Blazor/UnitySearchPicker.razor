@@ -6,8 +6,14 @@
 <div class="unity-picker @(Disabled ? "unity-picker--disabled" : null)">
     <div class="unity-picker__control">
         <i class="ti ti-search unity-picker__icon" aria-hidden="true"></i>
+        @* type="text" instead of type="search": same Chromium quirk that
+           hid the JE Debit/Credit cells under -webkit-text-fill-color was
+           biting type="search" too. Plain text inputs paint via our token
+           colour reliably; the picker has its own X clear button below so
+           losing type="search"'s native clear is a no-op. *@
         <input class="unity-picker__input"
-               type="search"
+               type="text"
+               autocomplete="off"
                value="@_searchText"
                placeholder="@Placeholder"
                disabled="@Disabled"
