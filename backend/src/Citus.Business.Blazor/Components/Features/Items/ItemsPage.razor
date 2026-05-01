@@ -50,9 +50,8 @@
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Kind</label>
-                <select class="citus-input__field"
-                        @bind="_draft.ItemKind"
-                        style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                <select class="citus-form-field__input"
+                        @bind="_draft.ItemKind">
                     <option value="service">Service</option>
                     <option value="non_stock">Non-stock</option>
                     <option value="stock">Stock</option>
@@ -78,7 +77,7 @@
                                @bind-Value="_draft.DefaultSalesPrice"
                                Min="0"
                                Format="0.00"
-                               Style="width: 100%;" />
+                               Class="citus-control-full" />
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Default purchase price (@ShellState.ActiveCompany.BaseCurrencyCode)</label>
@@ -86,13 +85,12 @@
                                @bind-Value="_draft.DefaultPurchasePrice"
                                Min="0"
                                Format="0.00"
-                               Style="width: 100%;" />
+                               Class="citus-control-full" />
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Default sales tax</label>
-                <select class="citus-input__field"
-                        @bind="_draft.DefaultSalesTaxCodeId"
-                        style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                <select class="citus-form-field__input"
+                        @bind="_draft.DefaultSalesTaxCodeId">
                     <option value="">— None —</option>
                     @foreach (var tax in _salesTaxCodes)
                     {
@@ -102,9 +100,8 @@
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Default purchase tax</label>
-                <select class="citus-input__field"
-                        @bind="_draft.DefaultPurchaseTaxCodeId"
-                        style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                <select class="citus-form-field__input"
+                        @bind="_draft.DefaultPurchaseTaxCodeId">
                     <option value="">— None —</option>
                     @foreach (var tax in _purchaseTaxCodes)
                     {
@@ -181,9 +178,8 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Manage inventory method</label>
-                    <select class="citus-input__field"
-                            @bind="_draft.ManageInventoryMethod"
-                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <select class="citus-form-field__input"
+                            @bind="_draft.ManageInventoryMethod">
                         <option value="manage_stock">Manage stock</option>
                         <option value="manage_stock_by_sku">Manage stock by SKU</option>
                         <option value="dont_manage_stock">Don't manage stock</option>
@@ -191,18 +187,16 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Costing method</label>
-                    <select class="citus-input__field"
-                            @bind="_draft.DefaultCostingMethod"
-                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <select class="citus-form-field__input"
+                            @bind="_draft.DefaultCostingMethod">
                         <option value="moving_average">Moving average</option>
                         <option value="fifo">FIFO</option>
                     </select>
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Backorder policy</label>
-                    <select class="citus-input__field"
-                            @bind="_draft.BackorderMode"
-                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <select class="citus-form-field__input"
+                            @bind="_draft.BackorderMode">
                         <option value="disallow">Disallow negative stock</option>
                         <option value="allow_negative_with_warning">Allow with warning</option>
                         <option value="allow_negative">Allow without warning</option>
@@ -210,9 +204,8 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Low-stock activity</label>
-                    <select class="citus-input__field"
-                            @bind="_draft.LowStockActivity"
-                            style="padding: 0.4rem 0.5rem; border: 1px solid var(--citus-color-border); background: var(--citus-color-bg-elevated); color: var(--citus-color-fg); border-radius: var(--citus-radius-sm); width: 100%;">
+                    <select class="citus-form-field__input"
+                            @bind="_draft.LowStockActivity">
                         <option value="nothing">Do nothing</option>
                         <option value="warn">Warn</option>
                         <option value="block_outbound">Block outbound</option>

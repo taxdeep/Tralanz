@@ -103,7 +103,7 @@
                                     TextProperty="DisplayText"
                                     ValueProperty="CurrencyCode"
                                     Placeholder="Select a currency…"
-                                    Style="flex: 1;" />
+                                    Class="citus-control-flex" />
                     <RadzenButton Text="Add"
                                   Disabled="@(_saving || string.IsNullOrEmpty(_selectedCurrencyCode))"
                                   Click="AddAsync" />

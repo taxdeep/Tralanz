@@ -74,7 +74,7 @@
                             Data="@_testStatusOptions"
                             Value="@_notificationTestStatus"
                             ValueChanged="@(s => _notificationTestStatus = s ?? "untested")"
-                            Style="width: 16rem;" />
+                            Class="citus-inline-control--lg" />
         </div>
 
         <CitusInput TValue="string" @bind-Value="_notificationLastTestedInput"

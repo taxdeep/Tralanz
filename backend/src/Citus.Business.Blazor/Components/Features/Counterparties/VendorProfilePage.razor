@@ -369,7 +369,7 @@ else
                                     <td>@FormatType(row.Type)</td>
                                     <td><a href="@DocumentHref(row)" class="citus-link">@row.DisplayNumber</a></td>
                                     <td>@(string.IsNullOrWhiteSpace(row.Memo) ? "—" : row.Memo)</td>
-                                    <td class="text-right" style="font-variant-numeric: tabular-nums;">@row.Amount.ToString("N2")</td>
+                                    <td class="text-right citus-tabular">@row.Amount.ToString("N2")</td>
                                     <td><CitusBadge Color="@StatusBadgeColor(row.Status)">@FormatStatus(row.Status)</CitusBadge></td>
                                     <td class="text-right"><a href="@DocumentHref(row)" class="citus-link">View</a></td>
                                 </tr>
@@ -378,7 +378,7 @@ else
                         <tfoot>
                             <tr class="citus-customer-transactions__total">
                                 <th colspan="4">Total</th>
-                                <th class="text-right" style="font-variant-numeric: tabular-nums;">@totalAmount.ToString("N2")</th>
+                                <th class="text-right citus-tabular">@totalAmount.ToString("N2")</th>
                                 <th colspan="2"></th>
                             </tr>
                         </tfoot>

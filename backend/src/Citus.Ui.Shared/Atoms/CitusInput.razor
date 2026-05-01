@@ -1,6 +1,6 @@
 @*
     CitusInput — single-line text input. Phase 5a of the UI library
-    migration: now wraps RadzenTextBox instead of AntDesign.Input<T>.
+    migration: wraps RadzenTextBox behind the Citus input contract.
     Public API stays string-typed (every existing callsite uses
     TValue="string"); the @typeparam stays declared for backwards
     compat with the 60+ existing TValue="string" callsites and is

@@ -64,7 +64,7 @@ else
                                         ValueProperty="Id"
                                         Placeholder="Choose a supplier…"
                                         AllowFiltering="true"
-                                        Style="width: 100%;"
+                                        Class="citus-control-full"
                                         Change="@(_ => OnVendorChanged())" />
                     </div>
                 </div>
@@ -108,7 +108,7 @@ else
             <section class="citus-panel">
                 <header class="citus-panel__header">
                     <h2 class="citus-panel__title">Lines</h2>
-                    <select class="citus-form-field__input" style="width: auto" value="@_taxMode" @onchange="OnTaxModeChanged">
+                    <select class="citus-form-field__input citus-inline-control--auto" value="@_taxMode" @onchange="OnTaxModeChanged">
                         <option value="exclusive">Tax exclusive</option>
                         <option value="inclusive">Tax inclusive</option>
                     </select>
@@ -143,7 +143,7 @@ else
                                                     ValueProperty="Id"
                                                     AllowFiltering="true"
                                                     AllowClear="true"
-                                                    Style="width: 100%;" />
+                                                    Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <CitusInput TValue="string"
@@ -153,12 +153,12 @@ else
                                 <td>
                                     <RadzenNumeric TValue="decimal" Value="@line.Quantity"
                                                    Change="@(v => UpdateLine(index, l => l with { Quantity = v }))"
-                                                   Format="0.##" Style="width: 100%;" />
+                                                   Format="0.##" Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <RadzenNumeric TValue="decimal" Value="@line.UnitPrice"
                                                    Change="@(v => UpdateLine(index, l => l with { UnitPrice = v }))"
-                                                   Format="0.0000" Style="width: 100%;" />
+                                                   Format="0.0000" Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <RadzenDropDown TValue="Guid?"
@@ -168,7 +168,7 @@ else
                                                     TextProperty="Code"
                                                     ValueProperty="Id"
                                                     AllowClear="true"
-                                                    Style="width: 100%;" />
+                                                    Class="citus-control-full" />
                                 </td>
                                 <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>
                                 <td>
@@ -214,12 +214,12 @@ else
                     <div>
                         <label class="text-sm font-medium block mb-1">Order date</label>
                         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_orderDate" Style="width: 100%;" />
+                                          @bind-Value="_orderDate" Class="citus-control-full" />
                     </div>
                     <div>
                         <label class="text-sm font-medium block mb-1">Expected delivery</label>
                         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_expectedDeliveryDate" Style="width: 100%;" />
+                                          @bind-Value="_expectedDeliveryDate" Class="citus-control-full" />
                     </div>
                     <div>
                         <label class="text-sm font-medium block mb-1">Transaction currency</label>
@@ -243,19 +243,19 @@ else
                     <div>
                         <label class="text-sm font-medium block mb-1">Discount</label>
                         <div class="flex gap-2">
-                            <select class="citus-form-field__input" style="width: 8rem"
+                            <select class="citus-form-field__input citus-inline-control--sm"
                                     value="@(_discountKind ?? "")"
                                     @onchange="OnDiscountKindChanged">
                                 <option value="">None</option>
                                 <option value="percent">Percent</option>
                                 <option value="amount">Amount</option>
                             </select>
-                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Style="flex: 1;" />
+                            <RadzenNumeric TValue="decimal?" @bind-Value="_discountValue" Format="0.##" Class="citus-control-flex" />
                         </div>
                     </div>
                     <div>
                         <label class="text-sm font-medium block mb-1">Shipping amount</label>
-                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Style="width: 100%;" />
+                        <RadzenNumeric TValue="decimal?" @bind-Value="_shippingAmount" Format="0.00" Class="citus-control-full" />
                     </div>
                 </div>
             </section>

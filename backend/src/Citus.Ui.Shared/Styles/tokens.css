@@ -1,8 +1,8 @@
 /*
  * Citus design tokens — single source of truth for color, spacing,
- * radius, shadow, density, and typography. Consumed by both
- * AntDesign Blazor's ConfigProvider (via Razor) and Tailwind v4's
- * @theme inline (see app.css per Blazor app).
+ * radius, shadow, density, and typography. Consumed by Radzen.Blazor,
+ * Citus.Ui.Shared primitives, and Tailwind v4's @theme inline
+ * (see app.css per Blazor app).
  *
  * Values use OKLCH where practical so the dark palette is purpose-
  * designed (UI_NAVIGATION_AND_DESIGN_SYSTEM_SPEC §11), not a flip.
@@ -39,6 +39,11 @@
   --citus-color-danger-bg: oklch(96% 0.04 28);
   --citus-color-info: oklch(60% 0.13 232);
   --citus-color-info-bg: oklch(96% 0.04 232);
+
+  /* Semantic aliases used by shared controls. */
+  --citus-color-primary-fg: var(--citus-color-fg-on-primary);
+  --citus-color-danger-fg: var(--citus-color-danger);
+  --citus-color-focus-ring: var(--citus-color-primary-bg);
 
   /* Spacing scale (multiples of 4px) */
   --citus-space-0: 0;
@@ -142,48 +147,13 @@
   --citus-color-info: oklch(72% 0.10 234);
   --citus-color-info-bg: oklch(26% 0.04 234);
 
+  --citus-color-primary-fg: var(--citus-color-fg-on-primary);
+  --citus-color-danger-fg: var(--citus-color-danger);
+  --citus-color-focus-ring: var(--citus-color-primary-bg);
+
   --citus-shadow-1: 0 1px 2px 0 oklch(20% 0.01 254 / 0.55);
   --citus-shadow-2: 0 4px 12px -2px oklch(15% 0.01 254 / 0.55), 0 2px 4px -2px oklch(15% 0.01 254 / 0.35);
   --citus-shadow-3: 0 12px 32px -4px oklch(10% 0.01 254 / 0.55), 0 4px 8px -4px oklch(15% 0.01 254 / 0.35);
-}
-
-/*
- * Dark-specific tweaks for AntDesign chrome that lives outside the citus token
- * system. Without these, AntDesign's table headers, inputs, and secondary
- * buttons render with their default light values inside our dark surfaces.
- */
-.dark .ant-table {
-  background: var(--citus-color-bg-elevated);
-  color: var(--citus-color-fg);
-}
-.dark .ant-table-thead > tr > th {
-  background: var(--citus-color-bg-muted) !important;
-  color: var(--citus-color-fg-muted) !important;
-  border-bottom-color: var(--citus-color-border) !important;
-}
-.dark .ant-table-tbody > tr > td,
-.dark .ant-input,
-.dark .ant-input-number,
-.dark .ant-input-affix-wrapper,
-.dark .ant-select-selector,
-.dark .ant-picker {
-  background: var(--citus-color-bg-elevated) !important;
-  color: var(--citus-color-fg) !important;
-  border-color: var(--citus-color-border) !important;
-}
-.dark .ant-input::placeholder,
-.dark .ant-picker-input > input::placeholder {
-  color: var(--citus-color-fg-subtle) !important;
-}
-.dark .ant-btn:not(.ant-btn-primary) {
-  background: var(--citus-color-bg-elevated);
-  color: var(--citus-color-fg);
-  border-color: var(--citus-color-border);
-}
-.dark .ant-btn:not(.ant-btn-primary):hover {
-  background: var(--citus-color-bg-muted);
-  color: var(--citus-color-fg);
-  border-color: var(--citus-color-border-strong);
 }
 
 /* Honour OS preference unless app explicitly opts to a mode via .light/.dark on <html>. */

@@ -3,12 +3,6 @@
 }
 
 .citus-main-content {
-    background:
-        radial-gradient(circle at top right, rgba(15, 118, 110, 0.08), transparent 30%),
-        linear-gradient(180deg, #f8fafc 0%, #eef6ff 100%);
+    background: var(--citus-color-bg);
     min-height: 100vh;
-}
-
-.citus-main-content :deep(.mud-container) {
-    padding-top: 2rem;
 }

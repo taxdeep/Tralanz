@@ -65,7 +65,7 @@ else
                                         ValueProperty="Id"
                                         Placeholder="Choose a supplier…"
                                         AllowFiltering="true"
-                                        Style="width: 100%;"
+                                        Class="citus-control-full"
                                         Change="@(_ => OnVendorChanged())" />
                     </div>
                     <div>
@@ -121,7 +121,7 @@ else
                                                     ValueProperty="Id"
                                                     AllowFiltering="true"
                                                     AllowClear="true"
-                                                    Style="width: 100%;" />
+                                                    Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <CitusInput TValue="string"
@@ -136,17 +136,17 @@ else
                                                     TextProperty="Code"
                                                     ValueProperty="Id"
                                                     AllowClear="true"
-                                                    Style="width: 100%;" />
+                                                    Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <RadzenNumeric TValue="decimal" Value="@line.TaxAmount"
                                                    Change="@(v => UpdateLine(index, l => l with { TaxAmount = v }))"
-                                                   Format="0.00" Style="width: 100%;" />
+                                                   Format="0.00" Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <RadzenNumeric TValue="decimal" Value="@line.LineAmount"
                                                    Change="@(v => UpdateLine(index, l => l with { LineAmount = v }))"
-                                                   Format="0.00" Style="width: 100%;" />
+                                                   Format="0.00" Class="citus-control-full" />
                                 </td>
                                 <td>
                                     <CitusButton Variant="CitusButtonVariant.Ghost" Size="CitusButtonSize.Small"
@@ -188,12 +188,12 @@ else
                         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
                                           @bind-Value="_billDate"
                                           Change="@(_ => RecomputeDueDate())"
-                                          Style="width: 100%;" />
+                                          Class="citus-control-full" />
                     </div>
                     <div>
                         <label class="text-sm font-medium block mb-1">Due date</label>
                         <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false"
-                                          @bind-Value="_dueDate" Style="width: 100%;" />
+                                          @bind-Value="_dueDate" Class="citus-control-full" />
                         @if (_paymentTermId is { } termId)
                         {
                             var term = _paymentTerms.FirstOrDefault(t => t.Id == termId);

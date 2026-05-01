@@ -78,7 +78,7 @@ else
                 <span>Include inactive customers</span>
             </label>
 
-            <div class="overflow-x-auto" style="max-height: 480px; overflow-y: auto;">
+            <div class="overflow-x-auto citus-scroll-y-md">
                 <table class="citus-data-table">
                     <thead>
                         <tr>
@@ -107,7 +107,7 @@ else
                                             @row.DisplayName
                                         </a>
                                     </td>
-                                    <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                    <td class="text-right citus-tabular">
                                         @FormatCurrency(row.CurrencyCode, row.Balance)
                                     </td>
                                 </tr>
@@ -134,19 +134,19 @@ else
         }
         else
         {
-            <RadzenChart Style="height: 320px;">
+            <RadzenChart Class="citus-chart--md">
                 <RadzenColumnSeries Data="@_cashFlowReceivedPoints"
                                     CategoryProperty="Label"
                                     ValueProperty="Amount"
                                     Title="@($"Received ({_baseCurrencyCode})")"
-                                    Fill="#0ea5b7">
+                                    Fill="var(--citus-color-info)">
                     <RadzenSeriesDataLabels Visible="true" />
                 </RadzenColumnSeries>
                 <RadzenColumnSeries Data="@_cashFlowForecastPoints"
                                     CategoryProperty="Label"
                                     ValueProperty="Amount"
                                     Title="@($"Forecast ({_baseCurrencyCode})")"
-                                    Fill="#94d8e2">
+                                    Fill="var(--citus-color-primary-border)">
                     <RadzenSeriesDataLabels Visible="true" />
                 </RadzenColumnSeries>
                 <RadzenColumnOptions Radius="2" />
@@ -168,8 +168,7 @@ else
             <div class="flex items-center gap-3 text-sm">
                 <label class="flex items-center gap-2">
                     Duration:
-                    <select class="citus-form-field__input"
-                            style="min-width: 11rem;"
+                    <select class="citus-form-field__input citus-inline-control--md"
                             value="@_duration"
                             @onchange="@(e => OnDurationChanged(e.Value?.ToString() ?? "last_12_months"))">
                         <option value="this_month">This month</option>
@@ -196,7 +195,7 @@ else
         }
         else
         {
-            <RadzenChart Style="height: 320px;">
+            <RadzenChart Class="citus-chart--md">
                 <RadzenLineSeries Data="@_incomePoints"
                                   CategoryProperty="Label"
                                   ValueProperty="Amount"

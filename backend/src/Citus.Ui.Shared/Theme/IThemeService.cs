@@ -2,7 +2,7 @@ namespace Citus.Ui.Shared.Theme;
 
 /// <summary>
 /// Single source of truth for the active light/dark theme. Components that
-/// react to theme changes (e.g. AntDesign ConfigProvider) subscribe to
+/// react to theme changes subscribe to
 /// <see cref="ThemeChanged"/>; components that toggle the theme call
 /// <see cref="SetModeAsync"/>.
 /// </summary>
