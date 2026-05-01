@@ -53,7 +53,7 @@
 
 .unity-picker__input:focus {
     border-color: var(--citus-color-primary);
-    box-shadow: 0 0 0 4px var(--citus-color-primary-bg);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
 }
 
 .unity-picker__clear {

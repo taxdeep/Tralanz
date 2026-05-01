@@ -1728,8 +1728,10 @@ input::-webkit-textfield-decoration-container {
      - Webkit native (Chrome / Edge): ::-webkit-outer-spin-button +
        ::-webkit-inner-spin-button.
      - Firefox native: -moz-appearance: textfield.
-     - Radzen RadzenNumeric: ships its own .rz-spinner-up / -down DOM
-       buttons (not pseudo-elements), so display:none reaches them.
+     - Radzen RadzenNumeric (5.x DOM): renders .rz-numeric-up /
+       .rz-numeric-down inside .rz-numeric-button. The pre-5.x DOM used
+       .rz-spinner-up / .rz-spinner-down / .rz-spinner-button — kept in
+       the selector so older sub-paths still strip if any survive.
 
    Keeping <input type="number"> for the numeric keyboard on mobile and
    step / min validation, just stripping the chrome. Operator types
@@ -1746,6 +1748,9 @@ input[type="number"] {
     appearance: textfield;
 }
 
+.rz-numeric .rz-numeric-up,
+.rz-numeric .rz-numeric-down,
+.rz-numeric .rz-numeric-button,
 .rz-numeric .rz-spinner-up,
 .rz-numeric .rz-spinner-down,
 .rz-numeric .rz-spinner-button {
@@ -1853,7 +1858,10 @@ textarea {
 
 /* Interior <input> of compound Radzen controls (numeric spinner, date
    picker) needs the same pin so the trigger and the input agree on
-   height. */
+   height. Radzen 5.x exposes the inner input as a bare <input> child
+   of .rz-numeric (no .rz-numeric-input class); legacy Radzen used
+   .rz-spinner-input. Listing both keeps cross-version safety. */
+.rz-numeric > input,
 .rz-numeric .rz-spinner-input,
 .rz-datepicker .rz-inputtext {
     min-height: var(--citus-input-height);
@@ -1862,6 +1870,7 @@ textarea {
 }
 
 .rz-dropdown .rz-dropdown-label,
+.rz-numeric > input,
 .rz-numeric .rz-spinner-input,
 .rz-datepicker .rz-inputtext {
     padding-block: 0;
@@ -1869,6 +1878,7 @@ textarea {
 }
 
 .rz-dropdown .rz-dropdown-trigger,
+.rz-numeric .rz-numeric-button,
 .rz-numeric .rz-spinner-button,
 .rz-datepicker .rz-datepicker-trigger,
 .rz-dropdown .rz-dropdown-clear {
@@ -1881,6 +1891,23 @@ textarea {
     background: var(--citus-color-bg-muted) !important;
     color: var(--citus-color-fg-muted) !important;
     opacity: 1;
+}
+
+/* RadzenProgressBar (powering CitusLoadingBar) ships with its default
+   fill = --rz-secondary = #35a0d7, an off-brand cyan that reads as a
+   bright stripe across the top of every loading page in dark mode.
+   Pin track + fill to Citus tokens so the bar follows the rest of the
+   design language. The :before / :after pseudos are the indeterminate
+   sliding stripe; they inherit fill from the same var so we cover both
+   determinate and indeterminate variants. */
+.rz-progressbar {
+    background-color: var(--citus-color-bg-muted) !important;
+}
+
+.rz-progressbar-value,
+.rz-progressbar-indeterminate .rz-progressbar-value::before,
+.rz-progressbar-indeterminate .rz-progressbar-value::after {
+    background-color: var(--citus-color-primary) !important;
 }
 
 /* ==========================================================================
@@ -2611,6 +2638,7 @@ html.dark .rz-listbox,
 html.dark .rz-listbox-item,
 html.dark .rz-textbox,
 html.dark .rz-inputtext,
+html.dark .rz-numeric > input,
 html.dark .rz-numeric .rz-spinner-input,
 html.dark .rz-datepicker .rz-inputtext,
 html.dark .rz-calendar,
@@ -2693,6 +2721,7 @@ html.dark .rz-datepicker .rz-inputtext::placeholder {
    them to track the muted fg token so they don't show as light grey
    on dark mode. */
 html.dark .rz-dropdown .rz-dropdown-trigger,
+html.dark .rz-numeric .rz-numeric-button,
 html.dark .rz-numeric .rz-spinner-button,
 html.dark .rz-datepicker .rz-datepicker-trigger {
     color: var(--citus-color-fg-muted) !important;
@@ -2708,6 +2737,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .rz-datepicker .rz-inputtext,
 .rz-dropdown .rz-dropdown-label,
+.rz-numeric > input,
 .rz-numeric .rz-spinner-input {
     line-height: 1.4;
 }
