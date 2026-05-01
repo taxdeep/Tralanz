@@ -432,6 +432,18 @@
     background: var(--citus-color-primary);
     color: var(--citus-color-primary-fg);
     border-color: var(--citus-color-primary);
+    /* Floor the visual weight of primary CTAs so paired panels (Profile
+       "Save changes" + "Update password", confirm dialogs, drawer
+       footers) don't read as different sizes when one button's label
+       is shorter than the other. 7rem (112 px) comfortably fits any
+       reasonable single-action label and lets longer labels expand
+       naturally. Size variants (--sm / --lg) and --block override. */
+    min-width: 7rem;
+}
+
+.citus-button--primary.citus-button--sm,
+.citus-button--primary.citus-button--block {
+    min-width: 0;
 }
 
 .citus-button--primary:hover {
@@ -2127,6 +2139,30 @@ html[data-theme="dark"] .citus-shell__sider {
 
 .citus-topbar__search > .unity-picker:focus-within {
     max-width: 560px;
+}
+
+/* Navbar density: the topbar lives in a 56 px header and the search
+   sits between dense controls (theme toggle, avatar). A canonical
+   32 px input reads bulky here — modern app navbars (GitHub, Notion,
+   Linear) all run their global search at 28 px. Drop the picker
+   height + horizontal padding for the topbar instance only; form
+   pages keep the canonical 32 px so amount / picker rows still
+   align. */
+.citus-topbar__search > .unity-picker .unity-picker__input {
+    min-height: 1.75rem;
+    padding: 0 2rem;
+    font-size: var(--citus-text-sm);
+}
+
+.citus-topbar__search > .unity-picker .unity-picker__icon {
+    left: 0.65rem;
+    font-size: 0.9rem;
+}
+
+.citus-topbar__search > .unity-picker .unity-picker__clear {
+    right: 0.4rem;
+    width: 1.25rem;
+    height: 1.25rem;
 }
 
 /*
