@@ -25,10 +25,14 @@
 
 .unity-picker__input {
     width: 100%;
-    min-height: 2.25rem;
-    padding: 0.4rem 2.25rem 0.4rem 2.25rem;
+    min-height: var(--citus-input-height);
+    /* Horizontal padding stays at 2.25rem to leave room for the search icon
+       (left) and clear button (right); vertical padding tracks the canonical
+       input token so the picker shares the 32 px row rhythm with bare
+       inputs / Radzen primitives / CitusButton. */
+    padding: var(--citus-input-padding-y) 2.25rem;
     border: 1px solid var(--citus-color-border);
-    border-radius: 10px;
+    border-radius: var(--citus-radius-md);
     background: var(--citus-color-bg-elevated);
     color: var(--citus-color-fg);
     /* Same belt-and-suspenders trick the JE cell input uses: Chromium /
@@ -38,7 +42,7 @@
        protects against any later cascade pile-up. */
     -webkit-text-fill-color: var(--citus-color-fg) !important;
     caret-color: var(--citus-color-fg);
-    font-size: 0.92rem;
+    font-size: var(--citus-text-sm);
     outline: none;
     transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }

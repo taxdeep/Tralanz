@@ -60,6 +60,10 @@
     margin: 0 auto 1rem;
     place-items: center;
     border-radius: 24px;
+    /* Brand-locked crest gradient; intentionally not token-bound for the
+       same reason as .sys-login__bar (see header note). The teal-mint
+       gradient is part of the SysAdmin brand mark and must look identical
+       in light and dark mode. */
     color: #0f172a;
     background:
         radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.8), transparent 28%),
