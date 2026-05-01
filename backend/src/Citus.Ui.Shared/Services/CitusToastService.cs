@@ -3,12 +3,9 @@ using Radzen;
 namespace Citus.Ui.Shared.Services;
 
 /// <summary>
-/// Phase 7 of the UI library migration. Drop-in replacement for the
-/// AntDesign IMessageService surface that was @inject'd across ~25
-/// pages. Wraps Radzen.NotificationService so existing call shapes
+/// App-level toast service. Wraps Radzen.NotificationService so existing call shapes
 /// (Message.InfoAsync(text), .WarningAsync(text), .SuccessAsync(text),
-/// .ErrorAsync(text)) keep working with a single sed across @inject
-/// lines.
+/// .ErrorAsync(text)) stay consistent across both shells.
 ///
 /// Stays async-returning Task — both because every call site already
 /// awaits, and because that lets us swap in latency-aware behaviour

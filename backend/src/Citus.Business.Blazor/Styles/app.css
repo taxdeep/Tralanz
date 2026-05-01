@@ -2,8 +2,8 @@
  * Tailwind v4 input — Citus.Business.Blazor.
  *
  * We only pull theme + utilities, not preflight, because preflight resets
- * <h*>, <button>, and <ul> in ways that collide with AntDesign Blazor's
- * baseline. AntDesign provides the equivalent reset for its own components.
+ * <h*>, <button>, and <ul> in ways that collide with Radzen.Blazor's
+ * baseline and our Citus.Ui.Shared primitives.
  */
 
 @import "tailwindcss/theme.css" layer(theme);

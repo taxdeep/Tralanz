@@ -1,5 +1,5 @@
 /*
- * Citus shell — visual rules for the AntDesign Layout/Sider/Header
+ * Citus shell — visual rules for the Blazor/Radzen application chrome
  * scaffolding shared by Citus.Business.Blazor and Citus.SysAdmin.Blazor.
  * Tokens come from tokens.css; this file only composes the chrome.
  */
@@ -127,7 +127,7 @@
     width: 100%;
 }
 
-/* ---------- Nav menu (Phase 8: plain <nav> structure, no AntDesign) ---------- */
+/* ---------- Nav menu ---------- */
 
 .citus-nav-menu {
     background: transparent;
@@ -314,7 +314,7 @@
     gap: var(--citus-space-2);
 }
 
-/* Phase 8: replaced AntDesign.Dropdown with a <details>-driven popover
+/* User menu: a <details>-driven popover
    so the user menu has zero JS / library dependency. The menu floats
    below the trigger; clicking the avatar toggles it. */
 .citus-user-menu {
@@ -386,10 +386,10 @@
 }
 
 .citus-user-menu__item--danger:hover {
-    color: #d4351c;
+    color: var(--citus-color-danger-fg);
 }
 
-/* ---------- Buttons (Phase 9: replaces AntDesign Button) ---------- */
+/* ---------- Buttons ---------- */
 
 .citus-button {
     display: inline-flex;
@@ -430,13 +430,13 @@
 
 .citus-button--primary {
     background: var(--citus-color-primary);
-    color: var(--citus-color-primary-fg, #fff);
+    color: var(--citus-color-primary-fg);
     border-color: var(--citus-color-primary);
 }
 
 .citus-button--primary:hover {
-    background: var(--citus-color-primary-hover, var(--citus-color-primary));
-    color: var(--citus-color-primary-fg, #fff);
+    background: var(--citus-color-primary-hover);
+    color: var(--citus-color-primary-fg);
 }
 
 .citus-button--ghost {
@@ -457,7 +457,7 @@
 
 .citus-button--link:hover {
     background: transparent;
-    color: var(--citus-color-primary-hover, var(--citus-color-primary));
+    color: var(--citus-color-primary-hover);
     text-decoration: underline;
 }
 
@@ -471,18 +471,18 @@
 }
 
 .citus-button--danger {
-    color: #d4351c;
-    border-color: rgba(212, 53, 28, 0.4);
+    color: var(--citus-color-danger-fg);
+    border-color: color-mix(in oklch, var(--citus-color-danger) 42%, transparent);
 }
 
 .citus-button--danger:hover {
-    background: rgba(212, 53, 28, 0.08);
+    background: var(--citus-color-danger-bg);
 }
 
 .citus-button--primary.citus-button--danger {
-    background: #d4351c;
-    color: #fff;
-    border-color: #d4351c;
+    background: var(--citus-color-danger);
+    color: var(--citus-color-primary-fg);
+    border-color: var(--citus-color-danger);
 }
 
 .citus-button--block {
@@ -1626,7 +1626,7 @@ a.citus-domain-card--linked:active {
     margin-left: auto;
 }
 
-/* Plain HTML form field (used where AntDesign.Input<T> can't render). */
+/* Plain HTML form field. */
 .citus-form-field {
     display: flex;
     flex-direction: column;
@@ -1664,6 +1664,11 @@ a.citus-domain-card--linked:active {
     background: var(--citus-color-bg-muted);
     color: var(--citus-color-fg-muted);
     cursor: not-allowed;
+}
+
+.citus-form-field__input--readonly {
+    background: var(--citus-color-bg-muted);
+    cursor: default;
 }
 
 /* Same autofill defense as .citus-input__field. See note there. */
@@ -1792,6 +1797,30 @@ select,
 textarea {
     min-height: var(--citus-input-height);
     box-sizing: border-box;
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg);
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    font: inherit;
+    font-size: var(--citus-text-sm);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="hidden"]):focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--citus-color-fg-subtle);
+}
+
+textarea {
+    min-height: calc(var(--citus-input-height) * 2.25);
+    resize: vertical;
 }
 
 /* CitusInput wrapper. Collapse all three size variants (--sm / --md /
@@ -1815,6 +1844,11 @@ textarea {
 .rz-datepicker {
     min-height: var(--citus-input-height);
     box-sizing: border-box;
+    background: var(--citus-color-bg-elevated) !important;
+    color: var(--citus-color-fg) !important;
+    border-color: var(--citus-color-border) !important;
+    border-radius: var(--citus-radius-md);
+    font: inherit;
 }
 
 /* Interior <input> of compound Radzen controls (numeric spinner, date
@@ -1823,6 +1857,30 @@ textarea {
 .rz-numeric .rz-spinner-input,
 .rz-datepicker .rz-inputtext {
     min-height: var(--citus-input-height);
+    background: transparent !important;
+    color: var(--citus-color-fg) !important;
+}
+
+.rz-dropdown .rz-dropdown-label,
+.rz-numeric .rz-spinner-input,
+.rz-datepicker .rz-inputtext {
+    padding-block: 0;
+    color: var(--citus-color-fg) !important;
+}
+
+.rz-dropdown .rz-dropdown-trigger,
+.rz-numeric .rz-spinner-button,
+.rz-datepicker .rz-datepicker-trigger,
+.rz-dropdown .rz-dropdown-clear {
+    color: var(--citus-color-fg-muted) !important;
+}
+
+.rz-state-disabled,
+.rz-state-disabled .rz-inputtext,
+.rz-state-disabled .rz-dropdown-label {
+    background: var(--citus-color-bg-muted) !important;
+    color: var(--citus-color-fg-muted) !important;
+    opacity: 1;
 }
 
 /* ==========================================================================
@@ -2525,7 +2583,7 @@ select.citus-journal-lines__cell-input {
 }
 
 .citus-fx-inline__hint--warn {
-    color: var(--citus-color-warning, #b26a00);
+    color: var(--citus-color-warning);
 }
 
 .citus-fx-inline--identity {
@@ -2556,12 +2614,14 @@ html.dark .rz-inputtext,
 html.dark .rz-numeric .rz-spinner-input,
 html.dark .rz-datepicker .rz-inputtext,
 html.dark .rz-calendar,
+html.dark .rz-calendar-header,
+html.dark .rz-calendar-view,
 html.dark .rz-datagrid,
 html.dark .rz-data-grid,
 html.dark .rz-grid-table,
 html.dark .rz-grid-table thead th,
 html.dark .rz-grid-table tbody td {
-    color: var(--citus-color-fg);
+    color: var(--citus-color-fg) !important;
 }
 
 /* Topbar chrome (company switcher, user-menu trigger) reads as
@@ -2577,31 +2637,50 @@ html.dark .rz-dropdown,
 html.dark .rz-textbox,
 html.dark .rz-inputtext,
 html.dark .rz-numeric,
-html.dark .rz-datepicker {
-    background: var(--citus-color-bg-elevated);
-    border-color: var(--citus-color-border);
+html.dark .rz-datepicker,
+html.dark .rz-datagrid,
+html.dark .rz-data-grid,
+html.dark .rz-grid-table,
+html.dark .rz-grid-table tbody td {
+    background: var(--citus-color-bg-elevated) !important;
+    border-color: var(--citus-color-border) !important;
 }
 
 html.dark .rz-dropdown-panel,
 html.dark .rz-listbox,
 html.dark .rz-calendar-popup,
-html.dark .rz-overlaypanel-content {
-    background: var(--citus-color-bg-elevated);
+html.dark .rz-overlaypanel-content,
+html.dark .rz-dialog,
+html.dark .rz-dialog-wrapper {
+    background: var(--citus-color-bg-elevated) !important;
     border: 1px solid var(--citus-color-border);
-    color: var(--citus-color-fg);
+    color: var(--citus-color-fg) !important;
+}
+
+html.dark .rz-grid-table thead th,
+html.dark .rz-datatable-thead th {
+    background: var(--citus-color-bg-muted) !important;
+    color: var(--citus-color-fg-muted) !important;
+    border-color: var(--citus-color-border) !important;
+}
+
+html.dark .rz-grid-table tbody tr:nth-child(even) td,
+html.dark .rz-datatable-even > td {
+    background: color-mix(in oklch, var(--citus-color-bg-elevated) 78%, var(--citus-color-bg-muted)) !important;
 }
 
 html.dark .rz-dropdown-item:hover,
 html.dark .rz-listbox-item:hover,
-html.dark .rz-calendar .rz-datepicker-cell:hover {
-    background: var(--citus-color-bg-muted);
+html.dark .rz-calendar .rz-datepicker-cell:hover,
+html.dark .rz-grid-table tbody tr:hover td {
+    background: var(--citus-color-bg-muted) !important;
 }
 
 html.dark .rz-dropdown-item.rz-state-highlight,
 html.dark .rz-listbox-item.rz-state-highlight,
 html.dark .rz-calendar .rz-state-active {
-    background: var(--citus-color-primary, #1677ff);
-    color: var(--citus-color-fg-on-primary);
+    background: var(--citus-color-primary) !important;
+    color: var(--citus-color-fg-on-primary) !important;
 }
 
 html.dark .rz-textbox::placeholder,
@@ -2616,7 +2695,7 @@ html.dark .rz-datepicker .rz-inputtext::placeholder {
 html.dark .rz-dropdown .rz-dropdown-trigger,
 html.dark .rz-numeric .rz-spinner-button,
 html.dark .rz-datepicker .rz-datepicker-trigger {
-    color: var(--citus-color-fg-muted);
+    color: var(--citus-color-fg-muted) !important;
 }
 
 /* ---------- Form-control height alignment (cross-theme) ----------
@@ -2653,13 +2732,13 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     border: 1px solid var(--citus-color-border);
     border-radius: var(--citus-radius-sm);
     padding: 0 var(--citus-space-1) 0 var(--citus-space-2);
-    min-height: 30px;
+    min-height: var(--citus-input-height);
     cursor: text;
 }
 
 .citus-account-picker__control:focus-within {
-    border-color: var(--citus-color-primary, #1677ff);
-    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+    border-color: var(--citus-color-primary);
+    box-shadow: 0 0 0 2px var(--citus-color-focus-ring);
 }
 
 .citus-account-picker__input {
@@ -2716,7 +2795,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     background: transparent;
     border: 0;
     border-bottom: 1px solid var(--citus-color-border);
-    color: var(--citus-color-primary, #1677ff);
+    color: var(--citus-color-primary);
     padding: var(--citus-space-2) var(--citus-space-3);
     cursor: pointer;
     font-size: var(--citus-text-sm);
@@ -2773,7 +2852,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 .citus-account-picker__match {
-    color: var(--citus-color-primary, #1677ff);
+    color: var(--citus-color-primary);
     font-weight: 600;
 }
 
@@ -2833,9 +2912,9 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 }
 
 .citus-account-picker__create-save {
-    background: var(--citus-color-primary, #1677ff);
+    background: var(--citus-color-primary);
     color: var(--citus-color-fg-on-primary);
-    border-color: var(--citus-color-primary, #1677ff);
+    border-color: var(--citus-color-primary);
 }
 
 .citus-account-picker__create-save[disabled] {
@@ -2845,7 +2924,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .citus-account-picker__create-error {
     grid-column: 1 / -1;
-    color: var(--citus-color-danger, #d32f2f);
+    color: var(--citus-color-danger);
     font-size: var(--citus-text-xs);
     margin: 0;
 }
@@ -2873,8 +2952,8 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: var(--citus-color-primary, #1677ff);
-    color: var(--citus-color-fg-on-primary, #fff);
+    background: var(--citus-color-primary);
+    color: var(--citus-color-fg-on-primary);
     padding: 0.55rem 1.15rem;
     border-radius: var(--citus-radius-md);
     font-weight: 600;
@@ -2957,4 +3036,54 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
     max-width: 64rem;
     margin-left: auto;
     margin-right: auto;
+}
+
+/* ---------- Small shared utilities for dense ERP surfaces ---------- */
+
+.citus-tabular {
+    font-variant-numeric: var(--citus-tabular-nums);
+}
+
+.citus-scroll-y-md {
+    max-height: 30rem;
+    overflow-y: auto;
+}
+
+.citus-chart--md {
+    height: 20rem;
+}
+
+.citus-control-full {
+    width: 100%;
+}
+
+.citus-control-flex {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.citus-inline-control--auto {
+    width: auto;
+    min-width: 8rem;
+}
+
+.citus-inline-control--md {
+    min-width: 11rem;
+}
+
+.citus-inline-control--sm {
+    width: 8rem;
+}
+
+.citus-inline-control--xs {
+    width: 5rem;
+}
+
+.citus-inline-control--lg {
+    width: 16rem;
+}
+
+.citus-color-input {
+    width: 3rem;
+    padding: 0;
 }

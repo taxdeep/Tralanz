@@ -61,8 +61,7 @@ else
                     <span class="citus-form-field__label">Primary color</span>
                     <div class="flex items-center gap-2">
                         <input type="color"
-                               class="citus-form-field__input"
-                               style="width:3rem;padding:0;"
+                               class="citus-form-field__input citus-color-input"
                                value="@_template.PrimaryColorHex"
                                @oninput="@(e => UpdateDraft(_template with { PrimaryColorHex = e.Value?.ToString() ?? "#000000" }))" />
                         <input type="text"
@@ -76,8 +75,7 @@ else
                     <span class="citus-form-field__label">Accent color</span>
                     <div class="flex items-center gap-2">
                         <input type="color"
-                               class="citus-form-field__input"
-                               style="width:3rem;padding:0;"
+                               class="citus-form-field__input citus-color-input"
                                value="@_template.AccentColorHex"
                                @oninput="@(e => UpdateDraft(_template with { AccentColorHex = e.Value?.ToString() ?? "#666666" }))" />
                         <input type="text"

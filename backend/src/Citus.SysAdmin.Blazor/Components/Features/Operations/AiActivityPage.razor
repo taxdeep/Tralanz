@@ -116,13 +116,13 @@ else
                                         </div>
                                     }
                                 </td>
-                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                <td class="text-right citus-tabular">
                                     @FormatTokenPair(c.TokenInputCount, c.TokenOutputCount)
                                 </td>
-                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                <td class="text-right citus-tabular">
                                     @(c.LatencyMs is { } ms ? $"{ms} ms" : "—")
                                 </td>
-                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                <td class="text-right citus-tabular">
                                     @(c.EstimatedCost is { } v ? FormatCost(v) : "—")
                                 </td>
                             </tr>
@@ -170,7 +170,7 @@ else
                                         </div>
                                     }
                                 </td>
-                                <td class="text-right" style="font-variant-numeric: tabular-nums;">
+                                <td class="text-right citus-tabular">
                                     @FormatDuration(j.StartedAt, j.FinishedAt)
                                 </td>
                             </tr>

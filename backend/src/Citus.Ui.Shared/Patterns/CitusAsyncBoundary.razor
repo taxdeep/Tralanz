@@ -1,8 +1,7 @@
 @*
     CitusAsyncBoundary — single tri-state wrapper for loading / error /
-    empty / content. Pages that previously hand-rolled the
-    AntDesign.Progress + AntDesign.Alert + CitusEmptyState chain in
-    three separate @if blocks should use this instead.
+    empty / content. Pages that would otherwise hand-roll loading,
+    alert, and empty-state blocks should use this instead.
 
     Usage:
         <CitusAsyncBoundary IsLoading="@_isLoading"

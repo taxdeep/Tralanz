@@ -29,15 +29,15 @@
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_statementDate" Style="width: 100%;" />
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_statementDate" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement opening balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_openingBalance" Style="width: 100%;" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_openingBalance" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Statement ending balance</label>
-                    <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Style="width: 100%;" />
+                    <RadzenNumeric TValue="decimal" @bind-Value="_endingBalance" Class="citus-control-full" />
                 </div>
             </div>
         </section>
@@ -63,9 +63,9 @@
                         var i = index;
                         var row = _inflows[i];
                         <tr>
-                            <td><RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
+                            <td><RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@row.Date" ValueChanged="@(v => Update(_inflows, i, r => r with { Date = v }))" Class="citus-control-full" /></td>
                             <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_inflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_inflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_inflows, i, r => r with { Amount = v }))" Min="0" Class="citus-control-full" /></td>
                             <td><RadzenSwitch Value="@row.Cleared" ValueChanged="@(v => Update(_inflows, i, r => r with { Cleared = v }))" /></td>
                             <td>
                                 <button type="button" class="citus-icon-button" @onclick="() => Remove(_inflows, i)">
@@ -104,9 +104,9 @@
                         var i = index;
                         var row = _outflows[i];
                         <tr>
-                            <td><RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Style="width: 100%;" /></td>
+                            <td><RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" Value="@row.Date" ValueChanged="@(v => Update(_outflows, i, r => r with { Date = v }))" Class="citus-control-full" /></td>
                             <td><CitusInput TValue="string" Value="@row.Memo" ValueChanged="@(v => Update(_outflows, i, r => r with { Memo = v ?? string.Empty }))" Size="CitusButtonSize.Small" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_outflows, i, r => r with { Amount = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@row.Amount" ValueChanged="@(v => Update(_outflows, i, r => r with { Amount = v }))" Min="0" Class="citus-control-full" /></td>
                             <td><RadzenSwitch Value="@row.Cleared" ValueChanged="@(v => Update(_outflows, i, r => r with { Cleared = v }))" /></td>
                             <td>
                                 <button type="button" class="citus-icon-button" @onclick="() => Remove(_outflows, i)">

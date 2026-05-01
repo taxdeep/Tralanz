@@ -1,10 +1,9 @@
 @*
     CitusBadge — small status pill. Phase 5e of the UI library
-    migration: wraps Radzen.RadzenBadge but keeps AntDesign's
-    color-string vocabulary so the 80+ existing <AntDesign.Tag
-    Color="@..."> callsites can switch with a one-line tag rename.
+    migration: wraps Radzen.RadzenBadge behind Citus status-pill
+    vocabulary so business and SysAdmin surfaces render badges alike.
 
-    Color accepts the AntDesign preset names ("blue", "green",
+    Color accepts the legacy preset names ("blue", "green",
     "orange", "red", "default", "magenta", "purple", "cyan",
     "yellow", "geekblue", "lime", "volcano", "gold") plus an
     explicit "" / null which maps to BadgeStyle.Light.

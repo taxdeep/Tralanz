@@ -47,11 +47,11 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Document date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Style="width: 100%;" />
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Due date</label>
-                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Style="width: 100%;" />
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_dueDate" Class="citus-control-full" />
                 </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Customer</label>
@@ -77,8 +77,7 @@
                     <label class="text-sm font-medium block mb-1">Exchange rate</label>
                     @if (_customerId == Guid.Empty)
                     {
-                        <div class="citus-form-field__input flex items-center"
-                             style="background: var(--citus-color-bg-muted); cursor: default;">
+                        <div class="citus-form-field__input citus-form-field__input--readonly flex items-center">
                             <span class="text-fg-subtle">Pick a customer first</span>
                         </div>
                     }
@@ -154,8 +153,8 @@
                                                    OnCleared="@(() => OnItemCleared(i))" />
                             </td>
                             <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Style="width: 100%;" /></td>
-                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Style="width: 100%;" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
+                            <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
                             <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => Update(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="4000" /></td>
                             <td><CitusInput TValue="string" Value="@line.TaxCode" ValueChanged="@(v => Update(i, l => l with { TaxCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="HST" /></td>
                             <td class="text-right">@FormatAmount(line.Quantity * line.UnitPrice)</td>

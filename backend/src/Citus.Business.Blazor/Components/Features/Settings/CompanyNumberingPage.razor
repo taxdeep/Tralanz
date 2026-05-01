@@ -118,10 +118,10 @@ else
                                 <CitusInput TValue="string" @bind-Value="row.Prefix" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Size="CitusButtonSize.Small" />
                             </td>
                             <td class="text-right">
-                                <RadzenNumeric TValue="short" @bind-Value="row.Padding" Min="1" Max="12" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Style="width: 5rem;" />
+                                <RadzenNumeric TValue="short" @bind-Value="row.Padding" Min="1" Max="12" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Class="citus-inline-control--xs" />
                             </td>
                             <td class="text-right">
-                                <RadzenNumeric TValue="long" @bind-Value="row.NextNumber" Min="1" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Style="width: 8rem;" />
+                                <RadzenNumeric TValue="long" @bind-Value="row.NextNumber" Min="1" Disabled="@(_isSaving || ShellState.AreWritesBlocked)" Class="citus-inline-control--sm" />
                             </td>
                             <td><span class="citus-inline-code">@BuildPreview(row)</span></td>
                             <td>

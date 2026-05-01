@@ -1,15 +1,10 @@
 @*
     CitusAlert — banner-style status panel. Phase 6 of the UI library
-    migration: wraps Radzen.RadzenAlert but keeps the AntDesign.Alert
+    migration: wraps Radzen.RadzenAlert behind the Citus alert
     surface (Severity / Message / MessageTemplate / ShowIcon / Class)
-    so the 75+ existing `<CitusAlert Type="@AntDesign.AlertType.X"
-    Message="..." />` callsites swap with a one-line tag rename plus
-    a single `Type=" -> Severity="` sed.
-
-    The Severity enum mirrors AntDesign.AlertType exactly except
-    "Error" stays "Error" on our side; the atom maps Error to
-    Radzen's BadgeStyle.Danger internally so callsites never see the
-    Radzen vocabulary.
+    so existing alert callsites share one Citus API and theme.
+    Severity maps to Radzen styles internally; callsites never need
+    Radzen-specific alert vocabulary.
 *@
 
 @using Radzen

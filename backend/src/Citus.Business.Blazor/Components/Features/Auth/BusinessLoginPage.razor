@@ -8,12 +8,10 @@
 @inject BusinessAuthenticationClient BusinessAuthenticationClient
 
 @*
-    Plain HTML inputs are used here on purpose: AntDesign 1.6.1's
-    Input<T> binds against a type that .NET 11 preview removed
-    (WebEventCallbackFactoryEventArgsExtensions), which throws a
-    TypeLoadException the moment the component is rendered. The
-    login surface must boot even when the rest of the form layer
-    is awaiting an AntDesign upgrade.
+    Plain HTML inputs are used here on purpose: the login surface must
+    boot before the authenticated Radzen shell is available. Shared
+    Citus form classes keep this business-layer login visually aligned
+    with the rest of the app.
 *@
 
 <PageTitle>Sign in | Tralanz Books</PageTitle>
