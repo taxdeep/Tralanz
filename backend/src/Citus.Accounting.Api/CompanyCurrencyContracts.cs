@@ -28,6 +28,15 @@ public sealed record CustomerShippingAddressBookHttpRequest(
     string? Country,
     bool IsDefault);
 
+public sealed record VendorShippingAddressBookHttpRequest(
+    string? Label,
+    string? AddressLine,
+    string? City,
+    string? ProvinceState,
+    string? PostalCode,
+    string? Country,
+    bool IsDefault);
+
 public sealed record VendorUpsertHttpRequest(
     string DisplayName,
     string DefaultCurrencyCode,

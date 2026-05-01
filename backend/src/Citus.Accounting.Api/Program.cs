@@ -223,6 +223,14 @@ builder.Services.AddSingleton<ICustomerOverviewQueries, PostgreSqlCustomerOvervi
 // quotes / sales orders); this one is the persisted CRUD surface
 // surfaced on the Customer Profile tab.
 builder.Services.AddSingleton<ICustomerShippingAddressBookStore, PostgreSqlCustomerShippingAddressBookStore>();
+// Read-only AP-side aggregates for the Vendor detail page: financial
+// summary (open balance + overdue bill count + open PO count) and the
+// unified bills + POs + vendor-credits transactions timeline.
+builder.Services.AddSingleton<IVendorOverviewQueries, PostgreSqlVendorOverviewQueries>();
+// First-class shipping address book per vendor — narrower use case
+// than the customer side (mostly returns / drop-ship origins) but
+// the same shape so the UX stays consistent across counterparties.
+builder.Services.AddSingleton<IVendorShippingAddressBookStore, PostgreSqlVendorShippingAddressBookStore>();
 
 // Read-only company profile lookup (legal_name, address, contacts) for
 // surfaces that print the company on a document — invoice / quote / PO
@@ -465,6 +473,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var accountStore = startupScope.ServiceProvider.GetRequiredService<IAccountStore>();
     var customerStore = startupScope.ServiceProvider.GetRequiredService<ICustomerStore>();
     var customerShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<ICustomerShippingAddressBookStore>();
+    var vendorShippingAddressBookStore = startupScope.ServiceProvider.GetRequiredService<IVendorShippingAddressBookStore>();
     var vendorStore = startupScope.ServiceProvider.GetRequiredService<IVendorStore>();
     var paymentTermStore = startupScope.ServiceProvider.GetRequiredService<IPaymentTermStore>();
     var quoteStore = startupScope.ServiceProvider.GetRequiredService<IQuoteStore>();
@@ -499,6 +508,7 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     await customerStore.EnsureSchemaAsync(CancellationToken.None);
     await customerShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
     await vendorStore.EnsureSchemaAsync(CancellationToken.None);
+    await vendorShippingAddressBookStore.EnsureSchemaAsync(CancellationToken.None);
     await paymentTermStore.EnsureSchemaAsync(CancellationToken.None);
     await quoteStore.EnsureSchemaAsync(CancellationToken.None);
     await salesOrderStore.EnsureSchemaAsync(CancellationToken.None);
@@ -10415,6 +10425,160 @@ accounting.MapPost(
                 message = ex.Message
             });
         }
+    });
+
+// =====================================================================
+// Vendor detail page surfaces — AP-side mirror of the customer ones.
+// Financial summary returns AP open balance + overdue bill count + open
+// PO count. Transactions UNIONs bills + ap_purchase_orders +
+// vendor_credits ordered by date desc with type/status/from/to filters.
+// =====================================================================
+accounting.MapGet(
+    "/vendors/{vendorId:guid}/financial-summary",
+    async (
+        Guid vendorId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorOverviewQueries queries,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var summary = await queries.GetFinancialSummaryAsync(session.ActiveCompanyId, vendorId, cancellationToken);
+        return Results.Ok(summary);
+    });
+
+accounting.MapGet(
+    "/vendors/{vendorId:guid}/transactions",
+    async (
+        Guid vendorId,
+        string? type,
+        string? status,
+        DateOnly? from,
+        DateOnly? to,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorOverviewQueries queries,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await queries.ListTransactionsAsync(
+            session.ActiveCompanyId,
+            vendorId,
+            new VendorTransactionFilter(type, status, from, to),
+            cancellationToken);
+        return Results.Ok(rows);
+    });
+
+// Vendor shipping address book CRUD (mirror of the customer set).
+accounting.MapGet(
+    "/vendors/{vendorId:guid}/shipping-address-book",
+    async (
+        Guid vendorId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListAsync(session.ActiveCompanyId, vendorId, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/vendors/{vendorId:guid}/shipping-address-book",
+    async (
+        Guid vendorId,
+        VendorShippingAddressBookHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (string.IsNullOrWhiteSpace(request.AddressLine) &&
+            string.IsNullOrWhiteSpace(request.City) &&
+            string.IsNullOrWhiteSpace(request.PostalCode))
+        {
+            return Results.BadRequest(new { message = "Provide at least an address line, city, or postal code." });
+        }
+
+        var inserted = await store.InsertAsync(
+            session.ActiveCompanyId,
+            vendorId,
+            new VendorShippingAddressBookUpsertRequest(
+                Label: request.Label,
+                AddressLine: request.AddressLine,
+                City: request.City,
+                ProvinceState: request.ProvinceState,
+                PostalCode: request.PostalCode,
+                Country: request.Country,
+                IsDefault: request.IsDefault),
+            cancellationToken);
+        return Results.Ok(inserted);
+    });
+
+accounting.MapPut(
+    "/vendors/{vendorId:guid}/shipping-address-book/{addressId:guid}",
+    async (
+        Guid vendorId,
+        Guid addressId,
+        VendorShippingAddressBookHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var updated = await store.UpdateAsync(
+            session.ActiveCompanyId,
+            vendorId,
+            addressId,
+            new VendorShippingAddressBookUpsertRequest(
+                Label: request.Label,
+                AddressLine: request.AddressLine,
+                City: request.City,
+                ProvinceState: request.ProvinceState,
+                PostalCode: request.PostalCode,
+                Country: request.Country,
+                IsDefault: request.IsDefault),
+            cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
+    });
+
+accounting.MapDelete(
+    "/vendors/{vendorId:guid}/shipping-address-book/{addressId:guid}",
+    async (
+        Guid vendorId,
+        Guid addressId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var removed = await store.DeleteAsync(session.ActiveCompanyId, vendorId, addressId, cancellationToken);
+        return removed ? Results.NoContent() : Results.NotFound();
+    });
+
+accounting.MapPost(
+    "/vendors/{vendorId:guid}/shipping-address-book/{addressId:guid}/set-default",
+    async (
+        Guid vendorId,
+        Guid addressId,
+        BusinessSessionContextAccessor sessionAccessor,
+        IVendorShippingAddressBookStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var updated = await store.SetDefaultAsync(session.ActiveCompanyId, vendorId, addressId, cancellationToken);
+        return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
 
 accounting.MapGet(

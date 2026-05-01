@@ -712,6 +712,14 @@
     flex-shrink: 0;
 }
 
+/* Vendor side reuses the customer header layout but flips the avatar
+   to a warning palette so the badge color (orange) and the avatar
+   stay visually consistent. */
+.citus-customer-header__avatar--vendor {
+    background: var(--citus-color-warning-bg);
+    color: var(--citus-color-warning);
+}
+
 .citus-customer-header__name {
     margin: 0;
     color: var(--citus-color-fg);
@@ -2042,13 +2050,6 @@ html[data-theme="dark"] .citus-shell__sider {
  * --citus-color-* tokens, which flip automatically on <html class="dark">.
  */
 
-/* ---------- Compact journal-entry lines table ----------
-   Density-tuned variant of .citus-data-table for surfaces that need
-   high-throughput data entry. Rows shrink to ~32px; cell inputs lose
-   their boxes so the table reads as a continuous grid; header is a
-   thin subdued row. Pickers slot in via .unity-picker without
-   wrappers — they already drive their own colours through tokens. */
-
 /* ---------- UnitySearchPicker text-fill safety net ----------
    The canonical colour rules for .unity-picker__input live in the
    component's scoped razor.css. They work, but Blazor's scoped CSS
@@ -2065,6 +2066,13 @@ html[data-theme="dark"] .citus-shell__sider {
     -webkit-text-fill-color: var(--citus-color-fg) !important;
     caret-color: var(--citus-color-fg);
 }
+
+/* ---------- Compact journal-entry lines table ----------
+   Density-tuned variant of .citus-data-table for surfaces that need
+   high-throughput data entry. Rows shrink to ~32px; cell inputs lose
+   their boxes so the table reads as a continuous grid; header is a
+   thin subdued row. Pickers slot in via .unity-picker without
+   wrappers — they already drive their own colours through tokens. */
 
 .citus-journal-lines {
     table-layout: fixed;

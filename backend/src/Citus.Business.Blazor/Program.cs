@@ -227,6 +227,24 @@ builder.Services.AddHttpClient<CustomerShippingAddressBookClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// AP-side mirror clients for the Vendor detail page: financial summary
+// + transactions timeline, plus the persisted shipping address book.
+builder.Services.AddHttpClient<VendorOverviewClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
+builder.Services.AddHttpClient<VendorShippingAddressBookClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<VendorClient>(
         (serviceProvider, client) =>
         {
