@@ -106,6 +106,8 @@
             <table class="citus-data-table">
                 <thead>
                     <tr>
+                        <th style="width: 2.25rem"></th>
+                        <th style="width: 16rem">Item / Service</th>
                         <th>Description</th>
                         <th class="text-right" style="width: 6rem">Qty</th>
                         <th class="text-right" style="width: 9rem">Unit price</th>
@@ -121,7 +123,37 @@
                         var i = index;
                         var line = _lines[i];
                         <tr>
-                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Item or service" /></td>
+                            <td>
+                                @* Insert-below button. Always visible (no hover-show) — keeps
+                                   the affordance discoverable for new operators. Plus auto-grow
+                                   below means most operators won't actually need this; it's
+                                   for re-ordering / inserting between two filled lines. *@
+                                <button type="button"
+                                        class="citus-icon-button"
+                                        title="Insert line below"
+                                        @onclick="() => InsertLineAfter(i)">
+                                    <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                            <td>
+                                @* Item / Service picker. Reuses the InvoiceItemPicker context
+                                   (active product_service + inventory_item rows). On select
+                                   we copy the display text into Description as a starting
+                                   point — operators can refine. Pre-fill of unit price /
+                                   account from the item master is a future iteration; for
+                                   now Description seeds and the rest is manual. *@
+                                <UnitySearchPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   Context="@SearchScopeContext.InvoiceItemPicker"
+                                                   Placeholder="Search items…"
+                                                   Take="6"
+                                                   SourceRoute="/invoices/new"
+                                                   SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                                   SelectedDisplayText="@line.ItemDisplay"
+                                                   OnOptionSelected="@(option => OnItemPicked(i, option))"
+                                                   OnCleared="@(() => OnItemCleared(i))" />
+                            </td>
+                            <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Style="width: 100%;" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Style="width: 100%;" /></td>
                             <td><CitusInput TValue="string" Value="@line.AccountCode" ValueChanged="@(v => Update(i, l => l with { AccountCode = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="4000" /></td>
@@ -135,7 +167,7 @@
                         </tr>
                     }
                     <tr class="citus-data-table__total">
-                        <td colspan="5" class="text-right font-medium">Total</td>
+                        <td colspan="7" class="text-right font-medium">Total</td>
                         <td class="text-right font-semibold">@FormatAmount(_total)</td>
                         <td></td>
                     </tr>
@@ -198,7 +230,32 @@
     private string _currency = string.Empty;
     private decimal? _fxRate;
     private string _memo = string.Empty;
-    private readonly List<DocumentLineDraft> _lines = new() { new DocumentLineDraft { Quantity = 1m } };
+    /// <summary>
+    /// UI-side per-line state. Carries the wire-shape fields plus the
+    /// item-picker's <see cref="ItemId"/> / <see cref="ItemDisplay"/> so
+    /// the picker on each row can render a stable "selected" state across
+    /// re-renders. Submit projects this list back into <see cref="DocumentLineDraft"/>
+    /// (the wire shape) — ItemId is informational for now; pre-fill of
+    /// unit price / account from the item master is a future iteration.
+    /// </summary>
+    private sealed record InvoiceLineEditState(
+        Guid ItemId = default,
+        string ItemDisplay = "",
+        string Description = "",
+        decimal Quantity = 1m,
+        decimal UnitPrice = 0m,
+        string AccountCode = "",
+        string TaxCode = "")
+    {
+        public bool HasContent =>
+            ItemId != Guid.Empty
+            || !string.IsNullOrWhiteSpace(Description)
+            || !string.IsNullOrWhiteSpace(AccountCode)
+            || !string.IsNullOrWhiteSpace(TaxCode)
+            || UnitPrice > 0m;
+    }
+
+    private readonly List<InvoiceLineEditState> _lines = new() { new InvoiceLineEditState() };
     private bool _isSubmitting;
     private string? _validation;
     private WriteFlowResult? _lastResult;
@@ -230,9 +287,71 @@
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
     }
 
-    private void AddLine() => _lines.Add(new DocumentLineDraft { Quantity = 1m });
-    private void RemoveLine(int i) { if (i >= 0 && i < _lines.Count) _lines.RemoveAt(i); }
-    private void Update(int i, Func<DocumentLineDraft, DocumentLineDraft> mutate) { if (i >= 0 && i < _lines.Count) _lines[i] = mutate(_lines[i]); }
+    private void AddLine() => _lines.Add(new InvoiceLineEditState());
+
+    private void RemoveLine(int i)
+    {
+        if (i < 0 || i >= _lines.Count) return;
+        _lines.RemoveAt(i);
+        // Always keep at least one row so the operator has somewhere to
+        // type. The auto-grow rule below relies on the LAST row being
+        // the "blank trailer" — removing it would strand the table.
+        if (_lines.Count == 0) _lines.Add(new InvoiceLineEditState());
+    }
+
+    private void InsertLineAfter(int i)
+    {
+        if (i < 0 || i >= _lines.Count) return;
+        _lines.Insert(i + 1, new InvoiceLineEditState());
+    }
+
+    private void Update(int i, Func<InvoiceLineEditState, InvoiceLineEditState> mutate)
+    {
+        if (i < 0 || i >= _lines.Count) return;
+        _lines[i] = mutate(_lines[i]);
+        EnsureTrailingBlankLine();
+    }
+
+    /// <summary>
+    /// Appends a fresh blank line whenever the user has filled content
+    /// into the previously-trailing row. Mirrors the JE create page's
+    /// auto-grow UX: operator types into the last row → another blank
+    /// row appears at the bottom → keep going. Removes the need to hunt
+    /// for "Add line" mid-flow.
+    /// </summary>
+    private void EnsureTrailingBlankLine()
+    {
+        if (_lines.Count == 0)
+        {
+            _lines.Add(new InvoiceLineEditState());
+            return;
+        }
+        if (_lines[^1].HasContent)
+        {
+            _lines.Add(new InvoiceLineEditState());
+        }
+    }
+
+    private void OnItemPicked(int i, UnitySearchPickerOption option)
+    {
+        // Seed Description from the picked item — the operator can refine
+        // / replace it. Pre-fill of unit price + account from the catalog
+        // master is deferred until the catalog client surfaces those
+        // fields. ItemId is recorded for future reporting / template use
+        // even though the wire shape (DocumentLineDraft) doesn't yet ship
+        // it to the backend.
+        Update(i, l => l with
+        {
+            ItemId = option.SourceId,
+            ItemDisplay = option.DisplayText,
+            Description = string.IsNullOrWhiteSpace(l.Description) ? option.PrimaryText : l.Description,
+        });
+    }
+
+    private void OnItemCleared(int i)
+    {
+        Update(i, l => l with { ItemId = Guid.Empty, ItemDisplay = string.Empty });
+    }
 
     private async Task PostAsync()
     {
@@ -240,10 +359,15 @@
         _lastResult = null;
 
         if (_customerId == Guid.Empty) { _validation = "Pick a customer first."; return; }
-        if (_lines.Count == 0) { _validation = "Add at least one invoice line."; return; }
-        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
-        if (_lines.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs a revenue account code."; return; }
-        if (_total <= 0) { _validation = "Invoice total must be greater than zero."; return; }
+
+        // Drop any trailing blank lines the auto-grow heuristic left behind
+        // before validating — they're scaffolding, not user intent.
+        var meaningful = _lines.Where(l => l.HasContent).ToArray();
+        if (meaningful.Length == 0) { _validation = "Add at least one invoice line."; return; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs a revenue account code."; return; }
+        var total = meaningful.Sum(l => l.Quantity * l.UnitPrice);
+        if (total <= 0) { _validation = "Invoice total must be greater than zero."; return; }
 
         _isSubmitting = true;
         try
@@ -256,7 +380,14 @@
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
-                Lines = _lines.ToArray()
+                Lines = meaningful.Select(l => new DocumentLineDraft
+                {
+                    Description = l.Description,
+                    Quantity = l.Quantity,
+                    UnitPrice = l.UnitPrice,
+                    AccountCode = l.AccountCode,
+                    TaxCode = l.TaxCode,
+                }).ToArray()
             };
             _lastResult = await WriteFlow.PostInvoiceAsync(draft);
             if (_lastResult.Succeeded) { await Message.SuccessAsync("Invoice posted."); NavigationManager.NavigateTo("invoices"); }
