@@ -2284,7 +2284,7 @@ html[data-theme="dark"] .citus-shell__sider {
 .citus-journal-lines__cell-input:focus {
     background: var(--citus-color-bg-elevated);
     border-color: var(--citus-color-primary);
-    box-shadow: 0 0 0 2px var(--citus-color-primary-bg);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
 }
 
 select.citus-journal-lines__cell-input {
@@ -2768,7 +2768,7 @@ html.dark .rz-datepicker .rz-datepicker-trigger {
 
 .citus-account-picker__control:focus-within {
     border-color: var(--citus-color-primary);
-    box-shadow: 0 0 0 2px var(--citus-color-focus-ring);
+    box-shadow: 0 0 0 3px var(--citus-color-focus-ring);
 }
 
 .citus-account-picker__input {

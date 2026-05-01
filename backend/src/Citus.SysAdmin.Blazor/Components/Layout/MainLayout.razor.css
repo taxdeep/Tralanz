@@ -1,8 +1,0 @@
-.citus-drawer {
-    border-inline-end: 1px solid rgba(12, 74, 110, 0.08);
-}
-
-.citus-main-content {
-    background: var(--citus-color-bg);
-    min-height: 100vh;
-}
