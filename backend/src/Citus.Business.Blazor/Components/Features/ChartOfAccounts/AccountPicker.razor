@@ -147,6 +147,16 @@
     [Parameter] public EventCallback OnCleared { get; set; }
     [Parameter] public string Context { get; set; } = "journal_entry.account_picker";
 
+    /// <summary>
+    /// Optional CSV of root_type values that may appear in search
+    /// results, e.g. <c>"expense,asset,cost_of_sales"</c> on the
+    /// expense lines. Empty / null = no filter (full chart). Used to
+    /// keep the picker's result set semantically appropriate for the
+    /// page (e.g. don't surface revenue accounts when the operator is
+    /// recording an expense).
+    /// </summary>
+    [Parameter] public string? AllowedRootTypes { get; set; }
+
     private ElementReference _inputRef;
     private string _searchText = string.Empty;
     private bool _showResults;
@@ -192,12 +202,24 @@
         try
         {
             var rows = await AccountClient.ListAsync();
-            _allAccounts = rows.Where(static r => r.IsActive).ToList();
+            var allowed = ParseAllowedRootTypes(AllowedRootTypes);
+            _allAccounts = rows
+                .Where(r => r.IsActive)
+                .Where(r => allowed is null || allowed.Contains(r.RootType ?? string.Empty))
+                .ToList();
         }
         finally
         {
             _loading = false;
         }
+    }
+
+    private static HashSet<string>? ParseAllowedRootTypes(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return null;
+        return csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => s.ToLowerInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task HandleFocus(FocusEventArgs _)

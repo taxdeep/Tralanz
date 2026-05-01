@@ -184,15 +184,15 @@ else
                             <tr>
                                 <td>@(index + 1)</td>
                                 <td>
-                                    <RadzenDropDown TValue="Guid?"
-                                                    Data="@_categoryAccounts"
-                                                    Value="@line.ExpenseAccountId"
-                                                    Change="@(v => UpdateLine(index, l => l with { ExpenseAccountId = v as Guid? }))"
-                                                    TextProperty="Label"
-                                                    ValueProperty="Id"
-                                                    AllowFiltering="true"
-                                                    AllowClear="true"
-                                                    Class="citus-control-full" />
+                                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                   Context="expense.line.category"
+                                                   AllowedRootTypes="expense,asset,cost_of_sales"
+                                                   SelectedId="@line.ExpenseAccountId"
+                                                   SelectedDisplayText="@GetCategoryLabel(line.ExpenseAccountId)"
+                                                   Placeholder="Pick a category…"
+                                                   OnAccountSelected="@(acct => UpdateLine(index, l => l with { ExpenseAccountId = acct.Id }))"
+                                                   OnCleared="@(() => UpdateLine(index, l => l with { ExpenseAccountId = null }))" />
                                 </td>
                                 <td>
                                     <CitusInput TValue="string"
@@ -355,6 +355,16 @@ else
         : _discountKind == "amount" && _discountValue is { } amt ? Math.Round(amt, 4)
         : 0m;
     private decimal Total => Math.Round(Subtotal - DiscountAmount, 4);
+
+    /// <summary>
+    /// Resting-state label shown inside the AccountPicker control so a
+    /// loaded draft (or a freshly-picked row before re-render) shows the
+    /// category name instead of an empty input. AccountPicker fetches
+    /// its own search results — this helper only sources the *displayed*
+    /// text from the page's pre-loaded category list.
+    /// </summary>
+    private string? GetCategoryLabel(Guid? id) =>
+        id is { } accountId ? _categoryAccounts.FirstOrDefault(a => a.Id == accountId)?.Label : null;
 
     protected override async Task OnInitializedAsync()
     {
