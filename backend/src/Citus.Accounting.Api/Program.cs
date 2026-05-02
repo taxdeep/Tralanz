@@ -99,6 +99,7 @@ builder.Services.AddSingleton<BusinessRouteGuard>();
 builder.Services.AddScoped<IManualJournalDocumentRepository, PostgresManualJournalDocumentRepository>();
 builder.Services.AddScoped<IInvoiceDocumentRepository, PostgresInvoiceDocumentRepository>();
 builder.Services.AddScoped<ISalesReceiptDocumentRepository, PostgresSalesReceiptDocumentRepository>();
+builder.Services.AddScoped<IRefundReceiptDocumentRepository, PostgresRefundReceiptDocumentRepository>();
 builder.Services.AddScoped<ICreditNoteDocumentRepository, PostgresCreditNoteDocumentRepository>();
 builder.Services.AddScoped<IBillDocumentRepository, PostgresBillDocumentRepository>();
 builder.Services.AddScoped<IBillReceiptMatchingRepository, PostgresBillReceiptMatchingRepository>();
@@ -165,6 +166,7 @@ builder.Services.AddScoped<IPostingEngine, DefaultPostingEngine>();
 builder.Services.AddScoped<PostManualJournalCommandHandler>();
 builder.Services.AddScoped<PostInvoiceCommandHandler>();
 builder.Services.AddScoped<PostSalesReceiptCommandHandler>();
+builder.Services.AddScoped<PostRefundReceiptCommandHandler>();
 builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
@@ -10925,30 +10927,192 @@ accounting.MapPost(
 
 accounting.MapPost(
     "/refund-receipts/save-and-post",
-    (RefundReceiptSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        RefundReceiptSaveAndPostHttpRequest request,
+        IRefundReceiptDocumentRepository repository,
+        PostRefundReceiptCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.RefundFromAccountId == Guid.Empty) return Results.BadRequest(new { error = "refundFromAccountId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
-        return WriteFlowPending(
-            "PostRefundReceipt",
-            "Build PostgresRefundReceiptDocumentRepository + BuildRefundReceiptFragments (Cr refund_from / Dr revenue + tax_payable — opposite polarity from sales-receipts).",
-            logger,
-            request);
+        foreach (var line in request.Lines)
+        {
+            if (line.RevenueAccountId == Guid.Empty)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: revenueAccountId required" });
+            }
+            if (line.Quantity <= 0m)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: quantity must be positive" });
+            }
+        }
+
+        try
+        {
+            var saveResult = await repository.SaveDraftAsync(
+                new RefundReceiptDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.RefundFromAccountId,
+                    request.PaymentMethod,
+                    request.ReferenceNo,
+                    request.Reason,
+                    request.DocumentDate,
+                    string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? "USD" : request.TransactionCurrencyCode,
+                    string.IsNullOrWhiteSpace(request.BaseCurrencyCode) ? request.TransactionCurrencyCode : request.BaseCurrencyCode,
+                    null,
+                    request.FxRate,
+                    null,
+                    null,
+                    request.Memo,
+                    request.Lines.Select(line => new RefundReceiptDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount)).ToArray()),
+                cancellationToken);
+
+            var postResult = await postHandler.HandleAsync(
+                new PostRefundReceiptCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    request.AcceptedFxSnapshotId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                refundNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
 
 accounting.MapPost(
     "/credit-memos/save-and-post",
-    (CreditMemoSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        CreditMemoSaveAndPostHttpRequest request,
+        ICreditNoteDocumentRepository repository,
+        PostCreditNoteCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        // CreditMemo reuses the existing credit_notes infrastructure
+        // (table + repository + posting fragment). The frontend uses
+        // the term "credit memo" because that's the QBO-flavoured
+        // operator label; the GL artifact stays a credit_note.
+        //
+        // V1 always issues a standalone credit (no apply-to-invoice
+        // wiring at this endpoint). When an apply-against-an-invoice
+        // is needed, the operator runs Receive Payment with the
+        // credit listed alongside the invoice in the open-item
+        // picker — that path already exists.
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
-        return WriteFlowPending(
-            "PostCreditMemo",
-            "Reuse credit_notes table; resolve apply-to invoice via (companyId, displayNumber) lookup if AppliedToInvoiceNumber is non-empty.",
-            logger,
-            request);
+        foreach (var line in request.Lines)
+        {
+            if (line.RevenueAccountId == Guid.Empty)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: revenueAccountId required" });
+            }
+            if (line.Quantity <= 0m)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: quantity must be positive" });
+            }
+        }
+
+        try
+        {
+            var saveResult = await repository.SaveDraftAsync(
+                new CreditNoteDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.DocumentDate,
+                    // Credit memos don't carry a "due date" the way
+                    // invoices do — the customer doesn't owe anything
+                    // (they're owed). Default it to the credit-note
+                    // date so the underlying credit_notes row stays
+                    // schema-valid.
+                    request.DocumentDate,
+                    string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? "USD" : request.TransactionCurrencyCode,
+                    string.IsNullOrWhiteSpace(request.BaseCurrencyCode) ? request.TransactionCurrencyCode : request.BaseCurrencyCode,
+                    null,
+                    request.FxRate,
+                    null,
+                    null,
+                    BuildCreditMemoMemo(request),
+                    request.Lines.Select(line => new CreditNoteDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount)).ToArray()),
+                cancellationToken);
+
+            var postResult = await postHandler.HandleAsync(
+                new PostCreditNoteCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    request.AcceptedFxSnapshotId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                creditMemoNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+                appliedToInvoiceNumber = string.IsNullOrWhiteSpace(request.AppliedToInvoiceNumber) ? null : request.AppliedToInvoiceNumber,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
+
+// Combine the operator's free-text Reason + Memo + AppliedTo hint into
+// one persistent memo line on the credit_notes row. Future iteration
+// adds explicit columns for these once the credit_notes schema is
+// extended; for V1 this is a lossless round-trip via memo.
+static string? BuildCreditMemoMemo(CreditMemoSaveAndPostHttpRequest request)
+{
+    var parts = new List<string>();
+    if (!string.IsNullOrWhiteSpace(request.Reason)) parts.Add($"Reason: {request.Reason.Trim()}");
+    if (!string.IsNullOrWhiteSpace(request.AppliedToInvoiceNumber)) parts.Add($"Applied to {request.AppliedToInvoiceNumber.Trim()}");
+    if (!string.IsNullOrWhiteSpace(request.Memo)) parts.Add(request.Memo.Trim());
+    return parts.Count == 0 ? null : string.Join(" — ", parts);
+}
 
 accounting.MapPost(
     "/vendor-credits/save-and-post",
@@ -11839,14 +12003,28 @@ internal sealed record class RefundReceiptSaveAndPostHttpRequest
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
+    public Guid? AcceptedFxSnapshotId { get; init; }
     public Guid RefundFromAccountId { get; init; }
     public string RefundFromAccountCode { get; init; } = string.Empty;
     public string PaymentMethod { get; init; } = "cash";
     public string ReferenceNo { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineHttpRequest> Lines { get; init; } = Array.Empty<DocumentLineHttpRequest>();
+    public string? IdempotencyKey { get; init; }
+    public IReadOnlyList<RefundReceiptLineHttpRequest> Lines { get; init; } = Array.Empty<RefundReceiptLineHttpRequest>();
+}
+
+internal sealed record class RefundReceiptLineHttpRequest
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 internal sealed record class CreditMemoSaveAndPostHttpRequest
@@ -11856,11 +12034,25 @@ internal sealed record class CreditMemoSaveAndPostHttpRequest
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
+    public Guid? AcceptedFxSnapshotId { get; init; }
     public string AppliedToInvoiceNumber { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineHttpRequest> Lines { get; init; } = Array.Empty<DocumentLineHttpRequest>();
+    public string? IdempotencyKey { get; init; }
+    public IReadOnlyList<CreditMemoLineHttpRequest> Lines { get; init; } = Array.Empty<CreditMemoLineHttpRequest>();
+}
+
+internal sealed record class CreditMemoLineHttpRequest
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 internal sealed record class VendorCreditSaveAndPostHttpRequest

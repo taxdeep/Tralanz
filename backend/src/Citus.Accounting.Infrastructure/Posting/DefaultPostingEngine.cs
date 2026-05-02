@@ -84,6 +84,7 @@ public sealed class DefaultPostingEngine : IPostingEngine
             ManualJournalDocument manualJournal => manualJournal.FxSnapshot,
             InvoiceDocument invoice => invoice.FxSnapshot,
             SalesReceiptDocument salesReceipt => salesReceipt.FxSnapshot,
+            RefundReceiptDocument refundReceipt => refundReceipt.FxSnapshot,
             CreditNoteDocument creditNote => creditNote.FxSnapshot,
             BillDocument bill => bill.FxSnapshot,
             VendorCreditDocument vendorCredit => vendorCredit.FxSnapshot,

@@ -2046,3 +2046,54 @@ public sealed record SalesReceiptDraftLineSaveModel(
     Guid? TaxCodeId,
     decimal TaxAmount,
     Guid? ItemId = null);
+
+// ========================================================================
+// Refund Receipt — cash-out customer refund.
+//
+// Mirror of ISalesReceiptDocumentRepository with the polarity flipped:
+// SalesReceipt's DepositToAccount becomes RefundFromAccount, and the
+// fragment builder credits (rather than debits) it. The Reason column
+// captures why the refund was issued (return / pricing dispute / RMA #)
+// because refund_receipts is one of the few documents where the GL
+// fragments themselves don't tell the operator the "why".
+// ========================================================================
+public interface IRefundReceiptDocumentRepository
+{
+    Task<RefundReceiptDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        RefundReceiptDraftSaveModel draft,
+        CancellationToken cancellationToken);
+}
+
+public sealed record RefundReceiptDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid CustomerId,
+    Guid RefundFromAccountId,
+    string PaymentMethod,
+    string? ReferenceNo,
+    string? Reason,
+    DateOnly RefundDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<RefundReceiptDraftLineSaveModel> Lines);
+
+public sealed record RefundReceiptDraftLineSaveModel(
+    int LineNumber,
+    Guid RevenueAccountId,
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    Guid? TaxCodeId,
+    decimal TaxAmount,
+    Guid? ItemId = null);

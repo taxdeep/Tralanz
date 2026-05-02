@@ -60,6 +60,20 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
         }
 
+        if (document is RefundReceiptDocument refundReceipt)
+        {
+            if (refundReceipt.TotalAmount <= 0m)
+            {
+                throw new InvalidOperationException("Refund receipt must carry a positive total before posting.");
+            }
+
+            if (refundReceipt.Status != "draft")
+            {
+                throw new InvalidOperationException(
+                    $"Refund receipt status '{refundReceipt.Status}' cannot enter the posting engine.");
+            }
+        }
+
         if (document is CreditNoteDocument creditNote)
         {
             if (creditNote.DocumentDate > creditNote.DueDate)
@@ -323,6 +337,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildInvoiceFragments(invoice, fxResult).AsReadOnly()),
             SalesReceiptDocument salesReceipt => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildSalesReceiptFragments(salesReceipt, fxResult).AsReadOnly()),
+            RefundReceiptDocument refundReceipt => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildRefundReceiptFragments(refundReceipt, fxResult).AsReadOnly()),
             CreditNoteDocument creditNote => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCreditNoteFragments(creditNote, fxResult).AsReadOnly()),
             BillDocument bill => Task.FromResult<IReadOnlyList<PostingFragment>>(
@@ -489,6 +505,69 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     $"Sales tax for sales receipt {salesReceipt.DisplayNumber.Value} line {line.LineNumber}",
                     TaxComponentType: "sales_tax_payable",
                     PostingRole: "tax:sales_tax_payable",
+                    SourceLineNumber: line.LineNumber));
+            }
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// Polarity flip of <see cref="BuildSalesReceiptFragments"/>. Cash
+    /// flows OUT, so the refund-from account is credited and the line
+    /// revenue + tax-payable rows are debited (reversing the original
+    /// sale's GL movement). No ControlRole / PartyId — same as the
+    /// sales-receipt side, no AR open item to control.
+    ///
+    ///   Cr RefundFromAccountId      = TotalAmount
+    ///   Dr line.RevenueAccountId    = LineAmount         (per line)
+    ///   Dr line.PayableTaxAccountId = TaxAmount          (per tax-bearing line)
+    /// </summary>
+    private static List<PostingFragment> BuildRefundReceiptFragments(
+        RefundReceiptDocument refundReceipt,
+        FxResolutionResult fxResult)
+    {
+        var fragments = new List<PostingFragment>();
+
+        var refundCreditBase = Math.Round(refundReceipt.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        fragments.Add(new PostingFragment(
+            refundReceipt.RefundFromAccountId,
+            refundReceipt.TransactionCurrencyCode,
+            0m,
+            refundReceipt.TotalAmount,
+            0m,
+            refundCreditBase,
+            $"Refund disbursed for refund receipt {refundReceipt.DisplayNumber.Value}",
+            PostingRole: "cash:refund_from"));
+
+        foreach (var line in refundReceipt.ReceiptLines)
+        {
+            var baseRevenue = Math.Round(line.LineAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            fragments.Add(new PostingFragment(
+                line.RevenueAccountId,
+                refundReceipt.TransactionCurrencyCode,
+                line.LineAmount,
+                0m,
+                baseRevenue,
+                0m,
+                BuildSourceLineDescription("Refund receipt revenue reversal", refundReceipt.DisplayNumber.Value, line.LineNumber, line.Description),
+                PostingRole: "source_line:revenue_reversal",
+                SourceLineNumber: line.LineNumber));
+
+            if (line.TaxAmount > 0m)
+            {
+                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                fragments.Add(new PostingFragment(
+                    line.PayableTaxAccountId!.Value,
+                    refundReceipt.TransactionCurrencyCode,
+                    line.TaxAmount,
+                    0m,
+                    baseTax,
+                    0m,
+                    $"Sales tax reversal for refund receipt {refundReceipt.DisplayNumber.Value} line {line.LineNumber}",
+                    TaxComponentType: "sales_tax_payable",
+                    PostingRole: "tax:sales_tax_payable_reversal",
                     SourceLineNumber: line.LineNumber));
             }
         }

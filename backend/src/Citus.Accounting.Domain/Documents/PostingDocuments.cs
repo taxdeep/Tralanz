@@ -2931,3 +2931,198 @@ public sealed class SalesReceiptDocument : IPostingDocument
 
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 }
+
+// ========================================================================
+// Refund Receipt — cash-out customer refund.
+//
+// Polarity flip of SalesReceiptDocument:
+//   Cr RefundFromAccountId      = TotalAmount      (cash flowing out)
+//   Dr line.RevenueAccountId    = LineAmount       (per line)
+//   Dr line.PayableTaxAccountId = TaxAmount        (per tax-bearing line)
+//
+// No IOpenItemDocument (cash refund — no AR open item is created or
+// touched). Same line shape as SalesReceiptDocumentLine; the only
+// header-level addition is the Reason field, which travels via memo
+// at persistence time.
+// ========================================================================
+public sealed record RefundReceiptDocumentLine : IPostingDocumentLine
+{
+    public RefundReceiptDocumentLine(
+        int lineNumber,
+        Guid revenueAccountId,
+        string description,
+        decimal quantity,
+        decimal unitPrice,
+        decimal lineAmount,
+        decimal taxAmount,
+        Guid? payableTaxAccountId,
+        Guid? taxCodeId = null,
+        Guid? itemId = null)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (revenueAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Revenue account id is required.", nameof(revenueAccountId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (quantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be greater than zero.");
+        }
+
+        if (unitPrice < 0m || lineAmount < 0m || taxAmount < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unitPrice), "Refund receipt amounts cannot be negative.");
+        }
+
+        if (taxAmount > 0m && payableTaxAccountId is null)
+        {
+            throw new InvalidOperationException("Tax-bearing refund receipt lines must resolve to a payable tax account.");
+        }
+
+        LineNumber = lineNumber;
+        RevenueAccountId = revenueAccountId;
+        Description = description.Trim();
+        Quantity = quantity;
+        UnitPrice = unitPrice;
+        LineAmount = lineAmount;
+        TaxAmount = taxAmount;
+        PayableTaxAccountId = payableTaxAccountId;
+        TaxCodeId = taxCodeId;
+        ItemId = itemId;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid RevenueAccountId { get; }
+
+    public string Description { get; }
+
+    public decimal Quantity { get; }
+
+    public decimal UnitPrice { get; }
+
+    public decimal LineAmount { get; }
+
+    public decimal TaxAmount { get; }
+
+    public Guid? PayableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
+
+    public Guid? ItemId { get; }
+}
+
+public sealed class RefundReceiptDocument : IPostingDocument
+{
+    public RefundReceiptDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        DateOnly refundDate,
+        Guid customerId,
+        Guid refundFromAccountId,
+        string paymentMethod,
+        string? referenceNo,
+        string? reason,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        FxSnapshotRef? fxSnapshot,
+        IEnumerable<RefundReceiptDocumentLine> lines,
+        decimal subtotalAmount,
+        decimal taxAmount,
+        decimal totalAmount,
+        string? memo = null)
+    {
+        if (customerId == Guid.Empty)
+        {
+            throw new ArgumentException("Customer id is required.", nameof(customerId));
+        }
+
+        if (refundFromAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Refund-from account id is required.", nameof(refundFromAccountId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        DocumentDate = refundDate;
+        CustomerId = customerId;
+        RefundFromAccountId = refundFromAccountId;
+        PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? "cash" : paymentMethod.Trim().ToLowerInvariant();
+        ReferenceNo = string.IsNullOrWhiteSpace(referenceNo) ? null : referenceNo.Trim();
+        Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        FxSnapshot = fxSnapshot;
+        SubtotalAmount = subtotalAmount;
+        TaxAmount = taxAmount;
+        TotalAmount = totalAmount;
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Refund receipt document must contain at least one line.");
+        }
+
+        ReceiptLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "refund_receipt";
+
+    public string Status { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public Guid CustomerId { get; }
+
+    public Guid RefundFromAccountId { get; }
+
+    public string PaymentMethod { get; }
+
+    public string? ReferenceNo { get; }
+
+    public string? Reason { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public FxSnapshotRef? FxSnapshot { get; }
+
+    public decimal SubtotalAmount { get; }
+
+    public decimal TaxAmount { get; }
+
+    public decimal TotalAmount { get; }
+
+    public string? Memo { get; }
+
+    public IReadOnlyList<RefundReceiptDocumentLine> ReceiptLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+}

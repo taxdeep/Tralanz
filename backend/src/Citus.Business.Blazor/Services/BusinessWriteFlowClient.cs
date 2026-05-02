@@ -576,12 +576,21 @@ public sealed record SalesReceiptLineDraft
 /// item directly. Standalone credit memos leave both fields null and
 /// produce a dangling negative-AR row that can be applied later via
 /// Receive Payment.
+///
+/// Backend reuses the existing <c>credit_notes</c> table; the
+/// "credit memo" name is the QBO-flavoured operator label, the GL
+/// artifact stays a credit_note. Line shape carries
+/// RevenueAccountId / TaxCodeId Guids (the frontend pickers already
+/// hold the ids — no server-side code → id resolution needed).
 /// </summary>
 public sealed record CreditMemoDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
 
     /// <summary>Optional reference to an existing invoice that this credit cancels in part or whole.</summary>
@@ -592,7 +601,18 @@ public sealed record CreditMemoDraft
     public string Reason { get; init; } = string.Empty;
 
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+    public IReadOnlyList<CreditMemoLineDraft> Lines { get; init; } = Array.Empty<CreditMemoLineDraft>();
+}
+
+public sealed record CreditMemoLineDraft
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 /// <summary>
@@ -604,9 +624,12 @@ public sealed record CreditMemoDraft
 /// </summary>
 public sealed record RefundReceiptDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
     public Guid? RefundFromAccountId { get; init; }
     public string RefundFromAccountCode { get; init; } = string.Empty;
@@ -614,7 +637,18 @@ public sealed record RefundReceiptDraft
     public string ReferenceNo { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+    public IReadOnlyList<RefundReceiptLineDraft> Lines { get; init; } = Array.Empty<RefundReceiptLineDraft>();
+}
+
+public sealed record RefundReceiptLineDraft
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 /// <summary>
