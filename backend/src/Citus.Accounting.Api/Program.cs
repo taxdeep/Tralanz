@@ -110,6 +110,7 @@ builder.Services.AddScoped<IReceivePaymentDocumentRepository, PostgresReceivePay
 // runs the canonical CITUS_POSTGRESQL_MIGRATION_DRAFT.sql; this is just a
 // safety net so app start works without a manual migration step.
 builder.Services.AddSingleton<PostgresCustomerDepositSchemaBootstrap>();
+builder.Services.AddSingleton<PostgresV1WriteFlowSchemaBootstrap>();
 builder.Services.AddScoped<ICreditApplicationDocumentRepository, PostgresCreditApplicationDocumentRepository>();
 builder.Services.AddScoped<IPayBillDocumentRepository, PostgresPayBillDocumentRepository>();
 builder.Services.AddScoped<IVendorCreditApplicationDocumentRepository, PostgresVendorCreditApplicationDocumentRepository>();
@@ -490,8 +491,10 @@ await using (var startupScope = app.Services.CreateAsyncScope())
     var businessPasswordResetService = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformBusinessPasswordResetService>();
     var loginLockoutPolicy = startupScope.ServiceProvider.GetRequiredService<Citus.Platform.Core.Abstractions.IPlatformLoginLockoutPolicy>();
     var customerDepositSchema = startupScope.ServiceProvider.GetRequiredService<PostgresCustomerDepositSchemaBootstrap>();
+    var v1WriteFlowSchema = startupScope.ServiceProvider.GetRequiredService<PostgresV1WriteFlowSchemaBootstrap>();
     await runtimeStateRepository.EnsureSchemaAsync(CancellationToken.None);
     await customerDepositSchema.EnsureSchemaAsync(CancellationToken.None);
+    await v1WriteFlowSchema.EnsureSchemaAsync(CancellationToken.None);
     await adjustmentAccountMappingRepository.EnsureSchemaAsync(CancellationToken.None);
     await unitySearchProjectionStore.EnsureSchemaAsync(CancellationToken.None);
     await unityAiSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
