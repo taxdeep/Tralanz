@@ -121,6 +121,70 @@ public sealed class BusinessWriteFlowClient
     public Task<WriteFlowResult> PostSalesReceiptAsync(SalesReceiptDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostSalesReceiptAsync), draft);
 
+    /// <summary>
+    /// Credit memo — the AR-side reversal of an invoice. Posting credits
+    /// AR (reducing what the customer owes) and debits the line revenue
+    /// accounts plus tax-payable. If linked to a specific invoice the
+    /// backend posts an apply against that invoice's open item so the
+    /// receivable trims directly; if standalone it lives as a credit
+    /// balance on the customer that can be applied against future
+    /// invoices in Receive Payment.
+    /// </summary>
+    public Task<WriteFlowResult> PostCreditMemoAsync(CreditMemoDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostCreditMemoAsync), draft);
+
+    /// <summary>
+    /// Refund receipt — the cash-side reversal of a sales receipt.
+    /// Posting credits the deposit account (money leaves the bank /
+    /// wallet) and debits revenue + tax-payable. No AR is touched —
+    /// the original sale was cash-in-hand and so is the refund.
+    /// </summary>
+    public Task<WriteFlowResult> PostRefundReceiptAsync(RefundReceiptDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostRefundReceiptAsync), draft);
+
+    /// <summary>
+    /// Vendor credit — the AP-side mirror of a credit memo. Posting
+    /// debits AP (reducing what we owe the vendor) and credits the line
+    /// expense / asset accounts plus the input-tax (ITC) row. Optional
+    /// apply-against-bill links it directly to a posted bill so the
+    /// payable trims; standalone leaves it as a credit on the vendor.
+    /// </summary>
+    public Task<WriteFlowResult> PostVendorCreditAsync(VendorCreditDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostVendorCreditAsync), draft);
+
+    /// <summary>
+    /// Internal account transfer (operating → savings, USD wallet →
+    /// CAD wallet, etc.). Single-line journal: debit the destination
+    /// account, credit the source. Multi-currency transfers carry an
+    /// FX rate so the base-currency amounts stay tied to the same
+    /// transaction snapshot.
+    /// </summary>
+    public Task<WriteFlowResult> PostBankTransferAsync(BankTransferDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostBankTransferAsync), draft);
+
+    /// <summary>
+    /// Bank deposit — bundles multiple cash-in items (sales receipts,
+    /// receive-payment cash, etc.) sitting in an Undeposited Funds
+    /// holding account into a single bank-statement-shaped entry that
+    /// will reconcile against one bank line later. Posting debits the
+    /// destination bank account and credits the holding account for
+    /// the total of selected items.
+    /// </summary>
+    public Task<WriteFlowResult> PostBankDepositAsync(BankDepositDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostBankDepositAsync), draft);
+
+    /// <summary>
+    /// Tax return — period close for sales-tax (GST/HST/PST/VAT) and
+    /// matching input credits (ITCs). Posting moves the period's
+    /// collected-tax balance and ITC balance off their respective
+    /// accrual accounts and onto a single net-payable (or refundable)
+    /// row that becomes a Pay Bills / Receive Payment target. The
+    /// filing snapshot itself is immutable once posted — corrections
+    /// happen via a follow-on adjustment return.
+    /// </summary>
+    public Task<WriteFlowResult> PostTaxReturnAsync(TaxReturnDraft draft, CancellationToken cancellationToken = default) =>
+        Pending(nameof(PostTaxReturnAsync), draft);
+
     public async Task<WriteFlowResult> PostReceivePaymentAsync(ReceivePaymentDraft draft, CancellationToken cancellationToken = default)
     {
         // Two-step server flow:
@@ -387,6 +451,168 @@ public sealed record SalesReceiptDraft
 
     public string Memo { get; init; } = string.Empty;
     public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+/// <summary>
+/// Wire shape for the customer-side credit memo (AR reversal). Carries
+/// the same line shape as <see cref="InvoiceDraft"/>; the optional
+/// <see cref="AppliedToInvoiceId"/> and <see cref="AppliedToInvoiceNumber"/>
+/// are populated when the operator opens this credit memo as "credit
+/// against invoice X" — backend uses that linkage to settle the AR open
+/// item directly. Standalone credit memos leave both fields null and
+/// produce a dangling negative-AR row that can be applied later via
+/// Receive Payment.
+/// </summary>
+public sealed record CreditMemoDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public Guid? CustomerId { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public decimal? FxRate { get; init; }
+
+    /// <summary>Optional reference to an existing invoice that this credit cancels in part or whole.</summary>
+    public Guid? AppliedToInvoiceId { get; init; }
+    public string AppliedToInvoiceNumber { get; init; } = string.Empty;
+
+    /// <summary>Operator-visible note on why credit was issued (RMA #, return reason, etc.).</summary>
+    public string Reason { get; init; } = string.Empty;
+
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+/// <summary>
+/// Refund receipt — money out, mirror of <see cref="SalesReceiptDraft"/>.
+/// The deposit account becomes the source of funds (bank credited) and
+/// the revenue / tax accrual rows are debited. Cheque / wire / EFT
+/// reference is mandatory the same way it is on the original sale so
+/// downstream bank-rec can match the outflow.
+/// </summary>
+public sealed record RefundReceiptDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public Guid? CustomerId { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public decimal? FxRate { get; init; }
+    public Guid? RefundFromAccountId { get; init; }
+    public string RefundFromAccountCode { get; init; } = string.Empty;
+    public string PaymentMethod { get; init; } = string.Empty;
+    public string ReferenceNo { get; init; } = string.Empty;
+    public string Reason { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+/// <summary>
+/// Vendor credit (AP credit memo). Mirror of <see cref="CreditMemoDraft"/>
+/// but on the purchase side: vendor refund / return-to-vendor / volume
+/// rebate / dispute resolution. The optional <see cref="AppliedToBillId"/>
+/// link settles a posted bill's AP open item directly.
+/// </summary>
+public sealed record VendorCreditDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public Guid? VendorId { get; init; }
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public decimal? FxRate { get; init; }
+    public Guid? AppliedToBillId { get; init; }
+    public string AppliedToBillNumber { get; init; } = string.Empty;
+    public string Reason { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+}
+
+/// <summary>
+/// Internal account transfer. Single source → single destination.
+/// Same-currency transfers carry no FX rate. Cross-currency transfers
+/// (USD operating → CAD savings, etc.) take the conversion rate the
+/// bank actually applied — defaulting to D-1 close from
+/// <c>fx_rates_daily</c> with manual override, same convention as
+/// invoice / bill.
+/// </summary>
+public sealed record BankTransferDraft
+{
+    public DateOnly DocumentDate { get; init; }
+
+    /// <summary>Account funds leave (credited).</summary>
+    public Guid? FromAccountId { get; init; }
+    public string FromAccountCode { get; init; } = string.Empty;
+    public string FromCurrencyCode { get; init; } = string.Empty;
+
+    /// <summary>Account funds land in (debited).</summary>
+    public Guid? ToAccountId { get; init; }
+    public string ToAccountCode { get; init; } = string.Empty;
+    public string ToCurrencyCode { get; init; } = string.Empty;
+
+    /// <summary>Amount in the source account's currency.</summary>
+    public decimal Amount { get; init; }
+
+    /// <summary>FX rate when source and destination currencies differ.</summary>
+    public decimal? FxRate { get; init; }
+
+    public string ReferenceNo { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Bank deposit slip — multiple Undeposited-Funds items rolled into
+/// one bank-line entry. Each application reduces the holding account
+/// by its share; the total goes to the destination bank account.
+/// </summary>
+public sealed record BankDepositDraft
+{
+    public DateOnly DocumentDate { get; init; }
+    public Guid? DepositToAccountId { get; init; }
+    public string DepositToAccountCode { get; init; } = string.Empty;
+    public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string ReferenceNo { get; init; } = string.Empty;
+    public string Memo { get; init; } = string.Empty;
+    public IReadOnlyList<BankDepositItemDraft> Items { get; init; } = Array.Empty<BankDepositItemDraft>();
+}
+
+public sealed record BankDepositItemDraft
+{
+    /// <summary>Source receipt / payment id sitting in Undeposited Funds.</summary>
+    public Guid SourceItemId { get; init; }
+    public string SourceItemDisplayNumber { get; init; } = string.Empty;
+    public string PayerName { get; init; } = string.Empty;
+    public string PaymentMethod { get; init; } = string.Empty;
+    public string ReferenceNo { get; init; } = string.Empty;
+    public decimal Amount { get; init; }
+}
+
+/// <summary>
+/// Tax return draft — the period the operator wants to file plus any
+/// manual adjustments to the auto-calculated boxes (Quebec QST, HST
+/// recapture, prior-period corrections). Posting the return locks the
+/// period and emits the net JE (collected − ITCs − adjustments → net
+/// payable / refund).
+/// </summary>
+public sealed record TaxReturnDraft
+{
+    public DateOnly PeriodStart { get; init; }
+    public DateOnly PeriodEnd { get; init; }
+
+    /// <summary>e.g. "GST_HST", "QST", "PST_BC", "VAT_UK".</summary>
+    public string TaxRegime { get; init; } = string.Empty;
+
+    /// <summary>Filing frequency: monthly / quarterly / annual. Drives default period bounds + due date.</summary>
+    public string FilingFrequency { get; init; } = string.Empty;
+
+    /// <summary>Auto-totalled output tax (sales-tax collected) in transaction currency.</summary>
+    public decimal CollectedAmount { get; init; }
+
+    /// <summary>Auto-totalled input-tax credits (sales-tax paid on purchases).</summary>
+    public decimal InputCreditsAmount { get; init; }
+
+    /// <summary>Operator override for prior-period corrections / regulator adjustments.</summary>
+    public decimal AdjustmentsAmount { get; init; }
+    public string AdjustmentsNote { get; init; } = string.Empty;
+
+    /// <summary>Reference number from the regulator portal once filed (CRA confirmation #, Revenu Quebec ref, etc.).</summary>
+    public string RegulatorReferenceNo { get; init; } = string.Empty;
+
+    public string Memo { get; init; } = string.Empty;
 }
 
 public sealed record BillDraft

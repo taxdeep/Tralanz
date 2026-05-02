@@ -1,0 +1,375 @@
+@*
+    VendorPicker — direct mirror of CustomerPicker for the AP side.
+    Both components consume UnitySearchPickerService for ranked search;
+    they only diverge on (1) which entity-type the ranked overlay
+    requests, (2) which Client.ListAsync seeds the local cache, and (3)
+    the option-row's secondary line. Keeping them as twins (rather than
+    a single generic picker) lets each one render party-specific copy
+    without a parameter explosion — and, more importantly, keeps each
+    page that consumes them readable: <CustomerPicker> on a sales doc
+    states intent, <VendorPicker> on a purchase doc states intent.
+*@
+
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
+@inject VendorClient VendorClient
+@inject UnitySearchPickerService PickerService
+
+<div class="citus-customer-picker @(Disabled ? "citus-customer-picker--disabled" : null)">
+    <div class="citus-customer-picker__control" @onclick="HandleControlClickAsync">
+        <input class="citus-customer-picker__input"
+               type="text"
+               autocomplete="off"
+               value="@_searchText"
+               placeholder="@Placeholder"
+               disabled="@Disabled"
+               @ref="_inputRef"
+               @oninput="HandleInputAsync"
+               @onfocus="HandleFocusAsync"
+               @onblur="HandleBlurAsync"
+               @onkeydown="HandleKeyDownAsync" />
+        <i class="ti ti-chevron-down citus-customer-picker__chevron" aria-hidden="true"></i>
+        @if (AllowClear && !Disabled && (!string.IsNullOrWhiteSpace(_searchText) || SelectedId.HasValue))
+        {
+            <button type="button"
+                    class="citus-customer-picker__clear"
+                    @onmousedown:preventDefault
+                    @onclick="ClearAsync"
+                    aria-label="Clear">
+                <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+        }
+    </div>
+
+    @if (_showResults)
+    {
+        <div class="citus-customer-picker__panel" role="listbox">
+            @if (CanCreate)
+            {
+                <button type="button"
+                        class="citus-customer-picker__create"
+                        @onmousedown:preventDefault
+                        @onclick="CreateAsync">
+                    <i class="ti ti-plus" aria-hidden="true"></i>
+                    <span>Add new @(_searchText.Trim())</span>
+                </button>
+            }
+            @if (_loading)
+            {
+                <div class="citus-customer-picker__empty">Loading...</div>
+            }
+            else if (_visibleRows.Count == 0)
+            {
+                <div class="citus-customer-picker__empty">No matching vendors.</div>
+            }
+            else
+            {
+                @for (var idx = 0; idx < _visibleRows.Count; idx++)
+                {
+                    var i = idx;
+                    var row = _visibleRows[i];
+                    <button type="button"
+                            class="citus-customer-picker__option @(i == _highlightedIndex ? "is-active" : null)"
+                            @onmousedown:preventDefault
+                            @onclick="@(() => SelectAsync(row))"
+                            @onmouseover="@(() => _highlightedIndex = i)">
+                        <span class="citus-customer-picker__option-copy">
+                            <span class="citus-customer-picker__option-primary">@RenderHighlight(row.DisplayName)</span>
+                            <span class="citus-customer-picker__option-secondary">
+                                @row.EntityNumber
+                                @if (!string.IsNullOrWhiteSpace(row.DefaultCurrencyCode))
+                                {
+                                    <span> - @row.DefaultCurrencyCode</span>
+                                }
+                            </span>
+                        </span>
+                        <span class="citus-customer-picker__option-kind">Vendor</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CompanyId { get; set; }
+    [Parameter] public Guid? UserId { get; set; }
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public string? SelectedDisplayText { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Search vendors...";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool AllowClear { get; set; } = true;
+    [Parameter] public int Take { get; set; } = 8;
+    [Parameter] public string? SourceRoute { get; set; }
+    [Parameter] public EventCallback<UnitySearchPickerOption> OnVendorSelected { get; set; }
+    [Parameter] public EventCallback OnCleared { get; set; }
+    [Parameter] public EventCallback<string> OnCreateRequested { get; set; }
+
+    private ElementReference _inputRef;
+    private string _searchText = string.Empty;
+    private bool _isFocused;
+    private bool _showResults;
+    private bool _loading;
+    private bool _hasLoadedOnce;
+    private int _highlightedIndex = -1;
+    private IReadOnlyList<VendorSummary> _allRows = Array.Empty<VendorSummary>();
+    private IReadOnlyList<VendorSummary> _visibleRows = Array.Empty<VendorSummary>();
+    private CancellationTokenSource? _blurCts;
+    private CancellationTokenSource? _rankCts;
+
+    private bool CanCreate =>
+        OnCreateRequested.HasDelegate &&
+        !string.IsNullOrWhiteSpace(_searchText.Trim()) &&
+        !_allRows.Any(row => string.Equals(row.DisplayName, _searchText.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnParametersSet()
+    {
+        if (!_isFocused)
+        {
+            _searchText = SelectedDisplayText ?? string.Empty;
+        }
+    }
+
+    private async Task EnsureLoadedAsync()
+    {
+        if (_hasLoadedOnce || Disabled)
+        {
+            return;
+        }
+
+        _hasLoadedOnce = true;
+        _loading = true;
+        try
+        {
+            _allRows = (await VendorClient.ListAsync())
+                .Where(static row => row.IsActive)
+                .OrderBy(static row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleFocusAsync(FocusEventArgs _)
+    {
+        _isFocused = true;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        _blurCts = null;
+        await EnsureLoadedAsync();
+        await ApplyFilterAsync(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private async Task HandleControlClickAsync()
+    {
+        if (Disabled) return;
+        if (!_showResults)
+        {
+            await _inputRef.FocusAsync();
+            await HandleFocusAsync(default!);
+        }
+    }
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _highlightedIndex = -1;
+        await EnsureLoadedAsync();
+        await ApplyFilterAsync(_searchText);
+        _showResults = true;
+        StateHasChanged();
+    }
+
+    private async Task ApplyFilterAsync(string query)
+    {
+        var trimmed = query.Trim();
+        var localRows = string.IsNullOrEmpty(trimmed)
+            ? _allRows.Take(Math.Max(Take, 1)).ToArray()
+            : _allRows
+                .Where(row =>
+                    row.DisplayName.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                    row.EntityNumber.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                    (row.Email?.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (row.Phone?.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ?? false))
+                .OrderByDescending(row => row.DisplayName.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+                .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .Take(Math.Max(Take, 1))
+                .ToArray();
+
+        _visibleRows = localRows;
+        _highlightedIndex = _visibleRows.Count > 0 ? 0 : -1;
+
+        if (trimmed.Length < 2 || CompanyId == Guid.Empty)
+        {
+            return;
+        }
+
+        _rankCts?.Cancel();
+        _rankCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _rankCts = cts;
+
+        try
+        {
+            await Task.Delay(120, cts.Token);
+            var ranked = await PickerService.SearchAsync(
+                CompanyId,
+                UserId,
+                SearchScopeContext.ExpenseVendorPicker,
+                trimmed,
+                Math.Clamp(Take, 1, 20),
+                cts.Token);
+
+            if (cts.IsCancellationRequested || ranked.Count == 0)
+            {
+                return;
+            }
+
+            var byId = _allRows.ToDictionary(static row => row.Id);
+            var rankedRows = ranked
+                .Where(static opt => string.Equals(opt.EntityType, SearchDocumentType.Vendor, StringComparison.OrdinalIgnoreCase))
+                .Where(opt => byId.ContainsKey(opt.SourceId))
+                .Select(opt => byId[opt.SourceId])
+                .ToList();
+
+            foreach (var row in localRows)
+            {
+                if (!rankedRows.Any(existing => existing.Id == row.Id))
+                {
+                    rankedRows.Add(row);
+                }
+            }
+
+            _visibleRows = rankedRows.Take(Math.Max(Take, 1)).ToArray();
+            _highlightedIndex = _visibleRows.Count > 0 ? 0 : -1;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task HandleBlurAsync(FocusEventArgs _)
+    {
+        _isFocused = false;
+        _blurCts?.Cancel();
+        _blurCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _blurCts = cts;
+
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                _showResults = false;
+                _highlightedIndex = -1;
+                _searchText = SelectedDisplayText ?? _searchText;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _showResults = false;
+            _highlightedIndex = -1;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!_showResults || _visibleRows.Count == 0) return;
+
+        if (e.Key == "ArrowDown")
+        {
+            _highlightedIndex = Math.Min(_highlightedIndex + 1, _visibleRows.Count - 1);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (e.Key == "Enter" && _highlightedIndex >= 0 && _highlightedIndex < _visibleRows.Count)
+        {
+            await SelectAsync(_visibleRows[_highlightedIndex]);
+        }
+    }
+
+    private async Task SelectAsync(VendorSummary row)
+    {
+        _showResults = false;
+        _highlightedIndex = -1;
+        _searchText = FormatDisplay(row);
+        await OnVendorSelected.InvokeAsync(ToOption(row));
+        StateHasChanged();
+    }
+
+    private async Task ClearAsync()
+    {
+        _searchText = string.Empty;
+        _showResults = false;
+        _highlightedIndex = -1;
+        await OnCleared.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private async Task CreateAsync()
+    {
+        var candidate = _searchText.Trim();
+        if (string.IsNullOrWhiteSpace(candidate)) return;
+        _showResults = false;
+        await OnCreateRequested.InvokeAsync(candidate);
+    }
+
+    private static UnitySearchPickerOption ToOption(VendorSummary row) => new()
+    {
+        SourceId = row.Id,
+        EntityType = SearchDocumentType.Vendor,
+        PrimaryText = row.DisplayName,
+        SecondaryText = row.DefaultCurrencyCode,
+        DisplayText = FormatDisplay(row),
+        NavigationHref = $"vendors/{row.Id:D}"
+    };
+
+    private static string FormatDisplay(VendorSummary row) =>
+        string.IsNullOrWhiteSpace(row.DefaultCurrencyCode)
+            ? row.DisplayName
+            : $"{row.DisplayName} - {row.DefaultCurrencyCode}";
+
+    private RenderFragment RenderHighlight(string text) => builder =>
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var query = _searchText.Trim();
+        var idx = string.IsNullOrEmpty(query)
+            ? -1
+            : text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+
+        if (idx > 0)
+        {
+            builder.AddContent(1, text[..idx]);
+        }
+
+        builder.OpenElement(2, "strong");
+        builder.AddAttribute(3, "class", "citus-customer-picker__match");
+        builder.AddContent(4, text.Substring(idx, query.Length));
+        builder.CloseElement();
+
+        var tail = idx + query.Length;
+        if (tail < text.Length)
+        {
+            builder.AddContent(5, text[tail..]);
+        }
+    };
+}

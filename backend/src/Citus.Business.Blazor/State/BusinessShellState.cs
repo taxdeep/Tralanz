@@ -64,7 +64,9 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Quotes", Href = "quotes", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Sales Orders", Href = "sales-orders", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Sales Receipts", Href = "sales-receipts/new", Icon = IconName.Cash },
-                new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash }
+                new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash },
+                new NavMenuItem { Title = "Credit Memo", Href = "credit-memos/new", Icon = IconName.FileText },
+                new NavMenuItem { Title = "Refund Receipt", Href = "refund-receipts/new", Icon = IconName.ArrowLeft }
             ]
         },
         new NavSection
@@ -77,7 +79,8 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Purchase Orders", Href = "purchase-orders", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Bills", Href = "bills", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Expenses", Href = "expenses", Icon = IconName.Wallet },
-                new NavMenuItem { Title = "Pay Bills", Href = "pay-bills", Icon = IconName.Wallet }
+                new NavMenuItem { Title = "Pay Bills", Href = "pay-bills", Icon = IconName.Wallet },
+                new NavMenuItem { Title = "Vendor Credit", Href = "vendor-credits/new", Icon = IconName.FileText }
             ]
         },
         new NavSection
@@ -90,11 +93,20 @@ public sealed class BusinessShellState
         },
         new NavSection
         {
+            Title = "Banking",
+            Items =
+            [
+                new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = IconName.CircleCheck },
+                new NavMenuItem { Title = "Account Transfer", Href = "bank-transfers/new", Icon = IconName.ArrowLeft },
+                new NavMenuItem { Title = "Bank Deposit", Href = "bank-deposits/new", Icon = IconName.Cash }
+            ]
+        },
+        new NavSection
+        {
             Title = "Accounting",
             Items =
             [
                 new NavMenuItem { Title = "Chart of Accounts", Href = "chart-of-accounts", Icon = IconName.BuildingBank },
-                new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = IconName.CircleCheck },
                 new NavMenuItem { Title = "Reports", Href = "reports", Icon = IconName.ReportAnalytics }
             ]
         },
@@ -108,6 +120,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Currencies", Href = "settings/currencies", Icon = IconName.Coin },
                 new NavMenuItem { Title = "Fiscal Year", Href = "settings/fiscal-year", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
+                new NavMenuItem { Title = "Tax Return", Href = "tax-return", Icon = IconName.ReportAnalytics },
                 new NavMenuItem { Title = "Payment Terms", Href = "settings/payment-terms", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Numbering", Href = "settings/numbering", Icon = IconName.FileInvoice },
                 new NavMenuItem { Title = "Invoice Templates", Href = "settings/invoice-templates", Icon = IconName.FileText },

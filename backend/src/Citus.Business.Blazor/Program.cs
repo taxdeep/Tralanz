@@ -293,6 +293,14 @@ builder.Services.AddHttpClient<BillClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+builder.Services.AddHttpClient<InvoiceClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<PurchaseOrderClient>(
         (serviceProvider, client) =>
         {

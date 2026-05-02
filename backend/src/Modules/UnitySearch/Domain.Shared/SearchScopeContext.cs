@@ -25,6 +25,14 @@ public static class SearchScopeContext
     public const string InvoiceCustomerPicker = "invoice.customer_picker";
     public const string InvoiceItemPicker = "invoice.item_picker";
     public const string BillVendorPicker = "bill.vendor_picker";
+
+    /// <summary>
+    /// Generic vendor picker for AP-side documents that don't have their
+    /// own scoped context (vendor-credit, expense, pay-bills, etc.).
+    /// Pages with a domain-specific picker (Bill, PO) keep their narrower
+    /// constants; this one is the default for shared pickers.
+    /// </summary>
+    public const string ExpenseVendorPicker = "expense.vendor_picker";
     public const string JournalEntryAccountPicker = "journal_entry.account_picker";
 
     /// <summary>

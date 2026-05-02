@@ -1,0 +1,272 @@
+@page "/invoices/{InvoiceId:guid}"
+
+@inject BusinessShellState ShellState
+@inject InvoiceClient InvoiceClient
+@inject AccountClient AccountClient
+@inject CustomerClient CustomerClient
+@inject NavigationManager Navigation
+
+@*
+    InvoiceDetailPage — read-only detail surface for a posted invoice.
+    Mirrors BillDetailPage's structure on purpose (stat-card row,
+    actions bar, line table, sidebar with Document + Totals) so the
+    sales / expense detail surfaces feel like one design language.
+
+    Differences from the bill twin:
+      • Sales-side terminology (Customer / receivable / invoice number)
+      • Lifecycle hint copy reflects AR semantics ("Awaiting payment"
+        vs "Awaiting payment", "partially_paid" → "Some receipts
+        received", etc.)
+      • Lines render Quantity × Unit price (the wire shape) since the
+        invoice line model exposes those, where bill lines collapsed
+        to a single LineAmount.
+*@
+
+<PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="invoices">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to invoices</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else if (_invoice is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Invoice not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Invoice #" Value="@_invoice.DisplayNumber" Description="@_customerName"
+                       Icon="IconName.FileInvoice" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_invoice.Status)" Description="@StatusHint(_invoice.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_invoice.Status)" />
+        <CitusStatCard Label="Total" Value="@($"{_invoice.TotalAmount:N2} {_invoice.TransactionCurrencyCode}")"
+                       Description="@($"Subtotal {_invoice.SubtotalAmount:N2} + tax {_invoice.TaxAmount:N2}")"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+        <CitusStatCard Label="@(_invoice.DueDate.HasValue ? "Due" : "Receipt")"
+                       Value="@(_invoice.DueDate?.ToString("yyyy-MM-dd") ?? "On receipt")"
+                       Description="@($"Issued {_invoice.DocumentDate:yyyy-MM-dd}")"
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+    </div>
+
+    <section class="citus-panel mb-6">
+        <h2 class="citus-panel__title">Actions</h2>
+        <div class="flex flex-wrap gap-2 items-center">
+            @if (_invoice.Status == "posted" || _invoice.Status == "partially_paid")
+            {
+                <a class="citus-button citus-button--primary" href="receive-payment">
+                    <CitusIcon Name="IconName.Cash" Size="IconSize.Inline" />
+                    <span>Receive payment</span>
+                </a>
+                <a class="citus-button citus-button--ghost" href="@($"sales-receipts/new")">Issue credit memo</a>
+                <span class="text-fg-muted text-sm">Settlement happens in Receive Payment.</span>
+            }
+            else if (_invoice.Status == "draft")
+            {
+                <span class="text-fg-muted text-sm">Open the editor to finish this draft and post it.</span>
+            }
+            else if (_invoice.Status == "voided" || _invoice.Status == "reversed")
+            {
+                <span class="text-fg-muted text-sm">This invoice has no outstanding balance.</span>
+            }
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th>Account</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 5rem">Qty</th>
+                            <th class="text-right" style="width: 8rem">Unit price</th>
+                            <th class="text-right" style="width: 8rem">Tax</th>
+                            <th class="text-right" style="width: 9rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _invoice.Lines)
+                        {
+                            <tr>
+                                <td>@line.LineNumber</td>
+                                <td>@ResolveAccountLabel(line.RevenueAccountId)</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                <td class="text-right">@line.UnitPrice.ToString("N2")</td>
+                                <td class="text-right">@line.TaxAmount.ToString("N2")</td>
+                                <td class="text-right">@line.LineAmount.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_invoice.Memo))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Memo</h2>
+                    <p class="text-fg-muted text-sm">@_invoice.Memo</p>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Invoice no.</th><td><span class="citus-inline-code">@_invoice.DisplayNumber</span></td></tr>
+                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_invoice.EntityNumber</span></td></tr>
+                        <tr><th>Document date</th><td>@_invoice.DocumentDate.ToString("yyyy-MM-dd")</td></tr>
+                        @if (_invoice.DueDate is { } due)
+                        {
+                            <tr><th>Due date</th><td>@due.ToString("yyyy-MM-dd")</td></tr>
+                        }
+                        <tr><th>Currency</th><td>@_invoice.TransactionCurrencyCode</td></tr>
+                        @if (!string.Equals(_invoice.TransactionCurrencyCode, _invoice.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <tr><th>Base currency</th><td>@_invoice.BaseCurrencyCode</td></tr>
+                        }
+                        <tr><th>Customer</th><td>@_customerName</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@_invoice.SubtotalAmount.ToString("N2")</td></tr>
+                        <tr><th>Tax</th><td class="text-right">@_invoice.TaxAmount.ToString("N2")</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@_invoice.TotalAmount.ToString("N2") @_invoice.TransactionCurrencyCode</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid InvoiceId { get; set; }
+
+    private InvoiceRecordDto? _invoice;
+    private string _customerName = "—";
+    private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private bool _isLoading = true;
+    private string? _error;
+
+    private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "Invoice", Subtitle = "Invoice detail" };
+    private string _pageTitle = "Invoice";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_invoice is not null && _invoice.Id != InvoiceId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            var invoiceTask = InvoiceClient.GetByIdAsync(InvoiceId, ShellState.ActiveCompany.Id);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(invoiceTask, accountsTask);
+            _invoice = invoiceTask.Result;
+            _accounts = accountsTask.Result;
+            if (_invoice is not null)
+            {
+                var customer = await CustomerClient.GetByIdAsync(_invoice.CustomerId);
+                _customerName = customer?.DisplayName ?? "—";
+            }
+            ApplyHeader();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_invoice is null)
+        {
+            _pageTitle = "Invoice";
+            _header = new PageHeaderModel { Eyebrow = "Sales & Get Paid", Title = "Invoice", Subtitle = "Invoice detail" };
+            return;
+        }
+        _pageTitle = _invoice.DisplayNumber;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Sales & Get Paid",
+            Title = _invoice.DisplayNumber,
+            Subtitle = $"{_customerName} · {HumanizeStatus(_invoice.Status)}"
+        };
+    }
+
+    private string ResolveAccountLabel(Guid? accountId)
+    {
+        if (accountId is null) return "—";
+        var account = _accounts.FirstOrDefault(a => a.Id == accountId.Value);
+        return account is null ? accountId.Value.ToString("D") : $"{account.Code}  {account.Name}";
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "submitted" => "Submitted",
+        "posted" => "Posted",
+        "partially_paid" => "Partially paid",
+        "paid" => "Paid",
+        "voided" => "Voided",
+        "reversed" => "Reversed",
+        _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "draft" => "Not posted yet.",
+        "submitted" => "Awaiting approval / posting.",
+        "posted" => "Awaiting payment.",
+        "partially_paid" => "Some receipts received.",
+        "paid" => "Fully settled.",
+        "voided" => "Voided.",
+        "reversed" => "Reversed.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "draft" => StatTone.Neutral,
+        "submitted" => StatTone.Info,
+        "posted" => StatTone.Info,
+        "partially_paid" => StatTone.Info,
+        "paid" => StatTone.Success,
+        "voided" => StatTone.Neutral,
+        "reversed" => StatTone.Warning,
+        _ => StatTone.Neutral
+    };
+}

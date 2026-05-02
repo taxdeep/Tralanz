@@ -1,0 +1,317 @@
+@page "/bank-deposits/new"
+
+@inject BusinessShellState ShellState
+@inject BusinessWriteFlowClient WriteFlow
+@inject NavigationManager NavigationManager
+@inject CitusToastService Message
+
+@*
+    BankDepositCreatePage — bundles multiple cash-in items sitting in
+    Undeposited Funds (the holding account that captures sales-receipt
+    cash, receive-payment cash, etc. before they hit the real bank
+    account) into one bank-statement-shaped entry.
+
+    Why operators want this: the bank statement shows a single $1,420
+    deposit. Internally three cheques + four cards composed it. Without
+    a deposit slip, the bank-rec page sees seven Undeposited Funds rows
+    and one bank row — they don't match. With a deposit slip, the seven
+    rows roll into one bank row at post time, and bank-rec reconciles
+    one-to-one.
+
+    GL on post (when backend wires up):
+      Cr Undeposited Funds   (each item)  | individual rows clear
+      Dr Destination Bank    (total)      | one consolidated row
+
+    V1 takes the items as a free-form list — operator types display
+    number + amount + payer + method. When the holding-account picker
+    + open-deposit list endpoint lands, this changes to a checkbox
+    table sourced from /accounting/undeposited-funds.
+*@
+
+<PageTitle>New Bank Deposit | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="reconciliation">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back to banking</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (ShellState.AreWritesBlocked)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" ShowIcon="true" Message="@ShellState.WriteBlockMessage" Class="mb-4" />
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_lastResult is not null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>@_lastResult.Operation</strong>
+            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-8 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Header</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Deposit date</label>
+                    <RadzenDatePicker TValue="DateTime?" DateFormat="yyyy-MM-dd" ShowTime="false" @bind-Value="_documentDate" Class="citus-control-full" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Reference #</label>
+                    <CitusInput TValue="string" @bind-Value="_referenceNo" Placeholder="Bank slip reference; optional." />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Deposit to</label>
+                    @* Real bank account that the slip lands in. Asset
+                       only — usually a chequing / operating row. *@
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="bank_deposit.deposit_to"
+                                   AllowedRootTypes="asset"
+                                   SelectedId="@_depositToAccountId"
+                                   SelectedDisplayText="@_depositToAccountDisplay"
+                                   Placeholder="Bank account to deposit into…"
+                                   OnAccountSelected="OnDepositAccountSelected"
+                                   OnCleared="OnDepositAccountCleared" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Memo</label>
+                    <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
+                </div>
+            </div>
+        </section>
+
+        <section class="citus-panel">
+            <header class="citus-panel__header">
+                <h2 class="citus-panel__title">Items in this deposit</h2>
+                <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddItem">Add item</CitusButton>
+            </header>
+
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 2.25rem"></th>
+                        <th style="width: 12rem">Source #</th>
+                        <th>Payer</th>
+                        <th style="width: 10rem">Method</th>
+                        <th style="width: 10rem">Reference</th>
+                        <th class="text-right" style="width: 10rem">Amount</th>
+                        <th style="width: 3rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var index = 0; index < _items.Count; index++)
+                    {
+                        var i = index;
+                        var item = _items[i];
+                        <tr>
+                            <td>
+                                <button type="button" class="citus-icon-button" title="Insert below" @onclick="() => InsertItemAfter(i)">
+                                    <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                            <td><CitusInput TValue="string" Value="@item.SourceItemDisplayNumber" ValueChanged="@(v => Update(i, x => x with { SourceItemDisplayNumber = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="SR-… / RP-…" /></td>
+                            <td><CitusInput TValue="string" Value="@item.PayerName" ValueChanged="@(v => Update(i, x => x with { PayerName = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Customer name" /></td>
+                            <td>
+                                <select class="citus-form-field__input"
+                                        value="@item.PaymentMethod"
+                                        @onchange="@(e => Update(i, x => x with { PaymentMethod = e.Value?.ToString() ?? string.Empty }))">
+                                    <option value="">—</option>
+                                    <option value="cash">Cash</option>
+                                    <option value="cheque">Cheque</option>
+                                    <option value="credit_card">Credit Card</option>
+                                    <option value="wire">Wire</option>
+                                    <option value="direct_deposit">Direct Deposit</option>
+                                    <option value="eft">EFT</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </td>
+                            <td><CitusInput TValue="string" Value="@item.ReferenceNo" ValueChanged="@(v => Update(i, x => x with { ReferenceNo = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Cheque / trace" /></td>
+                            <td>
+                                <input type="text"
+                                       inputmode="decimal"
+                                       class="citus-form-field__input text-right"
+                                       value="@FormatDecimal(item.Amount)"
+                                       @oninput="@(e => Update(i, x => x with { Amount = ParseDecimal(e.Value?.ToString()) }))" />
+                            </td>
+                            <td>
+                                <button type="button" class="citus-icon-button" title="Remove item" @onclick="() => RemoveItem(i)">
+                                    <CitusIcon Name="IconName.Trash" Size="IconSize.Inline" />
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="citus-data-table__total">
+                        <td colspan="5" class="text-right font-medium">Deposit total</td>
+                        <td class="text-right font-semibold">@FormatAmount(_total)</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="lg:col-span-4 flex flex-col gap-6">
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Summary</h2>
+            <table class="citus-keyvalue">
+                <tbody>
+                    <tr><th>Company</th><td>@ShellState.ActiveCompany.CompanyCode</td></tr>
+                    <tr><th>Items</th><td>@_items.Count(i => i.HasContent)</td></tr>
+                    <tr><th>Deposit to</th><td>@(string.IsNullOrEmpty(_depositToAccountDisplay) ? "—" : _depositToAccountDisplay)</td></tr>
+                    <tr><th>Total</th><td>@FormatAmount(_total)</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="citus-panel">
+            <h2 class="citus-panel__title">Post deposit</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Posting clears each item from Undeposited Funds and
+                debits the destination bank account for the total.
+                The slip becomes one row in bank-rec.
+            </p>
+            <CitusButton Variant="CitusButtonVariant.Primary" Block="true"
+                         Disabled="@(_total <= 0 || _depositToAccountId is null || ShellState.AreWritesBlocked || _isSubmitting)"
+                         OnClick="PostAsync">
+                @(_isSubmitting ? "Posting..." : "Post deposit")
+            </CitusButton>
+        </section>
+    </div>
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Banking",
+        Title = "New bank deposit",
+        Subtitle = "Group multiple Undeposited-Funds items into one bank-slip entry."
+    };
+
+    private DateTime? _documentDate = DateTime.Today;
+    private string _referenceNo = string.Empty;
+    private string _memo = string.Empty;
+
+    private Guid? _depositToAccountId;
+    private string _depositToAccountDisplay = string.Empty;
+    private string _depositToAccountCode = string.Empty;
+
+    private sealed record DepositItemEditState(
+        string SourceItemDisplayNumber = "",
+        string PayerName = "",
+        string PaymentMethod = "",
+        string ReferenceNo = "",
+        decimal Amount = 0m)
+    {
+        public bool HasContent =>
+            !string.IsNullOrWhiteSpace(SourceItemDisplayNumber)
+            || !string.IsNullOrWhiteSpace(PayerName)
+            || Amount > 0m;
+    }
+
+    private readonly List<DepositItemEditState> _items = new() { new DepositItemEditState() };
+    private bool _isSubmitting;
+    private string? _validation;
+    private WriteFlowResult? _lastResult;
+
+    private decimal _total => _items.Sum(i => i.Amount);
+
+    private void OnDepositAccountSelected(AccountSummary account)
+    {
+        _depositToAccountId = account.Id;
+        _depositToAccountDisplay = $"{account.Code} {account.Name}";
+        _depositToAccountCode = account.Code;
+    }
+
+    private void OnDepositAccountCleared()
+    {
+        _depositToAccountId = null;
+        _depositToAccountDisplay = string.Empty;
+        _depositToAccountCode = string.Empty;
+    }
+
+    private void AddItem() => _items.Add(new DepositItemEditState());
+
+    private void RemoveItem(int i)
+    {
+        if (i < 0 || i >= _items.Count) return;
+        _items.RemoveAt(i);
+        if (_items.Count == 0) _items.Add(new DepositItemEditState());
+    }
+
+    private void InsertItemAfter(int i)
+    {
+        if (i < 0 || i >= _items.Count) return;
+        _items.Insert(i + 1, new DepositItemEditState());
+    }
+
+    private void Update(int i, Func<DepositItemEditState, DepositItemEditState> mutate)
+    {
+        if (i < 0 || i >= _items.Count) return;
+        _items[i] = mutate(_items[i]);
+        EnsureTrailingBlankItem();
+    }
+
+    private void EnsureTrailingBlankItem()
+    {
+        if (_items.Count == 0) { _items.Add(new DepositItemEditState()); return; }
+        if (_items[^1].HasContent) _items.Add(new DepositItemEditState());
+    }
+
+    private async Task PostAsync()
+    {
+        _validation = null;
+        _lastResult = null;
+
+        if (_depositToAccountId is null) { _validation = "Pick a destination bank account."; return; }
+        var meaningful = _items.Where(i => i.HasContent && i.Amount > 0m).ToArray();
+        if (meaningful.Length == 0) { _validation = "Add at least one deposit item with a positive amount."; return; }
+        if (_total <= 0) { _validation = "Deposit total must be greater than zero."; return; }
+
+        _isSubmitting = true;
+        try
+        {
+            var draft = new BankDepositDraft
+            {
+                DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
+                DepositToAccountId = _depositToAccountId,
+                DepositToAccountCode = _depositToAccountCode,
+                TransactionCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode,
+                ReferenceNo = _referenceNo.Trim(),
+                Memo = _memo.Trim(),
+                Items = meaningful.Select(i => new BankDepositItemDraft
+                {
+                    SourceItemDisplayNumber = i.SourceItemDisplayNumber.Trim(),
+                    PayerName = i.PayerName.Trim(),
+                    PaymentMethod = i.PaymentMethod,
+                    ReferenceNo = i.ReferenceNo.Trim(),
+                    Amount = i.Amount,
+                }).ToArray(),
+            };
+            _lastResult = await WriteFlow.PostBankDepositAsync(draft);
+            if (_lastResult.Succeeded) { await Message.SuccessAsync("Bank deposit posted."); NavigationManager.NavigateTo("reconciliation"); }
+            else { await Message.InfoAsync(_lastResult.Message); }
+        }
+        finally { _isSubmitting = false; }
+    }
+
+    private static decimal ParseDecimal(string? raw) =>
+        decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0m;
+
+    private static string FormatAmount(decimal amount) => amount.ToString("N2");
+    private static string FormatDecimal(decimal value) => value == 0m ? string.Empty : value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}
