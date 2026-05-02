@@ -515,6 +515,33 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                                    and id = @source_id
                                    and status = 'draft';
                                  """,
+            "bank_transfer" => """
+                                update bank_transfers
+                                set status = 'posted',
+                                    posted_at = @posted_at,
+                                    updated_at = now()
+                                where company_id = @company_id
+                                  and id = @source_id
+                                  and status = 'draft';
+                                """,
+            "bank_deposit" => """
+                               update bank_deposits
+                               set status = 'posted',
+                                   posted_at = @posted_at,
+                                   updated_at = now()
+                               where company_id = @company_id
+                                 and id = @source_id
+                                 and status = 'draft';
+                               """,
+            "tax_return" => """
+                              update tax_returns
+                              set status = 'posted',
+                                  posted_at = @posted_at,
+                                  updated_at = now()
+                              where company_id = @company_id
+                                and id = @source_id
+                                and status = 'draft';
+                              """,
             "credit_note" => """
                               update credit_notes
                               set status = 'posted',

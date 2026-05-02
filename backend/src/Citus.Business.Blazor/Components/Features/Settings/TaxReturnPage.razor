@@ -308,10 +308,13 @@
         {
             var draft = new TaxReturnDraft
             {
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
                 PeriodStart = DateOnly.FromDateTime(_periodStart.Value.Date),
                 PeriodEnd = DateOnly.FromDateTime(_periodEnd.Value.Date),
                 TaxRegime = _taxRegime,
                 FilingFrequency = _filingFrequency,
+                BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode.Trim().ToUpperInvariant(),
                 CollectedAmount = _collectedAmount,
                 InputCreditsAmount = _inputCreditsAmount,
                 AdjustmentsAmount = _adjustmentsAmount,

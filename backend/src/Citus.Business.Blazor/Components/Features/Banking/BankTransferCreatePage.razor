@@ -256,6 +256,8 @@
         {
             var draft = new BankTransferDraft
             {
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
                 DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
                 FromAccountId = _fromAccountId,
                 FromAccountCode = _fromAccountCode,

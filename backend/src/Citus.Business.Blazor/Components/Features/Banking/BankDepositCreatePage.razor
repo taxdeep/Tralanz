@@ -285,6 +285,8 @@
         {
             var draft = new BankDepositDraft
             {
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
                 DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
                 DepositToAccountId = _depositToAccountId,
                 DepositToAccountCode = _depositToAccountCode,

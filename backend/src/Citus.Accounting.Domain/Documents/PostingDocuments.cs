@@ -3126,3 +3126,435 @@ public sealed class RefundReceiptDocument : IPostingDocument
 
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 }
+
+// ========================================================================
+// Bank Transfer — internal asset → asset movement.
+//
+// Two-fragment journal:
+//   Cr FromAccountId  = Amount             (in from-account currency)
+//   Dr ToAccountId    = Amount * FxRate    (in to-account currency)
+//
+// Same-currency transfers carry FxRate = null and Amount lands on
+// both sides identically. Cross-currency transfers carry FxRate > 0;
+// the engine still uses each account's snapshot rate for the
+// base-currency rows of the JE so the audit trail uses
+// fx_rates_daily-grade rates rather than the bank's rate. The
+// operator's per-document FxRate only sets the destination
+// transaction-currency amount.
+//
+// No lines, no IOpenItemDocument, no party. The single virtual
+// "transfer line" is just the [from, to, amount] tuple on the
+// document header.
+// ========================================================================
+public sealed class BankTransferDocument : IPostingDocument
+{
+    public BankTransferDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        DateOnly transferDate,
+        Guid fromAccountId,
+        CurrencyCode fromCurrencyCode,
+        Guid toAccountId,
+        CurrencyCode toCurrencyCode,
+        decimal amount,
+        decimal? fxRate,
+        FxSnapshotRef? fxSnapshot,
+        string? referenceNo,
+        string? memo)
+    {
+        if (fromAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("From-account id is required.", nameof(fromAccountId));
+        }
+        if (toAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("To-account id is required.", nameof(toAccountId));
+        }
+        if (fromAccountId == toAccountId)
+        {
+            throw new InvalidOperationException("Bank transfer source and destination accounts must differ.");
+        }
+        if (amount <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), "Amount must be positive.");
+        }
+
+        var sameCurrency = fromCurrencyCode == toCurrencyCode;
+        if (sameCurrency && fxRate is not null)
+        {
+            throw new InvalidOperationException("Same-currency transfers must carry no FX rate.");
+        }
+        if (!sameCurrency && (fxRate is null || fxRate.Value <= 0m))
+        {
+            throw new InvalidOperationException("Cross-currency transfers must carry a positive FX rate.");
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        DocumentDate = transferDate;
+        FromAccountId = fromAccountId;
+        FromCurrencyCode = fromCurrencyCode ?? throw new ArgumentNullException(nameof(fromCurrencyCode));
+        ToAccountId = toAccountId;
+        ToCurrencyCode = toCurrencyCode ?? throw new ArgumentNullException(nameof(toCurrencyCode));
+        Amount = amount;
+        FxRate = fxRate;
+        FxSnapshot = fxSnapshot;
+        // Transfer's "transaction currency" is the from-side; the
+        // PostingEngine's per-row FX is what handles the multi-
+        // currency wiring downstream.
+        TransactionCurrencyCode = fromCurrencyCode;
+        // Base currency comes from the FxSnapshot when present,
+        // otherwise we treat the from-side as base (same-currency
+        // transfer where Amount maps 1:1 to base).
+        BaseCurrencyCode = fxSnapshot?.BaseCurrencyCode ?? fromCurrencyCode;
+        ReferenceNo = string.IsNullOrWhiteSpace(referenceNo) ? null : referenceNo.Trim();
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        Lines = Array.Empty<IPostingDocumentLine>();
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "bank_transfer";
+
+    public string Status { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public Guid FromAccountId { get; }
+
+    public CurrencyCode FromCurrencyCode { get; }
+
+    public Guid ToAccountId { get; }
+
+    public CurrencyCode ToCurrencyCode { get; }
+
+    public decimal Amount { get; }
+
+    public decimal? FxRate { get; }
+
+    public FxSnapshotRef? FxSnapshot { get; }
+
+    public string? ReferenceNo { get; }
+
+    public string? Memo { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+}
+
+// ========================================================================
+// Bank Deposit — group N Undeposited-Funds items into one bank-line
+// posting. Each item carries the source-receipt reference and the
+// amount; the holding account loses each item's share, the bank
+// account gains the total.
+//
+// V1 simplification: the holding account is implicit (every item
+// must already be sitting in the same Undeposited-Funds account on
+// the books — the future iteration where items can come from
+// different holding accounts requires per-item account resolution).
+// ========================================================================
+public sealed record BankDepositItemDocumentLine : IPostingDocumentLine
+{
+    public BankDepositItemDocumentLine(
+        int lineNumber,
+        string sourceItemKind,
+        Guid? sourceItemId,
+        string sourceItemDisplayNumber,
+        string? payerName,
+        string? paymentMethod,
+        string? referenceNo,
+        decimal amount)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+        if (string.IsNullOrWhiteSpace(sourceItemKind))
+        {
+            throw new ArgumentException("Source item kind is required.", nameof(sourceItemKind));
+        }
+        if (string.IsNullOrWhiteSpace(sourceItemDisplayNumber))
+        {
+            throw new ArgumentException("Source item display number is required.", nameof(sourceItemDisplayNumber));
+        }
+        if (amount <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), "Item amount must be positive.");
+        }
+
+        LineNumber = lineNumber;
+        SourceItemKind = sourceItemKind.Trim().ToLowerInvariant();
+        SourceItemId = sourceItemId;
+        SourceItemDisplayNumber = sourceItemDisplayNumber.Trim();
+        PayerName = string.IsNullOrWhiteSpace(payerName) ? null : payerName.Trim();
+        PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? null : paymentMethod.Trim().ToLowerInvariant();
+        ReferenceNo = string.IsNullOrWhiteSpace(referenceNo) ? null : referenceNo.Trim();
+        Amount = amount;
+        Description = $"Deposit item {sourceItemDisplayNumber}";
+    }
+
+    public int LineNumber { get; }
+
+    public string SourceItemKind { get; }
+
+    public Guid? SourceItemId { get; }
+
+    public string SourceItemDisplayNumber { get; }
+
+    public string? PayerName { get; }
+
+    public string? PaymentMethod { get; }
+
+    public string? ReferenceNo { get; }
+
+    public decimal Amount { get; }
+
+    public string Description { get; }
+}
+
+public sealed class BankDepositDocument : IPostingDocument
+{
+    public BankDepositDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        DateOnly depositDate,
+        Guid depositToAccountId,
+        Guid undepositedFundsAccountId,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        decimal totalAmount,
+        string? referenceNo,
+        string? memo,
+        IEnumerable<BankDepositItemDocumentLine> items)
+    {
+        if (depositToAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Deposit-to account id is required.", nameof(depositToAccountId));
+        }
+        if (undepositedFundsAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Undeposited-funds account id is required.", nameof(undepositedFundsAccountId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        DocumentDate = depositDate;
+        DepositToAccountId = depositToAccountId;
+        UndepositedFundsAccountId = undepositedFundsAccountId;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        TotalAmount = totalAmount;
+        ReferenceNo = string.IsNullOrWhiteSpace(referenceNo) ? null : referenceNo.Trim();
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        var materializedItems = items?.ToArray() ?? throw new ArgumentNullException(nameof(items));
+        if (materializedItems.Length == 0)
+        {
+            throw new InvalidOperationException("Bank deposit document must contain at least one item.");
+        }
+
+        Items = Array.AsReadOnly(materializedItems);
+        Lines = Array.AsReadOnly(materializedItems.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "bank_deposit";
+
+    public string Status { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public Guid DepositToAccountId { get; }
+
+    public Guid UndepositedFundsAccountId { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public decimal TotalAmount { get; }
+
+    public string? ReferenceNo { get; }
+
+    public string? Memo { get; }
+
+    public IReadOnlyList<BankDepositItemDocumentLine> Items { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    /// <summary>
+    /// Bank deposit always-1 FX rate placeholder. Same-currency only
+    /// for V1 (the deposit-to and undeposited-funds accounts must be
+    /// in the same currency); cross-currency banking sits in
+    /// BankTransfer.
+    /// </summary>
+    public FxSnapshotRef? FxSnapshot => null;
+}
+
+// ========================================================================
+// Tax Return — period close for a sales-tax regime.
+//
+//   Net = CollectedAmount - InputCreditsAmount + AdjustmentsAmount
+//
+//   Net > 0  →  Dr TaxPayableAccount         = CollectedAmount
+//               Cr TaxReceivableAccount      = InputCreditsAmount
+//               Dr/Cr TaxAdjustmentsAccount  = signed AdjustmentsAmount
+//               Cr TaxFilingLiabilityAccount = Net
+//
+//   Net < 0  →  same accrual clearings, |Net| lands on
+//               TaxFilingReceivableAccount (Dr) instead.
+//
+// Single header, no lines, no party. Tax payable / receivable /
+// filing-liability account ids are resolved by the repository at
+// GetForPostingAsync time from the company chart by canonical code
+// (V1 hard-codes the codes; future iteration moves them to
+// company_settings columns).
+// ========================================================================
+public sealed class TaxReturnDocument : IPostingDocument
+{
+    public TaxReturnDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        string taxRegime,
+        string filingFrequency,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CurrencyCode baseCurrencyCode,
+        decimal collectedAmount,
+        decimal inputCreditsAmount,
+        decimal adjustmentsAmount,
+        decimal netAmount,
+        string? adjustmentsNote,
+        string? regulatorReferenceNo,
+        Guid taxPayableAccountId,
+        Guid taxReceivableAccountId,
+        Guid taxAdjustmentsAccountId,
+        Guid taxFilingLiabilityAccountId,
+        Guid taxFilingReceivableAccountId,
+        string? memo)
+    {
+        if (string.IsNullOrWhiteSpace(taxRegime))
+        {
+            throw new ArgumentException("Tax regime is required.", nameof(taxRegime));
+        }
+        if (periodEnd < periodStart)
+        {
+            throw new InvalidOperationException("Tax return period end must be on or after period start.");
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        TaxRegime = taxRegime.Trim();
+        FilingFrequency = string.IsNullOrWhiteSpace(filingFrequency) ? "quarterly" : filingFrequency.Trim().ToLowerInvariant();
+        PeriodStart = periodStart;
+        PeriodEnd = periodEnd;
+        DocumentDate = periodEnd; // For the engine's date-driven FX
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        TransactionCurrencyCode = baseCurrencyCode; // Tax returns settle in base
+        CollectedAmount = collectedAmount;
+        InputCreditsAmount = inputCreditsAmount;
+        AdjustmentsAmount = adjustmentsAmount;
+        NetAmount = netAmount;
+        AdjustmentsNote = string.IsNullOrWhiteSpace(adjustmentsNote) ? null : adjustmentsNote.Trim();
+        RegulatorReferenceNo = string.IsNullOrWhiteSpace(regulatorReferenceNo) ? null : regulatorReferenceNo.Trim();
+        TaxPayableAccountId = taxPayableAccountId;
+        TaxReceivableAccountId = taxReceivableAccountId;
+        TaxAdjustmentsAccountId = taxAdjustmentsAccountId;
+        TaxFilingLiabilityAccountId = taxFilingLiabilityAccountId;
+        TaxFilingReceivableAccountId = taxFilingReceivableAccountId;
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        Lines = Array.Empty<IPostingDocumentLine>();
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "tax_return";
+
+    public string Status { get; }
+
+    public string TaxRegime { get; }
+
+    public string FilingFrequency { get; }
+
+    public DateOnly PeriodStart { get; }
+
+    public DateOnly PeriodEnd { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public decimal CollectedAmount { get; }
+
+    public decimal InputCreditsAmount { get; }
+
+    public decimal AdjustmentsAmount { get; }
+
+    public decimal NetAmount { get; }
+
+    public string? AdjustmentsNote { get; }
+
+    public string? RegulatorReferenceNo { get; }
+
+    public Guid TaxPayableAccountId { get; }
+
+    public Guid TaxReceivableAccountId { get; }
+
+    public Guid TaxAdjustmentsAccountId { get; }
+
+    public Guid TaxFilingLiabilityAccountId { get; }
+
+    public Guid TaxFilingReceivableAccountId { get; }
+
+    public string? Memo { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    /// <summary>
+    /// Tax returns settle in the company's base currency — no FX
+    /// snapshot needed. Net == base by construction.
+    /// </summary>
+    public FxSnapshotRef? FxSnapshot => null;
+}

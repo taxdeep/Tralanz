@@ -656,18 +656,34 @@ public sealed record RefundReceiptLineDraft
 /// but on the purchase side: vendor refund / return-to-vendor / volume
 /// rebate / dispute resolution. The optional <see cref="AppliedToBillId"/>
 /// link settles a posted bill's AP open item directly.
+///
+/// Backend reuses the existing <c>vendor_credits</c> table; the line
+/// shape sends ExpenseAccountId Guids the picker already holds.
 /// </summary>
 public sealed record VendorCreditDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
     public Guid? AppliedToBillId { get; init; }
     public string AppliedToBillNumber { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+    public IReadOnlyList<VendorCreditLineDraft> Lines { get; init; } = Array.Empty<VendorCreditLineDraft>();
+}
+
+public sealed record VendorCreditLineDraft
+{
+    public int LineNumber { get; init; }
+    public Guid ExpenseAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal LineAmount { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 /// <summary>
@@ -701,6 +717,8 @@ public sealed record VendorCreditDraft
 /// </summary>
 public sealed record BankTransferDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
 
     /// <summary>Account funds leave (credited).</summary>
@@ -730,6 +748,8 @@ public sealed record BankTransferDraft
 /// </summary>
 public sealed record BankDepositDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? DepositToAccountId { get; init; }
     public string DepositToAccountCode { get; init; } = string.Empty;
@@ -785,6 +805,8 @@ public sealed record BankDepositItemDraft
 /// </summary>
 public sealed record TaxReturnDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly PeriodStart { get; init; }
     public DateOnly PeriodEnd { get; init; }
 
@@ -793,6 +815,9 @@ public sealed record TaxReturnDraft
 
     /// <summary>Filing frequency: monthly / quarterly / annual. Drives default period bounds + due date.</summary>
     public string FilingFrequency { get; init; } = string.Empty;
+
+    /// <summary>Company base currency at the time of save — server stores it on tax_returns.base_currency_code.</summary>
+    public string BaseCurrencyCode { get; init; } = string.Empty;
 
     /// <summary>Auto-totalled output tax (sales-tax collected) in transaction currency.</summary>
     public decimal CollectedAmount { get; init; }

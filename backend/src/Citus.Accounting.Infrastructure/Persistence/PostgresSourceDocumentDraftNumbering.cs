@@ -118,6 +118,9 @@ internal static class PostgresSourceDocumentDraftNumbering
         // Scan optional tables (added by the V1 write-flow bootstrap).
         // Each call is a no-op if the table doesn't exist yet, so the
         // function stays safe across staged deployments.
+        // Already in the list — kept here intentionally so a future
+        // doc-type addition is a one-line edit; the helper itself is
+        // tolerant of tables that don't exist yet via to_regclass.
         var optionalTables = new[]
         {
             "sales_receipts",

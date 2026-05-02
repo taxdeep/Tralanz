@@ -100,6 +100,9 @@ builder.Services.AddScoped<IManualJournalDocumentRepository, PostgresManualJourn
 builder.Services.AddScoped<IInvoiceDocumentRepository, PostgresInvoiceDocumentRepository>();
 builder.Services.AddScoped<ISalesReceiptDocumentRepository, PostgresSalesReceiptDocumentRepository>();
 builder.Services.AddScoped<IRefundReceiptDocumentRepository, PostgresRefundReceiptDocumentRepository>();
+builder.Services.AddScoped<IBankTransferDocumentRepository, PostgresBankTransferDocumentRepository>();
+builder.Services.AddScoped<IBankDepositDocumentRepository, PostgresBankDepositDocumentRepository>();
+builder.Services.AddScoped<ITaxReturnDocumentRepository, PostgresTaxReturnDocumentRepository>();
 builder.Services.AddScoped<ICreditNoteDocumentRepository, PostgresCreditNoteDocumentRepository>();
 builder.Services.AddScoped<IBillDocumentRepository, PostgresBillDocumentRepository>();
 builder.Services.AddScoped<IBillReceiptMatchingRepository, PostgresBillReceiptMatchingRepository>();
@@ -167,6 +170,9 @@ builder.Services.AddScoped<PostManualJournalCommandHandler>();
 builder.Services.AddScoped<PostInvoiceCommandHandler>();
 builder.Services.AddScoped<PostSalesReceiptCommandHandler>();
 builder.Services.AddScoped<PostRefundReceiptCommandHandler>();
+builder.Services.AddScoped<PostBankTransferCommandHandler>();
+builder.Services.AddScoped<PostBankDepositCommandHandler>();
+builder.Services.AddScoped<PostTaxReturnCommandHandler>();
 builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
@@ -10819,26 +10825,6 @@ app.MapPost(
 // so the frontend doesn't move.
 // ============================================================================
 
-static IResult WriteFlowPending(string operation, string nextStep, ILogger logger, object? echo = null)
-{
-    logger.LogInformation(
-        "WriteFlow {Operation} accepted but not posted — backend stub returned. Next step: {NextStep}.",
-        operation,
-        nextStep);
-    return Results.Json(
-        new
-        {
-            status = "pending_implementation",
-            operation,
-            message =
-                $"The {operation} HTTP endpoint accepted the payload, but the matching backend repository " +
-                "is not implemented yet. Nothing has been written to the ledger or the database.",
-            nextStep,
-            payloadEcho = echo,
-        },
-        statusCode: StatusCodes.Status501NotImplemented);
-}
-
 accounting.MapPost(
     "/sales-receipts/save-and-post",
     async (
@@ -11116,21 +11102,116 @@ static string? BuildCreditMemoMemo(CreditMemoSaveAndPostHttpRequest request)
 
 accounting.MapPost(
     "/vendor-credits/save-and-post",
-    (VendorCreditSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        VendorCreditSaveAndPostHttpRequest request,
+        IVendorCreditDocumentRepository repository,
+        PostVendorCreditCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        // Sister to /credit-memos/save-and-post on the AP side. The
+        // vendor_credits table + repository + posting fragment +
+        // AP open-item handler all already exist; this endpoint is
+        // pure adapter work mapping the V1-pending wire shape to the
+        // existing draft-save-model.
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.VendorId == Guid.Empty) return Results.BadRequest(new { error = "vendorId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
-        return WriteFlowPending(
-            "PostVendorCredit",
-            "Reuse vendor_credits table; resolve apply-to bill via (companyId, displayNumber) lookup if AppliedToBillNumber is non-empty.",
-            logger,
-            request);
+        foreach (var line in request.Lines)
+        {
+            if (line.ExpenseAccountId == Guid.Empty)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: expenseAccountId required" });
+            }
+            if (line.LineAmount <= 0m)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: lineAmount must be positive" });
+            }
+        }
+
+        try
+        {
+            var saveResult = await repository.SaveDraftAsync(
+                new VendorCreditDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.VendorId,
+                    request.DocumentDate,
+                    // VendorCredit row schema requires due_date; for a
+                    // standalone vendor credit there's nothing to "be
+                    // due", so we mirror the credit-note convention
+                    // and set it to the document date.
+                    request.DocumentDate,
+                    string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? "USD" : request.TransactionCurrencyCode,
+                    string.IsNullOrWhiteSpace(request.BaseCurrencyCode) ? request.TransactionCurrencyCode : request.BaseCurrencyCode,
+                    null,
+                    request.FxRate,
+                    null,
+                    null,
+                    BuildVendorCreditMemo(request),
+                    request.Lines.Select(line => new VendorCreditDraftLineSaveModel(
+                        line.LineNumber,
+                        line.ExpenseAccountId,
+                        line.Description,
+                        line.LineAmount,
+                        line.TaxCodeId,
+                        line.TaxAmount,
+                        // V1 default: every vendor credit's input-tax
+                        // is recoverable (treated as ITC reversal).
+                        // Future iteration exposes a checkbox on the
+                        // line for non-recoverable tax (capital goods
+                        // edge cases, etc.).
+                        IsTaxRecoverable: true)).ToArray()),
+                cancellationToken);
+
+            var postResult = await postHandler.HandleAsync(
+                new PostVendorCreditCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    request.AcceptedFxSnapshotId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                vendorCreditNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+                appliedToBillNumber = string.IsNullOrWhiteSpace(request.AppliedToBillNumber) ? null : request.AppliedToBillNumber,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
+
+static string? BuildVendorCreditMemo(VendorCreditSaveAndPostHttpRequest request)
+{
+    var parts = new List<string>();
+    if (!string.IsNullOrWhiteSpace(request.Reason)) parts.Add($"Reason: {request.Reason.Trim()}");
+    if (!string.IsNullOrWhiteSpace(request.AppliedToBillNumber)) parts.Add($"Applied to {request.AppliedToBillNumber.Trim()}");
+    if (!string.IsNullOrWhiteSpace(request.Memo)) parts.Add(request.Memo.Trim());
+    return parts.Count == 0 ? null : string.Join(" — ", parts);
+}
 
 accounting.MapPost(
     "/bank-transfers/save-and-post",
-    (BankTransferSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        BankTransferSaveAndPostHttpRequest request,
+        IBankTransferDocumentRepository repository,
+        PostBankTransferCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.FromAccountId == Guid.Empty) return Results.BadRequest(new { error = "fromAccountId required" });
         if (request.ToAccountId == Guid.Empty) return Results.BadRequest(new { error = "toAccountId required" });
         if (request.FromAccountId == request.ToAccountId) return Results.BadRequest(new { error = "from and to must be different accounts" });
@@ -11138,40 +11219,190 @@ accounting.MapPost(
         var sameCurrency = string.Equals(request.FromCurrencyCode, request.ToCurrencyCode, StringComparison.OrdinalIgnoreCase);
         if (sameCurrency && request.FxRate.HasValue) return Results.BadRequest(new { error = "fxRate must be null on same-currency transfers" });
         if (!sameCurrency && (!request.FxRate.HasValue || request.FxRate.Value <= 0)) return Results.BadRequest(new { error = "fxRate required and positive on cross-currency transfers" });
-        return WriteFlowPending(
-            "PostBankTransfer",
-            "Single-line JE: Cr from_account (amount), Dr to_account (amount * fxRate or amount). Use per-account snapshot rates for base-currency rows.",
-            logger,
-            request);
+
+        try
+        {
+            var saveResult = await repository.SaveDraftAsync(
+                new BankTransferDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.DocumentDate,
+                    request.FromAccountId,
+                    request.FromCurrencyCode,
+                    request.ToAccountId,
+                    request.ToCurrencyCode,
+                    request.Amount,
+                    request.FxRate,
+                    null,
+                    null,
+                    null,
+                    request.ReferenceNo,
+                    request.Memo),
+                cancellationToken);
+
+            var postResult = await postHandler.HandleAsync(
+                new PostBankTransferCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    request.AcceptedFxSnapshotId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                transferNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
 
 accounting.MapPost(
     "/bank-deposits/save-and-post",
-    (BankDepositSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        BankDepositSaveAndPostHttpRequest request,
+        IBankDepositDocumentRepository repository,
+        PostBankDepositCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { error = "depositToAccountId required" });
         if (request.Items.Count == 0) return Results.BadRequest(new { error = "at least one item required" });
         if (request.Items.Any(i => string.IsNullOrWhiteSpace(i.SourceItemDisplayNumber))) return Results.BadRequest(new { error = "every item needs a sourceItemDisplayNumber" });
         if (request.Items.Any(i => i.Amount <= 0)) return Results.BadRequest(new { error = "every item amount must be positive" });
-        return WriteFlowPending(
-            "PostBankDeposit",
-            "For each item resolve (kind, displayNumber) → source row; clear holding-account share, total goes to deposit_to.",
-            logger,
-            request);
+
+        try
+        {
+            var saveResult = await repository.SaveDraftAsync(
+                new BankDepositDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.DocumentDate,
+                    request.DepositToAccountId,
+                    string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? "USD" : request.TransactionCurrencyCode,
+                    request.ReferenceNo,
+                    request.Memo,
+                    request.Items.Select((item, idx) => new BankDepositItemDraftSaveModel(
+                        idx + 1,
+                        // V1 default kind: "manual" (operator typed
+                        // a free-form display number). When the
+                        // Undeposited-Funds picker ships, the kind
+                        // ('sales_receipt' / 'receive_payment') will
+                        // come from the picker option itself.
+                        "manual",
+                        item.SourceItemId == Guid.Empty ? null : item.SourceItemId,
+                        item.SourceItemDisplayNumber,
+                        item.PayerName,
+                        item.PaymentMethod,
+                        item.ReferenceNo,
+                        item.Amount)).ToArray()),
+                cancellationToken);
+
+            var postResult = await postHandler.HandleAsync(
+                new PostBankDepositCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    null,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                depositNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
 
 accounting.MapPost(
     "/tax-returns/save-and-post",
-    (TaxReturnSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        TaxReturnSaveAndPostHttpRequest request,
+        ITaxReturnDocumentRepository repository,
+        PostTaxReturnCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.PeriodEnd < request.PeriodStart) return Results.BadRequest(new { error = "periodEnd must be on or after periodStart" });
         if (string.IsNullOrWhiteSpace(request.TaxRegime)) return Results.BadRequest(new { error = "taxRegime required" });
         if (string.IsNullOrWhiteSpace(request.FilingFrequency)) return Results.BadRequest(new { error = "filingFrequency required" });
-        return WriteFlowPending(
-            "PostTaxReturn",
-            "Net = Collected - InputCredits + Adjustments. Move accrual balances to tax_filing_liability (or _receivable) per documented GL contract on TaxReturnDraft.",
-            logger,
-            request);
+        if (string.IsNullOrWhiteSpace(request.BaseCurrencyCode)) return Results.BadRequest(new { error = "baseCurrencyCode required" });
+        if (request.CollectedAmount < 0m || request.InputCreditsAmount < 0m)
+        {
+            return Results.BadRequest(new { error = "collected and ITC amounts must be non-negative" });
+        }
+
+        try
+        {
+            var baseCurrency = request.BaseCurrencyCode;
+
+            var saveResult = await repository.SaveDraftAsync(
+                new TaxReturnDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.TaxRegime,
+                    request.FilingFrequency,
+                    request.PeriodStart,
+                    request.PeriodEnd,
+                    baseCurrency,
+                    request.CollectedAmount,
+                    request.InputCreditsAmount,
+                    request.AdjustmentsAmount,
+                    request.AdjustmentsNote,
+                    request.RegulatorReferenceNo,
+                    request.Memo),
+                cancellationToken);
+
+            var postResult = await postHandler.HandleAsync(
+                new PostTaxReturnCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                returnNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
 
 app.Run();
@@ -12062,11 +12293,24 @@ internal sealed record class VendorCreditSaveAndPostHttpRequest
     public DateOnly DocumentDate { get; init; }
     public Guid VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
+    public Guid? AcceptedFxSnapshotId { get; init; }
     public string AppliedToBillNumber { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineHttpRequest> Lines { get; init; } = Array.Empty<DocumentLineHttpRequest>();
+    public string? IdempotencyKey { get; init; }
+    public IReadOnlyList<VendorCreditLineHttpRequest> Lines { get; init; } = Array.Empty<VendorCreditLineHttpRequest>();
+}
+
+internal sealed record class VendorCreditLineHttpRequest
+{
+    public int LineNumber { get; init; }
+    public Guid ExpenseAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal LineAmount { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 internal sealed record class BankTransferSaveAndPostHttpRequest
@@ -12082,8 +12326,10 @@ internal sealed record class BankTransferSaveAndPostHttpRequest
     public string ToCurrencyCode { get; init; } = string.Empty;
     public decimal Amount { get; init; }
     public decimal? FxRate { get; init; }
+    public Guid? AcceptedFxSnapshotId { get; init; }
     public string ReferenceNo { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    public string? IdempotencyKey { get; init; }
 }
 
 internal sealed record class BankDepositSaveAndPostHttpRequest
@@ -12096,6 +12342,7 @@ internal sealed record class BankDepositSaveAndPostHttpRequest
     public string TransactionCurrencyCode { get; init; } = string.Empty;
     public string ReferenceNo { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    public string? IdempotencyKey { get; init; }
     public IReadOnlyList<BankDepositItemHttpRequest> Items { get; init; } = Array.Empty<BankDepositItemHttpRequest>();
 }
 
@@ -12117,12 +12364,14 @@ internal sealed record class TaxReturnSaveAndPostHttpRequest
     public DateOnly PeriodEnd { get; init; }
     public string TaxRegime { get; init; } = string.Empty;
     public string FilingFrequency { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal CollectedAmount { get; init; }
     public decimal InputCreditsAmount { get; init; }
     public decimal AdjustmentsAmount { get; init; }
     public string AdjustmentsNote { get; init; } = string.Empty;
     public string RegulatorReferenceNo { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    public string? IdempotencyKey { get; init; }
 }
 
 internal sealed record class DocumentLineHttpRequest

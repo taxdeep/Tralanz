@@ -2097,3 +2097,107 @@ public sealed record RefundReceiptDraftLineSaveModel(
     Guid? TaxCodeId,
     decimal TaxAmount,
     Guid? ItemId = null);
+
+// ========================================================================
+// Bank Transfer — single-line internal account move.
+// No "lines" table; the document IS the transfer.
+// ========================================================================
+public interface IBankTransferDocumentRepository
+{
+    Task<BankTransferDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        BankTransferDraftSaveModel draft,
+        CancellationToken cancellationToken);
+}
+
+public sealed record BankTransferDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    DateOnly TransferDate,
+    Guid FromAccountId,
+    string FromCurrencyCode,
+    Guid ToAccountId,
+    string ToCurrencyCode,
+    decimal Amount,
+    decimal? FxRate,
+    Guid? FxSnapshotId,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? ReferenceNo,
+    string? Memo);
+
+// ========================================================================
+// Bank Deposit — multi-item deposit slip.
+// Posting fragments: Dr DepositToAccount, Cr UndepositedFundsAccount
+// (both for the total of the items). The undeposited-funds account
+// is resolved by the repository at GetForPostingAsync time from
+// company_settings (not stored on the deposit row itself).
+// ========================================================================
+public interface IBankDepositDocumentRepository
+{
+    Task<BankDepositDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        BankDepositDraftSaveModel draft,
+        CancellationToken cancellationToken);
+}
+
+public sealed record BankDepositDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    DateOnly DepositDate,
+    Guid DepositToAccountId,
+    string TransactionCurrencyCode,
+    string? ReferenceNo,
+    string? Memo,
+    IReadOnlyList<BankDepositItemDraftSaveModel> Items);
+
+public sealed record BankDepositItemDraftSaveModel(
+    int LineNumber,
+    string SourceItemKind,
+    Guid? SourceItemId,
+    string SourceItemDisplayNumber,
+    string? PayerName,
+    string? PaymentMethod,
+    string? ReferenceNo,
+    decimal Amount);
+
+// ========================================================================
+// Tax Return — single-row period close. No lines, no party.
+// ========================================================================
+public interface ITaxReturnDocumentRepository
+{
+    Task<TaxReturnDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        TaxReturnDraftSaveModel draft,
+        CancellationToken cancellationToken);
+}
+
+public sealed record TaxReturnDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    string TaxRegime,
+    string FilingFrequency,
+    DateOnly PeriodStart,
+    DateOnly PeriodEnd,
+    string BaseCurrencyCode,
+    decimal CollectedAmount,
+    decimal InputCreditsAmount,
+    decimal AdjustmentsAmount,
+    string? AdjustmentsNote,
+    string? RegulatorReferenceNo,
+    string? Memo);

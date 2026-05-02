@@ -339,22 +339,32 @@
         _isSubmitting = true;
         try
         {
+            if (meaningful.Any(l => l.AccountId is null || l.AccountId == Guid.Empty))
+            {
+                _validation = "Every line needs a category account picked from the dropdown (not a free-typed code).";
+                return;
+            }
+
             var draft = new VendorCreditDraft
             {
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
                 DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
                 VendorId = _vendorId,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+                BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 AppliedToBillNumber = _appliedToBillNumber.Trim(),
                 Reason = _reason.Trim(),
                 Memo = _memo.Trim(),
-                Lines = meaningful.Select(l => new DocumentLineDraft
+                Lines = meaningful.Select((l, idx) => new VendorCreditLineDraft
                 {
+                    LineNumber = idx + 1,
+                    ExpenseAccountId = l.AccountId!.Value,
                     Description = l.Description,
-                    Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice,
-                    AccountCode = l.AccountCode,
-                    TaxCode = l.TaxCode,
+                    LineAmount = l.Quantity * l.UnitPrice,
+                    TaxCodeId = l.TaxCodeId,
+                    TaxAmount = 0m,
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostVendorCreditAsync(draft);

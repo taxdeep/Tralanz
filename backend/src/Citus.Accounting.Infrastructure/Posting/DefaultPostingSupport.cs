@@ -74,6 +74,60 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
         }
 
+        if (document is BankTransferDocument bankTransfer)
+        {
+            if (bankTransfer.Amount <= 0m)
+            {
+                throw new InvalidOperationException("Bank transfer amount must be positive.");
+            }
+            if (bankTransfer.FromAccountId == bankTransfer.ToAccountId)
+            {
+                throw new InvalidOperationException("Bank transfer source and destination accounts must differ.");
+            }
+            if (bankTransfer.Status != "draft")
+            {
+                throw new InvalidOperationException(
+                    $"Bank transfer status '{bankTransfer.Status}' cannot enter the posting engine.");
+            }
+        }
+
+        if (document is BankDepositDocument bankDeposit)
+        {
+            if (bankDeposit.TotalAmount <= 0m)
+            {
+                throw new InvalidOperationException("Bank deposit total must be positive.");
+            }
+            if (bankDeposit.Items.Count == 0)
+            {
+                throw new InvalidOperationException("Bank deposit must contain at least one item.");
+            }
+            if (bankDeposit.DepositToAccountId == bankDeposit.UndepositedFundsAccountId)
+            {
+                throw new InvalidOperationException("Bank deposit destination account must differ from the Undeposited-Funds holding account.");
+            }
+            if (bankDeposit.Status != "draft")
+            {
+                throw new InvalidOperationException(
+                    $"Bank deposit status '{bankDeposit.Status}' cannot enter the posting engine.");
+            }
+        }
+
+        if (document is TaxReturnDocument taxReturn)
+        {
+            if (taxReturn.PeriodEnd < taxReturn.PeriodStart)
+            {
+                throw new InvalidOperationException("Tax return period end must be on or after period start.");
+            }
+            if (taxReturn.Status != "draft")
+            {
+                throw new InvalidOperationException(
+                    $"Tax return status '{taxReturn.Status}' cannot enter the posting engine.");
+            }
+            // A zero-net return still legitimately posts (it locks
+            // the period); we don't reject it, but we'll skip the
+            // settlement row in the fragment builder.
+        }
+
         if (document is CreditNoteDocument creditNote)
         {
             if (creditNote.DocumentDate > creditNote.DueDate)
@@ -339,6 +393,12 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildSalesReceiptFragments(salesReceipt, fxResult).AsReadOnly()),
             RefundReceiptDocument refundReceipt => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildRefundReceiptFragments(refundReceipt, fxResult).AsReadOnly()),
+            BankTransferDocument bankTransfer => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildBankTransferFragments(bankTransfer, fxResult).AsReadOnly()),
+            BankDepositDocument bankDeposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildBankDepositFragments(bankDeposit, fxResult).AsReadOnly()),
+            TaxReturnDocument taxReturn => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildTaxReturnFragments(taxReturn, fxResult).AsReadOnly()),
             CreditNoteDocument creditNote => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCreditNoteFragments(creditNote, fxResult).AsReadOnly()),
             BillDocument bill => Task.FromResult<IReadOnlyList<PostingFragment>>(
@@ -570,6 +630,221 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     PostingRole: "tax:sales_tax_payable_reversal",
                     SourceLineNumber: line.LineNumber));
             }
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// Two-fragment journal for an internal asset transfer.
+    ///
+    /// Same-currency:
+    ///   Cr FromAccountId  = Amount
+    ///   Dr ToAccountId    = Amount
+    /// Cross-currency:
+    ///   Cr FromAccountId  = Amount        (in from-currency)
+    ///   Dr ToAccountId    = Amount * Rate (in to-currency)
+    /// In both cases the base-currency amounts come from the engine's
+    /// FxResolutionResult so the audit trail uses snapshot rates, not
+    /// the operator's per-document rate.
+    /// </summary>
+    private static List<PostingFragment> BuildBankTransferFragments(
+        BankTransferDocument bankTransfer,
+        FxResolutionResult fxResult)
+    {
+        var fragments = new List<PostingFragment>();
+        var sameCurrency = bankTransfer.FromCurrencyCode == bankTransfer.ToCurrencyCode;
+
+        // From-side credit (cash leaves)
+        var fromBase = Math.Round(bankTransfer.Amount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        fragments.Add(new PostingFragment(
+            bankTransfer.FromAccountId,
+            bankTransfer.FromCurrencyCode,
+            0m,
+            bankTransfer.Amount,
+            0m,
+            fromBase,
+            $"Transfer out {bankTransfer.DisplayNumber.Value}",
+            PostingRole: "transfer:from"));
+
+        // To-side debit (cash arrives). Same-currency = same amount;
+        // cross-currency = amount * rate (operator-supplied).
+        var toAmount = sameCurrency
+            ? bankTransfer.Amount
+            : Math.Round(bankTransfer.Amount * (bankTransfer.FxRate ?? 1m), 6, MidpointRounding.ToEven);
+        var toBase = sameCurrency
+            ? fromBase
+            : Math.Round(toAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        fragments.Add(new PostingFragment(
+            bankTransfer.ToAccountId,
+            bankTransfer.ToCurrencyCode,
+            toAmount,
+            0m,
+            toBase,
+            0m,
+            $"Transfer in {bankTransfer.DisplayNumber.Value}",
+            PostingRole: "transfer:to"));
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// Two-fragment journal: the bank account receives the total,
+    /// Undeposited Funds is debited the same total. The per-item
+    /// detail (sales-receipt / receive-payment refs) lives on
+    /// <c>bank_deposit_items</c> for audit traceability but doesn't
+    /// produce additional GL fragments — the items are already
+    /// individually posted; this is just the holding-account
+    /// clearance.
+    ///
+    ///   Dr DepositToAccountId        = TotalAmount
+    ///   Cr UndepositedFundsAccountId = TotalAmount
+    /// </summary>
+    private static List<PostingFragment> BuildBankDepositFragments(
+        BankDepositDocument bankDeposit,
+        FxResolutionResult fxResult)
+    {
+        var fragments = new List<PostingFragment>();
+        var totalBase = Math.Round(bankDeposit.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+
+        fragments.Add(new PostingFragment(
+            bankDeposit.DepositToAccountId,
+            bankDeposit.TransactionCurrencyCode,
+            bankDeposit.TotalAmount,
+            0m,
+            totalBase,
+            0m,
+            $"Bank deposit {bankDeposit.DisplayNumber.Value} into bank",
+            PostingRole: "deposit:to_bank"));
+
+        fragments.Add(new PostingFragment(
+            bankDeposit.UndepositedFundsAccountId,
+            bankDeposit.TransactionCurrencyCode,
+            0m,
+            bankDeposit.TotalAmount,
+            0m,
+            totalBase,
+            $"Bank deposit {bankDeposit.DisplayNumber.Value} clears Undeposited Funds",
+            PostingRole: "deposit:from_holding"));
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// Tax return GL contract — clears the period's accruals and
+    /// lands the net on a filing-side row that becomes a Pay Bills
+    /// (owe) or Receive Payment (refund) target downstream.
+    ///
+    ///   Net = Collected - InputCredits + Adjustments
+    ///
+    ///   Always:
+    ///     Dr TaxPayableAccountId       = Collected   (clear collected accrual)
+    ///     Cr TaxReceivableAccountId    = InputCredits (clear ITC accrual)
+    ///   Adjustments (signed):
+    ///     If > 0:   Dr TaxAdjustmentsAccountId = Adjustments
+    ///     If < 0:   Cr TaxAdjustmentsAccountId = |Adjustments|
+    ///   Settlement row:
+    ///     Net > 0:  Cr TaxFilingLiabilityAccountId  = Net
+    ///     Net < 0:  Dr TaxFilingReceivableAccountId = |Net|
+    ///     Net = 0:  no settlement row (period still locks via
+    ///                JournalEntryWriter status flip)
+    /// </summary>
+    private static List<PostingFragment> BuildTaxReturnFragments(
+        TaxReturnDocument taxReturn,
+        FxResolutionResult fxResult)
+    {
+        var fragments = new List<PostingFragment>();
+
+        // 1. Clear the collected-tax accrual (Dr Tax Payable for full
+        //    collected amount). Only emit when collected > 0.
+        if (taxReturn.CollectedAmount > 0m)
+        {
+            fragments.Add(new PostingFragment(
+                taxReturn.TaxPayableAccountId,
+                taxReturn.BaseCurrencyCode,
+                taxReturn.CollectedAmount,
+                0m,
+                taxReturn.CollectedAmount,
+                0m,
+                $"Tax return {taxReturn.DisplayNumber.Value}: clear output-tax accrual",
+                TaxComponentType: "tax_filing:collected_clear",
+                PostingRole: "tax_filing:collected_clear"));
+        }
+
+        // 2. Clear the ITC accrual (Cr Tax Receivable for full ITC
+        //    amount). Only emit when ITCs > 0.
+        if (taxReturn.InputCreditsAmount > 0m)
+        {
+            fragments.Add(new PostingFragment(
+                taxReturn.TaxReceivableAccountId,
+                taxReturn.BaseCurrencyCode,
+                0m,
+                taxReturn.InputCreditsAmount,
+                0m,
+                taxReturn.InputCreditsAmount,
+                $"Tax return {taxReturn.DisplayNumber.Value}: clear ITC accrual",
+                TaxComponentType: "tax_filing:itc_clear",
+                PostingRole: "tax_filing:itc_clear"));
+        }
+
+        // 3. Adjustments — signed. Positive adjustment (operator owes
+        //    more) lands on the Dr side of the adjustments account;
+        //    negative adjustment (regulator owes more) lands on Cr.
+        if (taxReturn.AdjustmentsAmount != 0m)
+        {
+            var absAdj = Math.Abs(taxReturn.AdjustmentsAmount);
+            fragments.Add(taxReturn.AdjustmentsAmount > 0m
+                ? new PostingFragment(
+                    taxReturn.TaxAdjustmentsAccountId,
+                    taxReturn.BaseCurrencyCode,
+                    absAdj,
+                    0m,
+                    absAdj,
+                    0m,
+                    $"Tax return {taxReturn.DisplayNumber.Value}: adjustment (regulator owed)",
+                    TaxComponentType: "tax_filing:adjustment",
+                    PostingRole: "tax_filing:adjustment_dr")
+                : new PostingFragment(
+                    taxReturn.TaxAdjustmentsAccountId,
+                    taxReturn.BaseCurrencyCode,
+                    0m,
+                    absAdj,
+                    0m,
+                    absAdj,
+                    $"Tax return {taxReturn.DisplayNumber.Value}: adjustment (refund expected)",
+                    TaxComponentType: "tax_filing:adjustment",
+                    PostingRole: "tax_filing:adjustment_cr"));
+        }
+
+        // 4. Settlement row.
+        if (taxReturn.NetAmount > 0m)
+        {
+            fragments.Add(new PostingFragment(
+                taxReturn.TaxFilingLiabilityAccountId,
+                taxReturn.BaseCurrencyCode,
+                0m,
+                taxReturn.NetAmount,
+                0m,
+                taxReturn.NetAmount,
+                $"Tax return {taxReturn.DisplayNumber.Value}: net payable to regulator",
+                TaxComponentType: "tax_filing:net_payable",
+                PostingRole: "tax_filing:net_payable"));
+        }
+        else if (taxReturn.NetAmount < 0m)
+        {
+            fragments.Add(new PostingFragment(
+                taxReturn.TaxFilingReceivableAccountId,
+                taxReturn.BaseCurrencyCode,
+                Math.Abs(taxReturn.NetAmount),
+                0m,
+                Math.Abs(taxReturn.NetAmount),
+                0m,
+                $"Tax return {taxReturn.DisplayNumber.Value}: net refund expected from regulator",
+                TaxComponentType: "tax_filing:net_refund",
+                PostingRole: "tax_filing:net_refund"));
         }
 
         EnsureBalancedBaseCurrency(fragments);
