@@ -301,6 +301,25 @@ builder.Services.AddHttpClient<InvoiceClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+// V1-pending document detail clients (one per doc-type that has its
+// own detail endpoint shape). CreditMemo + VendorCredit reuse the
+// existing CreditNoteClient / VendorCreditClient where present.
+builder.Services.AddHttpClient<SalesReceiptClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<RefundReceiptClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<BankTransferClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<BankDepositClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<TaxReturnClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<PurchaseOrderClient>(
         (serviceProvider, client) =>
         {

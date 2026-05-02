@@ -1,0 +1,219 @@
+@page "/sales-receipts/{ReceiptId:guid}"
+
+@inject BusinessShellState ShellState
+@inject SalesReceiptClient SalesReceiptClient
+@inject AccountClient AccountClient
+@inject CustomerClient CustomerClient
+
+<PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="sales-receipts/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New sales receipt</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else if (_doc is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Sales receipt not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Receipt #" Value="@_doc.DisplayNumber" Description="@_customerName"
+                       Icon="IconName.Cash" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+        <CitusStatCard Label="Total" Value="@($"{_doc.TotalAmount:N2} {_doc.TransactionCurrencyCode}")"
+                       Description="@($"Subtotal {_doc.SubtotalAmount:N2} + tax {_doc.TaxAmount:N2}")"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+        <CitusStatCard Label="Receipt date" Value="@_doc.ReceiptDate.ToString("yyyy-MM-dd")"
+                       Description="@HumanizePaymentMethod(_doc.PaymentMethod)"
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Lines</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3rem">#</th>
+                            <th>Account</th>
+                            <th>Description</th>
+                            <th class="text-right" style="width: 5rem">Qty</th>
+                            <th class="text-right" style="width: 8rem">Unit price</th>
+                            <th class="text-right" style="width: 7rem">Tax</th>
+                            <th class="text-right" style="width: 9rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _doc.Lines)
+                        {
+                            <tr>
+                                <td>@line.LineNumber</td>
+                                <td>@ResolveAccountLabel(line.RevenueAccountId)</td>
+                                <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
+                                <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                <td class="text-right">@line.UnitPrice.ToString("N2")</td>
+                                <td class="text-right">@line.TaxAmount.ToString("N2")</td>
+                                <td class="text-right">@line.LineAmount.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_doc.Memo))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Memo</h2>
+                    <p class="text-fg-muted text-sm">@_doc.Memo</p>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Receipt no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
+                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
+                        <tr><th>Customer</th><td>@_customerName</td></tr>
+                        <tr><th>Receipt date</th><td>@_doc.ReceiptDate.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Currency</th><td>@_doc.TransactionCurrencyCode</td></tr>
+                        @if (!string.Equals(_doc.TransactionCurrencyCode, _doc.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <tr><th>Base / FX</th><td>@_doc.BaseCurrencyCode @(_doc.FxRate is { } r ? $"@ {r:0.000000}" : "")</td></tr>
+                        }
+                        <tr><th>Method</th><td>@HumanizePaymentMethod(_doc.PaymentMethod)</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
+                        {
+                            <tr><th>Reference</th><td>@_doc.ReferenceNo</td></tr>
+                        }
+                        <tr><th>Deposit to</th><td>@ResolveAccountLabel(_doc.DepositToAccountId)</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Totals</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Subtotal</th><td class="text-right">@_doc.SubtotalAmount.ToString("N2")</td></tr>
+                        <tr><th>Tax</th><td class="text-right">@_doc.TaxAmount.ToString("N2")</td></tr>
+                        <tr><th>Total</th><td class="text-right"><strong>@_doc.TotalAmount.ToString("N2") @_doc.TransactionCurrencyCode</strong></td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid ReceiptId { get; set; }
+
+    private SalesReceiptRecordDto? _doc;
+    private string _customerName = "—";
+    private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private bool _isLoading = true;
+    private string? _error;
+    private string _pageTitle = "Sales receipt";
+    private PageHeaderModel _header = new() { Eyebrow = "Sales & Get Paid", Title = "Sales receipt", Subtitle = "Receipt detail" };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_doc is not null && _doc.Id != ReceiptId) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            var docTask = SalesReceiptClient.GetByIdAsync(ReceiptId, ShellState.ActiveCompany.Id);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(docTask, accountsTask);
+            _doc = docTask.Result;
+            _accounts = accountsTask.Result;
+            if (_doc is not null)
+            {
+                var customer = await CustomerClient.GetByIdAsync(_doc.CustomerId);
+                _customerName = customer?.DisplayName ?? "—";
+            }
+            ApplyHeader();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _isLoading = false; }
+    }
+
+    private void ApplyHeader()
+    {
+        if (_doc is null) return;
+        _pageTitle = _doc.DisplayNumber;
+        _header = new PageHeaderModel
+        {
+            Eyebrow = "Sales & Get Paid",
+            Title = _doc.DisplayNumber,
+            Subtitle = $"{_customerName} · {HumanizeStatus(_doc.Status)}"
+        };
+    }
+
+    private string ResolveAccountLabel(Guid accountId)
+    {
+        var account = _accounts.FirstOrDefault(a => a.Id == accountId);
+        return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "draft" => "Not posted yet.",
+        "posted" => "Cash collected; GL posted.",
+        "voided" => "Voided.",
+        "reversed" => "Reversed by a refund receipt.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "draft" => StatTone.Neutral,
+        "posted" => StatTone.Success,
+        "voided" => StatTone.Neutral,
+        "reversed" => StatTone.Warning,
+        _ => StatTone.Neutral
+    };
+
+    private static string HumanizePaymentMethod(string method) => method switch
+    {
+        "cash" => "Cash",
+        "cheque" => "Cheque",
+        "credit_card" => "Credit Card",
+        "wire" => "Wire",
+        "direct_deposit" => "Direct Deposit",
+        "eft" => "EFT",
+        "other" => "Other",
+        _ => method
+    };
+}

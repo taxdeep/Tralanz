@@ -1,0 +1,183 @@
+@page "/tax-returns/{ReturnId:guid}"
+
+@inject BusinessShellState ShellState
+@inject TaxReturnClient TaxReturnClient
+
+<PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="settings/tax-return">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New tax return</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else if (_doc is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Tax return not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Filing #" Value="@_doc.DisplayNumber" Description="@_doc.TaxRegime"
+                       Icon="IconName.FileText" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+        <CitusStatCard Label="Period" Value="@($"{_doc.PeriodStart:yyyy-MM-dd} → {_doc.PeriodEnd:yyyy-MM-dd}")"
+                       Description="@HumanizeFrequency(_doc.FilingFrequency)"
+                       Icon="IconName.Calendar" Tone="StatTone.Neutral" />
+        <CitusStatCard Label="@(_doc.NetAmount >= 0 ? "Net payable" : "Net refund")"
+                       Value="@($"{Math.Abs(_doc.NetAmount):N2} {_doc.BaseCurrencyCode}")"
+                       Description="Collected − ITCs + Adj"
+                       Icon="IconName.Coin" Tone="@(_doc.NetAmount >= 0 ? StatTone.Warning : StatTone.Success)" />
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Filing breakdown</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Line</th>
+                            <th class="text-right" style="width: 14rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sales tax collected (output)</td>
+                            <td class="text-right">@_doc.CollectedAmount.ToString("N2")</td>
+                        </tr>
+                        <tr>
+                            <td>Input tax credits (ITCs)</td>
+                            <td class="text-right">−@_doc.InputCreditsAmount.ToString("N2")</td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Adjustments
+                                @if (!string.IsNullOrWhiteSpace(_doc.AdjustmentsNote))
+                                {
+                                    <span class="text-fg-subtle text-xs"> · @_doc.AdjustmentsNote</span>
+                                }
+                            </td>
+                            <td class="text-right">@(_doc.AdjustmentsAmount >= 0 ? "+" : "")@_doc.AdjustmentsAmount.ToString("N2")</td>
+                        </tr>
+                        <tr class="citus-data-table__total">
+                            <td class="text-right font-medium">@(_doc.NetAmount >= 0 ? "Net payable to regulator" : "Net refund expected")</td>
+                            <td class="text-right font-semibold">@Math.Abs(_doc.NetAmount).ToString("N2") @_doc.BaseCurrencyCode</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-fg-muted text-sm mt-3">
+                    Posted JE clears Tax Payable + Tax Receivable accruals and lands the net on the
+                    Tax Filing @(_doc.NetAmount >= 0 ? "Liability" : "Receivable") row.
+                </p>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_doc.Memo))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Memo</h2>
+                    <p class="text-fg-muted text-sm">@_doc.Memo</p>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Filing no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
+                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
+                        <tr><th>Regime</th><td>@_doc.TaxRegime</td></tr>
+                        <tr><th>Frequency</th><td>@HumanizeFrequency(_doc.FilingFrequency)</td></tr>
+                        <tr><th>Period start</th><td>@_doc.PeriodStart.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Period end</th><td>@_doc.PeriodEnd.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Currency</th><td>@_doc.BaseCurrencyCode</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_doc.RegulatorReferenceNo))
+                        {
+                            <tr><th>Regulator ref.</th><td><span class="citus-inline-code">@_doc.RegulatorReferenceNo</span></td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid ReturnId { get; set; }
+
+    private TaxReturnRecordDto? _doc;
+    private bool _isLoading = true;
+    private string? _error;
+    private string _pageTitle = "Tax return";
+    private PageHeaderModel _header = new() { Eyebrow = "Settings & Setup", Title = "Tax return", Subtitle = "Filing detail" };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_doc is not null && _doc.Id != ReturnId) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _doc = await TaxReturnClient.GetByIdAsync(ReturnId, ShellState.ActiveCompany.Id);
+            if (_doc is not null)
+            {
+                _pageTitle = _doc.DisplayNumber;
+                _header = new PageHeaderModel
+                {
+                    Eyebrow = "Settings & Setup",
+                    Title = _doc.DisplayNumber,
+                    Subtitle = $"{_doc.TaxRegime} · {HumanizeFrequency(_doc.FilingFrequency)} · {HumanizeStatus(_doc.Status)}"
+                };
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _isLoading = false; }
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft", "posted" => "Filed", "voided" => "Voided", "amended" => "Amended", _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "draft" => "Not yet filed.",
+        "posted" => "Period locked; net moved to filing-side row.",
+        "amended" => "Superseded by an amendment.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "draft" => StatTone.Neutral,
+        "posted" => StatTone.Success,
+        "amended" => StatTone.Warning,
+        _ => StatTone.Neutral
+    };
+
+    private static string HumanizeFrequency(string freq) => freq switch
+    {
+        "monthly" => "Monthly", "quarterly" => "Quarterly", "annual" => "Annual", _ => freq
+    };
+}

@@ -11405,6 +11405,200 @@ accounting.MapPost(
         }
     });
 
+// ============================================================================
+// V1 detail endpoints for the 7 doc types that now post end-to-end.
+// Each endpoint just exposes the existing repository's
+// GetForPostingAsync — no new persistence shape, no new SQL.
+// Frontend Detail pages call these to render a posted document.
+// ============================================================================
+
+accounting.MapGet(
+    "/sales-receipts/{documentId:guid}",
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Sales receipt not found in the active company context." });
+        }
+        return Results.Ok(new
+        {
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            ReceiptDate = document.DocumentDate,
+            CustomerId = document.CustomerId,
+            DepositToAccountId = document.DepositToAccountId,
+            document.PaymentMethod,
+            document.ReferenceNo,
+            TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+            BaseCurrencyCode = document.BaseCurrencyCode.Value,
+            FxRate = document.FxSnapshot?.Rate,
+            document.SubtotalAmount,
+            document.TaxAmount,
+            document.TotalAmount,
+            document.Memo,
+            Lines = document.ReceiptLines.Select(line => new
+            {
+                line.LineNumber,
+                line.RevenueAccountId,
+                line.Description,
+                line.Quantity,
+                line.UnitPrice,
+                line.LineAmount,
+                line.TaxAmount,
+                line.TaxCodeId,
+                line.PayableTaxAccountId,
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/refund-receipts/{documentId:guid}",
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Refund receipt not found in the active company context." });
+        }
+        return Results.Ok(new
+        {
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            RefundDate = document.DocumentDate,
+            CustomerId = document.CustomerId,
+            RefundFromAccountId = document.RefundFromAccountId,
+            document.PaymentMethod,
+            document.ReferenceNo,
+            document.Reason,
+            TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+            BaseCurrencyCode = document.BaseCurrencyCode.Value,
+            FxRate = document.FxSnapshot?.Rate,
+            document.SubtotalAmount,
+            document.TaxAmount,
+            document.TotalAmount,
+            document.Memo,
+            Lines = document.ReceiptLines.Select(line => new
+            {
+                line.LineNumber,
+                line.RevenueAccountId,
+                line.Description,
+                line.Quantity,
+                line.UnitPrice,
+                line.LineAmount,
+                line.TaxAmount,
+                line.TaxCodeId,
+                line.PayableTaxAccountId,
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/bank-transfers/{documentId:guid}",
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Bank transfer not found in the active company context." });
+        }
+        return Results.Ok(new
+        {
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            TransferDate = document.DocumentDate,
+            FromAccountId = document.FromAccountId,
+            FromCurrencyCode = document.FromCurrencyCode.Value,
+            ToAccountId = document.ToAccountId,
+            ToCurrencyCode = document.ToCurrencyCode.Value,
+            document.Amount,
+            document.FxRate,
+            document.ReferenceNo,
+            document.Memo,
+        });
+    });
+
+accounting.MapGet(
+    "/bank-deposits/{documentId:guid}",
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Bank deposit not found in the active company context." });
+        }
+        return Results.Ok(new
+        {
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            DepositDate = document.DocumentDate,
+            DepositToAccountId = document.DepositToAccountId,
+            UndepositedFundsAccountId = document.UndepositedFundsAccountId,
+            TransactionCurrencyCode = document.TransactionCurrencyCode.Value,
+            document.TotalAmount,
+            document.ReferenceNo,
+            document.Memo,
+            Items = document.Items.Select(item => new
+            {
+                item.LineNumber,
+                item.SourceItemKind,
+                item.SourceItemId,
+                item.SourceItemDisplayNumber,
+                item.PayerName,
+                item.PaymentMethod,
+                item.ReferenceNo,
+                item.Amount,
+            })
+        });
+    });
+
+accounting.MapGet(
+    "/tax-returns/{documentId:guid}",
+    async (Guid documentId, [AsParameters] V1PendingLookupQuery query, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetForPostingAsync(new(query.CompanyId), documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound(new { message = "Tax return not found in the active company context." });
+        }
+        return Results.Ok(new
+        {
+            document.Id,
+            CompanyId = document.CompanyId.Value,
+            EntityNumber = document.EntityNumber.Value,
+            DisplayNumber = document.DisplayNumber.Value,
+            document.Status,
+            document.TaxRegime,
+            document.FilingFrequency,
+            document.PeriodStart,
+            document.PeriodEnd,
+            BaseCurrencyCode = document.BaseCurrencyCode.Value,
+            document.CollectedAmount,
+            document.InputCreditsAmount,
+            document.AdjustmentsAmount,
+            document.AdjustmentsNote,
+            document.NetAmount,
+            document.RegulatorReferenceNo,
+            document.Memo,
+        });
+    });
+
+// CreditMemo + VendorCredit reuse the existing credit_notes /
+// vendor_credits detail endpoints which already shipped in main.
+// Frontend's CreditMemoClient / VendorCreditClient just call those.
+
 app.Run();
 
 static IResult AccountingOperationBadRequest(InvalidOperationException exception)

@@ -553,3 +553,12 @@ public sealed record PostFxRevaluationBatchHttpRequest(
 public sealed record FxRevaluationBatchListQuery(Guid CompanyId, int? Take);
 
 public sealed record FxRevaluationBatchLookupQuery(Guid CompanyId);
+
+/// <summary>
+/// Shared lookup query for the V1-pending detail endpoints (sales-
+/// receipts, refund-receipts, bank-transfers, bank-deposits,
+/// tax-returns). Single-field record so [AsParameters] picks the
+/// CompanyId off the query string the same way the existing
+/// detail-endpoint queries do.
+/// </summary>
+public sealed record V1PendingLookupQuery(Guid CompanyId);

@@ -1,0 +1,180 @@
+@page "/bank-transfers/{TransferId:guid}"
+
+@inject BusinessShellState ShellState
+@inject BankTransferClient BankTransferClient
+@inject AccountClient AccountClient
+
+<PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="bank-transfers/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New transfer</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="@_error" ShowIcon="true" Class="mb-4" />
+}
+
+@if (_isLoading)
+{
+    <CitusSkeleton Variant="SkeletonVariant.Detail" />
+}
+else if (_doc is null)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Warning" Message="Bank transfer not found in this company." ShowIcon="true" />
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <CitusStatCard Label="Transfer #" Value="@_doc.DisplayNumber" Description="@_doc.TransferDate.ToString("yyyy-MM-dd")"
+                       Icon="IconName.ArrowRight" Tone="StatTone.Primary" />
+        <CitusStatCard Label="Status" Value="@HumanizeStatus(_doc.Status)" Description="@StatusHint(_doc.Status)"
+                       Icon="IconName.Eye" Tone="@StatusTone(_doc.Status)" />
+        <CitusStatCard Label="From" Value="@($"{_doc.Amount:N2} {_doc.FromCurrencyCode}")"
+                       Description="@ResolveAccountLabel(_doc.FromAccountId)"
+                       Icon="IconName.Coin" Tone="StatTone.Warning" />
+        <CitusStatCard Label="To" Value="@FormatToAmount()"
+                       Description="@ResolveAccountLabel(_doc.ToAccountId)"
+                       Icon="IconName.Coin" Tone="StatTone.Success" />
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Movement</h2>
+                <table class="citus-data-table">
+                    <thead>
+                        <tr>
+                            <th>Direction</th>
+                            <th>Account</th>
+                            <th>Currency</th>
+                            <th class="text-right" style="width: 12rem">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Credit (out)</strong></td>
+                            <td>@ResolveAccountLabel(_doc.FromAccountId)</td>
+                            <td>@_doc.FromCurrencyCode</td>
+                            <td class="text-right">@_doc.Amount.ToString("N2")</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Debit (in)</strong></td>
+                            <td>@ResolveAccountLabel(_doc.ToAccountId)</td>
+                            <td>@_doc.ToCurrencyCode</td>
+                            <td class="text-right">@FormatToAmount()</td>
+                        </tr>
+                    </tbody>
+                </table>
+                @if (_doc.FxRate is { } rate)
+                {
+                    <p class="text-fg-muted text-sm mt-3">
+                        Cross-currency transfer at <strong>@rate.ToString("0.000000")</strong> (operator-supplied rate).
+                    </p>
+                }
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_doc.Memo))
+            {
+                <section class="citus-panel mt-6">
+                    <h2 class="citus-panel__title">Memo</h2>
+                    <p class="text-fg-muted text-sm">@_doc.Memo</p>
+                </section>
+            }
+        </div>
+
+        <aside class="lg:col-span-4">
+            <section class="citus-panel">
+                <h2 class="citus-panel__title">Document</h2>
+                <table class="citus-keyvalue">
+                    <tbody>
+                        <tr><th>Transfer no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
+                        <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
+                        <tr><th>Date</th><td>@_doc.TransferDate.ToString("yyyy-MM-dd")</td></tr>
+                        <tr><th>Status</th><td>@HumanizeStatus(_doc.Status)</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_doc.ReferenceNo))
+                        {
+                            <tr><th>Reference</th><td>@_doc.ReferenceNo</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid TransferId { get; set; }
+
+    private BankTransferRecordDto? _doc;
+    private IReadOnlyList<AccountSummary> _accounts = Array.Empty<AccountSummary>();
+    private bool _isLoading = true;
+    private string? _error;
+    private string _pageTitle = "Bank transfer";
+    private PageHeaderModel _header = new() { Eyebrow = "Banking", Title = "Bank transfer", Subtitle = "Transfer detail" };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_doc is not null && _doc.Id != TransferId) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            var docTask = BankTransferClient.GetByIdAsync(TransferId, ShellState.ActiveCompany.Id);
+            var accountsTask = AccountClient.ListAsync();
+            await Task.WhenAll(docTask, accountsTask);
+            _doc = docTask.Result;
+            _accounts = accountsTask.Result;
+            if (_doc is not null)
+            {
+                _pageTitle = _doc.DisplayNumber;
+                _header = new PageHeaderModel { Eyebrow = "Banking", Title = _doc.DisplayNumber, Subtitle = HumanizeStatus(_doc.Status) };
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _isLoading = false; }
+    }
+
+    private string FormatToAmount()
+    {
+        if (_doc is null) return "—";
+        var to = _doc.FxRate is { } rate ? Math.Round(_doc.Amount * rate, 2) : _doc.Amount;
+        return $"{to:N2} {_doc.ToCurrencyCode}";
+    }
+
+    private string ResolveAccountLabel(Guid accountId)
+    {
+        var account = _accounts.FirstOrDefault(a => a.Id == accountId);
+        return account is null ? accountId.ToString("D") : $"{account.Code}  {account.Name}";
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "draft" => "Not posted yet.",
+        "posted" => "Funds moved.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "draft" => StatTone.Neutral,
+        "posted" => StatTone.Success,
+        _ => StatTone.Neutral
+    };
+}
