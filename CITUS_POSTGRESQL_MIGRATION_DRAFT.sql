@@ -1800,4 +1800,363 @@ BEFORE UPDATE ON ap_open_items
 FOR EACH ROW
 EXECUTE FUNCTION citus_set_updated_at();
 
+-- ============================================================================
+-- Sales Receipts — cash-in-hand sales (no AR open item).
+-- Mirrors `invoices` shape with these deltas:
+--   • no due_date (paid at point of sale)
+--   • carries the deposit_to_account_id, payment_method, reference_no
+--     so downstream bank-rec can match the bank-statement line
+--   • status set is narrower — there's no "partially_paid" state
+--     because the receipt settles in one shot
+-- ============================================================================
+CREATE TABLE sales_receipts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number text NOT NULL UNIQUE,
+  receipt_number text NOT NULL,
+  customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  status text NOT NULL DEFAULT 'draft',
+  receipt_date date NOT NULL,
+  document_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  fx_rate_snapshot_id uuid REFERENCES company_fx_rate_snapshots(id) ON DELETE RESTRICT,
+  fx_rate numeric(20,10) NOT NULL DEFAULT 1,
+  fx_requested_date date NOT NULL,
+  fx_effective_date date NOT NULL,
+  fx_source text NOT NULL DEFAULT 'identity',
+  -- Deposit destination — the asset account that absorbs the cash.
+  -- Holding-account workflow (deposit lands in Undeposited Funds first
+  -- and a later Bank Deposit moves it to the real bank) is the
+  -- expected pattern; sales_receipts.deposit_to_account_id can point
+  -- at either depending on the operator's choice.
+  deposit_to_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  payment_method text NOT NULL DEFAULT 'cash',
+  reference_no text,
+  subtotal_amount numeric(20,6) NOT NULL DEFAULT 0,
+  tax_amount numeric(20,6) NOT NULL DEFAULT 0,
+  total_amount numeric(20,6) NOT NULL DEFAULT 0,
+  memo text,
+  posted_at timestamptz,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT sales_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT sales_receipts_status_chk CHECK (
+    status IN ('draft', 'posted', 'voided', 'reversed')
+  ),
+  CONSTRAINT sales_receipts_payment_method_chk CHECK (
+    payment_method IN ('cash', 'cheque', 'credit_card', 'wire', 'direct_deposit', 'eft', 'other')
+  ),
+  CONSTRAINT sales_receipts_fx_rate_positive_chk CHECK (fx_rate > 0),
+  CONSTRAINT sales_receipts_unique_company_receipt_number UNIQUE (company_id, receipt_number)
+);
+
+CREATE TABLE sales_receipt_lines (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  sales_receipt_id uuid NOT NULL REFERENCES sales_receipts(id) ON DELETE CASCADE,
+  line_number integer NOT NULL,
+  revenue_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  description text NOT NULL,
+  quantity numeric(20,6) NOT NULL,
+  unit_price numeric(20,6) NOT NULL,
+  line_amount numeric(20,6) NOT NULL,
+  tax_code_id uuid REFERENCES tax_codes(id) ON DELETE SET NULL,
+  tax_amount numeric(20,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT sales_receipt_lines_quantity_nonnegative_chk CHECK (quantity >= 0),
+  CONSTRAINT sales_receipt_lines_unit_price_nonnegative_chk CHECK (unit_price >= 0),
+  CONSTRAINT sales_receipt_lines_unique_line UNIQUE (sales_receipt_id, line_number)
+);
+
+CREATE INDEX ix_sales_receipts_company_status ON sales_receipts (company_id, status);
+CREATE INDEX ix_sales_receipts_company_customer ON sales_receipts (company_id, customer_id);
+CREATE INDEX ix_sales_receipt_lines_sales_receipt ON sales_receipt_lines (sales_receipt_id, line_number);
+
+-- ============================================================================
+-- Refund Receipts — cash-out customer refunds (no AR open item).
+-- Mirror of sales_receipts: same shape, opposite GL polarity at post
+-- time. We keep them as a separate table (rather than a signed
+-- amount on sales_receipts) because they have a distinct lifecycle,
+-- distinct numbering sequence, and reporting categorises them
+-- separately on cash-flow statements.
+-- ============================================================================
+CREATE TABLE refund_receipts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number text NOT NULL UNIQUE,
+  refund_number text NOT NULL,
+  customer_id uuid NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  status text NOT NULL DEFAULT 'draft',
+  refund_date date NOT NULL,
+  document_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  fx_rate_snapshot_id uuid REFERENCES company_fx_rate_snapshots(id) ON DELETE RESTRICT,
+  fx_rate numeric(20,10) NOT NULL DEFAULT 1,
+  fx_requested_date date NOT NULL,
+  fx_effective_date date NOT NULL,
+  fx_source text NOT NULL DEFAULT 'identity',
+  -- Source of funds — the asset account the money LEAVES.
+  refund_from_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  payment_method text NOT NULL DEFAULT 'cash',
+  reference_no text,
+  reason text,
+  subtotal_amount numeric(20,6) NOT NULL DEFAULT 0,
+  tax_amount numeric(20,6) NOT NULL DEFAULT 0,
+  total_amount numeric(20,6) NOT NULL DEFAULT 0,
+  memo text,
+  posted_at timestamptz,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT refund_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT refund_receipts_status_chk CHECK (
+    status IN ('draft', 'posted', 'voided', 'reversed')
+  ),
+  CONSTRAINT refund_receipts_payment_method_chk CHECK (
+    payment_method IN ('cash', 'cheque', 'credit_card', 'wire', 'direct_deposit', 'eft', 'other')
+  ),
+  CONSTRAINT refund_receipts_fx_rate_positive_chk CHECK (fx_rate > 0),
+  CONSTRAINT refund_receipts_unique_company_refund_number UNIQUE (company_id, refund_number)
+);
+
+CREATE TABLE refund_receipt_lines (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  refund_receipt_id uuid NOT NULL REFERENCES refund_receipts(id) ON DELETE CASCADE,
+  line_number integer NOT NULL,
+  revenue_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  description text NOT NULL,
+  quantity numeric(20,6) NOT NULL,
+  unit_price numeric(20,6) NOT NULL,
+  line_amount numeric(20,6) NOT NULL,
+  tax_code_id uuid REFERENCES tax_codes(id) ON DELETE SET NULL,
+  tax_amount numeric(20,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT refund_receipt_lines_quantity_nonnegative_chk CHECK (quantity >= 0),
+  CONSTRAINT refund_receipt_lines_unit_price_nonnegative_chk CHECK (unit_price >= 0),
+  CONSTRAINT refund_receipt_lines_unique_line UNIQUE (refund_receipt_id, line_number)
+);
+
+CREATE INDEX ix_refund_receipts_company_status ON refund_receipts (company_id, status);
+CREATE INDEX ix_refund_receipts_company_customer ON refund_receipts (company_id, customer_id);
+CREATE INDEX ix_refund_receipt_lines_refund_receipt ON refund_receipt_lines (refund_receipt_id, line_number);
+
+-- ============================================================================
+-- Bank Transfers — internal asset → asset movement (operating →
+-- savings, USD wallet → CAD wallet, etc.). Single record per
+-- transfer; no lines table because there's exactly one source and
+-- one destination.
+--
+-- Cross-currency transfers carry the operator-supplied fx_rate; the
+-- backend uses each account's currency snapshot rate for the
+-- base-currency JE rows so the audit trail uses
+-- fx_rates_daily-grade rates rather than the bank's rate.
+-- ============================================================================
+CREATE TABLE bank_transfers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number text NOT NULL UNIQUE,
+  transfer_number text NOT NULL,
+  status text NOT NULL DEFAULT 'draft',
+  transfer_date date NOT NULL,
+  from_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  from_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  to_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  to_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  -- Amount is in from_currency. The backend computes
+  -- to_currency_amount = amount * fx_rate when currencies differ.
+  amount numeric(20,6) NOT NULL,
+  fx_rate numeric(20,10),
+  reference_no text,
+  memo text,
+  posted_at timestamptz,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT bank_transfers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bank_transfers_status_chk CHECK (
+    status IN ('draft', 'posted', 'voided', 'reversed')
+  ),
+  CONSTRAINT bank_transfers_amount_positive_chk CHECK (amount > 0),
+  CONSTRAINT bank_transfers_distinct_accounts_chk CHECK (from_account_id <> to_account_id),
+  CONSTRAINT bank_transfers_fx_rate_positive_chk CHECK (fx_rate IS NULL OR fx_rate > 0),
+  -- Same-currency transfers MUST have null fx_rate; cross-currency
+  -- transfers MUST have a positive fx_rate. Enforced at the row
+  -- level so a malformed write never makes it past INSERT.
+  CONSTRAINT bank_transfers_fx_rate_polarity_chk CHECK (
+    (from_currency_code = to_currency_code AND fx_rate IS NULL) OR
+    (from_currency_code <> to_currency_code AND fx_rate IS NOT NULL)
+  ),
+  CONSTRAINT bank_transfers_unique_company_transfer_number UNIQUE (company_id, transfer_number)
+);
+
+CREATE INDEX ix_bank_transfers_company_status ON bank_transfers (company_id, status);
+CREATE INDEX ix_bank_transfers_company_from ON bank_transfers (company_id, from_account_id);
+CREATE INDEX ix_bank_transfers_company_to ON bank_transfers (company_id, to_account_id);
+
+-- ============================================================================
+-- Bank Deposits — group N Undeposited-Funds items into one bank
+-- statement-shaped entry. Header row identifies the destination bank
+-- account; the line rows reference the source receipts / payments
+-- being grouped.
+--
+-- The source_item_id column is intentionally a free-form uuid + text
+-- pair (no FK) because the source can come from any of:
+--   sales_receipts, receive_payments, journal entries, ...
+-- and a polymorphic FK in Postgres is more friction than value. The
+-- backend resolves source_item_kind + source_item_id at post time.
+-- ============================================================================
+CREATE TABLE bank_deposits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number text NOT NULL UNIQUE,
+  deposit_number text NOT NULL,
+  status text NOT NULL DEFAULT 'draft',
+  deposit_date date NOT NULL,
+  deposit_to_account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  document_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  total_amount numeric(20,6) NOT NULL DEFAULT 0,
+  reference_no text,
+  memo text,
+  posted_at timestamptz,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT bank_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bank_deposits_status_chk CHECK (
+    status IN ('draft', 'posted', 'voided', 'reversed')
+  ),
+  CONSTRAINT bank_deposits_total_nonnegative_chk CHECK (total_amount >= 0),
+  CONSTRAINT bank_deposits_unique_company_deposit_number UNIQUE (company_id, deposit_number)
+);
+
+CREATE TABLE bank_deposit_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  bank_deposit_id uuid NOT NULL REFERENCES bank_deposits(id) ON DELETE CASCADE,
+  line_number integer NOT NULL,
+  -- Loose pointer at the source document. backend resolves to the
+  -- right table by source_item_kind. text key keeps the schema small;
+  -- the (kind, id) pair is the canonical reference.
+  source_item_kind text NOT NULL,
+  source_item_id uuid,
+  source_item_display_number text NOT NULL,
+  payer_name text,
+  payment_method text,
+  reference_no text,
+  amount numeric(20,6) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT bank_deposit_items_amount_positive_chk CHECK (amount > 0),
+  CONSTRAINT bank_deposit_items_kind_chk CHECK (
+    source_item_kind IN ('sales_receipt', 'receive_payment', 'journal_entry', 'manual')
+  ),
+  CONSTRAINT bank_deposit_items_payment_method_chk CHECK (
+    payment_method IS NULL OR payment_method IN
+      ('cash', 'cheque', 'credit_card', 'wire', 'direct_deposit', 'eft', 'other')
+  ),
+  CONSTRAINT bank_deposit_items_unique_line UNIQUE (bank_deposit_id, line_number)
+);
+
+CREATE INDEX ix_bank_deposits_company_status ON bank_deposits (company_id, status);
+CREATE INDEX ix_bank_deposits_company_deposit_to ON bank_deposits (company_id, deposit_to_account_id);
+CREATE INDEX ix_bank_deposit_items_bank_deposit ON bank_deposit_items (bank_deposit_id, line_number);
+CREATE INDEX ix_bank_deposit_items_source ON bank_deposit_items (company_id, source_item_kind, source_item_id);
+
+-- ============================================================================
+-- Tax Returns — period close for a sales-tax regime. One row per
+-- (company, regime, period). Adjustments are a single signed amount
+-- with a free-form note (CRA / Revenu Quebec corrections, recapture,
+-- etc.); detailed line-by-line box mapping is out of scope for V1
+-- and lands in a follow-on tax_return_adjustments table when the
+-- regulator-form Engine ships.
+-- ============================================================================
+CREATE TABLE tax_returns (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  entity_number text NOT NULL UNIQUE,
+  return_number text NOT NULL,
+  status text NOT NULL DEFAULT 'draft',
+  tax_regime text NOT NULL,
+  filing_frequency text NOT NULL,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  base_currency_code char(3) NOT NULL REFERENCES currency_catalog(code) ON DELETE RESTRICT,
+  collected_amount numeric(20,6) NOT NULL DEFAULT 0,
+  input_credits_amount numeric(20,6) NOT NULL DEFAULT 0,
+  adjustments_amount numeric(20,6) NOT NULL DEFAULT 0,
+  adjustments_note text,
+  -- Net = collected - input_credits + adjustments (signed). Stored
+  -- so reports can sum without recomputing; the GL contract in
+  -- TaxReturnDraft.cs documents the binding arithmetic.
+  net_amount numeric(20,6) NOT NULL DEFAULT 0,
+  regulator_reference_no text,
+  memo text,
+  posted_at timestamptz,
+  created_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT tax_returns_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT tax_returns_status_chk CHECK (
+    status IN ('draft', 'posted', 'voided', 'amended')
+  ),
+  CONSTRAINT tax_returns_filing_frequency_chk CHECK (
+    filing_frequency IN ('monthly', 'quarterly', 'annual')
+  ),
+  CONSTRAINT tax_returns_period_chk CHECK (period_end >= period_start),
+  CONSTRAINT tax_returns_unique_company_return_number UNIQUE (company_id, return_number),
+  -- Only one posted return per (company, regime, period_end) — once
+  -- a period is filed we lock it. Drafts are unrestricted; amendments
+  -- go through the 'amended' status with a follow-on row.
+  CONSTRAINT tax_returns_unique_posted_period UNIQUE (company_id, tax_regime, period_end, status)
+    DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX ix_tax_returns_company_status ON tax_returns (company_id, status);
+CREATE INDEX ix_tax_returns_company_period ON tax_returns (company_id, tax_regime, period_end);
+
+-- updated_at triggers for the new tables
+CREATE TRIGGER trg_sales_receipts_set_updated_at
+BEFORE UPDATE ON sales_receipts
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_sales_receipt_lines_set_updated_at
+BEFORE UPDATE ON sales_receipt_lines
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_refund_receipts_set_updated_at
+BEFORE UPDATE ON refund_receipts
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_refund_receipt_lines_set_updated_at
+BEFORE UPDATE ON refund_receipt_lines
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_bank_transfers_set_updated_at
+BEFORE UPDATE ON bank_transfers
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_bank_deposits_set_updated_at
+BEFORE UPDATE ON bank_deposits
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_bank_deposit_items_set_updated_at
+BEFORE UPDATE ON bank_deposit_items
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
+CREATE TRIGGER trg_tax_returns_set_updated_at
+BEFORE UPDATE ON tax_returns
+FOR EACH ROW
+EXECUTE FUNCTION citus_set_updated_at();
+
 COMMIT;

@@ -115,11 +115,13 @@ public sealed class BusinessWriteFlowClient
     /// is debited the gross amount; the line revenue accounts and the
     /// tax-payable account are credited. No AR open item is created —
     /// the customer doesn't owe anything because they paid at the point
-    /// of sale. Backend route for this stub will live at
-    /// <c>/accounting/sales-receipts/save-and-post</c> when wired.
+    /// of sale. Endpoint at <c>/accounting/sales-receipts/save-and-post</c>
+    /// returns 501 until the matching repository ships;
+    /// <see cref="PostPendingAsync"/> translates that to an
+    /// <c>IsStubbed</c> result the page already knows how to render.
     /// </summary>
     public Task<WriteFlowResult> PostSalesReceiptAsync(SalesReceiptDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostSalesReceiptAsync), draft);
+        PostPendingAsync("accounting/sales-receipts/save-and-post", nameof(PostSalesReceiptAsync), draft, cancellationToken);
 
     /// <summary>
     /// Credit memo — the AR-side reversal of an invoice. Posting credits
@@ -131,7 +133,7 @@ public sealed class BusinessWriteFlowClient
     /// invoices in Receive Payment.
     /// </summary>
     public Task<WriteFlowResult> PostCreditMemoAsync(CreditMemoDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostCreditMemoAsync), draft);
+        PostPendingAsync("accounting/credit-memos/save-and-post", nameof(PostCreditMemoAsync), draft, cancellationToken);
 
     /// <summary>
     /// Refund receipt — the cash-side reversal of a sales receipt.
@@ -140,7 +142,7 @@ public sealed class BusinessWriteFlowClient
     /// the original sale was cash-in-hand and so is the refund.
     /// </summary>
     public Task<WriteFlowResult> PostRefundReceiptAsync(RefundReceiptDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostRefundReceiptAsync), draft);
+        PostPendingAsync("accounting/refund-receipts/save-and-post", nameof(PostRefundReceiptAsync), draft, cancellationToken);
 
     /// <summary>
     /// Vendor credit — the AP-side mirror of a credit memo. Posting
@@ -150,7 +152,7 @@ public sealed class BusinessWriteFlowClient
     /// payable trims; standalone leaves it as a credit on the vendor.
     /// </summary>
     public Task<WriteFlowResult> PostVendorCreditAsync(VendorCreditDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostVendorCreditAsync), draft);
+        PostPendingAsync("accounting/vendor-credits/save-and-post", nameof(PostVendorCreditAsync), draft, cancellationToken);
 
     /// <summary>
     /// Internal account transfer (operating → savings, USD wallet →
@@ -160,7 +162,7 @@ public sealed class BusinessWriteFlowClient
     /// transaction snapshot.
     /// </summary>
     public Task<WriteFlowResult> PostBankTransferAsync(BankTransferDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostBankTransferAsync), draft);
+        PostPendingAsync("accounting/bank-transfers/save-and-post", nameof(PostBankTransferAsync), draft, cancellationToken);
 
     /// <summary>
     /// Bank deposit — bundles multiple cash-in items (sales receipts,
@@ -171,7 +173,7 @@ public sealed class BusinessWriteFlowClient
     /// the total of selected items.
     /// </summary>
     public Task<WriteFlowResult> PostBankDepositAsync(BankDepositDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostBankDepositAsync), draft);
+        PostPendingAsync("accounting/bank-deposits/save-and-post", nameof(PostBankDepositAsync), draft, cancellationToken);
 
     /// <summary>
     /// Tax return — period close for sales-tax (GST/HST/PST/VAT) and
@@ -183,7 +185,82 @@ public sealed class BusinessWriteFlowClient
     /// happen via a follow-on adjustment return.
     /// </summary>
     public Task<WriteFlowResult> PostTaxReturnAsync(TaxReturnDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostTaxReturnAsync), draft);
+        PostPendingAsync("accounting/tax-returns/save-and-post", nameof(PostTaxReturnAsync), draft, cancellationToken);
+
+    /// <summary>
+    /// Single round-tripper for the seven V1-pending write flows. POSTs
+    /// the draft as JSON to the backend's save-and-post endpoint and
+    /// translates the response into a WriteFlowResult:
+    ///   • 200 OK             → real round-trip succeeded (future state)
+    ///   • 400 Bad Request    → server-side validation failed; surface
+    ///                          the error message
+    ///   • 501 Not Implemented→ endpoint accepted the payload shape but
+    ///                          the matching repository / posting
+    ///                          fragment hasn't shipped yet → IsStubbed
+    ///   • everything else    → network or transport failure
+    ///
+    /// Pages render the stubbed branch via WriteFlowResultAlert in a
+    /// Warning tone; the operator never sees a green "posted" toast for
+    /// a flow that didn't actually touch the GL.
+    /// </summary>
+    private async Task<WriteFlowResult> PostPendingAsync(
+        string requestUri,
+        string operation,
+        object draft,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync(requestUri, draft, cancellationToken);
+
+            if ((int)response.StatusCode == 501)
+            {
+                var body = await response.Content.ReadFromJsonAsync<PendingImplementationBody>(cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: body?.Message ?? PendingMessage,
+                    Operation: operation,
+                    DraftEcho: draft)
+                {
+                    IsStubbed = true,
+                };
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: $"Server returned {(int)response.StatusCode}: {Truncate(body, 240)}",
+                    Operation: operation,
+                    DraftEcho: draft);
+            }
+
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: $"{operation} round-trip succeeded.",
+                Operation: operation,
+                DraftEcho: draft);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "{Operation} HTTP call failed.", operation);
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server. Please retry.",
+                Operation: operation,
+                DraftEcho: draft);
+        }
+    }
+
+    private sealed record PendingImplementationBody(
+        string? Status,
+        string? Operation,
+        string? Message,
+        string? NextStep);
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : value[..max] + "...";
 
     public async Task<WriteFlowResult> PostReceivePaymentAsync(ReceivePaymentDraft draft, CancellationToken cancellationToken = default)
     {
