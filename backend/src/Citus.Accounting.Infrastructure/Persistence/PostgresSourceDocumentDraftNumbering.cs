@@ -66,9 +66,16 @@ internal static class PostgresSourceDocumentDraftNumbering
         int year,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
+        // The core aggregator covers every document table that's
+        // existed since the migration baseline. New tables added via
+        // PostgresV1WriteFlowSchemaBootstrap (sales_receipts, etc.)
+        // get scanned through ScanOptionalTableMaxSeedAsync below so
+        // a partially-migrated DB (e.g. an integration test that
+        // hasn't run the bootstrap yet) doesn't blow up the whole
+        // entity-number lookup.
+        await using var coreCommand = connection.CreateCommand();
+        coreCommand.Transaction = transaction;
+        coreCommand.CommandText =
             $"""
             with all_entities as (
               select entity_number from manual_journal_documents
@@ -102,11 +109,73 @@ internal static class PostgresSourceDocumentDraftNumbering
                 end
               ),
               0
-            ) + 1
+            )
             from all_entities;
             """;
 
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
+        var coreMax = Convert.ToInt64(await coreCommand.ExecuteScalarAsync(cancellationToken) ?? 0L);
+
+        // Scan optional tables (added by the V1 write-flow bootstrap).
+        // Each call is a no-op if the table doesn't exist yet, so the
+        // function stays safe across staged deployments.
+        var optionalTables = new[]
+        {
+            "sales_receipts",
+            "refund_receipts",
+            "bank_transfers",
+            "bank_deposits",
+            "tax_returns",
+        };
+
+        var optionalMax = 0L;
+        foreach (var table in optionalTables)
+        {
+            var tableMax = await ScanOptionalTableMaxSeedAsync(
+                connection, transaction, table, year, cancellationToken);
+            if (tableMax > optionalMax)
+            {
+                optionalMax = tableMax;
+            }
+        }
+
+        return Math.Max(coreMax, optionalMax) + 1;
+    }
+
+    /// <summary>
+    /// Returns max(seed) for the given table for the given year, or 0
+    /// if the table doesn't exist yet. Wrapping the SELECT in a
+    /// to_regclass check via PL/pgSQL keeps a partially-migrated DB
+    /// from breaking entity-number reservation across the whole app.
+    /// </summary>
+    private static async Task<long> ScanOptionalTableMaxSeedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string tableName,
+        int year,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"""
+            do $$
+            declare
+              max_seed bigint := 0;
+            begin
+              if to_regclass('public.{tableName}') is not null then
+                execute format(
+                  'select coalesce(max(case when entity_number ~ %L then substring(entity_number from 7)::bigint else null end), 0) from %I',
+                  '^EN{year}[0-9]+$',
+                  '{tableName}'
+                ) into max_seed;
+              end if;
+              perform set_config('citus.optional_seed_max', max_seed::text, true);
+            end $$;
+            select coalesce(nullif(current_setting('citus.optional_seed_max', true), ''), '0')::bigint;
+            """;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null ? 0L : Convert.ToInt64(result);
     }
 
     public static async Task<long> FindDisplaySeedNumberAsync(

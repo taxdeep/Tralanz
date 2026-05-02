@@ -2738,3 +2738,196 @@ public sealed class FxRevaluationDocument : IPostingDocument
             : throw new InvalidOperationException("FX revaluation document batch kind is not supported.");
     }
 }
+
+// ========================================================================
+// Sales Receipt — cash-in-hand sale.
+//
+// Posts a single journal in one shot:
+//   Dr DepositToAccountId      = TotalAmount      (cash flowing in)
+//   Cr line.RevenueAccountId   = LineAmount       (per line)
+//   Cr line.PayableTaxAccountId = TaxAmount       (per tax-bearing line)
+//
+// Differs from InvoiceDocument in two structural ways:
+//   1. No IOpenItemDocument — cash settled at point of sale; no AR row.
+//   2. No DueDate — customer doesn't owe anything afterward.
+// Lines reuse the same shape as InvoiceDocumentLine (item + revenue
+// account + tax) because the operator UX is identical to invoice line
+// entry; only the GL polarity at post time differs.
+// ========================================================================
+public sealed record SalesReceiptDocumentLine : IPostingDocumentLine
+{
+    public SalesReceiptDocumentLine(
+        int lineNumber,
+        Guid revenueAccountId,
+        string description,
+        decimal quantity,
+        decimal unitPrice,
+        decimal lineAmount,
+        decimal taxAmount,
+        Guid? payableTaxAccountId,
+        Guid? taxCodeId = null,
+        Guid? itemId = null)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+
+        if (revenueAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Revenue account id is required.", nameof(revenueAccountId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+
+        if (quantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be greater than zero.");
+        }
+
+        if (unitPrice < 0m || lineAmount < 0m || taxAmount < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unitPrice), "Sales receipt amounts cannot be negative.");
+        }
+
+        if (taxAmount > 0m && payableTaxAccountId is null)
+        {
+            throw new InvalidOperationException("Tax-bearing sales receipt lines must resolve to a payable tax account.");
+        }
+
+        LineNumber = lineNumber;
+        RevenueAccountId = revenueAccountId;
+        Description = description.Trim();
+        Quantity = quantity;
+        UnitPrice = unitPrice;
+        LineAmount = lineAmount;
+        TaxAmount = taxAmount;
+        PayableTaxAccountId = payableTaxAccountId;
+        TaxCodeId = taxCodeId;
+        ItemId = itemId;
+    }
+
+    public int LineNumber { get; }
+
+    public Guid RevenueAccountId { get; }
+
+    public string Description { get; }
+
+    public decimal Quantity { get; }
+
+    public decimal UnitPrice { get; }
+
+    public decimal LineAmount { get; }
+
+    public decimal TaxAmount { get; }
+
+    public Guid? PayableTaxAccountId { get; }
+
+    public Guid? TaxCodeId { get; }
+
+    public Guid? ItemId { get; }
+}
+
+public sealed class SalesReceiptDocument : IPostingDocument
+{
+    public SalesReceiptDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        DateOnly receiptDate,
+        Guid customerId,
+        Guid depositToAccountId,
+        string paymentMethod,
+        string? referenceNo,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        FxSnapshotRef? fxSnapshot,
+        IEnumerable<SalesReceiptDocumentLine> lines,
+        decimal subtotalAmount,
+        decimal taxAmount,
+        decimal totalAmount,
+        string? memo = null)
+    {
+        if (customerId == Guid.Empty)
+        {
+            throw new ArgumentException("Customer id is required.", nameof(customerId));
+        }
+
+        if (depositToAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Deposit-to account id is required.", nameof(depositToAccountId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        DocumentDate = receiptDate;
+        CustomerId = customerId;
+        DepositToAccountId = depositToAccountId;
+        PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? "cash" : paymentMethod.Trim().ToLowerInvariant();
+        ReferenceNo = string.IsNullOrWhiteSpace(referenceNo) ? null : referenceNo.Trim();
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        FxSnapshot = fxSnapshot;
+        SubtotalAmount = subtotalAmount;
+        TaxAmount = taxAmount;
+        TotalAmount = totalAmount;
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Sales receipt document must contain at least one line.");
+        }
+
+        ReceiptLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+
+    public CompanyId CompanyId { get; }
+
+    public EntityNumber EntityNumber { get; }
+
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "sales_receipt";
+
+    public string Status { get; }
+
+    public DateOnly DocumentDate { get; }
+
+    public Guid CustomerId { get; }
+
+    public Guid DepositToAccountId { get; }
+
+    public string PaymentMethod { get; }
+
+    public string? ReferenceNo { get; }
+
+    public CurrencyCode TransactionCurrencyCode { get; }
+
+    public CurrencyCode BaseCurrencyCode { get; }
+
+    public FxSnapshotRef? FxSnapshot { get; }
+
+    public decimal SubtotalAmount { get; }
+
+    public decimal TaxAmount { get; }
+
+    public decimal TotalAmount { get; }
+
+    public string? Memo { get; }
+
+    public IReadOnlyList<SalesReceiptDocumentLine> ReceiptLines { get; }
+
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+}

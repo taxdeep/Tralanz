@@ -43,6 +43,23 @@ public sealed class DefaultPostingValidator : IPostingValidator
             }
         }
 
+        if (document is SalesReceiptDocument salesReceipt)
+        {
+            if (salesReceipt.TotalAmount <= 0m)
+            {
+                throw new InvalidOperationException("Sales receipt must carry a positive total before posting.");
+            }
+
+            // Sales receipt is single-step (no submitted state); the
+            // engine accepts only 'draft' here. Posted is rejected to
+            // avoid double-posting via the same draft id.
+            if (salesReceipt.Status != "draft")
+            {
+                throw new InvalidOperationException(
+                    $"Sales receipt status '{salesReceipt.Status}' cannot enter the posting engine.");
+            }
+        }
+
         if (document is CreditNoteDocument creditNote)
         {
             if (creditNote.DocumentDate > creditNote.DueDate)
@@ -304,6 +321,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildManualJournalFragments(manualJournal, fxResult).AsReadOnly()),
             InvoiceDocument invoice => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildInvoiceFragments(invoice, fxResult).AsReadOnly()),
+            SalesReceiptDocument salesReceipt => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildSalesReceiptFragments(salesReceipt, fxResult).AsReadOnly()),
             CreditNoteDocument creditNote => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCreditNoteFragments(creditNote, fxResult).AsReadOnly()),
             BillDocument bill => Task.FromResult<IReadOnlyList<PostingFragment>>(
@@ -402,6 +421,72 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                     0m,
                     baseTax,
                     $"Sales tax for invoice {invoice.DisplayNumber.Value} line {line.LineNumber}",
+                    TaxComponentType: "sales_tax_payable",
+                    PostingRole: "tax:sales_tax_payable",
+                    SourceLineNumber: line.LineNumber));
+            }
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// Build the GL fragments for a Sales Receipt. Polarity is the
+    /// inverse of the AR side of an Invoice: cash flows IN, so the
+    /// deposit-to account is debited; revenue + tax-payable per line
+    /// are credited.
+    ///
+    ///   Dr DepositToAccountId      = TotalAmount
+    ///   Cr line.RevenueAccountId   = LineAmount      (per line)
+    ///   Cr line.PayableTaxAccountId = TaxAmount      (per tax-bearing line)
+    ///
+    /// No ControlRole / PartyId on any fragment — there's no AR open
+    /// item to control. The cash-side debit just lands directly on the
+    /// chosen asset account.
+    /// </summary>
+    private static List<PostingFragment> BuildSalesReceiptFragments(
+        SalesReceiptDocument salesReceipt,
+        FxResolutionResult fxResult)
+    {
+        var fragments = new List<PostingFragment>();
+
+        var depositDebitBase = Math.Round(salesReceipt.TotalAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+        fragments.Add(new PostingFragment(
+            salesReceipt.DepositToAccountId,
+            salesReceipt.TransactionCurrencyCode,
+            salesReceipt.TotalAmount,
+            0m,
+            depositDebitBase,
+            0m,
+            $"Deposit for sales receipt {salesReceipt.DisplayNumber.Value}",
+            PostingRole: "cash:deposit_to"));
+
+        foreach (var line in salesReceipt.ReceiptLines)
+        {
+            var baseRevenue = Math.Round(line.LineAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+            fragments.Add(new PostingFragment(
+                line.RevenueAccountId,
+                salesReceipt.TransactionCurrencyCode,
+                0m,
+                line.LineAmount,
+                0m,
+                baseRevenue,
+                BuildSourceLineDescription("Sales receipt revenue", salesReceipt.DisplayNumber.Value, line.LineNumber, line.Description),
+                PostingRole: "source_line:revenue",
+                SourceLineNumber: line.LineNumber));
+
+            if (line.TaxAmount > 0m)
+            {
+                var baseTax = Math.Round(line.TaxAmount * fxResult.Snapshot.Rate, 2, MidpointRounding.ToEven);
+                fragments.Add(new PostingFragment(
+                    line.PayableTaxAccountId!.Value,
+                    salesReceipt.TransactionCurrencyCode,
+                    0m,
+                    line.TaxAmount,
+                    0m,
+                    baseTax,
+                    $"Sales tax for sales receipt {salesReceipt.DisplayNumber.Value} line {line.LineNumber}",
                     TaxComponentType: "sales_tax_payable",
                     PostingRole: "tax:sales_tax_payable",
                     SourceLineNumber: line.LineNumber));

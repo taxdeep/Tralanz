@@ -98,6 +98,7 @@ builder.Services.AddSingleton<BusinessRequestContractGuard>();
 builder.Services.AddSingleton<BusinessRouteGuard>();
 builder.Services.AddScoped<IManualJournalDocumentRepository, PostgresManualJournalDocumentRepository>();
 builder.Services.AddScoped<IInvoiceDocumentRepository, PostgresInvoiceDocumentRepository>();
+builder.Services.AddScoped<ISalesReceiptDocumentRepository, PostgresSalesReceiptDocumentRepository>();
 builder.Services.AddScoped<ICreditNoteDocumentRepository, PostgresCreditNoteDocumentRepository>();
 builder.Services.AddScoped<IBillDocumentRepository, PostgresBillDocumentRepository>();
 builder.Services.AddScoped<IBillReceiptMatchingRepository, PostgresBillReceiptMatchingRepository>();
@@ -163,6 +164,7 @@ builder.Services.AddScoped<IJournalEntryWriter, PostgresJournalEntryWriter>();
 builder.Services.AddScoped<IPostingEngine, DefaultPostingEngine>();
 builder.Services.AddScoped<PostManualJournalCommandHandler>();
 builder.Services.AddScoped<PostInvoiceCommandHandler>();
+builder.Services.AddScoped<PostSalesReceiptCommandHandler>();
 builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
@@ -10837,16 +10839,88 @@ static IResult WriteFlowPending(string operation, string nextStep, ILogger logge
 
 accounting.MapPost(
     "/sales-receipts/save-and-post",
-    (SalesReceiptSaveAndPostHttpRequest request, ILogger<Program> logger) =>
+    async (
+        SalesReceiptSaveAndPostHttpRequest request,
+        ISalesReceiptDocumentRepository repository,
+        PostSalesReceiptCommandHandler postHandler,
+        CancellationToken cancellationToken) =>
     {
+        // 1. Validate the wire shape. Frontend already does its own
+        //    pass; this is the authoritative server-side gate.
+        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { error = "depositToAccountId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
-        return WriteFlowPending(
-            "PostSalesReceipt",
-            "Build PostgresSalesReceiptDocumentRepository + BuildSalesReceiptFragments (Dr deposit_to / Cr revenue + tax_payable).",
-            logger,
-            request);
+        foreach (var line in request.Lines)
+        {
+            if (line.RevenueAccountId == Guid.Empty)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: revenueAccountId required" });
+            }
+            if (line.Quantity <= 0m)
+            {
+                return Results.BadRequest(new { error = $"line {line.LineNumber}: quantity must be positive" });
+            }
+        }
+
+        try
+        {
+            // 2. Save the draft (status='draft', lines persisted).
+            var saveResult = await repository.SaveDraftAsync(
+                new SalesReceiptDraftSaveModel(
+                    null,
+                    new(request.CompanyId),
+                    new(request.UserId),
+                    request.CustomerId,
+                    request.DepositToAccountId,
+                    request.PaymentMethod,
+                    request.ReferenceNo,
+                    request.DocumentDate,
+                    string.IsNullOrWhiteSpace(request.TransactionCurrencyCode) ? "USD" : request.TransactionCurrencyCode,
+                    string.IsNullOrWhiteSpace(request.BaseCurrencyCode) ? request.TransactionCurrencyCode : request.BaseCurrencyCode,
+                    null,
+                    request.FxRate,
+                    null,
+                    null,
+                    request.Memo,
+                    request.Lines.Select(line => new SalesReceiptDraftLineSaveModel(
+                        line.LineNumber,
+                        line.RevenueAccountId,
+                        line.Description,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.TaxCodeId,
+                        line.TaxAmount)).ToArray()),
+                cancellationToken);
+
+            // 3. Post the draft → PostingEngine writes the journal,
+            //    JournalEntryWriter flips status to 'posted'.
+            var postResult = await postHandler.HandleAsync(
+                new PostSalesReceiptCommand(
+                    new(request.CompanyId),
+                    saveResult.DocumentId,
+                    new(request.UserId),
+                    request.AcceptedFxSnapshotId,
+                    request.IdempotencyKey),
+                cancellationToken);
+
+            return Results.Ok(new
+            {
+                documentId = saveResult.DocumentId,
+                receiptNumber = saveResult.DisplayNumber,
+                entityNumber = saveResult.EntityNumber,
+                status = postResult.Status,
+                journalEntryId = postResult.JournalEntryId,
+                journalEntryDisplayNumber = postResult.JournalEntryDisplayNumber,
+                postedAt = postResult.PostedAt,
+                warnings = postResult.Warnings,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AccountingOperationBadRequest(ex);
+        }
     });
 
 accounting.MapPost(
@@ -11735,13 +11809,27 @@ internal sealed record class SalesReceiptSaveAndPostHttpRequest
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     public decimal? FxRate { get; init; }
+    public Guid? AcceptedFxSnapshotId { get; init; }
     public Guid DepositToAccountId { get; init; }
     public string DepositToAccountCode { get; init; } = string.Empty;
     public string PaymentMethod { get; init; } = "cash";
     public string ReferenceNo { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineHttpRequest> Lines { get; init; } = Array.Empty<DocumentLineHttpRequest>();
+    public string? IdempotencyKey { get; init; }
+    public IReadOnlyList<SalesReceiptLineHttpRequest> Lines { get; init; } = Array.Empty<SalesReceiptLineHttpRequest>();
+}
+
+internal sealed record class SalesReceiptLineHttpRequest
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 internal sealed record class RefundReceiptSaveAndPostHttpRequest

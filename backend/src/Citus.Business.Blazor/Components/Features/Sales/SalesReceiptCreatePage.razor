@@ -499,24 +499,38 @@
         _isSubmitting = true;
         try
         {
+            // Server validates the line carries a non-empty
+            // RevenueAccountId — make sure the picker actually
+            // resolved an id before we ship.
+            if (meaningful.Any(l => l.AccountId is null || l.AccountId == Guid.Empty))
+            {
+                _validation = "Every line needs a revenue account picked from the dropdown (not a free-typed code).";
+                return;
+            }
+
             var draft = new SalesReceiptDraft
             {
+                CompanyId = ShellState.ActiveCompany.Id,
+                UserId = ShellState.User.Id,
                 DocumentDate = DateOnly.FromDateTime((_documentDate ?? DateTime.Today).Date),
                 CustomerId = _customerId,
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
+                BaseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 DepositToAccountId = _depositToAccountId,
                 DepositToAccountCode = _depositToAccountCode,
                 PaymentMethod = _paymentMethod,
                 ReferenceNo = _referenceNo.Trim(),
                 Memo = _memo.Trim(),
-                Lines = meaningful.Select(l => new DocumentLineDraft
+                Lines = meaningful.Select((l, idx) => new SalesReceiptLineDraft
                 {
+                    LineNumber = idx + 1,
+                    RevenueAccountId = l.AccountId!.Value,
                     Description = l.Description,
                     Quantity = l.Quantity,
                     UnitPrice = l.UnitPrice,
-                    AccountCode = l.AccountCode,
-                    TaxCode = l.TaxCode,
+                    TaxCodeId = l.TaxCodeId,
+                    TaxAmount = 0m, // Tax is computed server-side from tax_code rate; we don't push a client-computed amount.
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostSalesReceiptAsync(draft);

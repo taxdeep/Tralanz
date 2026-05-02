@@ -1992,3 +1992,57 @@ public interface IFxRevaluationApplyRepository
         UserId appliedByUserId,
         CancellationToken cancellationToken);
 }
+
+// ========================================================================
+// Sales Receipt — cash-in-hand sale (no AR open item).
+//
+// The contract mirrors IInvoiceDocumentRepository's shape so the
+// PostSalesReceiptCommandHandler can compose with the same posting
+// engine plumbing the Invoice flow uses. SaveDraftAsync persists a
+// draft row + lines (status='draft'); the journal entry writer
+// flips status to 'posted' as part of PostingEngine.PostAsync once
+// the matching source-type case lands in PostgresJournalEntryWriter.
+//
+// No SubmitDraftAsync — sales receipts always save-and-post in one
+// step (cash already in hand). The /save-and-post endpoint chains
+// SaveDraftAsync → PostSalesReceiptCommandHandler.HandleAsync.
+// ========================================================================
+public interface ISalesReceiptDocumentRepository
+{
+    Task<SalesReceiptDocument?> GetForPostingAsync(
+        CompanyId companyId,
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
+        SalesReceiptDraftSaveModel draft,
+        CancellationToken cancellationToken);
+}
+
+public sealed record SalesReceiptDraftSaveModel(
+    Guid? DocumentId,
+    CompanyId CompanyId,
+    UserId UserId,
+    Guid CustomerId,
+    Guid DepositToAccountId,
+    string PaymentMethod,
+    string? ReferenceNo,
+    DateOnly ReceiptDate,
+    string TransactionCurrencyCode,
+    string BaseCurrencyCode,
+    Guid? FxSnapshotId,
+    decimal? FxRate,
+    DateOnly? FxEffectiveDate,
+    string? FxSource,
+    string? Memo,
+    IReadOnlyList<SalesReceiptDraftLineSaveModel> Lines);
+
+public sealed record SalesReceiptDraftLineSaveModel(
+    int LineNumber,
+    Guid RevenueAccountId,
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    Guid? TaxCodeId,
+    decimal TaxAmount,
+    Guid? ItemId = null);

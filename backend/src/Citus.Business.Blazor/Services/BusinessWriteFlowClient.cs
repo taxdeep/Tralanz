@@ -519,12 +519,24 @@ public sealed record InvoiceDraft
 /// wallet account that receives the money), and the
 /// <see cref="PaymentMethod"/> + <see cref="ReferenceNo"/> are mandatory
 /// metadata for the bank reconciliation step downstream.
+///
+/// The line shape is <see cref="SalesReceiptLineDraft"/>, which carries
+/// the resolved <c>RevenueAccountId</c> + <c>TaxCodeId</c> Guids
+/// directly (the frontend pickers already have them). Sending Guids
+/// rather than display codes is the same convention the Invoice
+/// repository uses and removes a server-side <c>code → id</c> lookup
+/// that's redundant when the client already holds the id.
 /// </summary>
 public sealed record SalesReceiptDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+
+    /// <summary>Company base currency at the time of save — server uses this to validate FX direction without an extra round-trip.</summary>
+    public string BaseCurrencyCode { get; init; } = string.Empty;
 
     /// <summary>Per-document FX rate (transaction → base). Same semantics as <see cref="InvoiceDraft.FxRate"/>.</summary>
     public decimal? FxRate { get; init; }
@@ -541,7 +553,18 @@ public sealed record SalesReceiptDraft
     public string ReferenceNo { get; init; } = string.Empty;
 
     public string Memo { get; init; } = string.Empty;
-    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+    public IReadOnlyList<SalesReceiptLineDraft> Lines { get; init; } = Array.Empty<SalesReceiptLineDraft>();
+}
+
+public sealed record SalesReceiptLineDraft
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 /// <summary>
