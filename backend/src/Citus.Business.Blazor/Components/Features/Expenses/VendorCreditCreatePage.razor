@@ -41,15 +41,7 @@
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
 
-@if (_lastResult is not null)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>@_lastResult.Operation</strong>
-            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
-        </MessageTemplate>
-    </CitusAlert>
-}
+<WriteFlowResultAlert Result="@_lastResult" />
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
@@ -89,8 +81,18 @@
                     }
                 </div>
                 <div>
+                    @* Same lookup contract as CreditMemo's apply-to-
+                       invoice: backend resolves (company_id, bill
+                       display_number) at post-time. Leaving blank
+                       issues a standalone vendor credit. *@
                     <label class="text-sm font-medium block mb-1">Apply to bill (optional)</label>
                     <CitusInput TValue="string" @bind-Value="_appliedToBillNumber" Placeholder="e.g. BILL-2026-0042" />
+                    @if (!string.IsNullOrWhiteSpace(_appliedToBillNumber) && !LooksLikeDocumentNumber(_appliedToBillNumber))
+                    {
+                        <p class="text-fg-warning text-xs mt-1">
+                            Use the bill's display number (alphanumerics, dashes, underscores). Backend will reject anything it can't resolve in this company.
+                        </p>
+                    }
                 </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Reason</label>
@@ -363,4 +365,13 @@
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    /// <summary>
+    /// Twin of CreditMemoCreatePage.LooksLikeDocumentNumber — keeping
+    /// the helpers per-page (rather than a shared static) makes the
+    /// validation rules visible at the call site. If a third page
+    /// adopts the same gate, hoist to a shared util at that point.
+    /// </summary>
+    private static bool LooksLikeDocumentNumber(string value) =>
+        System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^[A-Za-z0-9_\-./]+$");
 }

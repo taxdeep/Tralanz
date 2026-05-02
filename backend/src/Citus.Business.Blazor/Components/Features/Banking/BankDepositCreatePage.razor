@@ -49,15 +49,7 @@
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
 
-@if (_lastResult is not null)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>@_lastResult.Operation</strong>
-            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
-        </MessageTemplate>
-    </CitusAlert>
-}
+<WriteFlowResultAlert Result="@_lastResult" />
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
@@ -98,6 +90,13 @@
                 <h2 class="citus-panel__title">Items in this deposit</h2>
                 <CitusButton LeadingIcon="IconName.Plus" Size="CitusButtonSize.Small" OnClick="AddItem">Add item</CitusButton>
             </header>
+            <p class="text-fg-muted text-sm mb-3">
+                Source # = the original sales-receipt or receive-payment
+                display number (SR-…, RP-…). Backend will reject items
+                that don't resolve to an unsettled Undeposited-Funds row
+                in this company; once the picker for outstanding holding
+                items ships this becomes a checkbox table.
+            </p>
 
             <table class="citus-data-table">
                 <thead>
@@ -125,18 +124,9 @@
                             <td><CitusInput TValue="string" Value="@item.SourceItemDisplayNumber" ValueChanged="@(v => Update(i, x => x with { SourceItemDisplayNumber = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="SR-… / RP-…" /></td>
                             <td><CitusInput TValue="string" Value="@item.PayerName" ValueChanged="@(v => Update(i, x => x with { PayerName = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Customer name" /></td>
                             <td>
-                                <select class="citus-form-field__input"
-                                        value="@item.PaymentMethod"
-                                        @onchange="@(e => Update(i, x => x with { PaymentMethod = e.Value?.ToString() ?? string.Empty }))">
-                                    <option value="">—</option>
-                                    <option value="cash">Cash</option>
-                                    <option value="cheque">Cheque</option>
-                                    <option value="credit_card">Credit Card</option>
-                                    <option value="wire">Wire</option>
-                                    <option value="direct_deposit">Direct Deposit</option>
-                                    <option value="eft">EFT</option>
-                                    <option value="other">Other</option>
-                                </select>
+                                <PaymentMethodSelect Value="@item.PaymentMethod"
+                                                     IncludeBlankOption="true"
+                                                     ValueChanged="@(method => Update(i, x => x with { PaymentMethod = method }))" />
                             </td>
                             <td><CitusInput TValue="string" Value="@item.ReferenceNo" ValueChanged="@(v => Update(i, x => x with { ReferenceNo = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Cheque / trace" /></td>
                             <td>
@@ -278,6 +268,16 @@
         if (_depositToAccountId is null) { _validation = "Pick a destination bank account."; return; }
         var meaningful = _items.Where(i => i.HasContent && i.Amount > 0m).ToArray();
         if (meaningful.Length == 0) { _validation = "Add at least one deposit item with a positive amount."; return; }
+        if (meaningful.Any(i => string.IsNullOrWhiteSpace(i.SourceItemDisplayNumber)))
+        {
+            _validation = "Every deposit item needs a source number (SR-… or RP-… from Undeposited Funds).";
+            return;
+        }
+        if (meaningful.Any(i => !LooksLikeDocumentNumber(i.SourceItemDisplayNumber)))
+        {
+            _validation = "Source numbers must look like document references (alphanumerics + dashes). Backend will reject anything it can't resolve.";
+            return;
+        }
         if (_total <= 0) { _validation = "Deposit total must be greater than zero."; return; }
 
         _isSubmitting = true;
@@ -314,4 +314,13 @@
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
     private static string FormatDecimal(decimal value) => value == 0m ? string.Empty : value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Same client-side gate the credit-memo / vendor-credit pages use
+    /// for their apply-to fields — keeps the operator from typing
+    /// obvious garbage. Backend's (company_id, display_number) lookup
+    /// is the canonical resolution.
+    /// </summary>
+    private static bool LooksLikeDocumentNumber(string value) =>
+        System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^[A-Za-z0-9_\-./]+$");
 }

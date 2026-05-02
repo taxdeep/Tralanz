@@ -1,0 +1,58 @@
+@*
+    PaymentMethodSelect — single source of truth for the payment-method
+    dropdown that appears on every cash-flow page (Sales Receipt,
+    Refund Receipt, Expense, Bank Deposit row, future Pay Bills row).
+
+    Centralising the option list means a new method (Apple Pay, Wire-
+    SWIFT, etc.) is added in one place and lights up every page. The
+    canonical token strings (cash, cheque, credit_card, wire,
+    direct_deposit, eft, other) are the same strings the backend's
+    payment-method enum expects, so wire-shape stability is built in.
+
+    Pages that need the conditional reference-no input rendering still
+    own that branching themselves — different pages have different copy
+    requirements (SalesReceipt's "Cheque #" vs Expense's "Cheque #
+    required"). This atom only owns the dropdown.
+*@
+
+<select class="citus-form-field__input @(string.IsNullOrEmpty(Class) ? null : Class)"
+        value="@Value"
+        disabled="@Disabled"
+        @onchange="HandleChanged">
+    @if (IncludeBlankOption)
+    {
+        <option value="">@BlankLabel</option>
+    }
+    <option value="cash">Cash</option>
+    <option value="cheque">Cheque</option>
+    <option value="credit_card">Credit Card</option>
+    <option value="wire">Wire</option>
+    <option value="direct_deposit">Direct Deposit</option>
+    <option value="eft">EFT</option>
+    <option value="other">Other</option>
+</select>
+
+@code {
+    [Parameter] public string Value { get; set; } = "cash";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>
+    /// Render an empty option at the top of the list. Use this on
+    /// surfaces where "no method picked" is meaningful (e.g. a deposit
+    /// item that hasn't been edited). Default false because most pages
+    /// default to "cash".
+    /// </summary>
+    [Parameter] public bool IncludeBlankOption { get; set; }
+    [Parameter] public string BlankLabel { get; set; } = "—";
+
+    [Parameter] public string? Class { get; set; }
+
+    private async Task HandleChanged(ChangeEventArgs e)
+    {
+        var next = e.Value?.ToString() ?? string.Empty;
+        if (string.Equals(next, Value, StringComparison.Ordinal)) return;
+        Value = next;
+        await ValueChanged.InvokeAsync(next);
+    }
+}

@@ -361,14 +361,28 @@ public sealed class BusinessWriteFlowClient
             Succeeded: false,
             Message: PendingMessage,
             Operation: operation,
-            DraftEcho: payload));
+            DraftEcho: payload)
+        {
+            IsStubbed = true,
+        });
 }
 
 public sealed record WriteFlowResult(
     bool Succeeded,
     string Message,
     string Operation,
-    object DraftEcho);
+    object DraftEcho)
+{
+    /// <summary>
+    /// True when this result came from a Pending stub — i.e. the form
+    /// is fully validated and the payload is well-shaped, but the
+    /// backend HTTP route does not exist yet. Pages use this to render
+    /// a Warning-tone alert (vs. the Info tone for real "draft saved /
+    /// posted" responses) so an operator never mistakes a simulation
+    /// for a real GL movement.
+    /// </summary>
+    public bool IsStubbed { get; init; }
+}
 
 public sealed record ManualJournalDraft
 {
@@ -529,6 +543,27 @@ public sealed record VendorCreditDraft
 /// bank actually applied — defaulting to D-1 close from
 /// <c>fx_rates_daily</c> with manual override, same convention as
 /// invoice / bill.
+///
+/// ── BACKEND VALIDATION CONTRACT ─────────────────────────────────
+///   Same-currency:
+///     • <c>FxRate</c> MUST be null.
+///     • <c>FromCurrencyCode</c> == <c>ToCurrencyCode</c>.
+///     • Posted JE: Cr From = Amount, Dr To = Amount.
+///
+///   Cross-currency:
+///     • <c>FxRate</c> MUST be &gt; 0.
+///     • Backend recomputes <c>derivedToAmount = Amount * FxRate</c>
+///       and asserts it matches the operator's expectation within a
+///       tolerance (recommended: 1 cent of the destination currency,
+///       OR 0.5% — whichever is wider, to absorb rounding on the
+///       operator's side). UI shows derivedToAmount in the sidebar
+///       so any mismatch is visible before posting.
+///     • Posted JE base-currency rows: convert each side using its
+///       own currency's snapshot rate from
+///       <c>company_fx_rate_snapshots</c>; never use the operator's
+///       per-document FX for the GL base-currency math (only for
+///       the displayed transaction-currency amounts).
+/// ────────────────────────────────────────────────────────────────
 /// </summary>
 public sealed record BankTransferDraft
 {
@@ -585,8 +620,34 @@ public sealed record BankDepositItemDraft
 /// Tax return draft — the period the operator wants to file plus any
 /// manual adjustments to the auto-calculated boxes (Quebec QST, HST
 /// recapture, prior-period corrections). Posting the return locks the
-/// period and emits the net JE (collected − ITCs − adjustments → net
-/// payable / refund).
+/// period and emits the net JE.
+///
+/// ── GL CONTRACT (binding for backend implementations) ─────────────
+///   Net = CollectedAmount − InputCreditsAmount + AdjustmentsAmount
+///
+///   Net &gt; 0  →  the operator owes the regulator
+///                 Dr Tax Payable (output-tax accrual)   = CollectedAmount
+///                 Cr Tax Receivable (ITC accrual)       = InputCreditsAmount
+///                 Dr Tax Adjustments (signed)           = AdjustmentsAmount
+///                 Cr Tax Filing Liability               = Net
+///
+///   Net &lt; 0  →  the regulator owes the operator (refund)
+///                 Same accrual clearings, but the |Net| lands on the
+///                 Tax Filing Receivable side instead of the liability.
+///
+///   Net = 0  →  no settlement row; period still locks.
+///
+///   The Tax Filing Liability / Receivable row is the open item that
+///   becomes a Pay Bills (owe) or Receive Payment (refund) target on
+///   the cash side. Its account id comes from company_settings's
+///   tax_filing_liability_account / tax_filing_receivable_account
+///   columns; until those settings ship, the backend should fall back
+///   to the regime-specific tax-payable account.
+/// ─────────────────────────────────────────────────────────────────
+///
+/// Frontend computes Net live for sidebar preview. Backend MUST use
+/// the same arithmetic — operator sees Net before posting and any
+/// drift between the displayed value and the posted JE breaks trust.
 /// </summary>
 public sealed record TaxReturnDraft
 {

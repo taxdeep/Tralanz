@@ -8,6 +8,13 @@
     without a parameter explosion — and, more importantly, keeps each
     page that consumes them readable: <CustomerPicker> on a sales doc
     states intent, <VendorPicker> on a purchase doc states intent.
+
+    KNOWN DUPLICATION (~370 LoC × 2). When a third party-shaped picker
+    appears (employee, contact, etc.) the right move is to lift the
+    shared scaffolding into a generic CounterpartyPicker<TEntity> and
+    keep these two as one-line wrappers that supply the entity type
+    and a label-formatter delegate. Two twins isn't worth the
+    abstraction; three is.
 *@
 
 @using Citus.Modules.UnitySearch.Blazor

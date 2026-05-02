@@ -63,6 +63,16 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Customers", Href = "customers", Icon = IconName.Users },
                 new NavMenuItem { Title = "Quotes", Href = "quotes", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Sales Orders", Href = "sales-orders", Icon = IconName.Receipt },
+                // V1 nav points the new doc types straight at the
+                // create page because their list pages don't exist yet
+                // (waiting on backend list endpoints). When list pages
+                // ship, switch the Href to the bare resource path
+                // (e.g. "sales-receipts") and the create flow lives at
+                // "{resource}/new" the same way invoices / bills work.
+                // The InvoicesPage / BillsPage already need to grow a
+                // "credit-memo / refund-receipt / vendor-credit" filter
+                // chip so an operator can see all related documents
+                // for a customer or vendor in one place.
                 new NavMenuItem { Title = "Sales Receipts", Href = "sales-receipts/new", Icon = IconName.Cash },
                 new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash },
                 new NavMenuItem { Title = "Credit Memo", Href = "credit-memos/new", Icon = IconName.FileText },

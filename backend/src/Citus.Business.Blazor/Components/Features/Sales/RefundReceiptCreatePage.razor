@@ -42,15 +42,7 @@
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
 
-@if (_lastResult is not null)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>@_lastResult.Operation</strong>
-            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
-        </MessageTemplate>
-    </CitusAlert>
-}
+<WriteFlowResultAlert Result="@_lastResult" />
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
@@ -105,15 +97,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="text-sm font-medium block mb-1">Payment method</label>
-                    <select class="citus-form-field__input" value="@_paymentMethod" @onchange="OnPaymentMethodChanged">
-                        <option value="cash">Cash</option>
-                        <option value="cheque">Cheque</option>
-                        <option value="credit_card">Credit Card</option>
-                        <option value="wire">Wire</option>
-                        <option value="direct_deposit">Direct Deposit</option>
-                        <option value="eft">EFT</option>
-                        <option value="other">Other</option>
-                    </select>
+                    <PaymentMethodSelect Value="@_paymentMethod" ValueChanged="HandlePaymentMethodChanged" />
                 </div>
                 <div>
                     @* Same conditional rules as Sales Receipt /
@@ -353,9 +337,9 @@
         _currency = ShellState.ActiveCompany.BaseCurrencyCode;
     }
 
-    private void OnPaymentMethodChanged(ChangeEventArgs e)
+    private void HandlePaymentMethodChanged(string method)
     {
-        _paymentMethod = e.Value?.ToString() ?? "cash";
+        _paymentMethod = string.IsNullOrEmpty(method) ? "cash" : method;
         if (_paymentMethod == "cash") _referenceNo = string.Empty;
     }
 

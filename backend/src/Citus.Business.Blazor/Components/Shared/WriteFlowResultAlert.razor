@@ -1,0 +1,40 @@
+@*
+    WriteFlowResultAlert — single, opinionated rendering for the
+    BusinessWriteFlowClient result every Post-page surfaces. Centralises
+    the "is this a real round-trip or a Pending stub" branch so an
+    operator never mistakes a simulation for a real GL movement.
+
+    Pages render <WriteFlowResultAlert Result="@_lastResult" /> and
+    don't need to know the severity / icon / copy rules themselves.
+*@
+
+@if (Result is not null)
+{
+    <CitusAlert Severity="@(Result.IsStubbed ? CitusAlertSeverity.Warning : CitusAlertSeverity.Info)"
+                ShowIcon="true"
+                Class="mb-4">
+        <MessageTemplate>
+            <strong>
+                @if (Result.IsStubbed)
+                {
+                    <span>Simulation only — </span>
+                }
+                @Result.Operation
+            </strong>
+            <div class="text-fg-muted text-sm mt-1">@Result.Message</div>
+            @if (Result.IsStubbed)
+            {
+                <div class="text-fg-subtle text-xs mt-2">
+                    The form payload is well-shaped and the GL contract
+                    is documented; nothing has been written to the
+                    ledger or the database. The real round-trip lights
+                    up the moment the matching backend route ships.
+                </div>
+            }
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+@code {
+    [Parameter] public WriteFlowResult? Result { get; set; }
+}

@@ -48,15 +48,7 @@
     <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
 }
 
-@if (_lastResult is not null)
-{
-    <CitusAlert Severity="CitusAlertSeverity.Info" ShowIcon="true" Class="mb-4">
-        <MessageTemplate>
-            <strong>@_lastResult.Operation</strong>
-            <div class="text-fg-muted text-sm mt-1">@_lastResult.Message</div>
-        </MessageTemplate>
-    </CitusAlert>
-}
+<WriteFlowResultAlert Result="@_lastResult" />
 
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     <div class="lg:col-span-8 flex flex-col gap-6">
@@ -98,12 +90,20 @@
                 <div>
                     @* Apply-to-invoice number. Free text for V1 — stored
                        and the backend resolves to invoice id at post-
-                       time. When a list / picker for outstanding
-                       invoices is added this field will become a
+                       time using a (company_id, display_number) lookup
+                       so two companies can reuse number namespaces
+                       without colliding. When a list / picker for
+                       outstanding invoices ships, this field becomes a
                        proper picker. Leaving blank issues a standalone
                        credit. *@
                     <label class="text-sm font-medium block mb-1">Apply to invoice (optional)</label>
                     <CitusInput TValue="string" @bind-Value="_appliedToInvoiceNumber" Placeholder="e.g. INV-2026-0042" />
+                    @if (!string.IsNullOrWhiteSpace(_appliedToInvoiceNumber) && !LooksLikeDocumentNumber(_appliedToInvoiceNumber))
+                    {
+                        <p class="text-fg-warning text-xs mt-1">
+                            Use the invoice's display number (alphanumerics, dashes, underscores). Backend will reject anything it can't resolve in this company.
+                        </p>
+                    }
                 </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Reason</label>
@@ -406,4 +406,14 @@
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("N2");
+
+    /// <summary>
+    /// Cheap client-side gate so the operator catches obvious typos
+    /// before the backend (company_id, display_number) lookup. The
+    /// canonical resolution lives on the server — we only filter out
+    /// strings that clearly aren't a document number (whitespace,
+    /// stray punctuation, multi-line paste, etc.).
+    /// </summary>
+    private static bool LooksLikeDocumentNumber(string value) =>
+        System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^[A-Za-z0-9_\-./]+$");
 }
