@@ -2014,10 +2014,27 @@ public interface ISalesReceiptDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<SalesReceiptListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         SalesReceiptDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+public sealed record SalesReceiptListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly ReceiptDate,
+    Guid CustomerId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    string PaymentMethod,
+    DateTimeOffset? PostedAt);
 
 public sealed record SalesReceiptDraftSaveModel(
     Guid? DocumentId,
@@ -2064,10 +2081,27 @@ public interface IRefundReceiptDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<RefundReceiptListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         RefundReceiptDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+public sealed record RefundReceiptListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly RefundDate,
+    Guid CustomerId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    string PaymentMethod,
+    DateTimeOffset? PostedAt);
 
 public sealed record RefundReceiptDraftSaveModel(
     Guid? DocumentId,
@@ -2109,10 +2143,29 @@ public interface IBankTransferDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<BankTransferListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         BankTransferDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+public sealed record BankTransferListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly TransferDate,
+    Guid FromAccountId,
+    string FromCurrencyCode,
+    Guid ToAccountId,
+    string ToCurrencyCode,
+    decimal Amount,
+    decimal? FxRate,
+    DateTimeOffset? PostedAt);
 
 public sealed record BankTransferDraftSaveModel(
     Guid? DocumentId,
@@ -2145,10 +2198,27 @@ public interface IBankDepositDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<BankDepositListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         BankDepositDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+public sealed record BankDepositListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly DepositDate,
+    Guid DepositToAccountId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    int ItemCount,
+    DateTimeOffset? PostedAt);
 
 public sealed record BankDepositDraftSaveModel(
     Guid? DocumentId,
@@ -2181,10 +2251,28 @@ public interface ITaxReturnDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<TaxReturnListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         TaxReturnDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+public sealed record TaxReturnListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    string TaxRegime,
+    string FilingFrequency,
+    DateOnly PeriodStart,
+    DateOnly PeriodEnd,
+    decimal NetAmount,
+    string BaseCurrencyCode,
+    DateTimeOffset? PostedAt);
 
 public sealed record TaxReturnDraftSaveModel(
     Guid? DocumentId,

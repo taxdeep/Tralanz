@@ -323,7 +323,11 @@
                 Memo = _memo.Trim(),
             };
             _lastResult = await WriteFlow.PostTaxReturnAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Tax return posted."); NavigationManager.NavigateTo("settings/tax-rates"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Tax return posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"tax-returns/{id:D}" : "tax-returns");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }

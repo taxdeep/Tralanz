@@ -63,20 +63,14 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Customers", Href = "customers", Icon = IconName.Users },
                 new NavMenuItem { Title = "Quotes", Href = "quotes", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Sales Orders", Href = "sales-orders", Icon = IconName.Receipt },
-                // V1 nav points the new doc types straight at the
-                // create page because their list pages don't exist yet
-                // (waiting on backend list endpoints). When list pages
-                // ship, switch the Href to the bare resource path
-                // (e.g. "sales-receipts") and the create flow lives at
-                // "{resource}/new" the same way invoices / bills work.
-                // The InvoicesPage / BillsPage already need to grow a
-                // "credit-memo / refund-receipt / vendor-credit" filter
-                // chip so an operator can see all related documents
-                // for a customer or vendor in one place.
-                new NavMenuItem { Title = "Sales Receipts", Href = "sales-receipts/new", Icon = IconName.Cash },
+                // List pages now exist for SR/RR — nav anchors there.
+                // CreditMemo still points at /new because it shares the
+                // existing credit_notes table; surfacing standalone
+                // credit memos in their own list page is a follow-on.
+                new NavMenuItem { Title = "Sales Receipts", Href = "sales-receipts", Icon = IconName.Cash },
                 new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash },
                 new NavMenuItem { Title = "Credit Memo", Href = "credit-memos/new", Icon = IconName.FileText },
-                new NavMenuItem { Title = "Refund Receipt", Href = "refund-receipts/new", Icon = IconName.ArrowLeft }
+                new NavMenuItem { Title = "Refund Receipts", Href = "refund-receipts", Icon = IconName.ArrowLeft }
             ]
         },
         new NavSection
@@ -107,8 +101,8 @@ public sealed class BusinessShellState
             Items =
             [
                 new NavMenuItem { Title = "Reconciliation", Href = "reconciliation", Icon = IconName.CircleCheck },
-                new NavMenuItem { Title = "Account Transfer", Href = "bank-transfers/new", Icon = IconName.ArrowLeft },
-                new NavMenuItem { Title = "Bank Deposit", Href = "bank-deposits/new", Icon = IconName.Cash }
+                new NavMenuItem { Title = "Account Transfers", Href = "bank-transfers", Icon = IconName.ArrowLeft },
+                new NavMenuItem { Title = "Bank Deposits", Href = "bank-deposits", Icon = IconName.Cash }
             ]
         },
         new NavSection
@@ -130,7 +124,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Currencies", Href = "settings/currencies", Icon = IconName.Coin },
                 new NavMenuItem { Title = "Fiscal Year", Href = "settings/fiscal-year", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
-                new NavMenuItem { Title = "Tax Return", Href = "tax-return", Icon = IconName.ReportAnalytics },
+                new NavMenuItem { Title = "Tax Returns", Href = "tax-returns", Icon = IconName.ReportAnalytics },
                 new NavMenuItem { Title = "Payment Terms", Href = "settings/payment-terms", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Numbering", Href = "settings/numbering", Icon = IconName.FileInvoice },
                 new NavMenuItem { Title = "Invoice Templates", Href = "settings/invoice-templates", Icon = IconName.FileText },

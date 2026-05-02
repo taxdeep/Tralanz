@@ -1,0 +1,100 @@
+@page "/refund-receipts"
+
+@inject BusinessShellState ShellState
+@inject RefundReceiptClient RefundReceiptClient
+
+<PageTitle>Refund Receipts | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="refund-receipts/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New refund receipt</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Refund receipts</h2>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked="@_includeDrafts" @onchange="OnIncludeDraftsChanged" />
+            <span>Include drafts</span>
+        </label>
+    </header>
+
+    @if (_isLoading)
+    {
+        <CitusSkeleton Variant="SkeletonVariant.List" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <CitusEmpty Title="No refund receipts yet"
+                    Description="Cash refunds will appear here once posted."
+                    Icon="IconName.ArrowLeft" />
+    }
+    else
+    {
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Refund #</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Method</th>
+                    <th class="text-right">Total refunded</th>
+                    <th>Currency</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr>
+                        <td><a class="citus-link" href="@($"refund-receipts/{row.Id:D}")">@row.DisplayNumber</a></td>
+                        <td>@row.RefundDate.ToString("yyyy-MM-dd")</td>
+                        <td>@HumanizeStatus(row.Status)</td>
+                        <td>@row.PaymentMethod</td>
+                        <td class="text-right">@row.TotalAmount.ToString("N2")</td>
+                        <td>@row.TransactionCurrencyCode</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Sales & Get Paid",
+        Title = "Refund receipts",
+        Subtitle = "Cash refunds — money out, GL polarity reversed from sales receipts."
+    };
+
+    private IReadOnlyList<RefundReceiptSummaryDto> _rows = Array.Empty<RefundReceiptSummaryDto>();
+    private bool _isLoading = true;
+    private bool _includeDrafts = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnIncludeDraftsChanged(ChangeEventArgs e)
+    {
+        _includeDrafts = (bool)(e.Value ?? false);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _rows = await RefundReceiptClient.ListAsync(ShellState.ActiveCompany.Id, _includeDrafts);
+        }
+        finally { _isLoading = false; }
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
+    };
+}

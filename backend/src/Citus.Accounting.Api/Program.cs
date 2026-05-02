@@ -11406,6 +11406,58 @@ accounting.MapPost(
     });
 
 // ============================================================================
+// V1 list endpoints for the 5 new doc types. Each calls the
+// repository's ListAsync to surface a summary feed (most-recent
+// first, capped at 200 rows). The companyId comes off the query
+// string the same way the detail endpoints get it.
+// ============================================================================
+
+accounting.MapGet(
+    "/sales-receipts",
+    async (Guid companyId, bool? includeDrafts, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/refund-receipts",
+    async (Guid companyId, bool? includeDrafts, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/bank-transfers",
+    async (Guid companyId, bool? includeDrafts, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/bank-deposits",
+    async (Guid companyId, bool? includeDrafts, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/tax-returns",
+    async (Guid companyId, bool? includeDrafts, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+// ============================================================================
 // V1 detail endpoints for the 7 doc types that now post end-to-end.
 // Each endpoint just exposes the existing repository's
 // GetForPostingAsync — no new persistence shape, no new SQL.

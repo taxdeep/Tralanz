@@ -127,6 +127,59 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             memo);
     }
 
+    public async Task<IReadOnlyList<BankTransferListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select bt.id, bt.entity_number, bt.transfer_number, bt.status, bt.transfer_date,
+                     bt.from_account_id, bt.from_currency_code, bt.to_account_id, bt.to_currency_code,
+                     bt.amount, bt.fx_rate, bt.posted_at
+              from bank_transfers bt
+              where bt.company_id = @company_id
+              order by bt.transfer_date desc, bt.created_at desc
+              limit 200;
+              """
+            : """
+              select bt.id, bt.entity_number, bt.transfer_number, bt.status, bt.transfer_date,
+                     bt.from_account_id, bt.from_currency_code, bt.to_account_id, bt.to_currency_code,
+                     bt.amount, bt.fx_rate, bt.posted_at
+              from bank_transfers bt
+              where bt.company_id = @company_id
+                and bt.status <> 'draft'
+              order by bt.transfer_date desc, bt.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<BankTransferListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new BankTransferListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("transfer_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("transfer_date")),
+                reader.GetGuid(reader.GetOrdinal("from_account_id")),
+                reader.GetString(reader.GetOrdinal("from_currency_code")),
+                reader.GetGuid(reader.GetOrdinal("to_account_id")),
+                reader.GetString(reader.GetOrdinal("to_currency_code")),
+                reader.GetDecimal(reader.GetOrdinal("amount")),
+                reader.IsDBNull(reader.GetOrdinal("fx_rate")) ? null : reader.GetDecimal(reader.GetOrdinal("fx_rate")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         BankTransferDraftSaveModel draft,
         CancellationToken cancellationToken)

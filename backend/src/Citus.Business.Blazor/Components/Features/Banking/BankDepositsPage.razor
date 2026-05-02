@@ -1,0 +1,100 @@
+@page "/bank-deposits"
+
+@inject BusinessShellState ShellState
+@inject BankDepositClient BankDepositClient
+
+<PageTitle>Bank Deposits | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button" href="bank-deposits/new">
+            <CitusIcon Name="IconName.Plus" Size="IconSize.Inline" />
+            <span>New deposit</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel">
+    <header class="citus-panel__header">
+        <h2 class="citus-panel__title">Bank deposits</h2>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked="@_includeDrafts" @onchange="OnIncludeDraftsChanged" />
+            <span>Include drafts</span>
+        </label>
+    </header>
+
+    @if (_isLoading)
+    {
+        <CitusSkeleton Variant="SkeletonVariant.List" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <CitusEmpty Title="No deposits yet"
+                    Description="Bundle Undeposited-Funds items here to clear them to a bank account."
+                    Icon="IconName.Receipt" />
+    }
+    else
+    {
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Deposit #</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th class="text-right">Items</th>
+                    <th class="text-right">Total</th>
+                    <th>Currency</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr>
+                        <td><a class="citus-link" href="@($"bank-deposits/{row.Id:D}")">@row.DisplayNumber</a></td>
+                        <td>@row.DepositDate.ToString("yyyy-MM-dd")</td>
+                        <td>@HumanizeStatus(row.Status)</td>
+                        <td class="text-right">@row.ItemCount</td>
+                        <td class="text-right">@row.TotalAmount.ToString("N2")</td>
+                        <td>@row.TransactionCurrencyCode</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Banking",
+        Title = "Bank deposits",
+        Subtitle = "Group Undeposited-Funds items into one bank-statement-shaped entry."
+    };
+
+    private IReadOnlyList<BankDepositSummaryDto> _rows = Array.Empty<BankDepositSummaryDto>();
+    private bool _isLoading = true;
+    private bool _includeDrafts = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnIncludeDraftsChanged(ChangeEventArgs e)
+    {
+        _includeDrafts = (bool)(e.Value ?? false);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _rows = await BankDepositClient.ListAsync(ShellState.ActiveCompany.Id, _includeDrafts);
+        }
+        finally { _isLoading = false; }
+    }
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft", "posted" => "Posted", "voided" => "Voided", "reversed" => "Reversed", _ => status
+    };
+}

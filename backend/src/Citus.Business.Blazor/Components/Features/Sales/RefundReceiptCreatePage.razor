@@ -475,7 +475,11 @@
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostRefundReceiptAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Refund receipt posted."); NavigationManager.NavigateTo("sales-overview"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Refund receipt posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"refund-receipts/{id:D}" : "refund-receipts");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }

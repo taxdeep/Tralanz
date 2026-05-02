@@ -236,11 +236,35 @@ public sealed class BusinessWriteFlowClient
                     DraftEcho: draft);
             }
 
+            // Successful round-trip — try to surface the documentId
+            // from the response body so Create pages can redirect to
+            // the new doc's detail view. All seven save-and-post
+            // endpoints currently return { documentId, ... }; if a
+            // future endpoint omits it, the redirect simply falls
+            // back to the section overview.
+            Guid? documentId = null;
+            try
+            {
+                var body = await response.Content.ReadFromJsonAsync<SaveAndPostSuccessBody>(cancellationToken);
+                if (body?.DocumentId is { } id && id != Guid.Empty)
+                {
+                    documentId = id;
+                }
+            }
+            catch
+            {
+                // Response wasn't the expected shape — leave DocumentId
+                // null and the page will use its fallback redirect.
+            }
+
             return new WriteFlowResult(
                 Succeeded: true,
                 Message: $"{operation} round-trip succeeded.",
                 Operation: operation,
-                DraftEcho: draft);
+                DraftEcho: draft)
+            {
+                DocumentId = documentId,
+            };
         }
         catch (Exception ex)
         {
@@ -258,6 +282,9 @@ public sealed class BusinessWriteFlowClient
         string? Operation,
         string? Message,
         string? NextStep);
+
+    private sealed record SaveAndPostSuccessBody(
+        Guid? DocumentId);
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "...";
@@ -459,6 +486,14 @@ public sealed record WriteFlowResult(
     /// for a real GL movement.
     /// </summary>
     public bool IsStubbed { get; init; }
+
+    /// <summary>
+    /// Document id of the just-created/posted document, surfaced from
+    /// the success response body (200 OK with <c>documentId</c> field).
+    /// Create pages use this to redirect to the detail page after a
+    /// successful post.
+    /// </summary>
+    public Guid? DocumentId { get; init; }
 }
 
 public sealed record ManualJournalDraft

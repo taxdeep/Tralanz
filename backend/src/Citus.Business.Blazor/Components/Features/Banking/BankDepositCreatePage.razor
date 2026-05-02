@@ -303,7 +303,11 @@
                 }).ToArray(),
             };
             _lastResult = await WriteFlow.PostBankDepositAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Bank deposit posted."); NavigationManager.NavigateTo("reconciliation"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Bank deposit posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"bank-deposits/{id:D}" : "bank-deposits");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }

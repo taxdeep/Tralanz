@@ -187,6 +187,56 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
         return (Guid)result;
     }
 
+    public async Task<IReadOnlyList<TaxReturnListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select tr.id, tr.entity_number, tr.return_number, tr.status, tr.tax_regime, tr.filing_frequency,
+                     tr.period_start, tr.period_end, tr.net_amount, tr.base_currency_code, tr.posted_at
+              from tax_returns tr
+              where tr.company_id = @company_id
+              order by tr.period_end desc, tr.created_at desc
+              limit 200;
+              """
+            : """
+              select tr.id, tr.entity_number, tr.return_number, tr.status, tr.tax_regime, tr.filing_frequency,
+                     tr.period_start, tr.period_end, tr.net_amount, tr.base_currency_code, tr.posted_at
+              from tax_returns tr
+              where tr.company_id = @company_id
+                and tr.status <> 'draft'
+              order by tr.period_end desc, tr.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<TaxReturnListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new TaxReturnListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("return_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetString(reader.GetOrdinal("tax_regime")),
+                reader.GetString(reader.GetOrdinal("filing_frequency")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("period_start")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("period_end")),
+                reader.GetDecimal(reader.GetOrdinal("net_amount")),
+                reader.GetString(reader.GetOrdinal("base_currency_code")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         TaxReturnDraftSaveModel draft,
         CancellationToken cancellationToken)

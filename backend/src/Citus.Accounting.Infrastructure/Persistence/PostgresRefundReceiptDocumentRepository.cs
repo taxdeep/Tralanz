@@ -226,6 +226,55 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             memo);
     }
 
+    public async Task<IReadOnlyList<RefundReceiptListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select rr.id, rr.entity_number, rr.refund_number, rr.status, rr.refund_date,
+                     rr.customer_id, rr.document_currency_code, rr.total_amount, rr.payment_method, rr.posted_at
+              from refund_receipts rr
+              where rr.company_id = @company_id
+              order by rr.refund_date desc, rr.created_at desc
+              limit 200;
+              """
+            : """
+              select rr.id, rr.entity_number, rr.refund_number, rr.status, rr.refund_date,
+                     rr.customer_id, rr.document_currency_code, rr.total_amount, rr.payment_method, rr.posted_at
+              from refund_receipts rr
+              where rr.company_id = @company_id
+                and rr.status <> 'draft'
+              order by rr.refund_date desc, rr.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<RefundReceiptListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new RefundReceiptListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("refund_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("refund_date")),
+                reader.GetGuid(reader.GetOrdinal("customer_id")),
+                reader.GetString(reader.GetOrdinal("document_currency_code")),
+                reader.GetDecimal(reader.GetOrdinal("total_amount")),
+                reader.GetString(reader.GetOrdinal("payment_method")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         RefundReceiptDraftSaveModel draft,
         CancellationToken cancellationToken)

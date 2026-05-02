@@ -5,6 +5,24 @@ namespace Citus.Business.Blazor.Services;
 
 public sealed class RefundReceiptClient(HttpClient httpClient, ILogger<RefundReceiptClient> logger)
 {
+    public async Task<IReadOnlyList<RefundReceiptSummaryDto>> ListAsync(
+        Guid companyId,
+        bool includeDrafts = true,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/refund-receipts?companyId={companyId:D}&includeDrafts={(includeDrafts ? "true" : "false")}";
+            var rows = await httpClient.GetFromJsonAsync<RefundReceiptSummaryDto[]>(url, cancellationToken);
+            return rows ?? Array.Empty<RefundReceiptSummaryDto>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to list refund receipts.");
+            return Array.Empty<RefundReceiptSummaryDto>();
+        }
+    }
+
     public async Task<RefundReceiptRecordDto?> GetByIdAsync(
         Guid documentId,
         Guid companyId,
@@ -47,6 +65,18 @@ public sealed record RefundReceiptRecordDto(
     decimal TotalAmount,
     string? Memo,
     IReadOnlyList<RefundReceiptLineDto> Lines);
+
+public sealed record RefundReceiptSummaryDto(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly RefundDate,
+    Guid CustomerId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    string PaymentMethod,
+    DateTimeOffset? PostedAt);
 
 public sealed record RefundReceiptLineDto(
     int LineNumber,

@@ -271,7 +271,11 @@
                 Memo = _memo.Trim(),
             };
             _lastResult = await WriteFlow.PostBankTransferAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Transfer posted."); NavigationManager.NavigateTo("reconciliation"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Transfer posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"bank-transfers/{id:D}" : "bank-transfers");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }

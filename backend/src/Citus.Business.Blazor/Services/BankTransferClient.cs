@@ -5,6 +5,24 @@ namespace Citus.Business.Blazor.Services;
 
 public sealed class BankTransferClient(HttpClient httpClient, ILogger<BankTransferClient> logger)
 {
+    public async Task<IReadOnlyList<BankTransferSummaryDto>> ListAsync(
+        Guid companyId,
+        bool includeDrafts = true,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/bank-transfers?companyId={companyId:D}&includeDrafts={(includeDrafts ? "true" : "false")}";
+            var rows = await httpClient.GetFromJsonAsync<BankTransferSummaryDto[]>(url, cancellationToken);
+            return rows ?? Array.Empty<BankTransferSummaryDto>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to list bank transfers.");
+            return Array.Empty<BankTransferSummaryDto>();
+        }
+    }
+
     public async Task<BankTransferRecordDto?> GetByIdAsync(
         Guid documentId,
         Guid companyId,
@@ -26,6 +44,20 @@ public sealed class BankTransferClient(HttpClient httpClient, ILogger<BankTransf
         }
     }
 }
+
+public sealed record BankTransferSummaryDto(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly TransferDate,
+    Guid FromAccountId,
+    string FromCurrencyCode,
+    Guid ToAccountId,
+    string ToCurrencyCode,
+    decimal Amount,
+    decimal? FxRate,
+    DateTimeOffset? PostedAt);
 
 public sealed record BankTransferRecordDto(
     Guid Id,

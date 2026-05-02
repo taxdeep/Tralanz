@@ -11,6 +11,24 @@ namespace Citus.Business.Blazor.Services;
 /// </summary>
 public sealed class SalesReceiptClient(HttpClient httpClient, ILogger<SalesReceiptClient> logger)
 {
+    public async Task<IReadOnlyList<SalesReceiptSummaryDto>> ListAsync(
+        Guid companyId,
+        bool includeDrafts = true,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/sales-receipts?companyId={companyId:D}&includeDrafts={(includeDrafts ? "true" : "false")}";
+            var rows = await httpClient.GetFromJsonAsync<SalesReceiptSummaryDto[]>(url, cancellationToken);
+            return rows ?? Array.Empty<SalesReceiptSummaryDto>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to list sales receipts.");
+            return Array.Empty<SalesReceiptSummaryDto>();
+        }
+    }
+
     public async Task<SalesReceiptRecordDto?> GetByIdAsync(
         Guid documentId,
         Guid companyId,
@@ -52,6 +70,18 @@ public sealed record SalesReceiptRecordDto(
     decimal TotalAmount,
     string? Memo,
     IReadOnlyList<SalesReceiptLineDto> Lines);
+
+public sealed record SalesReceiptSummaryDto(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly ReceiptDate,
+    Guid CustomerId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    string PaymentMethod,
+    DateTimeOffset? PostedAt);
 
 public sealed record SalesReceiptLineDto(
     int LineNumber,

@@ -5,6 +5,24 @@ namespace Citus.Business.Blazor.Services;
 
 public sealed class BankDepositClient(HttpClient httpClient, ILogger<BankDepositClient> logger)
 {
+    public async Task<IReadOnlyList<BankDepositSummaryDto>> ListAsync(
+        Guid companyId,
+        bool includeDrafts = true,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/bank-deposits?companyId={companyId:D}&includeDrafts={(includeDrafts ? "true" : "false")}";
+            var rows = await httpClient.GetFromJsonAsync<BankDepositSummaryDto[]>(url, cancellationToken);
+            return rows ?? Array.Empty<BankDepositSummaryDto>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to list bank deposits.");
+            return Array.Empty<BankDepositSummaryDto>();
+        }
+    }
+
     public async Task<BankDepositRecordDto?> GetByIdAsync(
         Guid documentId,
         Guid companyId,
@@ -41,6 +59,18 @@ public sealed record BankDepositRecordDto(
     string? ReferenceNo,
     string? Memo,
     IReadOnlyList<BankDepositItemDto> Items);
+
+public sealed record BankDepositSummaryDto(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly DepositDate,
+    Guid DepositToAccountId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    int ItemCount,
+    DateTimeOffset? PostedAt);
 
 public sealed record BankDepositItemDto(
     int LineNumber,

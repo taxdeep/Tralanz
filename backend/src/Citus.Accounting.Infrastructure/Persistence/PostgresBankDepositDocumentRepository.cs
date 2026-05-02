@@ -190,6 +190,57 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             items);
     }
 
+    public async Task<IReadOnlyList<BankDepositListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select bd.id, bd.entity_number, bd.deposit_number, bd.status, bd.deposit_date,
+                     bd.deposit_to_account_id, bd.document_currency_code, bd.total_amount, bd.posted_at,
+                     (select count(*) from bank_deposit_items i where i.bank_deposit_id = bd.id) as item_count
+              from bank_deposits bd
+              where bd.company_id = @company_id
+              order by bd.deposit_date desc, bd.created_at desc
+              limit 200;
+              """
+            : """
+              select bd.id, bd.entity_number, bd.deposit_number, bd.status, bd.deposit_date,
+                     bd.deposit_to_account_id, bd.document_currency_code, bd.total_amount, bd.posted_at,
+                     (select count(*) from bank_deposit_items i where i.bank_deposit_id = bd.id) as item_count
+              from bank_deposits bd
+              where bd.company_id = @company_id
+                and bd.status <> 'draft'
+              order by bd.deposit_date desc, bd.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<BankDepositListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new BankDepositListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("deposit_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("deposit_date")),
+                reader.GetGuid(reader.GetOrdinal("deposit_to_account_id")),
+                reader.GetString(reader.GetOrdinal("document_currency_code")),
+                reader.GetDecimal(reader.GetOrdinal("total_amount")),
+                Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("item_count"))),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         BankDepositDraftSaveModel draft,
         CancellationToken cancellationToken)

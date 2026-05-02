@@ -534,7 +534,11 @@
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostSalesReceiptAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Sales receipt posted."); NavigationManager.NavigateTo("sales-overview"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Sales receipt posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"sales-receipts/{id:D}" : "sales-receipts");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }
