@@ -61,9 +61,9 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
     /// </summary>
     private static CoaTemplate BuildCanonical5Digit() => new(
         Key: "ca_general_small_business",
-        Version: "4",
+        Version: "5",
         Name: "General business (5-digit canonical)",
-        Description: "Generic universal chart of accounts for SMBs. Covers cash, AR/AP control (base currency only — per-currency AR/AP rows are added when multi-currency is enabled), current/fixed assets, current and long-term liabilities (incl. credit card, payroll, sales/income tax), equity, income, COGS, operating expense (incl. payroll), FX, asset disposal, and income tax expense, plus engine-required hidden FX system rows. Codes are stored at 5 digits and shifted to the company's chosen length (4–10).",
+        Description: "Generic universal chart of accounts for SMBs. Covers cash (incl. Undeposited Funds for Bank Deposit clearing), AR/AP control (base currency only — per-currency AR/AP rows are added when multi-currency is enabled), current/fixed assets, current and long-term liabilities (incl. credit card, payroll, sales-tax payable + receivable + filing-side rows for TaxReturn period close, income tax), equity, income, COGS, operating expense (incl. payroll), FX, asset disposal, and income tax expense, plus engine-required hidden FX system rows. Codes are stored at 5 digits and shifted to the company's chosen length (4–10).",
         Country: "Generic",
         AccountCodeLength: 5,
         Accounts: new CoaTemplateAccount[]
@@ -80,10 +80,28 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
                 SystemRole: "accounts_receivable"),
 
             // ---- Other Current Asset (12000-13999) ----
-            new("12000", "Undeposited Funds", "asset", DetailType: "undeposited_funds"),
+            new("12000", "Undeposited Funds", "asset",
+                DetailType: "undeposited_funds",
+                SystemKey: "cash:undeposited_funds",
+                SystemRole: "undeposited_funds"),
             new("12500", "Short-Term Investments", "asset", DetailType: "short_term_investments"),
             new("12800", "Employee Advances", "asset", DetailType: "employee_advances"),
             new("13100", "Prepaid Expenses", "asset", DetailType: "prepaids"),
+
+            // ---- Sales-tax receivable family (13700-13701) ----
+            // Used by the TaxReturn posting fragment to clear ITC
+            // accruals (13700) and land net refunds (13701) at
+            // period-close time. Operator never touches them
+            // directly; AllowManualPosting stays true so adjustment
+            // journals can still hit them when needed.
+            new("13700", "Sales Tax Receivable", "asset",
+                DetailType: "tax",
+                SystemKey: "tax:receivable",
+                SystemRole: "tax_receivable"),
+            new("13701", "Sales Tax Filing Receivable", "asset",
+                DetailType: "tax",
+                SystemKey: "tax:filing_receivable",
+                SystemRole: "tax_filing_receivable"),
 
             // ---- Inventory (14000) ----
             new("14000", "Inventory", "asset", DetailType: "inventory"),
@@ -113,7 +131,27 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             // ---- Other Current Liability (24000-26999) ----
             new("24000", "Shareholder Loan", "liability", DetailType: "shareholder_loan"),
             new("24700", "Customer Deposits", "liability", DetailType: "customer_deposits"),
-            new("25000", "Sales Tax Payable", "liability", DetailType: "tax"),
+            // 25000 holds output-tax accruals — every invoice / sales
+            // receipt with a tax code credits it; TaxReturn clears it
+            // each period. SystemRole pins the canonical resolution.
+            new("25000", "Sales Tax Payable", "liability",
+                DetailType: "tax",
+                SystemKey: "tax:payable",
+                SystemRole: "tax_payable"),
+            // 25001 carries operator-supplied period adjustments
+            // (recapture, prior-period corrections) routed through
+            // TaxReturn — signed.
+            new("25001", "Sales Tax Adjustments", "liability",
+                DetailType: "tax",
+                SystemKey: "tax:adjustments",
+                SystemRole: "tax_adjustments"),
+            // 25002 absorbs the net-payable side of a filed return,
+            // becoming the row a Pay Bills against the regulator
+            // discharges later.
+            new("25002", "Sales Tax Filing Liability", "liability",
+                DetailType: "tax",
+                SystemKey: "tax:filing_liability",
+                SystemRole: "tax_filing_liability"),
             new("25500", "Income Tax Payable", "liability", DetailType: "tax"),
             new("26000", "Payroll Liabilities", "liability", DetailType: "payroll_liability"),
 

@@ -11,7 +11,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     IPlatformRuntimeStateRepository runtimeStateRepository) : IPlatformFirstCompanyProvisioningRepository
 {
     private const int MinimumPasswordLength = 12;
-    private const string TemplateVersion = "2026.04";
+    private const string TemplateVersion = "2026.05";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -636,10 +636,19 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         new StarterAccountDefinition("11000", "Accounts Receivable", "asset", "accounts_receivable", true, true, "control_account:accounts_receivable:base", "accounts_receivable", false),
 
         // ---- Other Current Asset (12000-13999) ----
-        new StarterAccountDefinition("12000", "Undeposited Funds", "asset", "undeposited_funds", false, true, null, null, true),
+        // 12000 carries pre-deposit cash from Sales Receipts / Receive
+        // Payment until a Bank Deposit clears it; SystemRole pins the
+        // canonical resolution used by those flows.
+        new StarterAccountDefinition("12000", "Undeposited Funds", "asset", "undeposited_funds", false, true, "cash:undeposited_funds", "undeposited_funds", true),
         new StarterAccountDefinition("12500", "Short-Term Investments", "asset", "short_term_investments", false, false, null, null, true),
         new StarterAccountDefinition("12800", "Employee Advances", "asset", "employee_advances", false, false, null, null, true),
         new StarterAccountDefinition("13100", "Prepaid Expenses", "asset", "prepaids", false, true, null, null, true),
+
+        // ---- Sales-tax receivable family (13700-13701) ----
+        // Used by the TaxReturn posting fragment to clear ITC accruals
+        // (13700) and land net refunds (13701) at period-close time.
+        new StarterAccountDefinition("13700", "Sales Tax Receivable", "asset", "tax", false, true, "tax:receivable", "tax_receivable", true),
+        new StarterAccountDefinition("13701", "Sales Tax Filing Receivable", "asset", "tax", false, true, "tax:filing_receivable", "tax_filing_receivable", true),
 
         // ---- Inventory (14000) ----
         new StarterAccountDefinition("14000", "Inventory", "asset", "inventory", false, true, null, null, true),
@@ -665,7 +674,12 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         // ---- Other Current Liability (24000-26999) ----
         new StarterAccountDefinition("24000", "Shareholder Loan", "liability", "shareholder_loan", false, false, null, null, true),
         new StarterAccountDefinition("24700", "Customer Deposits", "liability", "customer_deposits", false, false, null, null, true),
-        new StarterAccountDefinition("25000", "Sales Tax Payable", "liability", "tax", false, true, null, null, true),
+        // 25000 holds output-tax accruals from invoices / sales receipts;
+        // TaxReturn clears it each period. 25001 carries operator-supplied
+        // adjustments. 25002 absorbs the net-payable side of a filed return.
+        new StarterAccountDefinition("25000", "Sales Tax Payable", "liability", "tax", false, true, "tax:payable", "tax_payable", true),
+        new StarterAccountDefinition("25001", "Sales Tax Adjustments", "liability", "tax", false, true, "tax:adjustments", "tax_adjustments", true),
+        new StarterAccountDefinition("25002", "Sales Tax Filing Liability", "liability", "tax", false, true, "tax:filing_liability", "tax_filing_liability", true),
         new StarterAccountDefinition("25500", "Income Tax Payable", "liability", "tax", false, false, null, null, true),
         new StarterAccountDefinition("26000", "Payroll Liabilities", "liability", "payroll_liability", false, false, null, null, true),
 

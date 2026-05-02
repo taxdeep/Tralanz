@@ -10,16 +10,20 @@ namespace Citus.Accounting.Infrastructure.Persistence;
 /// Tax return repository — single-row document, no lines.
 ///
 /// At <see cref="GetForPostingAsync"/> time we resolve all five
-/// required tax accounts by canonical chart code. V1 codes (QBO-
-/// flavoured Canada GST/HST setup):
-///   • 21000 GST/HST Payable               → tax_payable
-///   • 13500 GST/HST Receivable            → tax_receivable
-///   • 21001 GST/HST Adjustments           → tax_adjustments
-///   • 21002 GST/HST Filing Liability       → tax_filing_liability
-///   • 13501 GST/HST Filing Receivable      → tax_filing_receivable
-/// Future iteration moves these to company_settings.tax_regime_*
-/// columns so a multi-regime company (GST + QST) can configure each
-/// regime's own quintet.
+/// required tax accounts by canonical chart code. The codes align
+/// with the Generic 5-digit chart shipped by
+/// <c>StaticCoaTemplateRegistry.BuildCanonical5Digit</c>:
+///   • 25000 Sales Tax Payable          → tax_payable
+///   • 13700 Sales Tax Receivable       → tax_receivable
+///   • 25001 Sales Tax Adjustments       → tax_adjustments
+///   • 25002 Sales Tax Filing Liability  → tax_filing_liability
+///   • 13701 Sales Tax Filing Receivable → tax_filing_receivable
+/// (Codes are generic on the chart side — the regime-specific
+/// label, "GST_HST" / "QST" / "VAT_UK", lives on the
+/// <see cref="TaxReturnDocument.TaxRegime"/> field. A future
+/// iteration moves the resolution to <c>company_settings.tax_*</c>
+/// so a multi-regime company can configure each regime's own
+/// quintet.)
 ///
 /// The <see cref="net_amount"/> column on tax_returns stores the
 /// signed Net (Collected − ITCs + Adjustments) so reports don't
@@ -126,13 +130,13 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
 
         // Resolve the five required tax accounts. Missing any of them
         // is a setup bug — V1 surfaces it as an InvalidOperationException
-        // so the operator sees actionable feedback ("create code 21000
-        // GST/HST Payable on the chart").
-        var taxPayableAccountId = await ResolveAccountByCodeAsync(scope, companyId, "21000", "GST/HST Payable", cancellationToken);
-        var taxReceivableAccountId = await ResolveAccountByCodeAsync(scope, companyId, "13500", "GST/HST Receivable", cancellationToken);
-        var taxAdjustmentsAccountId = await ResolveAccountByCodeAsync(scope, companyId, "21001", "GST/HST Adjustments", cancellationToken);
-        var taxFilingLiabilityAccountId = await ResolveAccountByCodeAsync(scope, companyId, "21002", "GST/HST Filing Liability", cancellationToken);
-        var taxFilingReceivableAccountId = await ResolveAccountByCodeAsync(scope, companyId, "13501", "GST/HST Filing Receivable", cancellationToken);
+        // so the operator sees actionable feedback ("create code 25000
+        // Sales Tax Payable on the chart").
+        var taxPayableAccountId = await ResolveAccountByCodeAsync(scope, companyId, "25000", "Sales Tax Payable", cancellationToken);
+        var taxReceivableAccountId = await ResolveAccountByCodeAsync(scope, companyId, "13700", "Sales Tax Receivable", cancellationToken);
+        var taxAdjustmentsAccountId = await ResolveAccountByCodeAsync(scope, companyId, "25001", "Sales Tax Adjustments", cancellationToken);
+        var taxFilingLiabilityAccountId = await ResolveAccountByCodeAsync(scope, companyId, "25002", "Sales Tax Filing Liability", cancellationToken);
+        var taxFilingReceivableAccountId = await ResolveAccountByCodeAsync(scope, companyId, "13701", "Sales Tax Filing Receivable", cancellationToken);
 
         return new TaxReturnDocument(
             id,
