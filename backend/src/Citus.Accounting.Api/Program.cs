@@ -11406,10 +11406,10 @@ accounting.MapPost(
     });
 
 // ============================================================================
-// V1 list endpoints for the 5 new doc types. Each calls the
-// repository's ListAsync to surface a summary feed (most-recent
-// first, capped at 200 rows). The companyId comes off the query
-// string the same way the detail endpoints get it.
+// V1 list endpoints for the 7 doc types that now post end-to-end.
+// Each calls the repository's ListAsync to surface a summary feed
+// (most-recent first, capped at 200 rows). The companyId comes off
+// the query string the same way the detail endpoints get it.
 // ============================================================================
 
 accounting.MapGet(
@@ -11424,6 +11424,24 @@ accounting.MapGet(
 accounting.MapGet(
     "/refund-receipts",
     async (Guid companyId, bool? includeDrafts, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/credit-memos",
+    async (Guid companyId, bool? includeDrafts, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapGet(
+    "/vendor-credits",
+    async (Guid companyId, bool? includeDrafts, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
     {
         if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);

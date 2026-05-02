@@ -301,13 +301,18 @@ builder.Services.AddHttpClient<InvoiceClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
-// V1-pending document detail clients (one per doc-type that has its
-// own detail endpoint shape). CreditMemo + VendorCredit reuse the
-// existing CreditNoteClient / VendorCreditClient where present.
+// V1 document read clients — one per doc-type for list + detail
+// surfaces. The write side runs through BusinessWriteFlowClient.
 builder.Services.AddHttpClient<SalesReceiptClient>(
         (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<RefundReceiptClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<CreditMemoClient>(
+        (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+builder.Services.AddHttpClient<VendorCreditClient>(
         (sp, c) => { c.BaseAddress = new Uri(sp.GetRequiredService<IOptions<AppHostOptions>>().Value.AccountingApiBaseUrl, UriKind.Absolute); })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 builder.Services.AddHttpClient<BankTransferClient>(

@@ -410,7 +410,11 @@
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostCreditMemoAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Credit memo posted."); NavigationManager.NavigateTo("invoices"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Credit memo posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"credit-memos/{id:D}" : "credit-memos");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }

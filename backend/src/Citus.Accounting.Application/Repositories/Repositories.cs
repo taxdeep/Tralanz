@@ -43,10 +43,29 @@ public interface ICreditNoteDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<CreditMemoListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         CreditNoteDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+// Surfaced as "credit memo" on the frontend even though the GL artifact
+// is a credit_note — same QBO-flavoured operator label split that the
+// /credit-memos endpoint uses.
+public sealed record CreditMemoListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly DocumentDate,
+    Guid CustomerId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    DateTimeOffset? PostedAt);
 
 public interface IBillDocumentRepository
 {
@@ -79,10 +98,26 @@ public interface IVendorCreditDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<VendorCreditListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         VendorCreditDraftSaveModel draft,
         CancellationToken cancellationToken);
 }
+
+public sealed record VendorCreditListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly DocumentDate,
+    Guid VendorId,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    DateTimeOffset? PostedAt);
 
 public interface IReceiptDocumentRepository
 {

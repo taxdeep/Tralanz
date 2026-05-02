@@ -368,7 +368,11 @@
                 }).ToArray()
             };
             _lastResult = await WriteFlow.PostVendorCreditAsync(draft);
-            if (_lastResult.Succeeded) { await Message.SuccessAsync("Vendor credit posted."); NavigationManager.NavigateTo("bills"); }
+            if (_lastResult.Succeeded)
+            {
+                await Message.SuccessAsync("Vendor credit posted.");
+                NavigationManager.NavigateTo(_lastResult.DocumentId is { } id ? $"vendor-credits/{id:D}" : "vendor-credits");
+            }
             else { await Message.InfoAsync(_lastResult.Message); }
         }
         finally { _isSubmitting = false; }

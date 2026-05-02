@@ -223,6 +223,54 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             memo);
     }
 
+    public async Task<IReadOnlyList<CreditMemoListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select c.id, c.entity_number, c.credit_note_number, c.status, c.credit_note_date,
+                     c.customer_id, c.document_currency_code, c.total_amount, c.posted_at
+              from credit_notes c
+              where c.company_id = @company_id
+              order by c.credit_note_date desc, c.created_at desc
+              limit 200;
+              """
+            : """
+              select c.id, c.entity_number, c.credit_note_number, c.status, c.credit_note_date,
+                     c.customer_id, c.document_currency_code, c.total_amount, c.posted_at
+              from credit_notes c
+              where c.company_id = @company_id
+                and c.status <> 'draft'
+              order by c.credit_note_date desc, c.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<CreditMemoListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new CreditMemoListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("credit_note_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("credit_note_date")),
+                reader.GetGuid(reader.GetOrdinal("customer_id")),
+                reader.GetString(reader.GetOrdinal("document_currency_code")),
+                reader.GetDecimal(reader.GetOrdinal("total_amount")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         CreditNoteDraftSaveModel draft,
         CancellationToken cancellationToken)

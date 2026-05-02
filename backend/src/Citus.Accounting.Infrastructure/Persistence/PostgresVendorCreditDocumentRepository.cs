@@ -221,6 +221,54 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
             memo);
     }
 
+    public async Task<IReadOnlyList<VendorCreditListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select c.id, c.entity_number, c.vendor_credit_number, c.status, c.vendor_credit_date,
+                     c.vendor_id, c.document_currency_code, c.total_amount, c.posted_at
+              from vendor_credits c
+              where c.company_id = @company_id
+              order by c.vendor_credit_date desc, c.created_at desc
+              limit 200;
+              """
+            : """
+              select c.id, c.entity_number, c.vendor_credit_number, c.status, c.vendor_credit_date,
+                     c.vendor_id, c.document_currency_code, c.total_amount, c.posted_at
+              from vendor_credits c
+              where c.company_id = @company_id
+                and c.status <> 'draft'
+              order by c.vendor_credit_date desc, c.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<VendorCreditListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new VendorCreditListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("vendor_credit_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("vendor_credit_date")),
+                reader.GetGuid(reader.GetOrdinal("vendor_id")),
+                reader.GetString(reader.GetOrdinal("document_currency_code")),
+                reader.GetDecimal(reader.GetOrdinal("total_amount")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         VendorCreditDraftSaveModel draft,
         CancellationToken cancellationToken)

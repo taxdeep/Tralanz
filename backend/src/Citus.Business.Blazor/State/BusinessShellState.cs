@@ -63,13 +63,9 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Customers", Href = "customers", Icon = IconName.Users },
                 new NavMenuItem { Title = "Quotes", Href = "quotes", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Sales Orders", Href = "sales-orders", Icon = IconName.Receipt },
-                // List pages now exist for SR/RR — nav anchors there.
-                // CreditMemo still points at /new because it shares the
-                // existing credit_notes table; surfacing standalone
-                // credit memos in their own list page is a follow-on.
                 new NavMenuItem { Title = "Sales Receipts", Href = "sales-receipts", Icon = IconName.Cash },
                 new NavMenuItem { Title = "Receive Payment", Href = "receive-payment", Icon = IconName.Cash },
-                new NavMenuItem { Title = "Credit Memo", Href = "credit-memos/new", Icon = IconName.FileText },
+                new NavMenuItem { Title = "Credit Memos", Href = "credit-memos", Icon = IconName.FileText },
                 new NavMenuItem { Title = "Refund Receipts", Href = "refund-receipts", Icon = IconName.ArrowLeft }
             ]
         },
@@ -84,7 +80,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Bills", Href = "bills", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Expenses", Href = "expenses", Icon = IconName.Wallet },
                 new NavMenuItem { Title = "Pay Bills", Href = "pay-bills", Icon = IconName.Wallet },
-                new NavMenuItem { Title = "Vendor Credit", Href = "vendor-credits/new", Icon = IconName.FileText }
+                new NavMenuItem { Title = "Vendor Credits", Href = "vendor-credits", Icon = IconName.FileText }
             ]
         },
         new NavSection
