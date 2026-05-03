@@ -216,8 +216,17 @@
 
     private async Task SearchAsync(string query, bool allowEmptyQuery)
     {
-        _searchCts?.Cancel();
+        // Cancel + dispose the prior CTS, then null the field. Without
+        // the null-out the empty-query early-return below leaves
+        // _searchCts pointing at an already-disposed instance, and the
+        // *next* call's Cancel() throws ObjectDisposedException —
+        // observed as "type 100 → clear → type 100 → no dropdown".
+        // Cancel-after-Dispose itself throws, so wrap it.
+        try { _searchCts?.Cancel(); }
+        catch (ObjectDisposedException) { }
         _searchCts?.Dispose();
+        _searchCts = null;
+
         _showResults = false;
         _options = Array.Empty<UnitySearchPickerOption>();
 
