@@ -4,11 +4,14 @@ using System.Text;
 using System.Text.Json;
 using Citus.Modules.UnitySearch.Application.Contracts;
 using Citus.Modules.UnitySearch.Domain.Shared;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Infrastructure.PostgreSQL.UnitySearch;
 
-public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFactory connections) : IUnitySearchProjectionStore
+public sealed class PostgreSqlUnitySearchProjectionStore(
+    PostgreSqlConnectionFactory connections,
+    ILogger<PostgreSqlUnitySearchProjectionStore> logger) : IUnitySearchProjectionStore
 {
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(5);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -215,29 +218,91 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
 
         try
         {
+            // Delete is the only step we want to fail loud — without a clean
+            // wipe the rebuild can leave duplicate / stale rows. Every Seed*
+            // step below runs inside its own savepoint so a single bad table
+            // (column drift, missing dependency) takes out *that* entity type
+            // only — the rest of the index keeps working.
             await DeleteCompanyProjectionAsync(connection, transaction, companyId, cancellationToken);
-            await SeedStaticDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedCustomerDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedVendorDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedProductServiceDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedInventoryItemDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedInventoryStockItemDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedWarehouseDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedSalesCommercialDocumentsAsync(connection, transaction, companyId, "quote", cancellationToken);
-            await SeedSalesCommercialDocumentsAsync(connection, transaction, companyId, "sales_order", cancellationToken);
-            await SeedPurchaseOrderDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedInvoiceDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedBillDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedCreditNoteDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedVendorCreditDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedJournalEntryDocumentsAsync(connection, transaction, companyId, cancellationToken);
-            await SeedAccountDocumentsAsync(connection, transaction, companyId, cancellationToken);
+
+            await RunSeedStepAsync(connection, transaction, companyId, "static", SeedStaticDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "customer", SeedCustomerDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "vendor", SeedVendorDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "product_service", SeedProductServiceDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "inventory_item", SeedInventoryItemDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "inventory_stock_item", SeedInventoryStockItemDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "warehouse", SeedWarehouseDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "quote",
+                (c, t, id, ct) => SeedSalesCommercialDocumentsAsync(c, t, id, "quote", ct), cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "sales_order",
+                (c, t, id, ct) => SeedSalesCommercialDocumentsAsync(c, t, id, "sales_order", ct), cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "purchase_order", SeedPurchaseOrderDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "invoice", SeedInvoiceDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "bill", SeedBillDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "credit_note", SeedCreditNoteDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "vendor_credit", SeedVendorCreditDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "journal_entry", SeedJournalEntryDocumentsAsync, cancellationToken);
+            await RunSeedStepAsync(connection, transaction, companyId, "account", SeedAccountDocumentsAsync, cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs a single Seed* step inside a savepoint so a SQL failure (column
+    /// drift, missing FK target, etc.) rolls back just that entity type
+    /// rather than the whole rebuild. Failures are logged at warning level
+    /// so an operator can see which projection lost coverage; the rest of
+    /// the index continues to populate.
+    /// </summary>
+    private async Task RunSeedStepAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        string stepName,
+        Func<NpgsqlConnection, NpgsqlTransaction, Guid, CancellationToken, Task> seed,
+        CancellationToken cancellationToken)
+    {
+        var savepoint = $"sp_{stepName}";
+        await using (var begin = connection.CreateCommand())
+        {
+            begin.Transaction = transaction;
+            begin.CommandText = $"SAVEPOINT {savepoint};";
+            await begin.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        try
+        {
+            await seed(connection, transaction, companyId, cancellationToken);
+            await using var release = connection.CreateCommand();
+            release.Transaction = transaction;
+            release.CommandText = $"RELEASE SAVEPOINT {savepoint};";
+            await release.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                await using var rollback = connection.CreateCommand();
+                rollback.Transaction = transaction;
+                rollback.CommandText = $"ROLLBACK TO SAVEPOINT {savepoint};";
+                await rollback.ExecuteNonQueryAsync(cancellationToken);
+                await using var release = connection.CreateCommand();
+                release.Transaction = transaction;
+                release.CommandText = $"RELEASE SAVEPOINT {savepoint};";
+                await release.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (Exception cleanupEx)
+            {
+                logger.LogError(cleanupEx, "Search projection savepoint cleanup failed for step '{Step}' / company {CompanyId}.", stepName, companyId);
+                throw;
+            }
+            logger.LogWarning(ex, "Search projection step '{Step}' for company {CompanyId} failed and was skipped.", stepName, companyId);
         }
     }
 
