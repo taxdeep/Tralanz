@@ -443,18 +443,16 @@ else
 
     private void OnItemPicked(int index, UnitySearchPickerOption option)
     {
-        // Item-side rule: stock items debit Inventory Asset on a bill;
-        // non-stock and service items debit the COGS / expense account
-        // (the existing Item form already labels that field as
-        // "COGS / expense"). If neither account is configured on the
-        // item, the line ends up with no Category and the existing
-        // "every line needs a category" validator catches it at save.
+        // Bill picker is restricted to stock-kind items (BillItemPicker
+        // policy → InventoryStockItem). The auto-fill account is always
+        // the item's Inventory Asset account — receiving stock on a bill
+        // debits inventory, never an expense. If the item lacks one
+        // configured, the existing "every line needs a category"
+        // validator catches it at save.
         Guid? expenseAccountId = null;
         if (_itemsById.TryGetValue(option.SourceId, out var item))
         {
-            expenseAccountId = string.Equals(item.ItemKind, "stock", StringComparison.OrdinalIgnoreCase)
-                ? item.DefaultInventoryAssetAccountId
-                : item.DefaultCogsAccountId;
+            expenseAccountId = item.DefaultInventoryAssetAccountId;
         }
         UpdateLine(index, l => l with
         {

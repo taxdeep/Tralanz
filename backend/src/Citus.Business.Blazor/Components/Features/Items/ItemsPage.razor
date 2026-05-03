@@ -144,20 +144,17 @@
                                    OnAccountSelected="@(a => _draft.DefaultInventoryAssetAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultInventoryAssetAccountId = null)" />
                 </div>
-            }
-            <div>
-                <label class="text-sm font-medium block mb-1">COGS / expense account</label>
-                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                               Context="items.cogs"
-                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                               SelectedId="@_draft.DefaultCogsAccountId"
-                               SelectedDisplayText="@AccountDisplay(_draft.DefaultCogsAccountId)"
-                               OnAccountSelected="@(a => _draft.DefaultCogsAccountId = a.Id)"
-                               OnCleared="@(() => _draft.DefaultCogsAccountId = null)" />
-            </div>
-            @if (_draft.ItemKind == "stock")
-            {
+                <div>
+                    <label class="text-sm font-medium block mb-1">COGS account</label>
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="items.cogs"
+                                   DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                   SelectedId="@_draft.DefaultCogsAccountId"
+                                   SelectedDisplayText="@AccountDisplay(_draft.DefaultCogsAccountId)"
+                                   OnAccountSelected="@(a => _draft.DefaultCogsAccountId = a.Id)"
+                                   OnCleared="@(() => _draft.DefaultCogsAccountId = null)" />
+                </div>
                 <div>
                     <label class="text-sm font-medium block mb-1">Write-off account</label>
                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
@@ -377,7 +374,7 @@ else
                 BackorderMode: _draft.ItemKind == "stock" ? _draft.BackorderMode : null,
                 LowStockActivity: _draft.ItemKind == "stock" ? _draft.LowStockActivity : null,
                 DefaultInventoryAssetAccountId: _draft.ItemKind == "stock" ? _draft.DefaultInventoryAssetAccountId : null,
-                DefaultCogsAccountId: _draft.DefaultCogsAccountId,
+                DefaultCogsAccountId: _draft.ItemKind == "stock" ? _draft.DefaultCogsAccountId : null,
                 DefaultWriteOffAccountId: _draft.ItemKind == "stock" ? _draft.DefaultWriteOffAccountId : null,
                 DefaultPurchaseVarianceAccountId: _draft.ItemKind == "stock" ? _draft.DefaultPurchaseVarianceAccountId : null,
                 DefaultSalesRevenueAccountId: _draft.DefaultSalesRevenueAccountId,

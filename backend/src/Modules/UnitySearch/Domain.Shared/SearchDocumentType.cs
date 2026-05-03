@@ -8,6 +8,7 @@ public static class SearchDocumentType
     public const string Vendor = "vendor";
     public const string ProductService = "product_service";
     public const string InventoryItem = "inventory_item";
+    public const string InventoryStockItem = "inventory_stock_item";
     public const string Warehouse = "warehouse";
     public const string Quote = "quote";
     public const string SalesOrder = "sales_order";

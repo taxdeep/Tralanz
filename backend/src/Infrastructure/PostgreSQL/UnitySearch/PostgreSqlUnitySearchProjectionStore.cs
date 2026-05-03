@@ -221,6 +221,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
             await SeedVendorDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedProductServiceDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedInventoryItemDocumentsAsync(connection, transaction, companyId, cancellationToken);
+            await SeedInventoryStockItemDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedWarehouseDocumentsAsync(connection, transaction, companyId, cancellationToken);
             await SeedSalesCommercialDocumentsAsync(connection, transaction, companyId, "quote", cancellationToken);
             await SeedSalesCommercialDocumentsAsync(connection, transaction, companyId, "sales_order", cancellationToken);
@@ -525,12 +526,12 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               item.id,
               'products',
               item.name,
-              concat_ws(' | ', item.entity_number, item.uom_code, item.stock_policy, case when item.is_active then 'active' else 'inactive' end),
-              concat_ws(' ', item.name, item.entity_number, coalesce(item.description, ''), coalesce(item.uom_code, ''), coalesce(item.stock_policy, '')),
-              to_tsvector('simple', concat_ws(' ', item.name, item.entity_number, coalesce(item.description, ''), coalesce(item.uom_code, ''), coalesce(item.stock_policy, ''))),
-              lower(coalesce(item.entity_number, item.name)),
-              '/company/inventory-foundation',
-              jsonb_build_object('entityNumber', item.entity_number, 'uomCode', item.uom_code, 'stockPolicy', item.stock_policy),
+              concat_ws(' | ', item.item_code, item.item_kind, coalesce(item.stock_uom_code, ''), case when item.is_active then 'active' else 'inactive' end),
+              concat_ws(' ', item.name, item.item_code, item.item_kind, coalesce(item.description, ''), coalesce(item.stock_uom_code, '')),
+              to_tsvector('simple', concat_ws(' ', item.name, item.item_code, item.item_kind, coalesce(item.description, ''), coalesce(item.stock_uom_code, ''))),
+              lower(coalesce(item.item_code, item.name)),
+              '/items',
+              jsonb_build_object('itemCode', item.item_code, 'itemKind', item.item_kind, 'stockUomCode', item.stock_uom_code),
               null,
               null,
               item.is_active,
@@ -539,6 +540,52 @@ public sealed class PostgreSqlUnitySearchProjectionStore(PostgreSqlConnectionFac
               1
             from inventory_items item
             where item.company_id = @company_id;
+            """,
+            cancellationToken);
+    }
+
+    private static async Task SeedInventoryStockItemDocumentsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, transaction, "public.inventory_items", cancellationToken))
+        {
+            return;
+        }
+
+        // Stock-only mirror of the inventory_item projection — used by Bill /
+        // PO line pickers that should only surface inventory-tracked items.
+        // Stock items end up indexed twice (once as 'inventory_item', once
+        // as 'inventory_stock_item'); the redundancy is small (one extra
+        // row per stock item) and keeps policy filtering trivial.
+        await ExecuteCompanyProjectionStepAsync(
+            connection,
+            transaction,
+            companyId,
+            """
+            insert into search_documents (
+              company_id, entity_type, source_id, group_key, primary_text, secondary_text, search_text, search_vector,
+              exact_code_norm, navigation_href, metadata_json, effective_date, amount, is_active, is_voided, rank_boost, version
+            )
+            select
+              item.company_id,
+              'inventory_stock_item',
+              item.id,
+              'products',
+              item.name,
+              concat_ws(' | ', item.item_code, coalesce(item.stock_uom_code, ''), case when item.is_active then 'active' else 'inactive' end),
+              concat_ws(' ', item.name, item.item_code, coalesce(item.description, ''), coalesce(item.stock_uom_code, '')),
+              to_tsvector('simple', concat_ws(' ', item.name, item.item_code, coalesce(item.description, ''), coalesce(item.stock_uom_code, ''))),
+              lower(coalesce(item.item_code, item.name)),
+              '/items',
+              jsonb_build_object('itemCode', item.item_code, 'itemKind', item.item_kind, 'stockUomCode', item.stock_uom_code),
+              null,
+              null,
+              item.is_active,
+              false,
+              24,
+              1
+            from inventory_items item
+            where item.company_id = @company_id
+              and item.item_kind = 'stock';
             """,
             cancellationToken);
     }
