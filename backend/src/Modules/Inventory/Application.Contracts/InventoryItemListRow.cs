@@ -24,6 +24,7 @@ public sealed record class InventoryItemListRow(
     Guid? DefaultCogsAccountId,
     Guid? DefaultWriteOffAccountId,
     Guid? DefaultPurchaseVarianceAccountId,
+    Guid? DefaultSalesRevenueAccountId,
     decimal? DefaultSalesPrice,
     decimal? DefaultPurchasePrice,
     Guid? DefaultSalesTaxCodeId,

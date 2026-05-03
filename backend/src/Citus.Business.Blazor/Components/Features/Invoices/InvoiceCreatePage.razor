@@ -1,11 +1,12 @@
 @page "/invoices/new"
 
 @using Citus.Modules.UnitySearch.Blazor
-@using Citus.Modules.UnitySearch.Domain.Shared
 
 @inject BusinessShellState ShellState
 @inject BusinessWriteFlowClient WriteFlow
 @inject CustomerClient CustomerClient
+@inject ItemClient ItemClient
+@inject AccountClient AccountClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -109,7 +110,6 @@
                         <th>Description</th>
                         <th class="text-right" style="width: 6rem">Qty</th>
                         <th class="text-right" style="width: 9rem">Unit price</th>
-                        <th style="width: 7rem">Account</th>
                         <th style="width: 6rem">Tax</th>
                         <th class="text-right" style="width: 9rem">Line total</th>
                         <th style="width: 3rem"></th>
@@ -135,11 +135,10 @@
                             </td>
                             <td>
                                 @* Item / Service picker. Uses the shared sales item-service wrapper
-                                   (active product_service + inventory_item rows). On select
-                                   we copy the display text into Description as a starting
-                                   point — operators can refine. Pre-fill of unit price /
-                                   account from the item master is a future iteration; for
-                                   now Description seeds and the rest is manual. *@
+                                   (active product_service + inventory_item rows). On select we
+                                   pull the item's DefaultSalesRevenueAccountId and pre-fill the
+                                   line's revenue account from it — sales lines have no separate
+                                   Account column; the Item is the single source of truth. *@
                                 <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
                                                    UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
                                                    Placeholder="Search items…"
@@ -149,22 +148,21 @@
                                                    SelectedDisplayText="@line.ItemDisplay"
                                                    OnItemSelected="@(option => OnItemPicked(i, option))"
                                                    OnCleared="@(() => OnItemCleared(i))" />
+                                @if (line.ItemId != Guid.Empty)
+                                {
+                                    @if (!string.IsNullOrWhiteSpace(line.AccountDisplay))
+                                    {
+                                        <div class="text-fg-subtle text-xs mt-1">→ @line.AccountDisplay</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-error text-xs mt-1">Item has no sales/revenue account — set one in Products &amp; Services.</div>
+                                    }
+                                }
                             </td>
                             <td><CitusInput TValue="string" Value="@line.Description" ValueChanged="@(v => Update(i, l => l with { Description = v ?? string.Empty }))" Size="CitusButtonSize.Small" Placeholder="Free-form description" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.Quantity" ValueChanged="@(v => Update(i, l => l with { Quantity = v }))" Min="0" Class="citus-control-full" /></td>
                             <td><RadzenNumeric TValue="decimal" Value="@line.UnitPrice" ValueChanged="@(v => Update(i, l => l with { UnitPrice = v }))" Min="0" Class="citus-control-full" /></td>
-                            <td>
-                                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
-                                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
-                                               Context="@SearchScopeContext.AccountPicker"
-                                               AllowedRootTypes="revenue"
-                                               SelectedId="@line.AccountId"
-                                               SelectedDisplayText="@line.AccountDisplay"
-                                               Placeholder="Revenue account..."
-                                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
-                                               OnAccountSelected="@(account => OnAccountSelected(i, account))"
-                                               OnCleared="@(() => OnAccountCleared(i))" />
-                            </td>
                             <td>
                                 <TaxCodePicker SelectedId="@line.TaxCodeId"
                                                SelectedDisplayText="@line.TaxCode"
@@ -182,7 +180,7 @@
                         </tr>
                     }
                     <tr class="citus-data-table__total">
-                        <td colspan="7" class="text-right font-medium">Total</td>
+                        <td colspan="6" class="text-right font-medium">Total</td>
                         <td class="text-right font-semibold">@FormatAmount(_total)</td>
                         <td></td>
                     </tr>
@@ -278,9 +276,22 @@
     private string? _validation;
     private WriteFlowResult? _lastResult;
 
+    // Item + account caches let the Item picker auto-fill each line's revenue
+    // account without a per-pick round-trip. Loaded once on page init; stale
+    // entries fall back to "missing account" and surface the validation error.
+    private Dictionary<Guid, ItemSummary> _itemsById = new();
+    private Dictionary<Guid, AccountSummary> _accountsById = new();
+
     private decimal _total => _lines.Sum(l => l.Quantity * l.UnitPrice);
 
-    protected override void OnInitialized() => _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+    protected override async Task OnInitializedAsync()
+    {
+        _currency = ShellState.ActiveCompany.BaseCurrencyCode;
+        var items = await ItemClient.ListAsync(includeInactive: false);
+        _itemsById = items.ToDictionary(i => i.Id);
+        var accounts = await AccountClient.ListAsync();
+        _accountsById = accounts.ToDictionary(a => a.Id);
+    }
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)
     {
@@ -352,38 +363,48 @@
 
     private void OnItemPicked(int i, UnitySearchPickerOption option)
     {
-        // Seed Description from the picked item — the operator can refine
-        // / replace it. Pre-fill of unit price + account from the catalog
-        // master is deferred until the catalog client surfaces those
-        // fields. ItemId is recorded for future reporting / template use
-        // even though the wire shape (DocumentLineDraft) doesn't yet ship
-        // it to the backend.
+        // Auto-fill the line's revenue account from the picked item's
+        // DefaultSalesRevenueAccountId. Sales lines have no manual Account
+        // column — the item is the single source of truth. If the item
+        // (or its account) is missing locally, we leave Account fields
+        // blank and the inline error / submit-time validation guides the
+        // operator to fix the item master.
+        var (accountId, accountCode, accountDisplay) = ResolveItemAccount(option.SourceId);
         Update(i, l => l with
         {
             ItemId = option.SourceId,
             ItemDisplay = option.DisplayText,
             Description = string.IsNullOrWhiteSpace(l.Description) ? option.PrimaryText : l.Description,
+            AccountId = accountId,
+            AccountCode = accountCode,
+            AccountDisplay = accountDisplay,
         });
     }
 
     private void OnItemCleared(int i)
     {
-        Update(i, l => l with { ItemId = Guid.Empty, ItemDisplay = string.Empty });
-    }
-
-    private void OnAccountSelected(int i, AccountSummary account)
-    {
         Update(i, l => l with
         {
-            AccountId = account.Id,
-            AccountDisplay = $"{account.Code} {account.Name}",
-            AccountCode = account.Code
+            ItemId = Guid.Empty,
+            ItemDisplay = string.Empty,
+            AccountId = null,
+            AccountCode = string.Empty,
+            AccountDisplay = string.Empty,
         });
     }
 
-    private void OnAccountCleared(int i)
+    private (Guid? AccountId, string AccountCode, string AccountDisplay) ResolveItemAccount(Guid itemId)
     {
-        Update(i, l => l with { AccountId = null, AccountDisplay = string.Empty, AccountCode = string.Empty });
+        if (!_itemsById.TryGetValue(itemId, out var item) || !item.DefaultSalesRevenueAccountId.HasValue)
+        {
+            return (null, string.Empty, string.Empty);
+        }
+        var accountId = item.DefaultSalesRevenueAccountId.Value;
+        if (!_accountsById.TryGetValue(accountId, out var account))
+        {
+            return (accountId, string.Empty, string.Empty);
+        }
+        return (accountId, account.Code, $"{account.Code} {account.Name}");
     }
 
     private void OnTaxCodeSelected(int i, TaxCodeSummary tax)
@@ -411,8 +432,9 @@
         // before validating — they're scaffolding, not user intent.
         var meaningful = _lines.Where(l => l.HasContent).ToArray();
         if (meaningful.Length == 0) { _validation = "Add at least one invoice line."; return; }
+        if (meaningful.Any(l => l.ItemId == Guid.Empty)) { _validation = "Every line needs an item / service picked."; return; }
         if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.Description))) { _validation = "Every line needs a description."; return; }
-        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "Every line needs a revenue account code."; return; }
+        if (meaningful.Any(l => string.IsNullOrWhiteSpace(l.AccountCode))) { _validation = "One or more items have no sales / revenue account configured. Set it in Products & Services and re-pick."; return; }
         var total = meaningful.Sum(l => l.Quantity * l.UnitPrice);
         if (total <= 0) { _validation = "Invoice total must be greater than zero."; return; }
 

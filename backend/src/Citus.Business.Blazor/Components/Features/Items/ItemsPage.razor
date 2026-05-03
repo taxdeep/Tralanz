@@ -115,9 +115,22 @@
     <section class="citus-panel mb-4">
         <h2 class="citus-panel__title">Accounting defaults</h2>
         <p class="text-fg-muted text-sm mb-3">
-            Suggested accounts when this item appears on a document. The user can still override per line.
+            Sales revenue is required — invoice lines pick this account up automatically when the item is selected. Other accounts are suggestions and can be overridden per line.
         </p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+                <label class="text-sm font-medium block mb-1">Sales / revenue account <span class="text-error">*</span></label>
+                <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                               UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                               Context="items.sales_revenue"
+                               DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                               SelectedId="@_draft.DefaultSalesRevenueAccountId"
+                               SelectedDisplayText="@AccountDisplay(_draft.DefaultSalesRevenueAccountId)"
+                               Placeholder="Revenue account..."
+                               AllowedRootTypes="revenue"
+                               OnAccountSelected="@(a => _draft.DefaultSalesRevenueAccountId = a.Id)"
+                               OnCleared="@(() => _draft.DefaultSalesRevenueAccountId = null)" />
+            </div>
             @if (_draft.ItemKind == "stock")
             {
                 <div>
@@ -348,6 +361,7 @@ else
         _validation = null;
         if (string.IsNullOrWhiteSpace(_draft.ItemCode)) { _validation = "Item code is required."; return; }
         if (string.IsNullOrWhiteSpace(_draft.Name)) { _validation = "Name is required."; return; }
+        if (!_draft.DefaultSalesRevenueAccountId.HasValue) { _validation = "Sales / revenue account is required — invoice lines need it to post."; return; }
 
         _isSubmitting = true;
         try
@@ -366,6 +380,7 @@ else
                 DefaultCogsAccountId: _draft.DefaultCogsAccountId,
                 DefaultWriteOffAccountId: _draft.ItemKind == "stock" ? _draft.DefaultWriteOffAccountId : null,
                 DefaultPurchaseVarianceAccountId: _draft.ItemKind == "stock" ? _draft.DefaultPurchaseVarianceAccountId : null,
+                DefaultSalesRevenueAccountId: _draft.DefaultSalesRevenueAccountId,
                 DefaultSalesPrice: _draft.DefaultSalesPrice,
                 DefaultPurchasePrice: _draft.DefaultPurchasePrice,
                 DefaultSalesTaxCodeId: _draft.DefaultSalesTaxCodeId == Guid.Empty ? null : _draft.DefaultSalesTaxCodeId,
@@ -441,6 +456,7 @@ else
         public Guid? DefaultCogsAccountId { get; set; }
         public Guid? DefaultWriteOffAccountId { get; set; }
         public Guid? DefaultPurchaseVarianceAccountId { get; set; }
+        public Guid? DefaultSalesRevenueAccountId { get; set; }
         public decimal? DefaultSalesPrice { get; set; }
         public decimal? DefaultPurchasePrice { get; set; }
         public Guid DefaultSalesTaxCodeId { get; set; }
@@ -464,6 +480,7 @@ else
             DefaultCogsAccountId = item.DefaultCogsAccountId,
             DefaultWriteOffAccountId = item.DefaultWriteOffAccountId,
             DefaultPurchaseVarianceAccountId = item.DefaultPurchaseVarianceAccountId,
+            DefaultSalesRevenueAccountId = item.DefaultSalesRevenueAccountId,
             DefaultSalesPrice = item.DefaultSalesPrice,
             DefaultPurchasePrice = item.DefaultPurchasePrice,
             DefaultSalesTaxCodeId = item.DefaultSalesTaxCodeId ?? Guid.Empty,

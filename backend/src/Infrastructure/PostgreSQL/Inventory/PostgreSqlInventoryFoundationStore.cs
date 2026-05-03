@@ -159,6 +159,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                         default_cogs_account_id = @default_cogs_account_id,
                         default_writeoff_account_id = @default_writeoff_account_id,
                         default_purchase_variance_account_id = @default_purchase_variance_account_id,
+                        default_sales_revenue_account_id = @default_sales_revenue_account_id,
                         default_sales_price = @default_sales_price,
                         default_purchase_price = @default_purchase_price,
                         default_sales_tax_code_id = @default_sales_tax_code_id,
@@ -190,6 +191,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 updateCommand.Parameters.AddWithValue(
                     "default_purchase_variance_account_id",
                     request.DefaultPurchaseVarianceAccountId.HasValue ? (object)request.DefaultPurchaseVarianceAccountId.Value : DBNull.Value);
+                updateCommand.Parameters.AddWithValue(
+                    "default_sales_revenue_account_id",
+                    request.DefaultSalesRevenueAccountId.HasValue ? (object)request.DefaultSalesRevenueAccountId.Value : DBNull.Value);
                 updateCommand.Parameters.AddWithValue(
                     "default_sales_price",
                     request.DefaultSalesPrice.HasValue ? (object)request.DefaultSalesPrice.Value : DBNull.Value);
@@ -233,6 +237,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   default_cogs_account_id,
                   default_writeoff_account_id,
                   default_purchase_variance_account_id,
+                  default_sales_revenue_account_id,
                   default_sales_price,
                   default_purchase_price,
                   default_sales_tax_code_id,
@@ -257,6 +262,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   @default_cogs_account_id,
                   @default_writeoff_account_id,
                   @default_purchase_variance_account_id,
+                  @default_sales_revenue_account_id,
                   @default_sales_price,
                   @default_purchase_price,
                   @default_sales_tax_code_id,
@@ -289,6 +295,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             insertCommand.Parameters.AddWithValue(
                 "default_purchase_variance_account_id",
                 request.DefaultPurchaseVarianceAccountId.HasValue ? (object)request.DefaultPurchaseVarianceAccountId.Value : DBNull.Value);
+            insertCommand.Parameters.AddWithValue(
+                "default_sales_revenue_account_id",
+                request.DefaultSalesRevenueAccountId.HasValue ? (object)request.DefaultSalesRevenueAccountId.Value : DBNull.Value);
             insertCommand.Parameters.AddWithValue(
                 "default_sales_price",
                 request.DefaultSalesPrice.HasValue ? (object)request.DefaultSalesPrice.Value : DBNull.Value);
@@ -374,6 +383,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               default_cogs_account_id,
               default_writeoff_account_id,
               default_purchase_variance_account_id,
+              default_sales_revenue_account_id,
               default_sales_price,
               default_purchase_price,
               default_sales_tax_code_id,
@@ -412,6 +422,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 ReadNullableGuid(reader, "default_cogs_account_id"),
                 ReadNullableGuid(reader, "default_writeoff_account_id"),
                 ReadNullableGuid(reader, "default_purchase_variance_account_id"),
+                ReadNullableGuid(reader, "default_sales_revenue_account_id"),
                 ReadNullableDecimal(reader, "default_sales_price"),
                 ReadNullableDecimal(reader, "default_purchase_price"),
                 ReadNullableGuid(reader, "default_sales_tax_code_id"),
@@ -655,6 +666,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 alter table inventory_items
                   add column if not exists default_purchase_tax_code_id uuid null references tax_codes(id);
+
+                alter table inventory_items
+                  add column if not exists default_sales_revenue_account_id uuid null references accounts(id);
 
                 create table if not exists inventory_warehouses (
                   id uuid primary key default gen_random_uuid(),

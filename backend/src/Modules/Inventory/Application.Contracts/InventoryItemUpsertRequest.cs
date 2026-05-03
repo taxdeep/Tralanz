@@ -19,6 +19,7 @@ public sealed record class InventoryItemUpsertRequest(
     Guid? DefaultCogsAccountId,
     Guid? DefaultWriteOffAccountId,
     Guid? DefaultPurchaseVarianceAccountId,
+    Guid? DefaultSalesRevenueAccountId,
     decimal? DefaultSalesPrice,
     decimal? DefaultPurchasePrice,
     Guid? DefaultSalesTaxCodeId,
