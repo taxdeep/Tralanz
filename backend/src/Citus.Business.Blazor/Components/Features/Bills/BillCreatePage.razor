@@ -3,6 +3,8 @@
 
 @using Radzen
 @using Radzen.Blazor
+@using Citus.Modules.UnitySearch.Blazor
+@using Citus.Modules.UnitySearch.Domain.Shared
 
 @inject BusinessShellState ShellState
 @inject VendorClient VendorClient
@@ -10,6 +12,7 @@
 @inject TaxCodeClient TaxCodeClient
 @inject PaymentTermClient PaymentTermClient
 @inject BillClient BillClient
+@inject ItemClient ItemClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
@@ -97,10 +100,11 @@ else
                     <thead>
                         <tr>
                             <th style="width: 3rem">#</th>
-                            <th style="width: 18rem">Category</th>
+                            <th style="width: 14rem">Item / Service</th>
+                            <th style="width: 14rem">Category</th>
                             <th>Description</th>
-                            <th style="width: 9rem">Tax</th>
-                            <th class="text-right" style="width: 9rem">Tax amt</th>
+                            <th style="width: 8rem">Tax</th>
+                            <th class="text-right" style="width: 8rem">Tax amt</th>
                             <th class="text-right" style="width: 10rem">Amount</th>
                             <th style="width: 3rem"></th>
                         </tr>
@@ -110,15 +114,36 @@ else
                         {
                             var index = i;
                             var line = _lines[index];
+                            var hasItem = line.ItemId != Guid.Empty;
                             <tr>
                                 <td>@(index + 1)</td>
+                                <td>
+                                    @* Item / Service picker (optional). On pick we look up
+                                       the item and dispatch its purchase account: stock
+                                       items → DefaultInventoryAssetAccountId; non-stock /
+                                       service → DefaultCogsAccountId (used as expense).
+                                       Picking an item locks the Category column so the
+                                       item stays the single source of truth. Clearing the
+                                       item re-opens Category for manual entry. *@
+                                    <ItemServicePicker CompanyId="@ShellState.ActiveCompany.Id"
+                                                       UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                                       Context="@SearchScopeContext.BillItemPicker"
+                                                       Placeholder="Optional…"
+                                                       Take="6"
+                                                       SourceRoute="/bills/new"
+                                                       SelectedId="@(line.ItemId == Guid.Empty ? null : line.ItemId)"
+                                                       SelectedDisplayText="@line.ItemDisplay"
+                                                       OnItemSelected="@(option => OnItemPicked(index, option))"
+                                                       OnCleared="@(() => OnItemCleared(index))" />
+                                </td>
                                 <td>
                                     <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
                                                    UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
                                                    Context="bill.line.category"
+                                                   Disabled="@hasItem"
                                                    SelectedId="@line.ExpenseAccountId"
                                                    SelectedDisplayText="@GetAccountLabel(line.ExpenseAccountId)"
-                                                   Placeholder="Pick a category…"
+                                                   Placeholder="@(hasItem ? "From item" : "Pick a category…")"
                                                    OnAccountSelected="@(acct => UpdateLine(index, l => l with { ExpenseAccountId = acct.Id }))"
                                                    OnCleared="@(() => UpdateLine(index, l => l with { ExpenseAccountId = null }))" />
                                 </td>
@@ -257,6 +282,10 @@ else
     private IReadOnlyList<AccountOption> _accounts = Array.Empty<AccountOption>();
     private IReadOnlyList<TaxCodeSummary> _taxCodes = Array.Empty<TaxCodeSummary>();
     private IReadOnlyList<PaymentTermSummary> _paymentTerms = Array.Empty<PaymentTermSummary>();
+    // Item lookup powers the Item-pick → Category auto-fill on bill lines.
+    // Loaded once on page init alongside accounts; the picker still searches
+    // server-side, this dict only resolves SourceId → ItemSummary on pick.
+    private Dictionary<Guid, ItemSummary> _itemsById = new();
 
     private Guid? _vendorId;
     private Guid? _paymentTermId;
@@ -313,7 +342,8 @@ else
             var accountsTask = AccountClient.ListAsync();
             var taxTask = TaxCodeClient.ListAsync(appliesTo: "purchase");
             var termsTask = PaymentTermClient.ListAsync(includeInactive: false);
-            await Task.WhenAll(vendorsTask, accountsTask, taxTask, termsTask);
+            var itemsTask = ItemClient.ListAsync(includeInactive: false);
+            await Task.WhenAll(vendorsTask, accountsTask, taxTask, termsTask, itemsTask);
 
             _vendors = vendorsTask.Result;
             _accountsRaw = accountsTask.Result;
@@ -323,6 +353,7 @@ else
                 .ToList();
             _taxCodes = taxTask.Result;
             _paymentTerms = termsTask.Result;
+            _itemsById = itemsTask.Result.ToDictionary(i => i.Id);
 
             _billId = BillId;
             if (BillId is { } id)
@@ -401,11 +432,47 @@ else
         if (index < 0 || index >= _lines.Count) return;
         var current = _lines[index];
         var updated = mutate(current);
+        current.ItemId = updated.ItemId;
+        current.ItemDisplay = updated.ItemDisplay;
         current.ExpenseAccountId = updated.ExpenseAccountId;
         current.Description = updated.Description;
         current.LineAmount = updated.LineAmount;
         current.TaxCodeId = updated.TaxCodeId;
         current.TaxAmount = updated.TaxAmount;
+    }
+
+    private void OnItemPicked(int index, UnitySearchPickerOption option)
+    {
+        // Item-side rule: stock items debit Inventory Asset on a bill;
+        // non-stock and service items debit the COGS / expense account
+        // (the existing Item form already labels that field as
+        // "COGS / expense"). If neither account is configured on the
+        // item, the line ends up with no Category and the existing
+        // "every line needs a category" validator catches it at save.
+        Guid? expenseAccountId = null;
+        if (_itemsById.TryGetValue(option.SourceId, out var item))
+        {
+            expenseAccountId = string.Equals(item.ItemKind, "stock", StringComparison.OrdinalIgnoreCase)
+                ? item.DefaultInventoryAssetAccountId
+                : item.DefaultCogsAccountId;
+        }
+        UpdateLine(index, l => l with
+        {
+            ItemId = option.SourceId,
+            ItemDisplay = option.DisplayText,
+            ExpenseAccountId = expenseAccountId,
+            Description = string.IsNullOrWhiteSpace(l.Description) ? option.PrimaryText : l.Description,
+        });
+    }
+
+    private void OnItemCleared(int index)
+    {
+        UpdateLine(index, l => l with
+        {
+            ItemId = Guid.Empty,
+            ItemDisplay = string.Empty,
+            ExpenseAccountId = null,
+        });
     }
 
     private void AddLine() => _lines.Add(new LineDraft());
@@ -507,6 +574,11 @@ else
 
     private sealed record LineDraft
     {
+        // ItemId / ItemDisplay are UI-only — the wire shape (BillLinePayload)
+        // posts only the resolved ExpenseAccountId. We don't persist which
+        // item drove the line yet; matches the precedent on the sales side.
+        public Guid ItemId { get; set; }
+        public string ItemDisplay { get; set; } = string.Empty;
         public Guid? ExpenseAccountId { get; set; }
         public string Description { get; set; } = string.Empty;
         public decimal LineAmount { get; set; }

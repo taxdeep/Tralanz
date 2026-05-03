@@ -25,6 +25,7 @@ public static class SearchScopeContext
     public const string InvoiceCustomerPicker = "invoice.customer_picker";
     public const string InvoiceItemPicker = "invoice.item_picker";
     public const string BillVendorPicker = "bill.vendor_picker";
+    public const string BillItemPicker = "bill.item_picker";
 
     /// <summary>
     /// Generic vendor picker for AP-side documents that don't have their

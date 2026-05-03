@@ -158,6 +158,11 @@ public sealed class UnitySearchPolicyRegistry
                 new[] { SearchDocumentType.Vendor },
                 EnforceActiveOnly: true,
                 EnforceBusinessEligibility: true),
+            [SearchScopeContext.BillItemPicker] = new(
+                SearchScopeContext.BillItemPicker,
+                new[] { SearchDocumentType.ProductService, SearchDocumentType.InventoryItem },
+                EnforceActiveOnly: true,
+                EnforceBusinessEligibility: true),
             [SearchScopeContext.JournalEntryAccountPicker] = new(
                 SearchScopeContext.JournalEntryAccountPicker,
                 new[] { SearchDocumentType.Account },

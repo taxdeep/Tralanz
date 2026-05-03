@@ -3,7 +3,7 @@
 
 <UnitySearchPicker CompanyId="@CompanyId"
                    UserId="@UserId"
-                   Context="@SearchScopeContext.SalesItemServicePicker"
+                   Context="@Context"
                    SelectedId="@SelectedId"
                    SelectedDisplayText="@SelectedDisplayText"
                    Placeholder="@Placeholder"
@@ -27,6 +27,13 @@
     [Parameter] public bool AllowClear { get; set; } = true;
     [Parameter] public int Take { get; set; } = 8;
     [Parameter] public string? SourceRoute { get; set; }
+    /// <summary>
+    /// Search-scope context. Defaults to the sales-side picker so existing
+    /// invoice / sales-receipt callers don't break. Bill / expense surfaces
+    /// pass <see cref="SearchScopeContext.BillItemPicker"/> so per-context
+    /// ranking and click-history stay separate.
+    /// </summary>
+    [Parameter] public string Context { get; set; } = SearchScopeContext.SalesItemServicePicker;
     [Parameter] public EventCallback<UnitySearchPickerOption> OnItemSelected { get; set; }
     [Parameter] public EventCallback OnCleared { get; set; }
     [Parameter] public EventCallback<string> OnCreateRequested { get; set; }
