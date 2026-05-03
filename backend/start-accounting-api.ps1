@@ -13,6 +13,9 @@ $stateDir = Join-Path $env:TEMP "citus-accounting-api"
 $pidFile = Join-Path $stateDir "accounting-api-$Port.pid"
 $healthUrl = "http://127.0.0.1:$Port/health"
 $rootUrl = "http://127.0.0.1:$Port/"
+$logDir = Join-Path $backendRoot "logs"
+$logFile = Join-Path $logDir "accounting-api.log"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 if (-not (Test-Path $projectPath)) {
     throw "Could not find project file at $projectPath."
@@ -89,9 +92,15 @@ if ($Foreground) {
 
 $argumentLine = [string]::Join(" ", $arguments)
 
+# Background launches go through a hidden PowerShell host, so the dotnet
+# process has no console attached. Redirect stdout (where the .NET console
+# logger writes everything: Information + Warning + Error) to a file in
+# logs/ so warnings — like fault-isolated search-projection step failures —
+# survive long enough to debug. Tail with:
+#   Get-Content backend\logs\accounting-api.log -Wait -Tail 100
 $childScript = @"
 Set-Location '$backendRoot'
-& '$dotnet' $argumentLine
+& '$dotnet' $argumentLine *>> '$logFile'
 "@
 
 $encodedChildScript = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($childScript))
