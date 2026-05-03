@@ -7,6 +7,7 @@
 @inject BusinessWriteFlowClient WriteFlow
 @inject TaxCodeClient TaxCodeClient
 @inject JournalEntryReviewClient JournalEntryReviewClient
+@inject CompanyCurrencyClient CompanyCurrencyClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -89,14 +90,30 @@
                            value="@(_date?.ToString("yyyy-MM-dd"))"
                            @onchange="OnDateChanged" />
                 </label>
+                @* Transaction currency picker — only currencies the company has
+                   enabled (Settings → Multi-currency) appear, base currency
+                   always included. Same pattern as CounterpartyForm. The FX
+                   rate inline below auto-fetches on currency change; switching
+                   currency clears the prior rate so FxRateInline re-fills
+                   from the recommendation API. *@
                 <label class="citus-form-field">
                     <span class="citus-form-field__label">Transaction currency</span>
-                    <input type="text"
-                           class="citus-form-field__input"
-                           placeholder="USD"
-                           value="@_currency"
-                           @oninput="@(e => _currency = e.Value?.ToString() ?? string.Empty)"
-                           disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled)" />
+                    <select class="citus-form-field__input"
+                            value="@_currency"
+                            @onchange="OnCurrencyChanged"
+                            disabled="@(!ShellState.ActiveCompany.MultiCurrencyEnabled || _isLoadingCurrencies)">
+                        @foreach (var entry in _enabledCurrencies)
+                        {
+                            <option value="@entry.CurrencyCode">
+                                @entry.CurrencyCode — @entry.CurrencyName@(entry.IsBaseCurrency ? " (base)" : "")
+                            </option>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_currency)
+                             && _enabledCurrencies.All(c => !string.Equals(c.CurrencyCode, _currency, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            <option value="@_currency">@_currency (no longer enabled)</option>
+                        }
+                    </select>
                     @if (!ShellState.ActiveCompany.MultiCurrencyEnabled)
                     {
                         <span class="text-fg-subtle text-xs mt-1">
@@ -327,6 +344,13 @@
     private List<TaxCodeSummary> _taxCodes = new();
     private bool _isLoadingTaxCodes;
 
+    // Enabled currencies for the Transaction currency dropdown. Loaded
+    // once at page init from /accounting/company/currencies. The base
+    // currency is always present; foreign entries depend on what's been
+    // enabled in Settings → Multi-currency.
+    private IReadOnlyList<CompanyCurrencyEntry> _enabledCurrencies = Array.Empty<CompanyCurrencyEntry>();
+    private bool _isLoadingCurrencies = true;
+
     private static string FormatTaxOption(TaxCodeSummary tax)
     {
         var rate = tax.RatePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
@@ -400,14 +424,15 @@
             _lines.Add(new JournalLineEditState());
         }
 
-        // Two independent loads — start both, await in parallel. The number
-        // peek is best-effort: a transport failure leaves the field empty
-        // with the "Auto-assigned on save" placeholder, which is also a
-        // valid state (the post handler will reserve a number then).
+        // Three independent loads — start all, await in parallel. Each is
+        // best-effort: a transport failure leaves the corresponding field
+        // empty / disabled, never blocks the form.
         _isLoadingJournalNumber = true;
         _isLoadingTaxCodes = true;
+        _isLoadingCurrencies = true;
         var numberTask = JournalEntryReviewClient.GetNextDisplayNumberAsync();
         var taxCodesTask = TaxCodeClient.ListAsync(appliesTo: "sales");
+        var currenciesTask = CompanyCurrencyClient.GetAsync();
 
         try
         {
@@ -434,6 +459,34 @@
         {
             _isLoadingTaxCodes = false;
         }
+
+        try
+        {
+            var profile = await currenciesTask;
+            if (profile is not null)
+            {
+                _enabledCurrencies = profile.Currencies
+                    .Where(c => c.IsEnabled || c.IsBaseCurrency)
+                    .OrderByDescending(c => c.IsBaseCurrency)
+                    .ThenBy(c => c.CurrencyCode)
+                    .ToList();
+            }
+        }
+        finally
+        {
+            _isLoadingCurrencies = false;
+        }
+    }
+
+    private void OnCurrencyChanged(ChangeEventArgs args)
+    {
+        var picked = args.Value?.ToString() ?? string.Empty;
+        if (string.Equals(picked, _currency, StringComparison.OrdinalIgnoreCase)) return;
+        _currency = picked;
+        // Drop the previous rate so FxRateInline re-fetches the
+        // recommendation for the new pair instead of reusing the
+        // stale rate from the old currency.
+        _exchangeRate = null;
     }
 
     private void OnDateChanged(ChangeEventArgs args)
