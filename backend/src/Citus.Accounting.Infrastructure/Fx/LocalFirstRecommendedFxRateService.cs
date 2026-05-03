@@ -16,6 +16,18 @@ namespace Citus.Accounting.Infrastructure.Fx;
 /// rate under whatever date frankfurter says it was published, so the
 /// cache key is always "the day this rate actually closed", not "the
 /// day someone asked for it".
+///
+/// <para>
+/// Direction convention: callers (Invoice / Bill / JE) expect the
+/// returned rate in the system's <c>tx_to_base</c> form — i.e.
+/// <c>baseAmount = txAmount * rate</c>, where the document's transaction
+/// currency is the <c>QuoteCurrencyCode</c> and the company base is the
+/// <c>BaseCurrencyCode</c>. Frankfurter publishes the opposite direction
+/// (<c>1 base = X quote</c>); we invert at the boundary so consumers,
+/// the cache, and the posting engine all speak the same language.
+/// Pre-fix cache rows are tagged <c>value_basis='frankfurter'</c> and
+/// filtered out by the cache repo's reads.
+/// </para>
 /// </summary>
 public sealed class LocalFirstRecommendedFxRateService : IRecommendedFxRateService
 {
@@ -79,15 +91,18 @@ public sealed class LocalFirstRecommendedFxRateService : IRecommendedFxRateServi
         // 2. Live frankfurter fetch. Stores every quote in the response
         // (not just the one the caller asked for) so a follow-up lookup
         // for a different quote currency on the same day is a cache hit.
+        // Each rate is inverted at this boundary so cache + caller all
+        // see the system's tx_to_base direction (see class doc-comment).
         var live = await _frankfurter.GetRatesAsync(targetDate, baseCode, cancellationToken).ConfigureAwait(false);
         if (live is not null)
         {
             var rows = live.Rates
+                .Where(kv => kv.Value > 0m)
                 .Select(kv => new FxRateCacheRow(
                     live.RateDate,
                     live.BaseCurrencyCode,
                     kv.Key.ToUpperInvariant(),
-                    kv.Value,
+                    Math.Round(1m / kv.Value, 10, MidpointRounding.ToEven),
                     FrankfurterFxRateClient.ProviderKey))
                 .ToArray();
 

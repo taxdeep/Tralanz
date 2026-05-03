@@ -5,13 +5,12 @@
     on date / currency change. The value is two-way bound; whatever
     the user submits is what posts.
 
-    Storage convention: the bound `Rate` value follows the standard
-    base→quote convention (1 BaseCurrencyCode = Rate × QuoteCurrencyCode).
-    For accountant-friendliness the *display* flips this — the operator
-    sees "1 [QuoteCurrencyCode] = [DisplayedRate] [BaseCurrencyCode]"
-    where DisplayedRate = 1 / Rate. The component handles the inversion
-    on read and write so consumers and the wire format stay on the
-    canonical convention.
+    Convention: the bound `Rate` is the system's tx_to_base direction
+    (baseAmount = txAmount * Rate). Display reads "1 [QuoteCurrencyCode]
+    = [Rate] [BaseCurrencyCode]" — the same number the posting engine
+    multiplies by, no inversion gymnastics. The recommendation API
+    returns rates already in this direction (the boundary inversion
+    happens server-side in LocalFirstRecommendedFxRateService).
 
     Empty / null Rate is intentional when no recommendation is
     available (frankfurter unreachable, no cached fallback). Forms must
@@ -38,8 +37,8 @@ else
             <span class="citus-fx-inline__equals">=</span>
         </span>
         <RadzenNumeric TValue="decimal?"
-                       Value="@DisplayedRate"
-                       ValueChanged="OnDisplayedRateChanged"
+                       Value="@Rate"
+                       ValueChanged="OnRateChanged"
                        Format="0.000000"
                        Min="0"
                        Step="0.000001"
@@ -88,14 +87,6 @@ else
 
     private string? BaseFlag => CurrencyFlagHelper.GetFlagEmoji(BaseCurrencyCode ?? string.Empty);
     private string? QuoteFlag => CurrencyFlagHelper.GetFlagEmoji(QuoteCurrencyCode ?? string.Empty);
-
-    /// <summary>
-    /// Display-side inverse of <see cref="Rate"/>. The operator sees and
-    /// edits the "1 quote = X base" view, while <see cref="Rate"/> stays
-    /// on the canonical "1 base = X quote" convention used by the wire
-    /// format and the domain model.
-    /// </summary>
-    private decimal? DisplayedRate => Rate is { } r && r > 0m ? Math.Round(1m / r, 6, MidpointRounding.ToEven) : null;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -154,13 +145,9 @@ else
         }
     }
 
-    private async Task OnDisplayedRateChanged(decimal? value)
+    private async Task OnRateChanged(decimal? value)
     {
-        // Invert the operator-facing "1 quote = X base" value back to
-        // the canonical "1 base = X quote" rate that flows to consumers
-        // and the wire format. Null / zero clears the rate (the form
-        // then treats it as "no rate yet — operator must enter one").
-        Rate = value is { } v && v > 0m ? Math.Round(1m / v, 6, MidpointRounding.ToEven) : null;
+        Rate = value;
         if (RateChanged.HasDelegate)
         {
             await RateChanged.InvokeAsync(Rate);

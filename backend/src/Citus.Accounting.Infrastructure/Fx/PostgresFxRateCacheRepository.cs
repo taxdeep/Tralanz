@@ -10,9 +10,27 @@ namespace Citus.Accounting.Infrastructure.Fx;
 /// is identical for every tenant. Rows are uniquely keyed by
 /// (rate_date, base_code, quote_code) so the same cache can serve
 /// USD→CAD lookups whether the asker has USD-base or CAD-base.
+///
+/// <para>
+/// Rate convention: the <c>rate</c> column stores the system-internal
+/// "1 quote = rate × base" direction (i.e. <c>baseAmount = txAmount * rate</c>
+/// where the document's transaction currency = quote_code and the
+/// company's base = base_code). This is the opposite of frankfurter's
+/// raw direction; <see cref="LocalFirstRecommendedFxRateService"/>
+/// inverts at the boundary before persisting.
+/// </para>
+///
+/// <para>
+/// Rows written before that inversion fix carried frankfurter's raw
+/// direction and are tagged <c>value_basis='frankfurter'</c>. New rows
+/// are <c>value_basis='tx_to_base'</c>. Reads filter to <c>tx_to_base</c>
+/// only — pre-fix rows are silently ignored, then naturally replaced as
+/// the same (date, base, quote) cell is re-fetched.
+/// </para>
 /// </summary>
 public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
 {
+    private const string CurrentValueBasis = "tx_to_base";
     private readonly PostgresConnectionFactory _connectionFactory;
 
     public PostgresFxRateCacheRepository(PostgresConnectionFactory connectionFactory)
@@ -37,6 +55,8 @@ public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
             );
             create index if not exists idx_fx_rates_daily_pair_date
                 on fx_rates_daily (base_code, quote_code, rate_date desc);
+            alter table fx_rates_daily
+                add column if not exists value_basis text not null default 'frankfurter';
             """;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -55,11 +75,13 @@ public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
             where rate_date = @rate_date
               and base_code = @base_code
               and quote_code = @quote_code
+              and value_basis = @value_basis
             limit 1;
             """;
         command.Parameters.AddWithValue("rate_date", rateDate);
         command.Parameters.AddWithValue("base_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_code", quoteCurrencyCode);
+        command.Parameters.AddWithValue("value_basis", CurrentValueBasis);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -91,6 +113,7 @@ public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
               and quote_code = @quote_code
               and rate_date <= @upper_bound
               and rate_date >= @floor
+              and value_basis = @value_basis
             order by rate_date desc
             limit 1;
             """;
@@ -98,6 +121,7 @@ public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
         command.Parameters.AddWithValue("quote_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("upper_bound", upperBoundDate);
         command.Parameters.AddWithValue("floor", floor);
+        command.Parameters.AddWithValue("value_basis", CurrentValueBasis);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -124,19 +148,21 @@ public sealed class PostgresFxRateCacheRepository : IFxRateCacheRepository
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                insert into fx_rates_daily (rate_date, base_code, quote_code, rate, source, fetched_at)
-                values (@rate_date, @base_code, @quote_code, @rate, @source, now())
+                insert into fx_rates_daily (rate_date, base_code, quote_code, rate, source, fetched_at, value_basis)
+                values (@rate_date, @base_code, @quote_code, @rate, @source, now(), @value_basis)
                 on conflict (rate_date, base_code, quote_code)
                 do update
                   set rate = excluded.rate,
                       source = excluded.source,
-                      fetched_at = excluded.fetched_at;
+                      fetched_at = excluded.fetched_at,
+                      value_basis = excluded.value_basis;
                 """;
             command.Parameters.AddWithValue("rate_date", row.RateDate);
             command.Parameters.AddWithValue("base_code", row.BaseCurrencyCode);
             command.Parameters.AddWithValue("quote_code", row.QuoteCurrencyCode);
             command.Parameters.AddWithValue("rate", row.Rate);
             command.Parameters.AddWithValue("source", row.Source);
+            command.Parameters.AddWithValue("value_basis", CurrentValueBasis);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
