@@ -53,6 +53,8 @@ public sealed record InvoiceRecordDto(
     decimal TaxAmount,
     decimal TotalAmount,
     string? Memo,
+    string? CustomerPoNumber,
+    Guid? SalesOrderId,
     IReadOnlyList<InvoiceLineDto> Lines);
 
 public sealed record InvoiceLineDto(

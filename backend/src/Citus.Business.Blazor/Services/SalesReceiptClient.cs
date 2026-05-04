@@ -69,6 +69,7 @@ public sealed record SalesReceiptRecordDto(
     decimal TaxAmount,
     decimal TotalAmount,
     string? Memo,
+    string? CustomerPoNumber,
     IReadOnlyList<SalesReceiptLineDto> Lines);
 
 public sealed record SalesReceiptSummaryDto(
@@ -81,7 +82,8 @@ public sealed record SalesReceiptSummaryDto(
     string TransactionCurrencyCode,
     decimal TotalAmount,
     string PaymentMethod,
-    DateTimeOffset? PostedAt);
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber);
 
 public sealed record SalesReceiptLineDto(
     int LineNumber,

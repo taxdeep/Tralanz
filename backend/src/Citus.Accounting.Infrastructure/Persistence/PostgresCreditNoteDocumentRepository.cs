@@ -49,6 +49,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         decimal taxAmount;
         decimal totalAmount;
         string? memo;
+        string? customerPoNumber;
 
         await using (var headerCommand = scope.CreateCommand(
                          """
@@ -71,6 +72,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                            c.tax_amount,
                            c.total_amount,
                            c.memo,
+                           c.customer_po_number,
                            (
                              select a.id
                              from accounts a
@@ -130,6 +132,9 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             memo = reader.IsDBNull(reader.GetOrdinal("memo"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("memo"));
+            customerPoNumber = reader.IsDBNull(reader.GetOrdinal("customer_po_number"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("customer_po_number"));
         }
 
         if (receivableAccountId == Guid.Empty)
@@ -220,7 +225,8 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
             subtotalAmount,
             taxAmount,
             totalAmount,
-            memo);
+            memo,
+            customerPoNumber);
     }
 
     public async Task<IReadOnlyList<CreditMemoListItem>> ListAsync(
@@ -236,7 +242,8 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         await using var command = scope.CreateCommand(includeDrafts
             ? """
               select c.id, c.entity_number, c.credit_note_number, c.status, c.credit_note_date,
-                     c.customer_id, c.document_currency_code, c.total_amount, c.posted_at
+                     c.customer_id, c.document_currency_code, c.total_amount, c.posted_at,
+                     c.customer_po_number
               from credit_notes c
               where c.company_id = @company_id
               order by c.credit_note_date desc, c.created_at desc
@@ -244,7 +251,8 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
               """
             : """
               select c.id, c.entity_number, c.credit_note_number, c.status, c.credit_note_date,
-                     c.customer_id, c.document_currency_code, c.total_amount, c.posted_at
+                     c.customer_id, c.document_currency_code, c.total_amount, c.posted_at,
+                     c.customer_po_number
               from credit_notes c
               where c.company_id = @company_id
                 and c.status <> 'draft'
@@ -266,7 +274,8 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                 reader.GetGuid(reader.GetOrdinal("customer_id")),
                 reader.GetString(reader.GetOrdinal("document_currency_code")),
                 reader.GetDecimal(reader.GetOrdinal("total_amount")),
-                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("customer_po_number")) ? null : reader.GetString(reader.GetOrdinal("customer_po_number"))));
         }
         return rows;
     }
@@ -340,6 +349,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   tax_amount,
                   total_amount,
                   memo,
+                  customer_po_number,
                   posted_at,
                   created_by_user_id,
                   created_at,
@@ -365,6 +375,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                   @tax_amount,
                   @total_amount,
                   @memo,
+                  @customer_po_number,
                   null,
                   @created_by_user_id,
                   now(),
@@ -397,6 +408,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
                     tax_amount = @tax_amount,
                     total_amount = @total_amount,
                     memo = @memo,
+                    customer_po_number = @customer_po_number,
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
@@ -549,6 +561,7 @@ public sealed class PostgresCreditNoteDocumentRepository : ICreditNoteDocumentRe
         command.Parameters.AddWithValue("tax_amount", taxAmount);
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(draft.Memo) ? (object)DBNull.Value : draft.Memo.Trim());
+        command.Parameters.AddWithValue("customer_po_number", string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? (object)DBNull.Value : draft.CustomerPoNumber.Trim());
     }
 
     private static void ValidateFx(string transactionCurrencyCode, string baseCurrencyCode, decimal? fxRate)

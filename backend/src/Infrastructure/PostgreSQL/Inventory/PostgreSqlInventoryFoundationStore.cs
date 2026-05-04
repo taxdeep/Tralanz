@@ -760,6 +760,8 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   source_document_id uuid null,
                   source_document_number text null,
                   counterparty_id uuid null,
+                  customer_po_number text null,
+                  sales_order_id uuid null,
                   memo text null,
                   created_by_user_id uuid not null,
                   created_at timestamptz not null default now(),
@@ -788,6 +790,16 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create index if not exists ix_inventory_documents_company_posting_date
                   on inventory_documents (company_id, posting_date desc, created_at desc);
+
+                alter table inventory_documents add column if not exists customer_po_number text null;
+                alter table inventory_documents add column if not exists sales_order_id uuid null;
+
+                create index if not exists ix_inventory_documents_company_customer_po
+                  on inventory_documents (company_id, customer_po_number)
+                  where customer_po_number is not null;
+                create index if not exists ix_inventory_documents_company_sales_order
+                  on inventory_documents (company_id, sales_order_id)
+                  where sales_order_id is not null;
 
                 create table if not exists inventory_document_lines (
                   id uuid primary key default gen_random_uuid(),

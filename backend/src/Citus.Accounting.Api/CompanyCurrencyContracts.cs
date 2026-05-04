@@ -123,6 +123,7 @@ public sealed record SalesOrderUpsertHttpRequest(
     string? MemoToCustomer,
     string? InternalNote,
     Guid? SourceQuoteId,
+    string? CustomerPoNumber,
     IReadOnlyList<SalesOrderLineHttpRequest>? Lines);
 
 public sealed record SalesOrderLineHttpRequest(

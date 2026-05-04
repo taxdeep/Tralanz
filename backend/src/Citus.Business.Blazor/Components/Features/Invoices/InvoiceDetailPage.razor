@@ -145,6 +145,14 @@ else
                             <tr><th>Base currency</th><td>@_invoice.BaseCurrencyCode</td></tr>
                         }
                         <tr><th>Customer</th><td>@_customerName</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_invoice.CustomerPoNumber))
+                        {
+                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_invoice.CustomerPoNumber</span></td></tr>
+                        }
+                        @if (_invoice.SalesOrderId is { } soId)
+                        {
+                            <tr><th>From SO</th><td><a class="citus-link" href="@($"sales-orders/{soId:D}")">View source SO</a></td></tr>
+                        }
                     </tbody>
                 </table>
             </section>

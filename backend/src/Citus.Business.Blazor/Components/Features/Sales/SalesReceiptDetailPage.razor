@@ -105,6 +105,10 @@ else
                         {
                             <tr><th>Reference</th><td>@_doc.ReferenceNo</td></tr>
                         }
+                        @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
+                        {
+                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_doc.CustomerPoNumber</span></td></tr>
+                        }
                         <tr><th>Deposit to</th><td>@ResolveAccountLabel(_doc.DepositToAccountId)</td></tr>
                     </tbody>
                 </table>

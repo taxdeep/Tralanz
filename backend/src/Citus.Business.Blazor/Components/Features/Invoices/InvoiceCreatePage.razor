@@ -89,6 +89,20 @@
                                       @bind-Rate="_fxRate" />
                     }
                 </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+                </div>
+                <div>
+                    @* Source SO display — filled when invoice is created via
+                       "Invoice this SO" (flow lands with M3 iter 3). For
+                       direct-create invoices this stays empty and the field
+                       remains null. *@
+                    <label class="text-sm font-medium block mb-1">From sales order</label>
+                    <div class="text-fg-muted text-sm">
+                        @(_salesOrderId is null ? "Direct invoice (no source SO)" : $"From SO {_salesOrderNumber}")
+                    </div>
+                </div>
                 <div class="md:col-span-2">
                     <label class="text-sm font-medium block mb-1">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
@@ -243,6 +257,9 @@
     private string _currency = string.Empty;
     private decimal? _fxRate;
     private string _memo = string.Empty;
+    private string _customerPoNumber = string.Empty;
+    private Guid? _salesOrderId;
+    private string? _salesOrderNumber;
     /// <summary>
     /// UI-side per-line state. Carries the wire-shape fields plus the
     /// item-picker's <see cref="ItemId"/> / <see cref="ItemDisplay"/> so
@@ -449,6 +466,8 @@
                 TransactionCurrencyCode = _currency.Trim().ToUpperInvariant(),
                 FxRate = _fxRate,
                 Memo = _memo.Trim(),
+                CustomerPoNumber = _customerPoNumber.Trim(),
+                SalesOrderId = _salesOrderId,
                 Lines = meaningful.Select(l => new DocumentLineDraft
                 {
                     Description = l.Description,

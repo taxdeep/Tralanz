@@ -64,6 +64,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
         decimal taxAmount;
         decimal totalAmount;
         string? memo;
+        string? customerPoNumber;
 
         await using (var headerCommand = scope.CreateCommand(
                          """
@@ -87,7 +88,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                            sr.subtotal_amount,
                            sr.tax_amount,
                            sr.total_amount,
-                           sr.memo
+                           sr.memo,
+                           sr.customer_po_number
                          from sales_receipts sr
                          where sr.company_id = @company_id
                            and sr.id = @document_id
@@ -129,6 +131,9 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
             memo = reader.IsDBNull(reader.GetOrdinal("memo"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("memo"));
+            customerPoNumber = reader.IsDBNull(reader.GetOrdinal("customer_po_number"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("customer_po_number"));
         }
 
         var lines = new List<SalesReceiptDocumentLine>();
@@ -219,7 +224,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
             subtotalAmount,
             taxAmount,
             totalAmount,
-            memo);
+            memo,
+            customerPoNumber);
     }
 
     public async Task<IReadOnlyList<SalesReceiptListItem>> ListAsync(
@@ -235,7 +241,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
         await using var command = scope.CreateCommand(includeDrafts
             ? """
               select sr.id, sr.entity_number, sr.receipt_number, sr.status, sr.receipt_date,
-                     sr.customer_id, sr.document_currency_code, sr.total_amount, sr.payment_method, sr.posted_at
+                     sr.customer_id, sr.document_currency_code, sr.total_amount, sr.payment_method, sr.posted_at,
+                     sr.customer_po_number
               from sales_receipts sr
               where sr.company_id = @company_id
               order by sr.receipt_date desc, sr.created_at desc
@@ -243,7 +250,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
               """
             : """
               select sr.id, sr.entity_number, sr.receipt_number, sr.status, sr.receipt_date,
-                     sr.customer_id, sr.document_currency_code, sr.total_amount, sr.payment_method, sr.posted_at
+                     sr.customer_id, sr.document_currency_code, sr.total_amount, sr.payment_method, sr.posted_at,
+                     sr.customer_po_number
               from sales_receipts sr
               where sr.company_id = @company_id
                 and sr.status <> 'draft'
@@ -266,7 +274,8 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                 reader.GetString(reader.GetOrdinal("document_currency_code")),
                 reader.GetDecimal(reader.GetOrdinal("total_amount")),
                 reader.GetString(reader.GetOrdinal("payment_method")),
-                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("customer_po_number")) ? null : reader.GetString(reader.GetOrdinal("customer_po_number"))));
         }
         return rows;
     }
@@ -351,6 +360,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                   tax_amount,
                   total_amount,
                   memo,
+                  customer_po_number,
                   posted_at,
                   created_by_user_id,
                   created_at,
@@ -378,6 +388,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                   @tax_amount,
                   @total_amount,
                   @memo,
+                  @customer_po_number,
                   null,
                   @created_by_user_id,
                   now(),
@@ -417,6 +428,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                     tax_amount = @tax_amount,
                     total_amount = @total_amount,
                     memo = @memo,
+                    customer_po_number = @customer_po_number,
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
@@ -597,6 +609,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
         command.Parameters.AddWithValue("tax_amount", taxTotal);
         command.Parameters.AddWithValue("total_amount", total);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(draft.Memo) ? (object)DBNull.Value : draft.Memo.Trim());
+        command.Parameters.AddWithValue("customer_po_number", string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? (object)DBNull.Value : draft.CustomerPoNumber.Trim());
     }
 
     private static async Task<(string EntityNumber, string ReceiptNumber)> LoadIdentityAsync(

@@ -113,6 +113,10 @@
                     <label class="text-sm font-medium block mb-1">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible to customer; optional." />
                 </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (typically copied from the original invoice)" MaxLength="64" />
+                </div>
             </div>
         </section>
 
@@ -256,6 +260,7 @@
     private string _appliedToInvoiceNumber = string.Empty;
     private string _reason = string.Empty;
     private string _memo = string.Empty;
+    private string _customerPoNumber = string.Empty;
 
     private sealed record CreditMemoLineEditState(
         Guid ItemId = default,
@@ -398,6 +403,7 @@
                 AppliedToInvoiceNumber = _appliedToInvoiceNumber.Trim(),
                 Reason = _reason.Trim(),
                 Memo = _memo.Trim(),
+                CustomerPoNumber = _customerPoNumber.Trim(),
                 Lines = meaningful.Select((l, idx) => new CreditMemoLineDraft
                 {
                     LineNumber = idx + 1,

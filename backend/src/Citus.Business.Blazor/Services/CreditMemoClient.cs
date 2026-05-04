@@ -62,7 +62,8 @@ public sealed record CreditMemoSummaryDto(
     Guid CustomerId,
     string TransactionCurrencyCode,
     decimal TotalAmount,
-    DateTimeOffset? PostedAt);
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber);
 
 public sealed record CreditMemoRecordDto(
     Guid Id,
@@ -80,6 +81,7 @@ public sealed record CreditMemoRecordDto(
     decimal TaxAmount,
     decimal TotalAmount,
     string? Memo,
+    string? CustomerPoNumber,
     IReadOnlyList<CreditMemoLineDto> Lines);
 
 public sealed record CreditMemoLineDto(

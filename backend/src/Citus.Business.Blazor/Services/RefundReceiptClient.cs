@@ -64,6 +64,7 @@ public sealed record RefundReceiptRecordDto(
     decimal TaxAmount,
     decimal TotalAmount,
     string? Memo,
+    string? CustomerPoNumber,
     IReadOnlyList<RefundReceiptLineDto> Lines);
 
 public sealed record RefundReceiptSummaryDto(
@@ -76,7 +77,8 @@ public sealed record RefundReceiptSummaryDto(
     string TransactionCurrencyCode,
     decimal TotalAmount,
     string PaymentMethod,
-    DateTimeOffset? PostedAt);
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber);
 
 public sealed record RefundReceiptLineDto(
     int LineNumber,

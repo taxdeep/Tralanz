@@ -65,7 +65,8 @@ public sealed record CreditMemoListItem(
     Guid CustomerId,
     string TransactionCurrencyCode,
     decimal TotalAmount,
-    DateTimeOffset? PostedAt);
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber = null);
 
 public interface IBillDocumentRepository
 {
@@ -311,7 +312,9 @@ public sealed record InvoiceDraftSaveModel(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<InvoiceDraftLineSaveModel> Lines);
+    IReadOnlyList<InvoiceDraftLineSaveModel> Lines,
+    string? CustomerPoNumber = null,
+    Guid? SalesOrderId = null);
 
 public sealed record InvoiceDraftLineSaveModel(
     int LineNumber,
@@ -339,7 +342,8 @@ public sealed record CreditNoteDraftSaveModel(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<CreditNoteDraftLineSaveModel> Lines);
+    IReadOnlyList<CreditNoteDraftLineSaveModel> Lines,
+    string? CustomerPoNumber = null);
 
 public sealed record CreditNoteDraftLineSaveModel(
     int LineNumber,
@@ -2069,7 +2073,8 @@ public sealed record SalesReceiptListItem(
     string TransactionCurrencyCode,
     decimal TotalAmount,
     string PaymentMethod,
-    DateTimeOffset? PostedAt);
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber = null);
 
 public sealed record SalesReceiptDraftSaveModel(
     Guid? DocumentId,
@@ -2087,7 +2092,8 @@ public sealed record SalesReceiptDraftSaveModel(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<SalesReceiptDraftLineSaveModel> Lines);
+    IReadOnlyList<SalesReceiptDraftLineSaveModel> Lines,
+    string? CustomerPoNumber = null);
 
 public sealed record SalesReceiptDraftLineSaveModel(
     int LineNumber,
@@ -2136,7 +2142,8 @@ public sealed record RefundReceiptListItem(
     string TransactionCurrencyCode,
     decimal TotalAmount,
     string PaymentMethod,
-    DateTimeOffset? PostedAt);
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber = null);
 
 public sealed record RefundReceiptDraftSaveModel(
     Guid? DocumentId,
@@ -2155,7 +2162,8 @@ public sealed record RefundReceiptDraftSaveModel(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<RefundReceiptDraftLineSaveModel> Lines);
+    IReadOnlyList<RefundReceiptDraftLineSaveModel> Lines,
+    string? CustomerPoNumber = null);
 
 public sealed record RefundReceiptDraftLineSaveModel(
     int LineNumber,

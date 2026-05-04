@@ -42,6 +42,7 @@
                     <th>Date</th>
                     <th>Status</th>
                     <th>Method</th>
+                    <th>Customer PO</th>
                     <th class="text-right">Total</th>
                     <th>Currency</th>
                 </tr>
@@ -54,6 +55,16 @@
                         <td>@row.ReceiptDate.ToString("yyyy-MM-dd")</td>
                         <td>@HumanizeStatus(row.Status)</td>
                         <td>@row.PaymentMethod</td>
+                        <td>
+                            @if (string.IsNullOrWhiteSpace(row.CustomerPoNumber))
+                            {
+                                <span class="text-fg-subtle">—</span>
+                            }
+                            else
+                            {
+                                <span class="citus-inline-code">@row.CustomerPoNumber</span>
+                            }
+                        </td>
                         <td class="text-right">@row.TotalAmount.ToString("N2")</td>
                         <td>@row.TransactionCurrencyCode</td>
                     </tr>

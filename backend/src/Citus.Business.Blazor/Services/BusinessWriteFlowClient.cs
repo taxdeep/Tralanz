@@ -543,6 +543,16 @@ public sealed record InvoiceDraft
     /// </summary>
     public decimal? FxRate { get; init; }
     public string Memo { get; init; } = string.Empty;
+    /// <summary>
+    /// Customer's own purchase-order reference. Carried into the wire shape
+    /// so when the create endpoint lands the value is already in the payload.
+    /// </summary>
+    public string CustomerPoNumber { get; init; } = string.Empty;
+    /// <summary>
+    /// Back-link to the Sales Order this invoice was created from (when
+    /// applicable). Drives auto-COGS-post linkage and the printed banner.
+    /// </summary>
+    public Guid? SalesOrderId { get; init; }
     public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
 }
 
@@ -588,6 +598,8 @@ public sealed record SalesReceiptDraft
     public string ReferenceNo { get; init; } = string.Empty;
 
     public string Memo { get; init; } = string.Empty;
+    /// <summary>Customer's own purchase-order reference. Optional. Carried into the saved sales-receipt for downstream search + customer-portal display.</summary>
+    public string CustomerPoNumber { get; init; } = string.Empty;
     public IReadOnlyList<SalesReceiptLineDraft> Lines { get; init; } = Array.Empty<SalesReceiptLineDraft>();
 }
 
@@ -636,6 +648,8 @@ public sealed record CreditMemoDraft
     public string Reason { get; init; } = string.Empty;
 
     public string Memo { get; init; } = string.Empty;
+    /// <summary>Customer's own purchase-order reference (typically copied from the original invoice). Optional.</summary>
+    public string CustomerPoNumber { get; init; } = string.Empty;
     public IReadOnlyList<CreditMemoLineDraft> Lines { get; init; } = Array.Empty<CreditMemoLineDraft>();
 }
 
@@ -672,6 +686,8 @@ public sealed record RefundReceiptDraft
     public string ReferenceNo { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    /// <summary>Customer's own purchase-order reference. Optional.</summary>
+    public string CustomerPoNumber { get; init; } = string.Empty;
     public IReadOnlyList<RefundReceiptLineDraft> Lines { get; init; } = Array.Empty<RefundReceiptLineDraft>();
 }
 

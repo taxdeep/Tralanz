@@ -51,6 +51,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         decimal taxAmount;
         decimal totalAmount;
         string? memo;
+        string? customerPoNumber;
+        Guid? salesOrderId;
 
         await using (var headerCommand = scope.CreateCommand(
                          """
@@ -73,6 +75,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                            i.tax_amount,
                            i.total_amount,
                            i.memo,
+                           i.customer_po_number,
+                           i.sales_order_id,
                            (
                              select a.id
                              from accounts a
@@ -132,6 +136,12 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             memo = reader.IsDBNull(reader.GetOrdinal("memo"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("memo"));
+            customerPoNumber = reader.IsDBNull(reader.GetOrdinal("customer_po_number"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("customer_po_number"));
+            salesOrderId = reader.IsDBNull(reader.GetOrdinal("sales_order_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("sales_order_id"));
         }
 
         if (receivableAccountId == Guid.Empty)
@@ -228,7 +238,9 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             subtotalAmount,
             taxAmount,
             totalAmount,
-            memo);
+            memo,
+            customerPoNumber,
+            salesOrderId);
     }
 
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
@@ -302,6 +314,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   tax_amount,
                   total_amount,
                   memo,
+                  customer_po_number,
+                  sales_order_id,
                   posted_at,
                   created_by_user_id,
                   created_at,
@@ -327,6 +341,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                   @tax_amount,
                   @total_amount,
                   @memo,
+                  @customer_po_number,
+                  @sales_order_id,
                   null,
                   @created_by_user_id,
                   now(),
@@ -359,6 +375,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
                     tax_amount = @tax_amount,
                     total_amount = @total_amount,
                     memo = @memo,
+                    customer_po_number = @customer_po_number,
+                    sales_order_id = @sales_order_id,
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
@@ -576,6 +594,8 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
         command.Parameters.AddWithValue("tax_amount", taxAmount);
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(draft.Memo) ? (object)DBNull.Value : draft.Memo.Trim());
+        command.Parameters.AddWithValue("customer_po_number", string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? (object)DBNull.Value : draft.CustomerPoNumber.Trim());
+        command.Parameters.Add(new NpgsqlParameter<Guid?>("sales_order_id", NpgsqlDbType.Uuid) { TypedValue = draft.SalesOrderId });
     }
 
     private static void ValidateFx(string transactionCurrencyCode, string baseCurrencyCode, decimal? fxRate)

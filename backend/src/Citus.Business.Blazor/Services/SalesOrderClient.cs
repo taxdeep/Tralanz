@@ -174,6 +174,7 @@ public sealed record SalesOrderSummaryDto(
     decimal TotalAmount,
     Guid? SourceQuoteId,
     string? InvoiceNumber,
+    string? CustomerPoNumber,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -214,6 +215,7 @@ public sealed record SalesOrderRecordDto(
     Guid? SourceQuoteId,
     string? SourceQuoteNumber,
     string? InvoiceNumber,
+    string? CustomerPoNumber,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<SalesOrderLineDto> Lines);
@@ -257,6 +259,7 @@ public sealed record SalesOrderUpsertPayload(
     string? MemoToCustomer,
     string? InternalNote,
     Guid? SourceQuoteId,
+    string? CustomerPoNumber,
     IReadOnlyList<SalesOrderLinePayload> Lines);
 
 public sealed record SalesOrderLinePayload(

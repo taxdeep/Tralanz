@@ -96,6 +96,10 @@
                     <label class="text-sm font-medium block mb-1">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Visible on the receipt; optional." />
                 </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+                </div>
             </div>
         </section>
 
@@ -303,6 +307,7 @@
     private string _currency = string.Empty;
     private decimal? _fxRate;
     private string _memo = string.Empty;
+    private string _customerPoNumber = string.Empty;
 
     // Payment metadata — cash receipt is more than just an invoice that
     // posts immediately; it carries the channel (method) and where the
@@ -522,6 +527,7 @@
                 PaymentMethod = _paymentMethod,
                 ReferenceNo = _referenceNo.Trim(),
                 Memo = _memo.Trim(),
+                CustomerPoNumber = _customerPoNumber.Trim(),
                 Lines = meaningful.Select((l, idx) => new SalesReceiptLineDraft
                 {
                     LineNumber = idx + 1,

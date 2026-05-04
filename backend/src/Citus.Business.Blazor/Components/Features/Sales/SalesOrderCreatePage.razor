@@ -69,6 +69,13 @@ else
                             @(string.IsNullOrEmpty(_sourceQuoteNumber) ? "Created directly (no source quote)" : $"From quote {_sourceQuoteNumber}")
                         </div>
                     </div>
+                    @* Customer PO# — the customer's own purchase-order reference. Optional but
+                       carried through to the downstream Invoice + Shipment + Packing Slip so the
+                       customer's AP can match payments back to their procurement record. *@
+                    <div class="md:col-span-2">
+                        <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                        <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's own purchase-order reference (optional)" MaxLength="64" />
+                    </div>
                 </div>
             </section>
 
@@ -305,6 +312,7 @@ else
     private decimal? _shippingAmount;
     private string _memoToCustomer = string.Empty;
     private string _internalNote = string.Empty;
+    private string _customerPoNumber = string.Empty;
 
     private List<LineDraft> _lines = new() { new LineDraft() };
 
@@ -389,6 +397,7 @@ else
         _shippingAmount = so.ShippingAmount;
         _memoToCustomer = so.MemoToCustomer ?? string.Empty;
         _internalNote = so.InternalNote ?? string.Empty;
+        _customerPoNumber = so.CustomerPoNumber ?? string.Empty;
         _lines = so.Lines.Select(l => new LineDraft
         {
             ItemId = l.ItemId,
@@ -499,6 +508,7 @@ else
                 MemoToCustomer: NullIfEmpty(_memoToCustomer),
                 InternalNote: NullIfEmpty(_internalNote),
                 SourceQuoteId: _sourceQuoteId,
+                CustomerPoNumber: NullIfEmpty(_customerPoNumber),
                 Lines: _lines
                     .Where(l => l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description) || l.ItemId is not null)
                     .Select((l, i) => new SalesOrderLinePayload(

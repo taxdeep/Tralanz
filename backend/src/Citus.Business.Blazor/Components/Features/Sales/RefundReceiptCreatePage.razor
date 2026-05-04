@@ -89,6 +89,10 @@
                     <label class="text-sm font-medium block mb-1">Memo</label>
                     <CitusInput TValue="string" @bind-Value="_memo" Placeholder="Internal note; optional." />
                 </div>
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                    <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (optional)" MaxLength="64" />
+                </div>
             </div>
         </section>
 
@@ -283,6 +287,7 @@
     private decimal? _fxRate;
     private string _reason = string.Empty;
     private string _memo = string.Empty;
+    private string _customerPoNumber = string.Empty;
 
     private string _paymentMethod = "cash";
     private string _referenceNo = string.Empty;
@@ -463,6 +468,7 @@
                 ReferenceNo = _referenceNo.Trim(),
                 Reason = _reason.Trim(),
                 Memo = _memo.Trim(),
+                CustomerPoNumber = _customerPoNumber.Trim(),
                 Lines = meaningful.Select((l, idx) => new RefundReceiptLineDraft
                 {
                     LineNumber = idx + 1,

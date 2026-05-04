@@ -234,7 +234,9 @@ public sealed record SaveInvoiceDraftHttpRequest(
     DateOnly? FxEffectiveDate,
     string? FxSource,
     string? Memo,
-    IReadOnlyList<SaveInvoiceDraftLineHttpRequest> Lines);
+    IReadOnlyList<SaveInvoiceDraftLineHttpRequest> Lines,
+    string? CustomerPoNumber = null,
+    Guid? SalesOrderId = null);
 
 public sealed record SaveInvoiceDraftLineHttpRequest(
     int LineNumber,

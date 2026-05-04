@@ -54,9 +54,11 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 internal_note               TEXT NULL,
                 source_quote_id             UUID NULL,
                 invoice_number              TEXT NULL,
+                customer_po_number          TEXT NULL,
                 created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS customer_po_number TEXT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_orders_company_so_number
                 ON sales_orders (company_id, sales_order_number);
             CREATE INDEX IF NOT EXISTS idx_sales_orders_company_status
@@ -65,6 +67,9 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 ON sales_orders (company_id, customer_id);
             CREATE INDEX IF NOT EXISTS idx_sales_orders_company_document_date
                 ON sales_orders (company_id, document_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_sales_orders_company_customer_po
+                ON sales_orders (company_id, customer_po_number)
+                WHERE customer_po_number IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS sales_order_lines (
                 id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,6 +105,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                    s.document_date, s.status,
                    s.transaction_currency_code, s.total_amount,
                    s.source_quote_id, s.invoice_number,
+                   s.customer_po_number,
                    s.created_at, s.updated_at
               FROM sales_orders s
               LEFT JOIN customers c ON c.id = s.customer_id
@@ -188,7 +194,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                     ship_via, shipping_date, tracking_no,
                     tax_mode, discount_kind, discount_value, shipping_amount, shipping_tax_code_id,
                     subtotal_amount, discount_amount, tax_amount, total_amount,
-                    memo_to_customer, internal_note, source_quote_id
+                    memo_to_customer, internal_note, source_quote_id, customer_po_number
                 )
                 VALUES (
                     @company_id, @sales_order_number, 'open', @customer_id,
@@ -199,7 +205,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                     @ship_via, @shipping_date, @tracking_no,
                     @tax_mode, @discount_kind, @discount_value, @shipping_amount, @shipping_tax_code_id,
                     @subtotal_amount, @discount_amount, @tax_amount, @total_amount,
-                    @memo_to_customer, @internal_note, @source_quote_id
+                    @memo_to_customer, @internal_note, @source_quote_id, @customer_po_number
                 )
                 RETURNING id;
                 """;
@@ -275,6 +281,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                        total_amount             = @total_amount,
                        memo_to_customer         = @memo_to_customer,
                        internal_note            = @internal_note,
+                       customer_po_number       = @customer_po_number,
                        updated_at               = NOW()
                  WHERE company_id = @company_id AND id = @id;
                 """;
@@ -492,6 +499,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         command.Parameters.AddWithValue("memo_to_customer", (object?)input.MemoToCustomer ?? DBNull.Value);
         command.Parameters.AddWithValue("internal_note", (object?)input.InternalNote ?? DBNull.Value);
         command.Parameters.AddWithValue("source_quote_id", (object?)input.SourceQuoteId ?? DBNull.Value);
+        command.Parameters.AddWithValue("customer_po_number", (object?)input.CustomerPoNumber ?? DBNull.Value);
     }
 
     /// <summary>
@@ -517,6 +525,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                s.memo_to_customer, s.internal_note,
                s.source_quote_id, q.quote_number AS source_quote_number,
                s.invoice_number,
+               s.customer_po_number,
                s.created_at, s.updated_at
           FROM sales_orders s
           LEFT JOIN customers c ON c.id = s.customer_id
@@ -535,8 +544,9 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         TotalAmount: reader.GetDecimal(8),
         SourceQuoteId: reader.IsDBNull(9) ? null : reader.GetGuid(9),
         InvoiceNumber: reader.IsDBNull(10) ? null : reader.GetString(10),
-        CreatedAt: reader.GetFieldValue<DateTimeOffset>(11),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(12));
+        CustomerPoNumber: reader.IsDBNull(11) ? null : reader.GetString(11),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(12),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(13));
 
     private static SalesOrderRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<SalesOrderLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
@@ -575,6 +585,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         SourceQuoteId: ReadNullableGuid(reader, "source_quote_id"),
         SourceQuoteNumber: ReadNullableString(reader, "source_quote_number"),
         InvoiceNumber: ReadNullableString(reader, "invoice_number"),
+        CustomerPoNumber: ReadNullableString(reader, "customer_po_number"),
         CreatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
         UpdatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
         Lines: lines);

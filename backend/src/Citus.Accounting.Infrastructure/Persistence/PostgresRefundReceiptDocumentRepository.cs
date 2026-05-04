@@ -63,6 +63,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
         decimal taxAmount;
         decimal totalAmount;
         string? memo;
+        string? customerPoNumber;
 
         await using (var headerCommand = scope.CreateCommand(
                          """
@@ -87,7 +88,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                            rr.subtotal_amount,
                            rr.tax_amount,
                            rr.total_amount,
-                           rr.memo
+                           rr.memo,
+                           rr.customer_po_number
                          from refund_receipts rr
                          where rr.company_id = @company_id
                            and rr.id = @document_id
@@ -132,6 +134,9 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             memo = reader.IsDBNull(reader.GetOrdinal("memo"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("memo"));
+            customerPoNumber = reader.IsDBNull(reader.GetOrdinal("customer_po_number"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("customer_po_number"));
         }
 
         var lines = new List<RefundReceiptDocumentLine>();
@@ -223,7 +228,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
             subtotalAmount,
             taxAmount,
             totalAmount,
-            memo);
+            memo,
+            customerPoNumber);
     }
 
     public async Task<IReadOnlyList<RefundReceiptListItem>> ListAsync(
@@ -239,7 +245,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
         await using var command = scope.CreateCommand(includeDrafts
             ? """
               select rr.id, rr.entity_number, rr.refund_number, rr.status, rr.refund_date,
-                     rr.customer_id, rr.document_currency_code, rr.total_amount, rr.payment_method, rr.posted_at
+                     rr.customer_id, rr.document_currency_code, rr.total_amount, rr.payment_method, rr.posted_at,
+                     rr.customer_po_number
               from refund_receipts rr
               where rr.company_id = @company_id
               order by rr.refund_date desc, rr.created_at desc
@@ -247,7 +254,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
               """
             : """
               select rr.id, rr.entity_number, rr.refund_number, rr.status, rr.refund_date,
-                     rr.customer_id, rr.document_currency_code, rr.total_amount, rr.payment_method, rr.posted_at
+                     rr.customer_id, rr.document_currency_code, rr.total_amount, rr.payment_method, rr.posted_at,
+                     rr.customer_po_number
               from refund_receipts rr
               where rr.company_id = @company_id
                 and rr.status <> 'draft'
@@ -270,7 +278,8 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                 reader.GetString(reader.GetOrdinal("document_currency_code")),
                 reader.GetDecimal(reader.GetOrdinal("total_amount")),
                 reader.GetString(reader.GetOrdinal("payment_method")),
-                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at"))));
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("customer_po_number")) ? null : reader.GetString(reader.GetOrdinal("customer_po_number"))));
         }
         return rows;
     }
@@ -352,6 +361,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                   tax_amount,
                   total_amount,
                   memo,
+                  customer_po_number,
                   posted_at,
                   created_by_user_id,
                   created_at,
@@ -380,6 +390,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                   @tax_amount,
                   @total_amount,
                   @memo,
+                  @customer_po_number,
                   null,
                   @created_by_user_id,
                   now(),
@@ -420,6 +431,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
                     tax_amount = @tax_amount,
                     total_amount = @total_amount,
                     memo = @memo,
+                    customer_po_number = @customer_po_number,
                     updated_at = now()
                 where id = @id
                   and company_id = @company_id
@@ -601,6 +613,7 @@ public sealed class PostgresRefundReceiptDocumentRepository : IRefundReceiptDocu
         command.Parameters.AddWithValue("tax_amount", taxTotal);
         command.Parameters.AddWithValue("total_amount", total);
         command.Parameters.AddWithValue("memo", string.IsNullOrWhiteSpace(draft.Memo) ? (object)DBNull.Value : draft.Memo.Trim());
+        command.Parameters.AddWithValue("customer_po_number", string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? (object)DBNull.Value : draft.CustomerPoNumber.Trim());
     }
 
     private static async Task<(string EntityNumber, string RefundNumber)> LoadIdentityAsync(

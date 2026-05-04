@@ -41,6 +41,7 @@
                     <th>Memo #</th>
                     <th>Date</th>
                     <th>Status</th>
+                    <th>Customer PO</th>
                     <th class="text-right">Total</th>
                     <th>Currency</th>
                 </tr>
@@ -52,6 +53,16 @@
                         <td><a class="citus-link" href="@($"credit-memos/{row.Id:D}")">@row.DisplayNumber</a></td>
                         <td>@row.DocumentDate.ToString("yyyy-MM-dd")</td>
                         <td>@HumanizeStatus(row.Status)</td>
+                        <td>
+                            @if (string.IsNullOrWhiteSpace(row.CustomerPoNumber))
+                            {
+                                <span class="text-fg-subtle">—</span>
+                            }
+                            else
+                            {
+                                <span class="citus-inline-code">@row.CustomerPoNumber</span>
+                            }
+                        </td>
                         <td class="text-right">@row.TotalAmount.ToString("N2")</td>
                         <td>@row.TransactionCurrencyCode</td>
                     </tr>

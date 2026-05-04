@@ -255,7 +255,9 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
         decimal subtotalAmount,
         decimal taxAmount,
         decimal totalAmount,
-        string? memo = null)
+        string? memo = null,
+        string? customerPoNumber = null,
+        Guid? salesOrderId = null)
     {
         if (customerId == Guid.Empty)
         {
@@ -283,6 +285,8 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
         TaxAmount = taxAmount;
         TotalAmount = totalAmount;
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        CustomerPoNumber = string.IsNullOrWhiteSpace(customerPoNumber) ? null : customerPoNumber.Trim();
+        SalesOrderId = salesOrderId;
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -327,6 +331,22 @@ public sealed class InvoiceDocument : IPostingDocument, IOpenItemDocument
     public decimal TotalAmount { get; }
 
     public string? Memo { get; }
+
+    /// <summary>
+    /// Customer's own purchase-order reference (their procurement system's
+    /// PO number). Carried through from Sales Order if invoiced from one;
+    /// editable on the invoice itself for late-arriving PO updates. Optional —
+    /// retail / B2C invoices typically leave it null.
+    /// </summary>
+    public string? CustomerPoNumber { get; }
+
+    /// <summary>
+    /// Back-link to the Sales Order this invoice was created from, when
+    /// applicable. Null for direct-create invoices. Drives the auto-COGS
+    /// trigger (find the SalesIssue tied to the SO) and the printed
+    /// "From SO# XYZ" banner on the customer-facing invoice.
+    /// </summary>
+    public Guid? SalesOrderId { get; }
 
     public IReadOnlyList<InvoiceDocumentLine> InvoiceLines { get; }
 
@@ -425,7 +445,8 @@ public sealed class CreditNoteDocument : IPostingDocument, IOpenItemDocument
         decimal subtotalAmount,
         decimal taxAmount,
         decimal totalAmount,
-        string? memo = null)
+        string? memo = null,
+        string? customerPoNumber = null)
     {
         if (customerId == Guid.Empty)
         {
@@ -453,6 +474,7 @@ public sealed class CreditNoteDocument : IPostingDocument, IOpenItemDocument
         TaxAmount = taxAmount;
         TotalAmount = totalAmount;
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        CustomerPoNumber = string.IsNullOrWhiteSpace(customerPoNumber) ? null : customerPoNumber.Trim();
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -497,6 +519,9 @@ public sealed class CreditNoteDocument : IPostingDocument, IOpenItemDocument
     public decimal TotalAmount { get; }
 
     public string? Memo { get; }
+
+    /// <summary>Customer's own purchase-order reference (typically copied from the original invoice). Optional.</summary>
+    public string? CustomerPoNumber { get; }
 
     public IReadOnlyList<CreditNoteDocumentLine> CreditNoteLines { get; }
 
@@ -2851,7 +2876,8 @@ public sealed class SalesReceiptDocument : IPostingDocument
         decimal subtotalAmount,
         decimal taxAmount,
         decimal totalAmount,
-        string? memo = null)
+        string? memo = null,
+        string? customerPoNumber = null)
     {
         if (customerId == Guid.Empty)
         {
@@ -2880,6 +2906,7 @@ public sealed class SalesReceiptDocument : IPostingDocument
         TaxAmount = taxAmount;
         TotalAmount = totalAmount;
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        CustomerPoNumber = string.IsNullOrWhiteSpace(customerPoNumber) ? null : customerPoNumber.Trim();
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -2926,6 +2953,9 @@ public sealed class SalesReceiptDocument : IPostingDocument
     public decimal TotalAmount { get; }
 
     public string? Memo { get; }
+
+    /// <summary>Customer's own purchase-order reference (their procurement / AP system's ref). Optional.</summary>
+    public string? CustomerPoNumber { get; }
 
     public IReadOnlyList<SalesReceiptDocumentLine> ReceiptLines { get; }
 
@@ -3043,7 +3073,8 @@ public sealed class RefundReceiptDocument : IPostingDocument
         decimal subtotalAmount,
         decimal taxAmount,
         decimal totalAmount,
-        string? memo = null)
+        string? memo = null,
+        string? customerPoNumber = null)
     {
         if (customerId == Guid.Empty)
         {
@@ -3073,6 +3104,7 @@ public sealed class RefundReceiptDocument : IPostingDocument
         TaxAmount = taxAmount;
         TotalAmount = totalAmount;
         Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+        CustomerPoNumber = string.IsNullOrWhiteSpace(customerPoNumber) ? null : customerPoNumber.Trim();
 
         var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
         if (materializedLines.Length == 0)
@@ -3121,6 +3153,9 @@ public sealed class RefundReceiptDocument : IPostingDocument
     public decimal TotalAmount { get; }
 
     public string? Memo { get; }
+
+    /// <summary>Customer's own purchase-order reference. Optional.</summary>
+    public string? CustomerPoNumber { get; }
 
     public IReadOnlyList<RefundReceiptDocumentLine> ReceiptLines { get; }
 

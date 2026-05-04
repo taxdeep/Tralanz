@@ -69,6 +69,7 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               tax_amount numeric(20,6) not null default 0,
               total_amount numeric(20,6) not null default 0,
               memo text,
+              customer_po_number text,
               posted_at timestamptz,
               created_by_user_id uuid not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
@@ -101,6 +102,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
 
             create index if not exists ix_sales_receipts_company_status on sales_receipts (company_id, status);
             create index if not exists ix_sales_receipts_company_customer on sales_receipts (company_id, customer_id);
+            create index if not exists ix_sales_receipts_company_customer_po
+              on sales_receipts (company_id, customer_po_number)
+              where customer_po_number is not null;
             create index if not exists ix_sales_receipt_lines_sales_receipt on sales_receipt_lines (sales_receipt_id, line_number);
 
             -- Refund Receipts -----------------------------------------------
@@ -127,6 +131,7 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               tax_amount numeric(20,6) not null default 0,
               total_amount numeric(20,6) not null default 0,
               memo text,
+              customer_po_number text,
               posted_at timestamptz,
               created_by_user_id uuid not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
@@ -159,6 +164,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
 
             create index if not exists ix_refund_receipts_company_status on refund_receipts (company_id, status);
             create index if not exists ix_refund_receipts_company_customer on refund_receipts (company_id, customer_id);
+            create index if not exists ix_refund_receipts_company_customer_po
+              on refund_receipts (company_id, customer_po_number)
+              where customer_po_number is not null;
             create index if not exists ix_refund_receipt_lines_refund_receipt on refund_receipt_lines (refund_receipt_id, line_number);
 
             -- Bank Transfers ------------------------------------------------
@@ -303,6 +311,26 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
 
             drop trigger if exists trg_tax_returns_set_updated_at on tax_returns;
             create trigger trg_tax_returns_set_updated_at before update on tax_returns for each row execute function citus_set_updated_at();
+
+            -- Customer PO# + SO link rollout (additive, idempotent) ----------
+            -- These columns get added to documents whose CREATE TABLE is owned
+            -- elsewhere (canonical migration script for invoices / credit_notes;
+            -- foundation store for inventory_documents). Re-asserted here so
+            -- dev / test databases pick the columns up on next app start without
+            -- needing a manual migration run.
+            alter table invoices             add column if not exists customer_po_number text;
+            alter table invoices             add column if not exists sales_order_id     uuid;
+            alter table credit_notes         add column if not exists customer_po_number text;
+
+            create index if not exists ix_invoices_company_customer_po
+              on invoices (company_id, customer_po_number)
+              where customer_po_number is not null;
+            create index if not exists ix_invoices_company_sales_order
+              on invoices (company_id, sales_order_id)
+              where sales_order_id is not null;
+            create index if not exists ix_credit_notes_company_customer_po
+              on credit_notes (company_id, customer_po_number)
+              where customer_po_number is not null;
             """;
 
         await command.ExecuteNonQueryAsync(cancellationToken);

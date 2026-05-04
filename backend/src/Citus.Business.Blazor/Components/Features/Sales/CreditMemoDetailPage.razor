@@ -94,6 +94,10 @@ else
                         <tr><th>Memo no.</th><td><span class="citus-inline-code">@_doc.DisplayNumber</span></td></tr>
                         <tr><th>Internal #</th><td><span class="citus-inline-code">@_doc.EntityNumber</span></td></tr>
                         <tr><th>Customer</th><td>@_customerName</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_doc.CustomerPoNumber))
+                        {
+                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_doc.CustomerPoNumber</span></td></tr>
+                        }
                         <tr><th>Memo date</th><td>@_doc.DocumentDate.ToString("yyyy-MM-dd")</td></tr>
                         <tr><th>Due date</th><td>@_doc.DueDate.ToString("yyyy-MM-dd")</td></tr>
                         <tr><th>Currency</th><td>@_doc.TransactionCurrencyCode</td></tr>

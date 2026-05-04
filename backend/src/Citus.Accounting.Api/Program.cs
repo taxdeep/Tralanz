@@ -5605,6 +5605,7 @@ accounting.MapPost(
             MemoToCustomer: quote.MemoToCustomer,
             InternalNote: quote.InternalNote,
             SourceQuoteId: quote.Id,
+            CustomerPoNumber: null,
             Lines: quote.Lines
                 .Select(l => new SalesOrderLineInput(
                     Sequence: l.Sequence,
@@ -6011,6 +6012,7 @@ static SalesOrderUpsertInput MapSalesOrderInput(SalesOrderUpsertHttpRequest requ
     MemoToCustomer: request.MemoToCustomer,
     InternalNote: request.InternalNote,
     SourceQuoteId: request.SourceQuoteId,
+    CustomerPoNumber: string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
     Lines: (request.Lines ?? Array.Empty<SalesOrderLineHttpRequest>())
         .Select(l => new SalesOrderLineInput(
             Sequence: l.Sequence,
@@ -7921,7 +7923,9 @@ accounting.MapPost(
                         line.TaxAmount,
                         line.ItemId,
                         line.WarehouseId,
-                        line.UomCode)).ToArray()),
+                        line.UomCode)).ToArray(),
+                    string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
+                    request.SalesOrderId),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -7963,7 +7967,9 @@ accounting.MapPut(
                         line.TaxAmount,
                         line.ItemId,
                         line.WarehouseId,
-                        line.UomCode)).ToArray()),
+                        line.UomCode)).ToArray(),
+                    string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
+                    request.SalesOrderId),
                 cancellationToken);
 
             return Results.Ok(result);
@@ -8028,6 +8034,8 @@ accounting.MapGet(
             document.TaxAmount,
             document.TotalAmount,
             document.Memo,
+            document.CustomerPoNumber,
+            document.SalesOrderId,
             Lines = document.InvoiceLines.Select(line => new
             {
                 line.LineNumber,
@@ -11103,7 +11111,8 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount)).ToArray(),
+                    string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
             // 3. Post the draft → PostingEngine writes the journal,
@@ -11187,7 +11196,8 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount)).ToArray(),
+                    string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
             var postResult = await postHandler.HandleAsync(
@@ -11280,7 +11290,8 @@ accounting.MapPost(
                         line.Quantity,
                         line.UnitPrice,
                         line.TaxCodeId,
-                        line.TaxAmount)).ToArray()),
+                        line.TaxAmount)).ToArray(),
+                    string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim()),
                 cancellationToken);
 
             var postResult = await postHandler.HandleAsync(
@@ -11734,6 +11745,7 @@ accounting.MapGet(
             document.TaxAmount,
             document.TotalAmount,
             document.Memo,
+            document.CustomerPoNumber,
             Lines = document.ReceiptLines.Select(line => new
             {
                 line.LineNumber,
@@ -11778,6 +11790,7 @@ accounting.MapGet(
             document.TaxAmount,
             document.TotalAmount,
             document.Memo,
+            document.CustomerPoNumber,
             Lines = document.ReceiptLines.Select(line => new
             {
                 line.LineNumber,
@@ -12700,6 +12713,7 @@ internal sealed record class SalesReceiptSaveAndPostHttpRequest
     public string PaymentMethod { get; init; } = "cash";
     public string ReferenceNo { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    public string CustomerPoNumber { get; init; } = string.Empty;
     public string? IdempotencyKey { get; init; }
     public IReadOnlyList<SalesReceiptLineHttpRequest> Lines { get; init; } = Array.Empty<SalesReceiptLineHttpRequest>();
 }
@@ -12731,6 +12745,7 @@ internal sealed record class RefundReceiptSaveAndPostHttpRequest
     public string ReferenceNo { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    public string CustomerPoNumber { get; init; } = string.Empty;
     public string? IdempotencyKey { get; init; }
     public IReadOnlyList<RefundReceiptLineHttpRequest> Lines { get; init; } = Array.Empty<RefundReceiptLineHttpRequest>();
 }
@@ -12759,6 +12774,7 @@ internal sealed record class CreditMemoSaveAndPostHttpRequest
     public string AppliedToInvoiceNumber { get; init; } = string.Empty;
     public string Reason { get; init; } = string.Empty;
     public string Memo { get; init; } = string.Empty;
+    public string CustomerPoNumber { get; init; } = string.Empty;
     public string? IdempotencyKey { get; init; }
     public IReadOnlyList<CreditMemoLineHttpRequest> Lines { get; init; } = Array.Empty<CreditMemoLineHttpRequest>();
 }

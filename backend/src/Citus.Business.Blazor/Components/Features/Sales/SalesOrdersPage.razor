@@ -57,6 +57,18 @@
                         <CitusBadge Color="@StatusColor(row.Status)">@HumanizeStatus(row.Status)</CitusBadge>
                     </Template>
                 </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.CustomerPoNumber)" Title="Customer PO" Width="160px">
+                    <Template Context="row">
+                        @if (string.IsNullOrWhiteSpace(row.CustomerPoNumber))
+                        {
+                            <span class="text-fg-subtle">—</span>
+                        }
+                        else
+                        {
+                            <span class="citus-inline-code">@row.CustomerPoNumber</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="SalesOrderRow" Property="@nameof(SalesOrderRow.InvoiceNumber)" Title="Invoice #" Width="160px">
                     <Template Context="row">@(string.IsNullOrEmpty(row.InvoiceNumber) ? "—" : row.InvoiceNumber)</Template>
                 </RadzenDataGridColumn>
@@ -94,6 +106,7 @@
                 DocumentDate: r.DocumentDate,
                 Status: r.Status,
                 InvoiceNumber: r.InvoiceNumber,
+                CustomerPoNumber: r.CustomerPoNumber,
                 TotalAmount: r.TotalAmount,
                 Currency: r.TransactionCurrencyCode)).ToList();
         }
@@ -123,6 +136,7 @@
         DateOnly DocumentDate,
         string Status,
         string? InvoiceNumber,
+        string? CustomerPoNumber,
         decimal TotalAmount,
         string Currency);
 }
