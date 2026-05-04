@@ -570,6 +570,53 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         }
     }
 
+    public async Task<IReadOnlyList<InventoryWarehouseListRow>> ListWarehousesAsync(
+        Guid companyId,
+        bool includeInactive,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            select
+              id,
+              company_id,
+              warehouse_code,
+              name,
+              description,
+              is_active,
+              created_at,
+              updated_at
+            from inventory_warehouses
+            where company_id = @company_id
+              and (@include_inactive or is_active = true)
+            order by
+              case when is_active then 0 else 1 end,
+              warehouse_code asc;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("include_inactive", includeInactive);
+
+        var rows = new List<InventoryWarehouseListRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new InventoryWarehouseListRow(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetGuid(reader.GetOrdinal("company_id")),
+                reader.GetString(reader.GetOrdinal("warehouse_code")),
+                reader.GetString(reader.GetOrdinal("name")),
+                reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
+                reader.GetBoolean(reader.GetOrdinal("is_active")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at"))));
+        }
+        return rows;
+    }
+
     private async Task EnsureSchemaAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)

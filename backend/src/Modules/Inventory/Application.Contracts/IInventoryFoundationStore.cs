@@ -48,4 +48,14 @@ public interface IInventoryFoundationStore
         Guid warehouseId,
         bool isActive,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Warehouse list for the per-company Warehouses management page.
+    /// Returns active by default; pass <paramref name="includeInactive"/>
+    /// to surface deactivated rows as well.
+    /// </summary>
+    Task<IReadOnlyList<InventoryWarehouseListRow>> ListWarehousesAsync(
+        Guid companyId,
+        bool includeInactive,
+        CancellationToken cancellationToken);
 }

@@ -1445,6 +1445,59 @@ accounting.MapPost(
         }
     });
 
+// -----------------------------------------------------------------------
+// Warehouses — list / rename for the Inventory tier's Warehouses page.
+// V1 inventory is single-warehouse so this list is short, but the
+// shape is multi-row-ready for the ERP tier.
+// -----------------------------------------------------------------------
+accounting.MapGet(
+    "/warehouses",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        bool? includeInactive,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await store.ListWarehousesAsync(session.ActiveCompanyId, includeInactive ?? false, cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPut(
+    "/warehouses/{warehouseId:guid}",
+    async (
+        Guid warehouseId,
+        WarehouseRenameHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryFoundationStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (string.IsNullOrWhiteSpace(request.Name)) return Results.BadRequest(new { message = "Name is required." });
+
+        try
+        {
+            await store.SaveWarehouseAsync(
+                new InventoryWarehouseUpsertRequest(
+                    CompanyId: session.ActiveCompanyId,
+                    UserId: session.UserId,
+                    WarehouseId: warehouseId,
+                    WarehouseCode: (request.WarehouseCode ?? string.Empty).Trim().ToUpperInvariant(),
+                    Name: request.Name.Trim(),
+                    Description: string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim()),
+                cancellationToken);
+            return Results.Ok(new { warehouseId });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
 accounting.MapGet(
     "/inventory/activation-state",
     async (

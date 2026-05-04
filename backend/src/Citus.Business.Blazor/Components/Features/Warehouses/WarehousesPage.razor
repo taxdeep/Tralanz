@@ -1,0 +1,229 @@
+@page "/company/warehouses"
+
+@inject BusinessShellState ShellState
+@inject WarehouseClient WarehouseClient
+@inject NavigationManager NavigationManager
+@inject CitusToastService Message
+
+<PageTitle>Warehouses | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        @if (ShellState.ActiveCompany.InventoryModuleEnabled)
+        {
+            <a class="citus-button citus-button--ghost" href="company/inventory/activate">
+                <CitusIcon Name="IconName.Settings" Size="IconSize.Inline" />
+                <span>Inventory Setup</span>
+            </a>
+        }
+    </Actions>
+</CitusPageHeader>
+
+@if (!ShellState.ActiveCompany.InventoryModuleEnabled)
+{
+    @* Module-not-enabled state: no warehouses to manage. Surface the
+       activation wizard CTA prominently rather than showing an empty
+       table — same call-to-action pattern as the Items page Stock
+       kind upsell. *@
+    <section class="citus-panel">
+        <div class="text-center py-8">
+            <CitusIcon Name="IconName.BuildingStore" Size="IconSize.Display" />
+            <h2 class="text-lg font-semibold mt-3">Tralanz Inventory is not enabled for this company.</h2>
+            <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
+                Warehouses become available after you enable the Inventory paid module.
+                Activation also adds the standard inventory accounts (GR/IR Clearing, COGS,
+                PPV, Adjustment) and the costing engine (Moving Average or FIFO).
+            </p>
+            <a class="citus-button citus-button--primary" href="company/inventory/activate">
+                Enable Tralanz Inventory →
+            </a>
+        </div>
+    </section>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+
+    <section class="citus-panel">
+        <CitusAsyncBoundary IsLoading="@_isLoading"
+                            IsEmpty="@(_warehouses.Count == 0)"
+                            EmptyIcon="IconName.BuildingStore"
+                            EmptyTitle="No warehouses yet"
+                            EmptyMessage="The activation wizard creates Main Warehouse for you. If you don't see it, re-run the wizard.">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8rem">Code</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th style="width: 6rem">Status</th>
+                        <th style="width: 6rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var warehouse in _warehouses)
+                    {
+                        var isEditing = _editingId == warehouse.Id;
+                        <tr>
+                            <td><span class="citus-inline-code">@warehouse.WarehouseCode</span></td>
+                            <td>
+                                @if (isEditing)
+                                {
+                                    <CitusInput TValue="string" @bind-Value="_editName" Placeholder="Main Warehouse" />
+                                }
+                                else
+                                {
+                                    @warehouse.Name
+                                }
+                            </td>
+                            <td>
+                                @if (isEditing)
+                                {
+                                    <CitusInput TValue="string" @bind-Value="_editDescription" Placeholder="Optional" />
+                                }
+                                else
+                                {
+                                    <span class="text-fg-muted text-sm">@(warehouse.Description ?? "—")</span>
+                                }
+                            </td>
+                            <td>
+                                @if (warehouse.IsActive)
+                                {
+                                    <CitusBadge Color="@("green")">Active</CitusBadge>
+                                }
+                                else
+                                {
+                                    <CitusBadge Color="@("default")">Inactive</CitusBadge>
+                                }
+                            </td>
+                            <td class="text-right">
+                                @if (isEditing)
+                                {
+                                    <div class="flex gap-1 justify-end">
+                                        <CitusButton Variant="CitusButtonVariant.Primary"
+                                                     Size="CitusButtonSize.Small"
+                                                     Disabled="_isSubmitting"
+                                                     OnClick="@(() => SaveAsync(warehouse))">
+                                            @(_isSubmitting ? "Saving…" : "Save")
+                                        </CitusButton>
+                                        <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                     Size="CitusButtonSize.Small"
+                                                     Disabled="_isSubmitting"
+                                                     OnClick="CancelEdit">Cancel</CitusButton>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <CitusButton Variant="CitusButtonVariant.Ghost"
+                                                 Size="CitusButtonSize.Small"
+                                                 OnClick="@(() => StartEdit(warehouse))">Edit</CitusButton>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </CitusAsyncBoundary>
+    </section>
+
+    <p class="text-fg-subtle text-xs mt-3">
+        V1 Inventory tier supports a single warehouse per company. Multi-warehouse,
+        bin / location, and lot / serial tracking arrive with the ERP tier.
+    </p>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Warehouse",
+        Title = "Warehouses",
+        Subtitle = "Inventory locations under this company. The activation wizard creates Main Warehouse; rename here."
+    };
+
+    private IReadOnlyList<WarehouseSummary> _warehouses = Array.Empty<WarehouseSummary>();
+    private bool _isLoading = true;
+    private bool _isSubmitting;
+    private string? _validation;
+    private Guid? _editingId;
+    private string _editName = string.Empty;
+    private string _editDescription = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ShellState.ActiveCompany.InventoryModuleEnabled)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _warehouses = await WarehouseClient.ListAsync(includeInactive: true);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void StartEdit(WarehouseSummary warehouse)
+    {
+        _validation = null;
+        _editingId = warehouse.Id;
+        _editName = warehouse.Name;
+        _editDescription = warehouse.Description ?? string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _editName = string.Empty;
+        _editDescription = string.Empty;
+        _validation = null;
+    }
+
+    private async Task SaveAsync(WarehouseSummary warehouse)
+    {
+        _validation = null;
+        if (string.IsNullOrWhiteSpace(_editName))
+        {
+            _validation = "Name is required.";
+            return;
+        }
+
+        _isSubmitting = true;
+        try
+        {
+            var outcome = await WarehouseClient.RenameAsync(
+                warehouse.Id,
+                new WarehouseRenamePayload(
+                    WarehouseCode: warehouse.WarehouseCode,
+                    Name: _editName.Trim(),
+                    Description: string.IsNullOrWhiteSpace(_editDescription) ? null : _editDescription.Trim()));
+
+            if (!outcome.Succeeded)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not save the warehouse.";
+                return;
+            }
+
+            await Message.SuccessAsync($"Warehouse {warehouse.WarehouseCode} updated.");
+            CancelEdit();
+            await LoadAsync();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}
