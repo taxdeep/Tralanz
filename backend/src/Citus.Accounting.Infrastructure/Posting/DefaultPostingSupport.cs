@@ -423,6 +423,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly()),
             SalesIssueCogsPostingDocument cogsPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly()),
+            CustomerDepositPostingDocument deposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildCustomerDepositFragments(deposit).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -1351,6 +1353,45 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 ControlRole: "inventory_asset",
                 PostingRole: "inventory:asset_consumption"));
         }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// M5 iter 3: Customer Deposit posting fragments.
+    /// Dr Bank (DepositToAccountId) / Cr Customer Deposit (24700) at the
+    /// proportional base amount derived from FxSnapshot. Single-line
+    /// document — no cost layers, no AR involvement.
+    /// </summary>
+    private static List<PostingFragment> BuildCustomerDepositFragments(
+        CustomerDepositPostingDocument deposit)
+    {
+        var fragments = new List<PostingFragment>(2)
+        {
+            new(
+                deposit.DepositToAccountId,
+                deposit.TransactionCurrencyCode,
+                deposit.AmountTx,
+                0m,
+                deposit.AmountBase,
+                0m,
+                $"Customer deposit received {deposit.DisplayNumber.Value}",
+                ControlRole: "customer_deposit_bank",
+                PartyId: deposit.CustomerId,
+                PostingRole: "deposit:bank_in"),
+            new(
+                deposit.CustomerDepositAccountId,
+                deposit.TransactionCurrencyCode,
+                0m,
+                deposit.AmountTx,
+                0m,
+                deposit.AmountBase,
+                $"Customer deposit liability {deposit.DisplayNumber.Value}",
+                ControlRole: "customer_deposit",
+                PartyId: deposit.CustomerId,
+                PostingRole: "control:customer_deposit"),
+        };
 
         EnsureBalancedBaseCurrency(fragments);
         return fragments;

@@ -127,6 +127,7 @@ builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryRe
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
+builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
 builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
 builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
@@ -181,6 +182,7 @@ builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
+builder.Services.AddScoped<PostCustomerDepositCommandHandler>();
 builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
 builder.Services.AddScoped<PostReceiptGrIrSettlementJournalCommandHandler>();
 builder.Services.AddScoped<ClearReceiptGrIrSettlementOpenItemCommandHandler>();
@@ -5799,6 +5801,53 @@ accounting.MapPost(
         {
             var saved = await store.ConfirmAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
             return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+// M5 iter 3: standalone Customer Deposit on an SO. Operator collects a
+// prepayment against an open / confirmed SO before any invoice exists.
+// Persists customer_deposits + ar_open_items credit row + posts JE
+// (Dr Bank / Cr Customer Deposit) in a single unit of work.
+accounting.MapPost(
+    "/sales-orders/{salesOrderId:guid}/deposit",
+    async (
+        Guid salesOrderId,
+        SalesOrderDepositHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore salesOrderStore,
+        PostCustomerDepositCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        if (request.AmountTx <= 0m) return Results.BadRequest(new { message = "Deposit amount must be positive." });
+        if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { message = "Deposit-to (bank) account is required." });
+
+        // Resolve customer from the SO so the client doesn't have to ferry
+        // it (and so we never create a deposit pointed at the wrong customer).
+        var so = await salesOrderStore.GetByIdAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
+        if (so is null) return Results.NotFound(new { message = "Sales order not found in the active company." });
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostCustomerDepositCommand(
+                    new(session.ActiveCompanyId),
+                    new(session.UserId),
+                    SalesOrderId: salesOrderId,
+                    CustomerId: so.CustomerId,
+                    DepositToAccountId: request.DepositToAccountId,
+                    AmountTx: request.AmountTx,
+                    DocumentDate: request.DocumentDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    Memo: request.Memo,
+                    IdempotencyKey: request.IdempotencyKey),
+                cancellationToken);
+            return Results.Ok(result);
         }
         catch (InvalidOperationException ex)
         {
@@ -12736,6 +12785,13 @@ internal sealed record class ManualJournalSaveAndPostLineHttpRequest
 }
 
 // V1-pending request bodies. Match the frontend Draft records 1:1.
+internal sealed record SalesOrderDepositHttpRequest(
+    Guid DepositToAccountId,
+    decimal AmountTx,
+    DateOnly? DocumentDate,
+    string? Memo,
+    string? IdempotencyKey);
+
 internal sealed record class SalesReceiptSaveAndPostHttpRequest
 {
     public Guid CompanyId { get; init; }

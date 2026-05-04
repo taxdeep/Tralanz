@@ -3784,3 +3784,94 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
     /// </summary>
     public FxSnapshotRef? FxSnapshot => null;
 }
+
+/// <summary>
+/// M5 iter 3: standalone Customer Deposit posting. The customer pays
+/// against an open / confirmed Sales Order (no invoice exists yet);
+/// the cash lands as a liability on the Customer Deposit account
+/// (system_role=customer_deposit, code 24700) instead of touching AR.
+///
+/// GL math:
+///   Dr  Bank (deposit_to_account_id)            AmountBase
+///   Cr  Customer Deposit (customer_deposit acct) AmountBase
+///
+/// Persistence side-effects (handled by the repository before the
+/// engine post): a customer_deposits row is inserted (status='open',
+/// source_sales_order_id set), and a matching ar_open_items row is
+/// inserted with source_type='customer_deposit', balance_side='credit'
+/// — that row drives M5 iter 4's pro-rata clearing on shipment / invoice.
+///
+/// Idempotency: SourceType='customer_deposit', SourceId=Id (the deposit
+/// row id), so re-posting on the same deposit is journal-layer safe.
+/// </summary>
+public sealed class CustomerDepositPostingDocument : IPostingDocument
+{
+    public CustomerDepositPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        DateOnly documentDate,
+        Guid customerId,
+        Guid depositToAccountId,
+        Guid customerDepositAccountId,
+        CurrencyCode transactionCurrencyCode,
+        CurrencyCode baseCurrencyCode,
+        FxSnapshotRef? fxSnapshot,
+        decimal amountTx,
+        decimal amountBase,
+        string? memo = null)
+    {
+        if (customerId == Guid.Empty)
+        {
+            throw new ArgumentException("Customer id is required.", nameof(customerId));
+        }
+        if (depositToAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Deposit-to account id is required.", nameof(depositToAccountId));
+        }
+        if (customerDepositAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Customer Deposit account id is required.", nameof(customerDepositAccountId));
+        }
+        if (amountTx <= 0m || amountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amountTx), "Customer deposit amounts must be positive.");
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        DocumentDate = documentDate;
+        CustomerId = customerId;
+        DepositToAccountId = depositToAccountId;
+        CustomerDepositAccountId = customerDepositAccountId;
+        TransactionCurrencyCode = transactionCurrencyCode ?? throw new ArgumentNullException(nameof(transactionCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        FxSnapshot = fxSnapshot;
+        AmountTx = Math.Round(amountTx, 6, MidpointRounding.ToEven);
+        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        Lines = Array.Empty<IPostingDocumentLine>();
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+    public string SourceType => "customer_deposit";
+    public string Status => "draft";
+    public DateOnly DocumentDate { get; }
+    public Guid CustomerId { get; }
+    public Guid DepositToAccountId { get; }
+    public Guid CustomerDepositAccountId { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public FxSnapshotRef? FxSnapshot { get; }
+    public decimal AmountTx { get; }
+    public decimal AmountBase { get; }
+    public string? Memo { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+}

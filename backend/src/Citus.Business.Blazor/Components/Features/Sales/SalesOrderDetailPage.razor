@@ -2,6 +2,7 @@
 
 @inject BusinessShellState ShellState
 @inject SalesOrderClient SalesOrderClient
+@inject CustomerDepositClient CustomerDepositClient
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
@@ -116,6 +117,63 @@ else
             }
         </div>
     </section>
+
+    @* M5 iter 3: standalone customer deposit. Available while the SO is
+       not yet billed — captures a prepayment that lands as a Customer
+       Deposit liability (24700) instead of touching AR. M5 iter 4 will
+       pro-rata clear these against shipments / invoices. *@
+    @if (_so.Status is "open" or "confirmed")
+    {
+        <section class="citus-panel mb-6">
+            <h2 class="citus-panel__title">Receive Customer Deposit</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Capture a prepayment from @_so.CustomerName for this Sales Order.
+                The cash lands on the Customer Deposit liability (account 24700);
+                no invoice or AR row is created. V1 supports same-currency only.
+            </p>
+
+            @if (!string.IsNullOrWhiteSpace(_depositError))
+            {
+                <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_depositError" ShowIcon="true" Class="mb-3" />
+            }
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="md:col-span-2">
+                    <label class="text-sm font-medium block mb-1">Deposit to (bank / cash)</label>
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="customer_deposit.deposit_to"
+                                   AllowedRootTypes="asset"
+                                   SelectedId="@_depositBankAccountId"
+                                   SelectedDisplayText="@_depositBankAccountDisplay"
+                                   Placeholder="Select bank / cash / credit card…"
+                                   DefaultCurrencyCode="@_so.TransactionCurrencyCode"
+                                   OnAccountSelected="OnDepositBankSelected"
+                                   OnCleared="OnDepositBankCleared" />
+                </div>
+                <div>
+                    <label class="text-sm font-medium block mb-1">Amount (@_so.TransactionCurrencyCode)</label>
+                    <RadzenNumeric TValue="decimal" @bind-Value="_depositAmount" Min="0" Format="0.00" Class="citus-control-full" />
+                </div>
+                <div class="md:col-span-3">
+                    <label class="text-sm font-medium block mb-1">Memo</label>
+                    <CitusInput TValue="string" @bind-Value="_depositMemo" Placeholder="Optional note (e.g. 'Down payment per signed PO')." />
+                </div>
+            </div>
+
+            <div class="flex gap-2 items-center mt-3">
+                <CitusButton Variant="CitusButtonVariant.Primary"
+                             Disabled="@(_depositSubmitting || _depositAmount <= 0 || _depositBankAccountId is null)"
+                             OnClick="ReceiveDepositAsync">
+                    @(_depositSubmitting ? "Posting…" : "Receive deposit")
+                </CitusButton>
+                @if (_depositAmount > 0 && _depositBankAccountId is null)
+                {
+                    <span class="text-fg-subtle text-sm">Pick a bank / cash account first.</span>
+                }
+            </div>
+        </section>
+    }
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-8">
@@ -255,6 +313,65 @@ else
 
     private static string FormatQty(decimal qty) =>
         qty == 0m ? "—" : qty.ToString("0.##");
+
+    // M5 iter 3: customer-deposit form state.
+    private decimal _depositAmount;
+    private Guid? _depositBankAccountId;
+    private string _depositBankAccountDisplay = string.Empty;
+    private string _depositMemo = string.Empty;
+    private bool _depositSubmitting;
+    private string? _depositError;
+
+    private void OnDepositBankSelected(AccountSummary account)
+    {
+        _depositBankAccountId = account.Id;
+        _depositBankAccountDisplay = $"{account.Code} {account.Name}";
+    }
+
+    private void OnDepositBankCleared()
+    {
+        _depositBankAccountId = null;
+        _depositBankAccountDisplay = string.Empty;
+    }
+
+    private async Task ReceiveDepositAsync()
+    {
+        if (_so is null || _depositSubmitting) return;
+        if (_depositBankAccountId is null) { _depositError = "Pick a bank / cash account."; return; }
+        if (_depositAmount <= 0) { _depositError = "Amount must be greater than zero."; return; }
+
+        _depositError = null;
+        _depositSubmitting = true;
+        try
+        {
+            var outcome = await CustomerDepositClient.PostAsync(
+                _so.Id,
+                new CustomerDepositPostRequest(
+                    DepositToAccountId: _depositBankAccountId.Value,
+                    AmountTx: _depositAmount,
+                    DocumentDate: DateOnly.FromDateTime(DateTime.Today),
+                    Memo: string.IsNullOrWhiteSpace(_depositMemo) ? null : _depositMemo.Trim()));
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _depositError = outcome.ErrorMessage ?? "Could not post the deposit.";
+                await Message.WarningAsync(_depositError);
+                return;
+            }
+
+            var saved = outcome.Saved;
+            await Message.SuccessAsync(
+                $"Deposit {saved.DisplayNumber} posted ({saved.AmountBase:N2}). " +
+                $"Journal entry {saved.JournalEntryDisplayNumber}.");
+
+            // Reset the form for the next deposit; reload SO so any future
+            // M5 iter 4 surface (cleared deposits, balance summary) refreshes.
+            _depositAmount = 0;
+            _depositMemo = string.Empty;
+            await LoadAsync();
+        }
+        finally { _depositSubmitting = false; }
+    }
 
     private async Task ConfirmAsync()
     {

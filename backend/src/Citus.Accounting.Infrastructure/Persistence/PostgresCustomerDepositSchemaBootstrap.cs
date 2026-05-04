@@ -92,6 +92,19 @@ public sealed class PostgresCustomerDepositSchemaBootstrap
             create index if not exists ix_customer_deposits_source_receive_payment
               on customer_deposits (source_receive_payment_id)
               where source_receive_payment_id is not null;
+
+            -- M5 iter 3: standalone-deposit path. Customer pays directly
+            -- against an open / confirmed Sales Order (not via overpaying an
+            -- invoice). The deposit row carries the SO id so M5 iter 4 can
+            -- look up open deposits per SO and pro-rata clear them on
+            -- shipment / invoice. Existing overpay-on-invoice path leaves
+            -- this column NULL.
+            alter table customer_deposits
+              add column if not exists source_sales_order_id uuid null;
+
+            create index if not exists ix_customer_deposits_source_sales_order
+              on customer_deposits (source_sales_order_id)
+              where source_sales_order_id is not null;
             """;
 
         await command.ExecuteNonQueryAsync(cancellationToken);
