@@ -1,0 +1,318 @@
+@page "/company/inventory/activate"
+
+@inject BusinessShellState ShellState
+@inject InventoryActivationClient ActivationClient
+@inject BusinessSessionClient SessionClient
+@inject NavigationManager NavigationManager
+@inject CitusToastService Message
+
+<PageTitle>Enable Tralanz Inventory</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <a class="citus-button citus-button--ghost" href="dashboard">
+            <CitusIcon Name="IconName.ArrowLeft" Size="IconSize.Inline" />
+            <span>Back</span>
+        </a>
+    </Actions>
+</CitusPageHeader>
+
+@if (_alreadyEnabled)
+{
+    <CitusAlert Severity="CitusAlertSeverity.Success" ShowIcon="true" Class="mb-4">
+        <MessageTemplate>
+            <strong>Tralanz Inventory is already enabled for @ShellState.ActiveCompany.CompanyName.</strong>
+            <div class="text-fg-muted text-sm mt-1">
+                Enabled @(_currentState?.EnabledAt?.ToString("yyyy-MM-dd") ?? "earlier"). Re-running this wizard
+                refreshes the company profile, re-seeds any missing standard CoA accounts, and
+                rewrites the default warehouse — but does not unlock the costing method (locks on
+                first inventory transaction).
+            </div>
+        </MessageTemplate>
+    </CitusAlert>
+}
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+<ol class="citus-wizard-steps mb-4">
+    @for (var i = 0; i < _stepLabels.Length; i++)
+    {
+        var index = i;
+        var state = index < _stepIndex ? "done" : (index == _stepIndex ? "current" : "pending");
+        <li class="citus-wizard-steps__item citus-wizard-steps__item--@state">
+            <span class="citus-wizard-steps__num">@(index + 1)</span>
+            <span class="citus-wizard-steps__label">@_stepLabels[index]</span>
+        </li>
+    }
+</ol>
+
+<section class="citus-panel mb-4">
+    @switch (_stepIndex)
+    {
+        case 0:
+            <h2 class="citus-panel__title">1. What kind of inventory?</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Drives a few defaults (BOM stays hidden until you pick manufacturing).
+                Doesn't affect what you can do later.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                @foreach (var (value, label, hint) in _profileOptions)
+                {
+                    <label class="citus-radio-card @(_draft.ProfileTag == value ? "is-selected" : null)">
+                        <input type="radio"
+                               name="profile-tag"
+                               value="@value"
+                               checked="@(_draft.ProfileTag == value)"
+                               @onchange="@(() => _draft = _draft with { ProfileTag = value })" />
+                        <span class="citus-radio-card__title">@label</span>
+                        <span class="citus-radio-card__hint">@hint</span>
+                    </label>
+                }
+            </div>
+            break;
+
+        case 1:
+            <h2 class="citus-panel__title">2. Costing method</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Locks after your first inventory transaction. Changing later requires
+                an inventory revaluation by an administrator.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="citus-radio-card citus-radio-card--lg @(_draft.CostingMethod == "moving_average" ? "is-selected" : null)">
+                    <input type="radio" name="costing" value="moving_average"
+                           checked="@(_draft.CostingMethod == "moving_average")"
+                           @onchange="@(() => _draft = _draft with { CostingMethod = "moving_average" })" />
+                    <span class="citus-radio-card__title">Moving Average <span class="text-fg-subtle text-xs">(recommended)</span></span>
+                    <span class="citus-radio-card__hint">
+                        Easier to explain. No layer tracking — cost smooths over time. Fits most
+                        retail and service businesses.
+                    </span>
+                </label>
+                <label class="citus-radio-card citus-radio-card--lg @(_draft.CostingMethod == "fifo" ? "is-selected" : null)">
+                    <input type="radio" name="costing" value="fifo"
+                           checked="@(_draft.CostingMethod == "fifo")"
+                           @onchange="@(() => _draft = _draft with { CostingMethod = "fifo" })" />
+                    <span class="citus-radio-card__title">FIFO</span>
+                    <span class="citus-radio-card__hint">
+                        Per-receipt cost layer. Cost reflects acquisition order. Required for
+                        shelf-life goods, tax-regulated industries, or volatile prices.
+                    </span>
+                </label>
+            </div>
+            break;
+
+        case 2:
+            <h2 class="citus-panel__title">3. Standard accounts</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                Tralanz adds these to your Chart of Accounts (skips any that already exist).
+                Each one is wired to the Inventory engine via a system role — you can rename
+                or renumber them later.
+            </p>
+            <table class="citus-data-table">
+                <thead>
+                    <tr><th>Code</th><th>Name</th><th>Type</th><th>Used for</th></tr>
+                </thead>
+                <tbody>
+                    @* Razor parses bare @code as a directive; alias the loop
+                       variables so the parser doesn't choke on @code / @type. *@
+                    @foreach (var account in _accountsToSeed)
+                    {
+                        <tr>
+                            <td><span class="citus-inline-code">@account.Code</span></td>
+                            <td>@account.Name</td>
+                            <td class="text-fg-muted text-xs uppercase tracking-wider">@account.Type</td>
+                            <td class="text-fg-muted text-sm">@account.Role</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            break;
+
+        case 3:
+            <h2 class="citus-panel__title">4. Default warehouse</h2>
+            <p class="text-fg-muted text-sm mb-3">
+                The Inventory tier supports one warehouse per company. Most operators leave
+                this as "Main Warehouse"; you can rename later.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-medium block mb-1">Warehouse name</label>
+                    <CitusInput TValue="string"
+                                Value="@_draft.WarehouseName"
+                                ValueChanged="@(v => _draft = _draft with { WarehouseName = v ?? string.Empty })"
+                                Placeholder="Main Warehouse" />
+                    <p class="text-fg-subtle text-xs mt-1">Code is fixed as <span class="citus-inline-code">MAIN</span>.</p>
+                </div>
+            </div>
+
+            <div class="citus-callout citus-callout--info mt-4">
+                <CitusIcon Name="IconName.InfoCircle" Size="IconSize.Inline" />
+                <div>
+                    <strong>Opening stock balances</strong> are recorded after activation.
+                    Use <a class="citus-link" href="company/inventory-adjustment">Inventory
+                    Adjustment → Gain</a> to enter what's already on the shelf for each item.
+                    The activation wizard will support inline opening balance in a later
+                    release.
+                </div>
+            </div>
+            break;
+    }
+</section>
+
+<div class="flex items-center justify-between gap-3">
+    <CitusButton Variant="CitusButtonVariant.Ghost" OnClick="OnBack" Disabled="@(_stepIndex == 0 || _isSubmitting)">
+        Back
+    </CitusButton>
+    <div class="flex gap-2">
+        @if (_stepIndex < _stepLabels.Length - 1)
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnNext" Disabled="@(_isSubmitting || !CanAdvance())">
+                Next
+            </CitusButton>
+        }
+        else
+        {
+            <CitusButton Variant="CitusButtonVariant.Primary" OnClick="OnSubmit" Disabled="_isSubmitting">
+                @(_isSubmitting ? "Activating…" : (_alreadyEnabled ? "Re-apply settings" : "Enable Tralanz Inventory"))
+            </CitusButton>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings",
+        Title = "Enable Tralanz Inventory",
+        Subtitle = "Activate the Inventory paid module: stock items, Receipts, Shipments, costing engine, GR/IR clearing."
+    };
+
+    private static readonly string[] _stepLabels =
+    {
+        "Profile", "Costing", "Standard accounts", "Warehouse"
+    };
+
+    private static readonly (string Value, string Label, string Hint)[] _profileOptions =
+    {
+        ("retail",        "Retail / point-of-sale",   "Sell to consumers; stock turns frequently"),
+        ("wholesale",     "Wholesale / distribution", "Sell to other businesses; bulk movements"),
+        ("manufacturing", "Light manufacturing",      "Build finished goods from components (BOM)"),
+        ("service",       "Service + consumables",    "Mostly services, some parts inventory"),
+        ("other",         "Other",                    "Doesn't fit the above categories")
+    };
+
+    // Listing matches the M1 canonical CoA additions / SystemRole bindings.
+    // Read-only review — nothing is editable here; the seeder is idempotent.
+    private static readonly (string Code, string Name, string Type, string Role)[] _accountsToSeed =
+    {
+        ("14000", "Inventory",                    "Asset",        "Inventory asset (existing — adds system role)"),
+        ("21500", "GR/IR Clearing",               "Liability",    "Goods received before vendor bill matched"),
+        ("21600", "Drop-ship Clearing",           "Liability",    "Drop-ship vendor bill awaits customer invoice"),
+        ("24700", "Customer Deposits",            "Liability",    "Full prepayment on a Sales Order"),
+        ("24710", "Customer Advance Payment",     "Liability",    "Partial deposit on big-ticket order"),
+        ("24720", "Customer Store Credit",        "Liability",    "Refund-as-credit from cancelled SO"),
+        ("49100", "Inventory Other Income",       "Revenue",      "GR/IR write-off as gain"),
+        ("51000", "Cost of Goods Sold",           "Cost of Sales","COGS on shipment (existing — adds system role)"),
+        ("51100", "Purchase Price Variance",      "Cost of Sales","Bill price ≠ receipt price"),
+        ("64600", "Inventory Adjustment",         "Expense",      "Cycle count / damage / GR/IR loss")
+    };
+
+    private int _stepIndex;
+    private WizardDraft _draft = new();
+    private bool _isSubmitting;
+    private string? _validation;
+    private bool _alreadyEnabled;
+    private InventoryActivationStateSummary? _currentState;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentState = await ActivationClient.GetStateAsync();
+        _alreadyEnabled = _currentState?.ModuleEnabled == true;
+        if (_alreadyEnabled)
+        {
+            _draft = _draft with
+            {
+                ProfileTag = _currentState?.ProfileTag ?? string.Empty,
+                CostingMethod = "moving_average",
+                WarehouseName = "Main Warehouse"
+            };
+        }
+        else
+        {
+            _draft = _draft with
+            {
+                ProfileTag = "retail",
+                CostingMethod = "moving_average",
+                WarehouseName = "Main Warehouse"
+            };
+        }
+    }
+
+    private bool CanAdvance() => _stepIndex switch
+    {
+        0 => !string.IsNullOrWhiteSpace(_draft.ProfileTag),
+        1 => _draft.CostingMethod is "moving_average" or "fifo",
+        2 => true,
+        3 => true,
+        _ => false
+    };
+
+    private void OnBack()
+    {
+        _validation = null;
+        if (_stepIndex > 0) _stepIndex--;
+    }
+
+    private void OnNext()
+    {
+        _validation = null;
+        if (!CanAdvance())
+        {
+            _validation = "Please make a selection before continuing.";
+            return;
+        }
+        if (_stepIndex < _stepLabels.Length - 1) _stepIndex++;
+    }
+
+    private async Task OnSubmit()
+    {
+        _validation = null;
+        _isSubmitting = true;
+        try
+        {
+            var outcome = await ActivationClient.ActivateAsync(new InventoryActivationPayload(
+                ProfileTag: _draft.ProfileTag,
+                CostingMethod: _draft.CostingMethod,
+                WarehouseName: _draft.WarehouseName));
+
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not activate Tralanz Inventory.";
+                return;
+            }
+
+            // Refresh the session so the topbar / Items page see the new
+            // InventoryModuleEnabled flag without a full page reload.
+            var ctx = await SessionClient.GetContextAsync();
+            if (ctx is not null) ShellState.ApplySessionContext(ctx);
+
+            await Message.SuccessAsync(outcome.Saved.CoaAccountsCreated > 0
+                ? $"Tralanz Inventory enabled. {outcome.Saved.CoaAccountsCreated} new CoA accounts added."
+                : "Tralanz Inventory enabled. Standard accounts already in place.");
+
+            NavigationManager.NavigateTo("items");
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private sealed record WizardDraft(
+        string ProfileTag = "",
+        string CostingMethod = "moving_average",
+        string WarehouseName = "Main Warehouse");
+}

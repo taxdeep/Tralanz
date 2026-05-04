@@ -81,6 +81,7 @@ builder.Services.AddSingleton<IPlatformRuntimeStateRepository, PostgresPlatformR
 builder.Services.AddSingleton<ICompanySessionContextStore, PostgreSqlCompanySessionContextStore>();
 builder.Services.AddSingleton<ICompanySessionContextWorkflow, CompanySessionContextWorkflow>();
 builder.Services.AddSingleton<IInventoryFoundationStore, PostgreSqlInventoryFoundationStore>();
+builder.Services.AddSingleton<IInventoryModuleActivationStore, PostgresInventoryModuleActivationStore>();
 builder.Services.AddSingleton<IInventoryReceiptStore, PostgreSqlInventoryReceiptStore>();
 builder.Services.AddSingleton<IReceiptInventoryActivationStore, PostgreSqlReceiptInventoryActivationStore>();
 builder.Services.AddSingleton<IReceiptInventoryValuationStore, PostgreSqlReceiptInventoryValuationStore>();
@@ -1355,6 +1356,114 @@ accounting.MapPut(
 //
 // Active company id + user id resolve from the BusinessSession header.
 // -----------------------------------------------------------------------
+
+// -----------------------------------------------------------------------
+// Inventory Module activation (M2 of the Inventory V1 plan).
+// One POST handles the wizard's submit:
+//   1. Re-runs the canonical CoA seeder so older companies pick up the
+//      M1 standard accounts (idempotent additive).
+//   2. Sets default costing method via SavePolicyAsync.
+//   3. Creates the single "Main Warehouse" via SaveWarehouseAsync.
+//   4. Stamps the companies-table activation flags via the dedicated
+//      activation store.
+// Step 5 of the original plan (per-item opening balance) is deferred —
+// no OpeningBalanceReceipt helper exists yet. Wizard surfaces a link
+// to the existing Inventory Adjustment workbench for opening stock.
+// -----------------------------------------------------------------------
+accounting.MapPost(
+    "/inventory/activate",
+    async (
+        InventoryActivationHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryModuleActivationStore activationStore,
+        IInventoryFoundationStore foundationStore,
+        ICoaTemplateSeeder coaSeeder,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            // Step 1 — make sure every standard CoA account exists
+            // (covers companies that already onboarded before M1).
+            var coaSummary = await coaSeeder.SeedAsync(
+                session.ActiveCompanyId, "ca_general_small_business", cancellationToken);
+
+            // Step 2 — costing method (locks on first inventory document).
+            var costingMethod = InventoryActivationRequestParser.ParseCostingMethod(request.CostingMethod);
+            await foundationStore.SavePolicyAsync(
+                new InventoryCostingPolicyUpdateRequest(
+                    CompanyId: session.ActiveCompanyId,
+                    UserId: session.UserId,
+                    DefaultCostingMethod: costingMethod,
+                    NegativeStockAllowed: false,
+                    RequireWriteOffApproval: true),
+                cancellationToken);
+
+            // Step 3 — default warehouse. SaveWarehouseAsync is idempotent
+            // on (company_id, lower(warehouse_code)) per its unique index;
+            // re-running the wizard updates the existing MAIN warehouse
+            // rather than failing.
+            var warehouseName = string.IsNullOrWhiteSpace(request.WarehouseName)
+                ? "Main Warehouse"
+                : request.WarehouseName.Trim();
+            var warehouseId = await foundationStore.SaveWarehouseAsync(
+                new InventoryWarehouseUpsertRequest(
+                    CompanyId: session.ActiveCompanyId,
+                    UserId: session.UserId,
+                    WarehouseId: null,
+                    WarehouseCode: "MAIN",
+                    Name: warehouseName,
+                    Description: "Default warehouse created by the Inventory activation wizard."),
+                cancellationToken);
+
+            // Step 4 — flip the companies-table flags. Done last so the
+            // module only appears active if every preceding step worked.
+            var profileTag = (request.ProfileTag ?? string.Empty).Trim();
+            var activated = await activationStore.MarkEnabledAsync(
+                session.ActiveCompanyId, profileTag, cancellationToken);
+
+            return Results.Ok(new InventoryActivationHttpResponse(
+                ModuleEnabled: activated.ModuleEnabled,
+                EnabledAt: activated.EnabledAt,
+                LockedAt: activated.LockedAt,
+                ProfileTag: activated.ProfileTag,
+                DefaultCostingMethod: InventoryActivationRequestParser.FormatCostingMethod(costingMethod),
+                WarehouseId: warehouseId,
+                WarehouseCode: "MAIN",
+                WarehouseName: warehouseName,
+                CoaAccountsCreated: coaSummary.CreatedCount,
+                CoaAccountsAlreadyPresent: coaSummary.SkippedCount));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+accounting.MapGet(
+    "/inventory/activation-state",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IInventoryModuleActivationStore activationStore,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var state = await activationStore.GetStateAsync(session.ActiveCompanyId, cancellationToken);
+        if (state is null) return Results.NotFound();
+        return Results.Ok(new
+        {
+            state.ModuleEnabled,
+            state.EnabledAt,
+            state.LockedAt,
+            state.ProfileTag
+        });
+    });
+
 accounting.MapGet(
     "/items",
     async (

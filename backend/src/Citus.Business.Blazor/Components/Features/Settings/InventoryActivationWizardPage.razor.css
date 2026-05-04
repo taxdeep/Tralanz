@@ -1,0 +1,136 @@
+/*
+ * InventoryActivationWizardPage — scoped styles for the M2 wizard.
+ * Three primitives are introduced here that don't yet exist in the
+ * shared design system; if a second wizard surface lands later, lift
+ * these into shell.css and remove from here.
+ */
+
+/* ---------- Step indicator (numbered horizontal list) ---------- */
+
+.citus-wizard-steps {
+    display: flex;
+    align-items: stretch;
+    gap: 0.6rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.citus-wizard-steps__item {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.85rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+    color: var(--citus-color-fg-muted);
+    font-size: 0.85rem;
+}
+
+.citus-wizard-steps__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    background: var(--citus-color-bg-muted);
+    color: var(--citus-color-fg-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.citus-wizard-steps__label {
+    font-weight: 500;
+}
+
+.citus-wizard-steps__item--current {
+    border-color: var(--citus-color-primary);
+    background: var(--citus-color-primary-bg);
+    color: var(--citus-color-fg);
+}
+
+.citus-wizard-steps__item--current .citus-wizard-steps__num,
+.citus-wizard-steps__item--done .citus-wizard-steps__num {
+    background: var(--citus-color-primary);
+    color: var(--citus-color-bg-elevated);
+}
+
+.citus-wizard-steps__item--done {
+    color: var(--citus-color-fg);
+}
+
+/* ---------- Radio cards (selectable option panels) ---------- */
+
+.citus-radio-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.citus-radio-card:hover {
+    border-color: var(--citus-color-fg-subtle);
+}
+
+.citus-radio-card.is-selected {
+    border-color: var(--citus-color-primary);
+    background: var(--citus-color-primary-bg);
+    box-shadow: 0 0 0 1px var(--citus-color-primary);
+}
+
+/* The native radio input itself stays hidden; the card is the click
+   target. Screen readers still see the input via accessible name. */
+.citus-radio-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.citus-radio-card__title {
+    color: var(--citus-color-fg);
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.citus-radio-card__hint {
+    color: var(--citus-color-fg-muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+.citus-radio-card--lg {
+    padding: 1.2rem 1.25rem;
+    gap: 0.4rem;
+}
+
+.citus-radio-card--lg .citus-radio-card__title {
+    font-size: 1.05rem;
+}
+
+/* ---------- Callout (informational inline note) ---------- */
+
+.citus-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--citus-color-border);
+    border-radius: var(--citus-radius-md);
+    background: var(--citus-color-bg-elevated);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.citus-callout--info {
+    border-left: 3px solid var(--citus-color-primary);
+}
