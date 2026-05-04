@@ -1292,8 +1292,12 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             Assert.NotNull(billSummary);
             Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement, billSummary!.PurchaseVarianceStatus);
             Assert.Equal(5m, billSummary.PurchaseVarianceAmountBase);
-            Assert.Equal(5m, apOpenItem.OpenAmountBase);
-            Assert.Equal("partially_applied", apOpenItem.Status);
+            // Post-M4: clearing applies the bill-side proportional amount
+            // (= grir + variance), so the AP open item fully closes — the
+            // variance portion has already been booked to PPV by the
+            // settlement journal, leaving no AP balance owed.
+            Assert.Equal(0m, apOpenItem.OpenAmountBase);
+            Assert.Equal("closed", apOpenItem.Status);
         }
         finally
         {

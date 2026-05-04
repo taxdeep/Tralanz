@@ -1456,6 +1456,14 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
+        // Allocation amount is the BILL-side proportional amount (not the
+        // GR/IR-side settled_amount_base) so the AP open item fully clears
+        // when M4's settlement journal already booked the variance to PPV.
+        // Same proportional formula as the M4 journal posting + the variance
+        // refresh upsert: settled_qty / bill_qty * bill_line.line_amount *
+        // bill.fx_rate. Falls back to settled_amount_base when bill quantity
+        // basis is missing — clearing matches the (zero-variance) journal in
+        // that case so AP still squares.
         await using var command = scope.CreateCommand(
             $"""
             select
@@ -1466,8 +1474,21 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               oi.open_amount_tx,
               oi.open_amount_base,
               oi.status,
-              sum(batch_line.settled_amount_base)::numeric(20,6) as amount_base
+              sum(case
+                when bill_line.quantity is null or round(bill_line.quantity, 6) <= 0 then batch_line.settled_amount_base
+                else round(batch_line.settled_quantity * round(bill_line.line_amount * bill.fx_rate, 6) / bill_line.quantity, 6)
+              end)::numeric(20,6) as amount_base
             from {SettlementBatchLinesTableName} batch_line
+            join {SettlementLinesTableName} settlement_line
+              on settlement_line.company_id = batch_line.company_id
+             and settlement_line.id = batch_line.settlement_line_id
+            join bills bill
+              on bill.company_id = batch_line.company_id
+             and bill.id = batch_line.bill_id
+            join bill_lines bill_line
+              on bill_line.company_id = batch_line.company_id
+             and bill_line.bill_id = batch_line.bill_id
+             and bill_line.line_number = settlement_line.bill_line_number
             join ap_open_items oi
               on oi.company_id = batch_line.company_id
              and oi.id = batch_line.ap_open_item_id
