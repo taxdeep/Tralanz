@@ -111,6 +111,13 @@
     box-shadow: var(--citus-shadow-3);
 }
 
+/* Inline pickers (item / service) are often nested inside narrow table
+   cells; widening the panel here gives the code · name · kind row room
+   to breathe without each cell having to set its own width. */
+.unity-picker__panel--inline {
+    min-width: 22rem;
+}
+
 .unity-picker__empty {
     padding: 0.78rem 0.8rem 0.72rem;
     color: var(--citus-color-fg-muted);
@@ -123,6 +130,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     width: 100%;
+    box-sizing: border-box;
     gap: 0.18rem;
     padding: 0.72rem 0.8rem;
     border: 0;
@@ -131,6 +139,41 @@
     color: inherit;
     text-align: left;
     cursor: pointer;
+}
+
+/* One-line variant: code | name | kind on a single row. Code and kind
+   size to content; name takes the remainder and truncates with
+   ellipsis so an over-long name can't push the kind column off-edge. */
+.unity-picker__option--inline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+}
+
+.unity-picker__option-code {
+    flex: 0 0 auto;
+    color: var(--citus-color-fg);
+    font-size: 0.86rem;
+    font-weight: 700;
+    font-family: var(--citus-font-mono, ui-monospace, monospace);
+    letter-spacing: 0.01em;
+}
+
+.unity-picker__option-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--citus-color-fg);
+    font-size: 0.88rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.unity-picker__option--inline .unity-picker__option-kind {
+    flex: 0 0 auto;
+    color: var(--citus-color-fg-subtle);
+    font-size: var(--citus-text-xs);
+    text-transform: lowercase;
 }
 
 .unity-picker__option:hover,

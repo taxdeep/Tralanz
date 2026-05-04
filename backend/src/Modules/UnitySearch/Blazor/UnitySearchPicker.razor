@@ -48,25 +48,51 @@
 
     @if (_showResults && _options.Count > 0)
     {
-        <div class="unity-picker__panel" role="listbox">
+        <div class="unity-picker__panel @(OneLineLayout ? "unity-picker__panel--inline" : null)" role="listbox">
             @{ var optionIndex = 0; }
             @foreach (var option in _options)
             {
                 var i = optionIndex++;
-                <button type="button"
-                        class="unity-picker__option @(i == _highlightedIndex ? "is-active" : null)"
-                        @onmousedown:preventDefault
-                        @onclick="@(() => SelectAsync(option))"
-                        @onmouseover="@(() => _highlightedIndex = i)">
-                    <span class="unity-picker__option-copy">
-                        <span class="unity-picker__option-primary">@RenderHighlighted(option.PrimaryText)</span>
-                        @if (!string.IsNullOrWhiteSpace(option.SecondaryText))
+                if (OneLineLayout)
+                {
+                    @* Compact one-line layout: code · name · kind, all on one row,
+                       name truncates with ellipsis if it overflows. The
+                       secondary slot is split on " · " — projection writers
+                       producing one-line items must format secondary as
+                       "<name> · <kind>". *@
+                    var secondaryParts = (option.SecondaryText ?? string.Empty).Split(" · ", 2);
+                    var inlineName = secondaryParts.Length > 0 ? secondaryParts[0] : string.Empty;
+                    var inlineKind = secondaryParts.Length > 1 ? secondaryParts[1] : string.Empty;
+                    <button type="button"
+                            class="unity-picker__option unity-picker__option--inline @(i == _highlightedIndex ? "is-active" : null)"
+                            @onmousedown:preventDefault
+                            @onclick="@(() => SelectAsync(option))"
+                            @onmouseover="@(() => _highlightedIndex = i)">
+                        <span class="unity-picker__option-code">@RenderHighlighted(option.PrimaryText)</span>
+                        <span class="unity-picker__option-name">@RenderHighlighted(inlineName)</span>
+                        @if (!string.IsNullOrWhiteSpace(inlineKind))
                         {
-                            <span class="unity-picker__option-secondary">@RenderHighlighted(option.SecondaryText)</span>
+                            <span class="unity-picker__option-kind">@inlineKind</span>
                         }
-                    </span>
-                    <span class="unity-picker__option-kind">@FormatEntityType(option.EntityType)</span>
-                </button>
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="unity-picker__option @(i == _highlightedIndex ? "is-active" : null)"
+                            @onmousedown:preventDefault
+                            @onclick="@(() => SelectAsync(option))"
+                            @onmouseover="@(() => _highlightedIndex = i)">
+                        <span class="unity-picker__option-copy">
+                            <span class="unity-picker__option-primary">@RenderHighlighted(option.PrimaryText)</span>
+                            @if (!string.IsNullOrWhiteSpace(option.SecondaryText))
+                            {
+                                <span class="unity-picker__option-secondary">@RenderHighlighted(option.SecondaryText)</span>
+                            }
+                        </span>
+                        <span class="unity-picker__option-kind">@FormatEntityType(option.EntityType)</span>
+                    </button>
+                }
             }
 
             @if (CanCreateFromSearch)
@@ -133,6 +159,17 @@
 
     [Parameter]
     public bool ShowDropdownButton { get; set; } = true;
+
+    /// <summary>
+    /// When true, options render as a single horizontal row
+    /// (code · name · kind) instead of the default two-line stack with a
+    /// right-aligned entity-type tag. The kind column reads the second
+    /// half of <see cref="UnitySearchPickerOption.SecondaryText"/> after
+    /// splitting on " · " — projections feeding inline pickers must
+    /// format secondary as "<name> · <kind>".
+    /// </summary>
+    [Parameter]
+    public bool OneLineLayout { get; set; }
 
     [Parameter]
     public string? CreateEntityLabel { get; set; }
