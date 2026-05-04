@@ -977,6 +977,104 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   after insert on inventory_documents
                   for each row
                   execute function inventory_documents_stamp_module_lock();
+
+                -- ===========================================================
+                -- M5 iter 2: backorder auto-promotion
+                -- ===========================================================
+                -- When item_warehouse_balances.on_hand_qty INCREASES (any
+                -- inbound flow — receipt / customer return / transfer-in /
+                -- manufacturing-receipt / opening-balance / inventory gain
+                -- adjustment / activation seed), find Confirmed SO lines
+                -- with backorder_qty > 0 for the same item, FIFO by the
+                -- SO's confirmed_at, and promote backorder → reserved up
+                -- to the on_hand delta. Bumps reserved_qty on the same
+                -- balance row in a single trigger pass.
+                --
+                -- Recursion safety: the trigger's WHEN clause fires only
+                -- when on_hand_qty grows. Inside the trigger we update
+                -- reserved_qty without touching on_hand_qty, so a recursive
+                -- fire is filtered out by the WHEN clause.
+                --
+                -- The function gates on sales_orders / sales_order_lines
+                -- existence via to_regclass so it stays safe in environments
+                -- where the SO module hasn't bootstrapped yet (early dev /
+                -- inventory-only smoke tests). Once sales_orders ships in
+                -- the same DB, the next on_hand bump will start promoting.
+                create or replace function promote_so_backorders_after_on_hand_change()
+                  returns trigger as $$
+                declare
+                  remaining numeric(20, 6);
+                  total_promoted numeric(20, 6) := 0;
+                  v_line record;
+                  fill_qty numeric(20, 6);
+                begin
+                  if to_regclass('sales_orders') is null
+                    or to_regclass('sales_order_lines') is null then
+                    return null;
+                  end if;
+
+                  -- INSERT path: OLD is implicitly zero, delta = NEW.on_hand_qty.
+                  -- UPDATE path: delta = NEW - OLD (already filtered > 0 by trigger WHEN).
+                  if TG_OP = 'INSERT' then
+                    remaining := NEW.on_hand_qty;
+                  else
+                    remaining := NEW.on_hand_qty - OLD.on_hand_qty;
+                  end if;
+                  if remaining <= 0 then
+                    return null;
+                  end if;
+
+                  for v_line in
+                    select sol.id as line_id, sol.backorder_qty
+                      from sales_order_lines sol
+                      join sales_orders so on so.id = sol.sales_order_id
+                     where so.company_id = NEW.company_id
+                       and sol.item_id = NEW.item_id
+                       and sol.backorder_qty > 0
+                       and so.status = 'confirmed'
+                     order by so.confirmed_at asc nulls last, so.id asc
+                     for update
+                  loop
+                    exit when remaining <= 0;
+                    fill_qty := least(v_line.backorder_qty, remaining);
+                    update sales_order_lines
+                       set backorder_qty = backorder_qty - fill_qty,
+                           reserved_qty  = reserved_qty + fill_qty
+                     where id = v_line.line_id;
+                    remaining := remaining - fill_qty;
+                    total_promoted := total_promoted + fill_qty;
+                  end loop;
+
+                  if total_promoted > 0 then
+                    update item_warehouse_balances
+                       set reserved_qty = reserved_qty + total_promoted,
+                           updated_at = now()
+                     where company_id = NEW.company_id
+                       and item_id = NEW.item_id
+                       and warehouse_id = NEW.warehouse_id;
+                  end if;
+
+                  return null;
+                end;
+                $$ language plpgsql;
+
+                drop trigger if exists trg_promote_so_backorders_insert on item_warehouse_balances;
+                create trigger trg_promote_so_backorders_insert
+                  after insert on item_warehouse_balances
+                  for each row
+                  when (NEW.on_hand_qty > 0)
+                  execute function promote_so_backorders_after_on_hand_change();
+
+                drop trigger if exists trg_promote_so_backorders_update on item_warehouse_balances;
+                create trigger trg_promote_so_backorders_update
+                  after update of on_hand_qty on item_warehouse_balances
+                  for each row
+                  when (NEW.on_hand_qty > OLD.on_hand_qty)
+                  execute function promote_so_backorders_after_on_hand_change();
+
+                -- Older trigger name from earlier rev — drop if present so
+                -- we don't double-fire the promotion.
+                drop trigger if exists trg_promote_so_backorders on item_warehouse_balances;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
             _schemaEnsured = true;
