@@ -860,7 +860,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                   when bill_status <> 'posted' then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedBillNotPosted}'
                   when bill_amount_base is null then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.BlockedQuantityBasisMissing}'
                   when abs(round(bill_amount_base - grir_amount_base, 6)) = 0 then '{ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance}'
-                  else '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}'
+                  else '{ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement}'
                 end as variance_status,
                 case
                   when batch_status <> 'posted' then 'settlement_batch_not_posted'
@@ -2356,10 +2356,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
           select
             variance.{documentColumn} as document_id,
             count(*)::int as purchase_variance_line_count,
-            count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}')::int as purchase_variance_candidate_line_count,
+            -- Field name `purchase_variance_candidate_line_count` retained
+            -- for wire compatibility; the underlying status semantic is now
+            -- "recognised in settlement journal" (M4) — see policy doc.
+            count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement}')::int as purchase_variance_candidate_line_count,
             count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance}')::int as purchase_variance_no_variance_line_count,
             count(*) filter (where variance.variance_status like 'blocked_%' or variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.VarianceInconsistent}')::int as purchase_variance_blocked_line_count,
-            coalesce(sum(variance.variance_amount_base) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}'), 0)::numeric(20,6) as purchase_variance_amount_base,
+            coalesce(sum(variance.variance_amount_base) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement}'), 0)::numeric(20,6) as purchase_variance_amount_base,
             max(variance.refreshed_at) as last_purchase_variance_refreshed_at
           from {PurchaseVarianceLinesTableName} variance
           where variance.company_id = @company_id

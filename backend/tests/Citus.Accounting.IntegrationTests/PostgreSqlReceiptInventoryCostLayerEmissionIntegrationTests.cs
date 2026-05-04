@@ -1285,12 +1285,12 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 CancellationToken.None);
             var apOpenItem = await GetApOpenItemStateByBillAsync(schemaConnectionString, companyId, billId);
 
-            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed, varianceSummary.PurchaseVarianceStatus);
+            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement, varianceSummary.PurchaseVarianceStatus);
             Assert.Equal(1, varianceSummary.PurchaseVarianceLineCount);
             Assert.Equal(1, varianceSummary.PurchaseVarianceCandidateLineCount);
             Assert.Equal(5m, varianceSummary.PurchaseVarianceAmountBase);
             Assert.NotNull(billSummary);
-            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed, billSummary!.PurchaseVarianceStatus);
+            Assert.Equal(ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement, billSummary!.PurchaseVarianceStatus);
             Assert.Equal(5m, billSummary.PurchaseVarianceAmountBase);
             Assert.Equal(5m, apOpenItem.OpenAmountBase);
             Assert.Equal("partially_applied", apOpenItem.Status);

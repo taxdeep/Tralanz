@@ -1387,10 +1387,12 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             $"""
             select
               count(*)::int as variance_line_count,
-              count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}')::int as candidate_line_count,
+              -- candidate_* aliases retained for wire compatibility; the
+              -- variance_status now reads "recognised in settlement" (M4).
+              count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement}')::int as candidate_line_count,
               count(*) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.NoVariance}')::int as no_variance_line_count,
               count(*) filter (where variance.variance_status like 'blocked_%' or variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.VarianceInconsistent}')::int as blocked_line_count,
-              coalesce(sum(variance.variance_amount_base) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.CandidateNotReviewed}'), 0)::numeric(20,6) as candidate_variance_amount_base,
+              coalesce(sum(variance.variance_amount_base) filter (where variance.variance_status = '{ReceiptGrIrApPurchaseVarianceStatusPolicy.RecognizedInSettlement}'), 0)::numeric(20,6) as candidate_variance_amount_base,
               max(variance.refreshed_at) as last_refreshed_at
             from {PurchaseVarianceLinesTableName} variance
             join receipt_lines receipt_line

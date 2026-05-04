@@ -347,7 +347,19 @@ public static class ReceiptGrIrApPurchaseVarianceStatusPolicy
 {
     public const string NotApplicable = "not_applicable";
     public const string NoVariance = "no_variance";
-    public const string CandidateNotReviewed = "candidate_not_reviewed";
+
+    /// <summary>
+    /// A non-zero variance is present and has been booked into the GR/IR
+    /// settlement journal as a Dr/Cr Purchase Price Variance fragment
+    /// (M4). Pre-M4 this was <c>candidate_not_reviewed</c> — the variance
+    /// existed but no journal had captured it yet, so the operator was
+    /// expected to review and post it manually. Post-M4 the variance is
+    /// recognised as part of the settlement journal itself; the workbench
+    /// surfaces these lines as "variance recognised, GL up to date" rather
+    /// than "needs action".
+    /// </summary>
+    public const string RecognizedInSettlement = "recognized_in_settlement";
+
     public const string Blocked = "blocked";
     public const string BlockedSettlementNotPosted = "blocked_settlement_not_posted";
     public const string BlockedJournalNotPosted = "blocked_journal_not_posted";
@@ -358,7 +370,7 @@ public static class ReceiptGrIrApPurchaseVarianceStatusPolicy
 
     public static string ResolveSummaryStatus(
         int varianceLineCount,
-        int candidateLineCount,
+        int recognizedLineCount,
         int noVarianceLineCount,
         int blockedLineCount)
     {
@@ -372,9 +384,9 @@ public static class ReceiptGrIrApPurchaseVarianceStatusPolicy
             return Blocked;
         }
 
-        if (candidateLineCount > 0)
+        if (recognizedLineCount > 0)
         {
-            return CandidateNotReviewed;
+            return RecognizedInSettlement;
         }
 
         return noVarianceLineCount == varianceLineCount ? NoVariance : NotApplicable;
