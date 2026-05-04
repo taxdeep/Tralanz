@@ -58,6 +58,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
             CompanyName = company.CompanyName,
             BaseCurrencyCode = company.BaseCurrencyCode,
             MultiCurrencyEnabled = company.MultiCurrencyEnabled,
+            InventoryModuleEnabled = company.InventoryModuleEnabled,
             Status = company.Status,
             IsReadOnly = !string.Equals(company.Status, "active", StringComparison.Ordinal)
         };
@@ -139,16 +140,26 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         CancellationToken cancellationToken)
     {
         var hasPermissionsColumn = await HasMembershipPermissionsColumnAsync(connection, cancellationToken);
+        // Defensive: the inventory_module_enabled column is added by the
+        // platform-provisioning ALTER. Older Tralanz Books deployments
+        // that haven't yet run the bumped startup will lack the column;
+        // fall back to false there so the session still resolves.
+        var hasInventoryModuleColumn = await HasColumnAsync(connection, "companies", "inventory_module_enabled", cancellationToken);
+        var inventoryModuleSelect = hasInventoryModuleColumn
+            ? "c.inventory_module_enabled"
+            : "false as inventory_module_enabled";
+
         await using var command = connection.CreateCommand();
         command.CommandText = hasPermissionsColumn
             ?
-            """
+            $"""
             select
               c.id,
               c.entity_number,
               c.legal_name,
               c.base_currency_code,
               c.multi_currency_enabled,
+              {inventoryModuleSelect},
               c.status,
               m.role,
               m.permissions::text as permissions
@@ -160,13 +171,14 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
             order by c.entity_number, c.legal_name;
             """
             :
-            """
+            $"""
             select
               c.id,
               c.entity_number,
               c.legal_name,
               c.base_currency_code,
               c.multi_currency_enabled,
+              {inventoryModuleSelect},
               c.status,
               m.role,
               null::text as permissions
@@ -190,6 +202,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
                     reader.GetString(reader.GetOrdinal("legal_name")).Trim(),
                     reader.GetString(reader.GetOrdinal("base_currency_code")).Trim().ToUpperInvariant(),
                     reader.GetBoolean(reader.GetOrdinal("multi_currency_enabled")),
+                    reader.GetBoolean(reader.GetOrdinal("inventory_module_enabled")),
                     reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
                     reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
                     ParsePermissionTokens(reader.IsDBNull(reader.GetOrdinal("permissions"))
@@ -322,6 +335,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         string CompanyName,
         string BaseCurrencyCode,
         bool MultiCurrencyEnabled,
+        bool InventoryModuleEnabled,
         string Status,
         string MembershipRole,
         IReadOnlyList<string> PermissionTokens);

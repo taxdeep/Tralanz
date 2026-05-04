@@ -125,6 +125,19 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             alter table companies add column if not exists account_code_length smallint not null default 4;
             alter table companies alter column account_code_length set default 5;
 
+            -- Inventory module (paid add-on, per Tralanz Inventory V1 plan).
+            -- Enabled flag drives the Items page gate, the activation
+            -- wizard's idempotency, and (later) the Receipt / Shipment /
+            -- Adjustment workbenches' visibility. enabled_at marks the
+            -- moment the module was turned on (analytics + license
+            -- bookkeeping); locked_at is set on the first inventory
+            -- transaction so the costing-method choice can no longer be
+            -- changed without admin revaluation tooling.
+            alter table companies add column if not exists inventory_module_enabled boolean not null default false;
+            alter table companies add column if not exists inventory_module_enabled_at timestamptz null;
+            alter table companies add column if not exists inventory_module_locked_at timestamptz null;
+            alter table companies add column if not exists inventory_profile_tag text null;
+
             do $$
             begin
               if not exists (
@@ -651,7 +664,9 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         new StarterAccountDefinition("13701", "Sales Tax Filing Receivable", "asset", "tax", false, true, "tax:filing_receivable", "tax_filing_receivable", true),
 
         // ---- Inventory (14000) ----
-        new StarterAccountDefinition("14000", "Inventory", "asset", "inventory", false, true, null, null, true),
+        // SystemRole pins the inventory-asset target for the Inventory
+        // Module's M3 sales-issue → COGS bridge.
+        new StarterAccountDefinition("14000", "Inventory", "asset", "inventory", false, true, "inventory:asset", "inventory_asset", true),
 
         // ---- Fixed Asset (15000-17000) ----
         new StarterAccountDefinition("15000", "Furniture and Equipment", "asset", "fixed_asset", false, false, null, null, true),
@@ -671,9 +686,20 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         // ---- Credit Card Payable (21000) ----
         new StarterAccountDefinition("21000", "Credit Card Payable", "liability", "credit_card", false, true, null, null, true),
 
+        // ---- Inventory clearing (21500-21600) ----
+        // GR/IR: goods received before bill matched. Drop-ship: vendor
+        // bill credit cleared by customer invoice's COGS leg. Both
+        // hidden from manual posting; only inventory engines write.
+        new StarterAccountDefinition("21500", "GR/IR Clearing", "liability", "inventory_clearing", true, true, "inventory:gr_ir_clearing", "gr_ir_clearing", false),
+        new StarterAccountDefinition("21600", "Drop-ship Clearing", "liability", "inventory_clearing", true, true, "inventory:drop_ship_clearing", "drop_ship_clearing", false),
+
         // ---- Other Current Liability (24000-26999) ----
         new StarterAccountDefinition("24000", "Shareholder Loan", "liability", "shareholder_loan", false, false, null, null, true),
-        new StarterAccountDefinition("24700", "Customer Deposits", "liability", "customer_deposits", false, false, null, null, true),
+        // Customer Deposits family — pinned with SystemRole so the M5
+        // Sales Order workflow can resolve them without per-company config.
+        new StarterAccountDefinition("24700", "Customer Deposits", "liability", "customer_deposits", false, false, "ar:customer_deposit", "customer_deposit", true),
+        new StarterAccountDefinition("24710", "Customer Advance Payment", "liability", "customer_deposits", false, false, "ar:customer_advance", "customer_advance_payment", true),
+        new StarterAccountDefinition("24720", "Customer Store Credit", "liability", "customer_deposits", false, false, "ar:customer_store_credit", "customer_store_credit", true),
         // 25000 holds output-tax accruals from invoices / sales receipts;
         // TaxReturn clears it each period. 25001 carries operator-supplied
         // adjustments. 25002 absorbs the net-payable side of a filed return.
@@ -696,10 +722,16 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         // ---- Income (47900-49900) ----
         new StarterAccountDefinition("47900", "Sales Revenue", "revenue", "sales", false, true, null, null, true),
         new StarterAccountDefinition("48000", "Service Revenue", "revenue", "service_revenue", false, true, null, null, true),
+        // GR/IR write-off as gain lands here (vendor bill never arrives →
+        // we keep the inventory effectively for free).
+        new StarterAccountDefinition("49100", "Inventory Other Income", "revenue", "other_income", false, false, "inventory:other_income", "inventory_other_income", true),
         new StarterAccountDefinition("49900", "Uncategorized Income", "revenue", "uncategorized", false, false, null, null, true),
 
         // ---- Cost of Goods Sold (51000-51200) ----
-        new StarterAccountDefinition("51000", "Cost of Goods Sold", "cost_of_sales", "cogs", false, true, null, null, true),
+        // SystemRole pins COGS for M3 sales-issue bridge.
+        new StarterAccountDefinition("51000", "Cost of Goods Sold", "cost_of_sales", "cogs", false, true, "inventory:cogs", "cost_of_goods_sold", true),
+        // PPV — bill price vs receipt-side cost-layer mismatch lands here.
+        new StarterAccountDefinition("51100", "Purchase Price Variance", "cost_of_sales", "ppv", true, true, "inventory:purchase_price_variance", "purchase_price_variance", false),
         new StarterAccountDefinition("51200", "Freight Costs", "cost_of_sales", "freight", false, false, null, null, true),
 
         // ---- Operating Expense (60000-69800) ----
@@ -712,6 +744,9 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         new StarterAccountDefinition("63400", "Interest Expense", "expense", "interest", false, false, null, null, true),
         new StarterAccountDefinition("64300", "Meals and Entertainment", "expense", "meals", false, false, null, null, true),
         new StarterAccountDefinition("64500", "Bad Debt Expense", "expense", "bad_debt", false, false, null, null, true),
+        // Inventory Adjustment — debit side of cycle-count / damage / loss
+        // adjustments and loss-side of GR/IR write-offs. System-managed.
+        new StarterAccountDefinition("64600", "Inventory Adjustment", "expense", "inventory_adjustment", true, true, "inventory:adjustment", "inventory_adjustment", false),
         new StarterAccountDefinition("64900", "Office Supplies", "expense", "office", false, false, null, null, true),
         new StarterAccountDefinition("65000", "Wages and Salaries", "expense", "payroll", false, true, null, null, true),
         new StarterAccountDefinition("65100", "Employee Benefits", "expense", "payroll", false, false, null, null, true),

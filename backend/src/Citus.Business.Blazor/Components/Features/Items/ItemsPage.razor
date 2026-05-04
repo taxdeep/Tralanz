@@ -50,13 +50,30 @@
             </div>
             <div>
                 <label class="text-sm font-medium block mb-1">Kind</label>
+                @* Stock kind is gated on the Inventory paid module. Without
+                   it the option is greyed and a single-line upsell hint
+                   replaces the kind hint. Existing stock items stay
+                   editable (no data lock-out) but new stock items can't
+                   be created until the company enables Inventory. *@
                 <select class="citus-form-field__input"
                         @bind="_draft.ItemKind">
                     <option value="service">Service</option>
                     <option value="non_stock">Non-stock</option>
-                    <option value="stock">Stock</option>
+                    <option value="stock" disabled="@(!ShellState.ActiveCompany.InventoryModuleEnabled && _draft.ItemKind != "stock")">
+                        Stock@(ShellState.ActiveCompany.InventoryModuleEnabled ? string.Empty : " — requires Tralanz Inventory")
+                    </option>
                 </select>
-                <p class="text-fg-subtle text-xs mt-1">@KindHint(_draft.ItemKind)</p>
+                @if (!ShellState.ActiveCompany.InventoryModuleEnabled && _draft.ItemKind != "stock")
+                {
+                    <p class="text-fg-subtle text-xs mt-1">
+                        Stock items track on-hand quantity, cost layers, and COGS.
+                        <a class="citus-link" href="company/inventory/activate">Enable Tralanz Inventory →</a>
+                    </p>
+                }
+                else
+                {
+                    <p class="text-fg-subtle text-xs mt-1">@KindHint(_draft.ItemKind)</p>
+                }
             </div>
             @if (_draft.ItemKind == "stock")
             {

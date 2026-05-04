@@ -104,7 +104,12 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
                 SystemRole: "tax_filing_receivable"),
 
             // ---- Inventory (14000) ----
-            new("14000", "Inventory", "asset", DetailType: "inventory"),
+            // SystemRole pins inventory-asset resolution for the M3 COGS
+            // bridge and any future receipt-driven inventory posting.
+            new("14000", "Inventory", "asset",
+                DetailType: "inventory",
+                SystemKey: "inventory:asset",
+                SystemRole: "inventory_asset"),
 
             // ---- Fixed Asset (15000-17000) ----
             new("15000", "Furniture and Equipment", "asset", DetailType: "fixed_asset"),
@@ -128,9 +133,45 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             // ---- Credit Card Payable (21000) ----
             new("21000", "Credit Card Payable", "liability", DetailType: "credit_card"),
 
+            // ---- Inventory clearing accounts (21500-21600) ----
+            // GR/IR (Goods-Received / Invoice-Received) clearing — booked
+            // when goods arrive ahead of the matching vendor bill (Dr
+            // Inventory / Cr GR/IR), then cleared when the bill posts
+            // (Dr GR/IR / Cr AP). Sits in the AP-payable rangeso it
+            // shows next to AP on the trial balance.
+            new("21500", "GR/IR Clearing", "liability",
+                DetailType: "inventory_clearing",
+                AllowManualPosting: false,
+                SystemKey: "inventory:gr_ir_clearing",
+                SystemRole: "gr_ir_clearing"),
+            // Drop-ship clearing — vendor bills the drop-ship line into
+            // here; customer invoice's COGS leg clears it. Aging report
+            // mirrors GR/IR.
+            new("21600", "Drop-ship Clearing", "liability",
+                DetailType: "inventory_clearing",
+                AllowManualPosting: false,
+                SystemKey: "inventory:drop_ship_clearing",
+                SystemRole: "drop_ship_clearing"),
+
             // ---- Other Current Liability (24000-26999) ----
             new("24000", "Shareholder Loan", "liability", DetailType: "shareholder_loan"),
-            new("24700", "Customer Deposits", "liability", DetailType: "customer_deposits"),
+            // Customer Deposits family (24700-24720). Drives the Sales
+            // Order pre-payment workflow (M5):
+            //   24700 — full prepayment, generally refundable
+            //   24710 — partial deposit on big-ticket SO, contract-bound
+            //   24720 — store credit balance from cancelled SO
+            new("24700", "Customer Deposits", "liability",
+                DetailType: "customer_deposits",
+                SystemKey: "ar:customer_deposit",
+                SystemRole: "customer_deposit"),
+            new("24710", "Customer Advance Payment", "liability",
+                DetailType: "customer_deposits",
+                SystemKey: "ar:customer_advance",
+                SystemRole: "customer_advance_payment"),
+            new("24720", "Customer Store Credit", "liability",
+                DetailType: "customer_deposits",
+                SystemKey: "ar:customer_store_credit",
+                SystemRole: "customer_store_credit"),
             // 25000 holds output-tax accruals — every invoice / sales
             // receipt with a tax code credits it; TaxReturn clears it
             // each period. SystemRole pins the canonical resolution.
@@ -174,10 +215,32 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             // ---- Income (47900-49900) ----
             new("47900", "Sales Revenue", "revenue", DetailType: "sales"),
             new("48000", "Service Revenue", "revenue", DetailType: "service_revenue"),
+            // Inventory-Other-Income — receives the credit side when an
+            // aged GR/IR row is written off as a gain (vendor bill never
+            // arrives → we keep the inventory effectively for free).
+            // Distinct from 49900 so finance can separate ordinary
+            // un-categorized misc from inventory write-off windfall.
+            new("49100", "Inventory Other Income", "revenue",
+                DetailType: "other_income",
+                SystemKey: "inventory:other_income",
+                SystemRole: "inventory_other_income"),
             new("49900", "Uncategorized Income", "revenue", DetailType: "uncategorized"),
 
             // ---- Cost of Goods Sold (51000-51200) ----
-            new("51000", "Cost of Goods Sold", "cost_of_sales", DetailType: "cogs"),
+            // SystemRole pins COGS resolution for the M3 sales-issue
+            // bridge (Dr COGS / Cr Inventory at frozen receipt FX rate).
+            new("51000", "Cost of Goods Sold", "cost_of_sales",
+                DetailType: "cogs",
+                SystemKey: "inventory:cogs",
+                SystemRole: "cost_of_goods_sold"),
+            // Purchase Price Variance — receives the difference when a
+            // vendor bill posts at a price that doesn't match the
+            // receipt-side cost layer (M4 GR/IR + PPV journal writing).
+            new("51100", "Purchase Price Variance", "cost_of_sales",
+                DetailType: "ppv",
+                AllowManualPosting: false,
+                SystemKey: "inventory:purchase_price_variance",
+                SystemRole: "purchase_price_variance"),
             new("51200", "Freight Costs", "cost_of_sales", DetailType: "freight"),
 
             // ---- Operating Expense (60000-69800) ----
@@ -190,6 +253,15 @@ public sealed class StaticCoaTemplateRegistry : ICoaTemplateRegistry
             new("63400", "Interest Expense", "expense", DetailType: "interest"),
             new("64300", "Meals and Entertainment", "expense", DetailType: "meals"),
             new("64500", "Bad Debt Expense", "expense", DetailType: "bad_debt"),
+            // Inventory Adjustment expense — receives the debit side of
+            // cycle-count / damage / loss adjustments and the loss-side
+            // of GR/IR write-offs (M4 + future Inventory Adjustment
+            // workbench formalisation).
+            new("64600", "Inventory Adjustment", "expense",
+                DetailType: "inventory_adjustment",
+                AllowManualPosting: false,
+                SystemKey: "inventory:adjustment",
+                SystemRole: "inventory_adjustment"),
             new("64900", "Office Supplies", "expense", DetailType: "office"),
             new("65000", "Wages and Salaries", "expense", DetailType: "payroll"),
             new("65100", "Employee Benefits", "expense", DetailType: "payroll"),

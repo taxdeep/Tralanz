@@ -184,6 +184,7 @@ public sealed class BusinessSessionDirectory
             CompanyName = company.CompanyName.Trim(),
             BaseCurrencyCode = company.BaseCurrencyCode.Trim().ToUpperInvariant(),
             MultiCurrencyEnabled = company.MultiCurrencyEnabled,
+            InventoryModuleEnabled = company.InventoryModuleEnabled,
             Status = NormalizeCompanyStatus(company.Status),
             IsReadOnly = company.IsReadOnly ||
                 !string.Equals(NormalizeCompanyStatus(company.Status), "active", StringComparison.Ordinal)
