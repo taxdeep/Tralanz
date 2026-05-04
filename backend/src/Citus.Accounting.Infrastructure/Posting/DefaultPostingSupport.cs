@@ -355,9 +355,9 @@ public sealed class DefaultPostingValidator : IPostingValidator
                 throw new InvalidOperationException("Receipt GR/IR settlement posting must carry a positive base amount.");
             }
 
-            if (grIrSettlement.SettlementLines.Any(static line => line.AmountBase <= 0m))
+            if (grIrSettlement.SettlementLines.Any(static line => line.GrIrAmountBase <= 0m))
             {
-                throw new InvalidOperationException("Receipt GR/IR settlement posting lines must carry positive base amounts.");
+                throw new InvalidOperationException("Receipt GR/IR settlement posting lines must carry positive GR/IR base amounts.");
             }
         }
 
@@ -1361,9 +1361,11 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
     {
         var fragments = new List<PostingFragment>();
 
+        // Dr GR/IR clearing for the receipt-side amount that was parked at
+        // receipt time. Bringing the clearing back to zero per matched slice.
         foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.GrIrClearingAccountId))
         {
-            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            var amount = Round6(accountGroup.Sum(static line => line.GrIrAmountBase));
             if (amount <= 0m)
             {
                 continue;
@@ -1381,9 +1383,12 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 PostingRole: "control:grir_clearing"));
         }
 
+        // Cr the bill's expense account for the bill-side proportional amount,
+        // reversing the bill's standalone Dr Expense line so the cost lives on
+        // Inventory (debited by the receipt) instead of Expense.
         foreach (var accountGroup in document.SettlementLines.GroupBy(static line => line.BillOffsetAccountId))
         {
-            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            var amount = Round6(accountGroup.Sum(static line => line.BillAmountBase));
             if (amount <= 0m)
             {
                 continue;
@@ -1399,6 +1404,39 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 $"Bill-side GR/IR settlement offset for {document.DisplayNumber.Value}",
                 ControlRole: "grir_bill_offset",
                 PostingRole: "settlement:grir_bill_offset"));
+        }
+
+        // PPV: signed delta between bill and GR/IR. Positive = unfavorable
+        // (paid more than expected) → Dr PPV. Negative = favorable → Cr PPV.
+        // Lines whose bill-side amount equals their GR/IR amount contribute 0
+        // and are dropped by the magnitude check below.
+        foreach (var accountGroup in document.SettlementLines
+            .Where(static line => line.PpvAccountId.HasValue && line.VarianceAmountBase != 0m)
+            .GroupBy(static line => line.PpvAccountId!.Value))
+        {
+            var signedAmount = Round6(accountGroup.Sum(static line => line.VarianceAmountBase));
+            if (signedAmount == 0m)
+            {
+                continue;
+            }
+
+            var debitBase = signedAmount > 0m ? signedAmount : 0m;
+            var creditBase = signedAmount < 0m ? -signedAmount : 0m;
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                debitBase,
+                creditBase,
+                debitBase,
+                creditBase,
+                signedAmount > 0m
+                    ? $"Purchase Price Variance (unfavorable) for {document.DisplayNumber.Value}"
+                    : $"Purchase Price Variance (favorable) for {document.DisplayNumber.Value}",
+                ControlRole: "purchase_price_variance",
+                PostingRole: signedAmount > 0m
+                    ? "ppv:unfavorable"
+                    : "ppv:favorable"));
         }
 
         EnsureBalancedBaseCurrency(fragments);

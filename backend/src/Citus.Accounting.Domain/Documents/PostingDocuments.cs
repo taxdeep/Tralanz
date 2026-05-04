@@ -1278,8 +1278,10 @@ public sealed record ReceiptGrIrSettlementPostingDocumentLine : IPostingDocument
         Guid settlementBatchLineId,
         Guid grIrClearingAccountId,
         Guid billOffsetAccountId,
+        Guid? ppvAccountId,
         string description,
-        decimal amountBase)
+        decimal grIrAmountBase,
+        decimal billAmountBase)
     {
         if (lineNumber <= 0)
         {
@@ -1311,9 +1313,25 @@ public sealed record ReceiptGrIrSettlementPostingDocumentLine : IPostingDocument
             throw new ArgumentException("Description is required.", nameof(description));
         }
 
-        if (amountBase <= 0m)
+        if (grIrAmountBase <= 0m)
         {
-            throw new ArgumentOutOfRangeException(nameof(amountBase), "Settlement line amount must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(grIrAmountBase), "GR/IR amount must be positive.");
+        }
+
+        if (billAmountBase < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(billAmountBase), "Bill-side amount must be non-negative.");
+        }
+
+        var rounded = Math.Round(billAmountBase - grIrAmountBase, 6, MidpointRounding.ToEven);
+        if (Math.Abs(rounded) > 0m && ppvAccountId is null)
+        {
+            // Caller (settlement repo) must resolve the PPV account from the
+            // CoA when it knows there is a non-zero variance to post. Refusing
+            // to construct the line is safer than silently dropping the
+            // variance and creating an unbalanced journal.
+            throw new InvalidOperationException(
+                "PPV account id is required when bill amount differs from GR/IR amount.");
         }
 
         LineNumber = lineNumber;
@@ -1321,8 +1339,10 @@ public sealed record ReceiptGrIrSettlementPostingDocumentLine : IPostingDocument
         SettlementBatchLineId = settlementBatchLineId;
         GrIrClearingAccountId = grIrClearingAccountId;
         BillOffsetAccountId = billOffsetAccountId;
+        PpvAccountId = ppvAccountId;
         Description = description.Trim();
-        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+        GrIrAmountBase = Math.Round(grIrAmountBase, 6, MidpointRounding.ToEven);
+        BillAmountBase = Math.Round(billAmountBase, 6, MidpointRounding.ToEven);
     }
 
     public int LineNumber { get; }
@@ -1335,9 +1355,41 @@ public sealed record ReceiptGrIrSettlementPostingDocumentLine : IPostingDocument
 
     public Guid BillOffsetAccountId { get; }
 
+    /// <summary>
+    /// Purchase Price Variance account id. Required when
+    /// <see cref="BillAmountBase"/> differs from <see cref="GrIrAmountBase"/>;
+    /// optional (null) when the two match exactly. Resolved by the settlement
+    /// repository from the Chart of Accounts via SystemRole
+    /// <c>purchase_price_variance</c>.
+    /// </summary>
+    public Guid? PpvAccountId { get; }
+
     public string Description { get; }
 
-    public decimal AmountBase { get; }
+    /// <summary>
+    /// GR/IR-side amount: equals what the receipt-side GR/IR posting parked on
+    /// the clearing account for this slice. The settlement journal debits the
+    /// GR/IR clearing for this amount to bring it back to zero.
+    /// </summary>
+    public decimal GrIrAmountBase { get; }
+
+    /// <summary>
+    /// Bill-side amount: the proportional vendor invoice amount for this
+    /// settled quantity (settled_qty / bill_line_qty × bill_line_amount × fx).
+    /// The settlement journal credits the bill's expense account for this
+    /// amount to fully reverse the bill's standalone Dr Expense line. Zero
+    /// when the bill line quantity basis is missing — in that case caller
+    /// passes <see cref="GrIrAmountBase"/> here so the journal still balances
+    /// (no variance booked, refresh in workbench later).
+    /// </summary>
+    public decimal BillAmountBase { get; }
+
+    /// <summary>
+    /// Signed PPV: positive = unfavorable (bill cost more than expected),
+    /// negative = favorable (bill cost less). Computed once at construction
+    /// from <see cref="BillAmountBase"/> minus <see cref="GrIrAmountBase"/>.
+    /// </summary>
+    public decimal VarianceAmountBase => BillAmountBase - GrIrAmountBase;
 }
 
 public sealed class ReceiptGrIrSettlementPostingDocument : IPostingDocument
@@ -1411,7 +1463,7 @@ public sealed class ReceiptGrIrSettlementPostingDocument : IPostingDocument
 
     public IReadOnlyList<IPostingDocumentLine> Lines { get; }
 
-    public decimal TotalAmountBase => SettlementLines.Sum(static line => line.AmountBase);
+    public decimal TotalAmountBase => SettlementLines.Sum(static line => line.BillAmountBase);
 }
 
 public sealed record VendorCreditDocumentLine : IPostingDocumentLine

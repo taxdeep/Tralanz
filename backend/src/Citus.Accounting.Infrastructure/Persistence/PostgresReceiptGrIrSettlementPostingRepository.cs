@@ -287,15 +287,29 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
+        // bill_amount_base computed inline using the same proportional formula
+        // as PostgresReceiptGrIrApSettlementControlStore.UpsertReceiptPurchaseVarianceLinesAsync
+        // (settled_quantity / bill_line_quantity * bill_line.line_amount * bill.fx_rate).
+        // When bill quantity basis is missing we fall back to bill_amount = grir_amount
+        // so the journal still balances at face value (zero variance) — operator
+        // can fix the bill quantity later and the variance workbench will refresh.
+        //
+        // PPV account resolved company-wide via system_role='purchase_price_variance'
+        // (seeded by StaticCoaTemplateRegistry / PlatformFirstCompanyProvisioningRepository).
         await using var command = scope.CreateCommand(
             """
             select
               row_number() over (order by settlement_line.receipt_line_number, settlement_line.bill_line_number, batch_line.id)::int as line_number,
               batch_line.id as settlement_batch_line_id,
               batch_line.settlement_line_id,
-              batch_line.settled_amount_base,
+              batch_line.settled_amount_base as grir_amount_base,
+              case
+                when bill_line.quantity is null or round(bill_line.quantity, 6) <= 0 then batch_line.settled_amount_base
+                else round(batch_line.settled_quantity * round(bill_line.line_amount * bill.fx_rate, 6) / bill_line.quantity, 6)
+              end as bill_amount_base,
               posting_batch.grir_clearing_account_id,
               bill_line.expense_account_id,
+              ppv.id as ppv_account_id,
               settlement_line.settlement_status
             from receipt_grir_ap_settlement_batch_lines batch_line
             join receipt_grir_ap_settlement_lines settlement_line
@@ -307,10 +321,17 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             join receipt_grir_bridge_posting_batches posting_batch
               on posting_batch.company_id = bridge_posting_line.company_id
              and posting_batch.id = bridge_posting_line.posting_batch_id
+            join bills bill
+              on bill.company_id = batch_line.company_id
+             and bill.id = batch_line.bill_id
             join bill_lines bill_line
               on bill_line.company_id = batch_line.company_id
              and bill_line.bill_id = batch_line.bill_id
              and bill_line.line_number = settlement_line.bill_line_number
+            left join accounts ppv
+              on ppv.company_id = batch_line.company_id
+             and ppv.system_role = 'purchase_price_variance'
+             and ppv.is_active = true
             where batch_line.company_id = @company_id
               and batch_line.settlement_batch_id = @settlement_batch_id
               and posting_batch.status = 'posted'
@@ -334,7 +355,21 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             var settlementBatchLineId = reader.GetGuid(reader.GetOrdinal("settlement_batch_line_id"));
             var grIrClearingAccountId = reader.GetGuid(reader.GetOrdinal("grir_clearing_account_id"));
             var expenseAccountId = reader.GetGuid(reader.GetOrdinal("expense_account_id"));
-            var amountBase = reader.GetFieldValue<decimal>(reader.GetOrdinal("settled_amount_base"));
+            var grIrAmountBase = reader.GetFieldValue<decimal>(reader.GetOrdinal("grir_amount_base"));
+            var billAmountBase = reader.GetFieldValue<decimal>(reader.GetOrdinal("bill_amount_base"));
+            Guid? ppvAccountId = reader.IsDBNull(reader.GetOrdinal("ppv_account_id"))
+                ? null
+                : reader.GetGuid(reader.GetOrdinal("ppv_account_id"));
+
+            // PPV account is required when there is a non-zero variance to
+            // book. Without it, the variance lands silently in expense and
+            // we lose the analytical signal — surface a clear error pointing
+            // at the CoA seed so the operator can add the account.
+            if (Math.Round(billAmountBase - grIrAmountBase, 6, MidpointRounding.ToEven) != 0m && ppvAccountId is null)
+            {
+                throw new InvalidOperationException(
+                    "GR/IR settlement requires a Purchase Price Variance account (system_role='purchase_price_variance') in the Chart of Accounts to book a non-zero variance.");
+            }
 
             lines.Add(new ReceiptGrIrSettlementPostingDocumentLine(
                 lineNumber,
@@ -342,8 +377,10 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
                 settlementBatchLineId,
                 grIrClearingAccountId,
                 expenseAccountId,
+                ppvAccountId,
                 $"GR/IR settlement batch line {lineNumber}",
-                amountBase));
+                grIrAmountBase,
+                billAmountBase));
         }
 
         if (lines.Count == 0)
