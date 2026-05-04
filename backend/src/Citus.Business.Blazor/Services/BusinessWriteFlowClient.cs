@@ -103,8 +103,240 @@ public sealed class BusinessWriteFlowClient
 
     private sealed record ManualJournalErrorBody(string? ErrorCode, string? Message);
 
-    public Task<WriteFlowResult> PostInvoiceAsync(InvoiceDraft draft, CancellationToken cancellationToken = default) =>
-        Pending(nameof(PostInvoiceAsync), draft);
+    /// <summary>
+    /// Two-step invoice post — mirrors <see cref="PostReceivePaymentAsync"/>:
+    ///   1. <c>POST /accounting/invoices/drafts</c> persists the draft and
+    ///      reserves the entity / invoice display numbers; returns documentId.
+    ///   2. <c>POST /accounting/invoices/{documentId}/post</c> runs the
+    ///      posting engine (writes the JE, opens the AR row) and the
+    ///      auto-COGS bridge for any linked sales-issues (M3 iter 3).
+    ///
+    /// The returned <see cref="WriteFlowResult.Message"/> composes the
+    /// invoice display number with the auto-COGS outcomes:
+    ///   • all succeeded:  "Invoice INV-0042 posted. COGS auto-posted: JE-0007."
+    ///   • partial fail:   "Invoice INV-0042 posted. COGS auto-posted: JE-0007.
+    ///                      1 sales-issue(s) need manual COGS post (see workbench)."
+    ///   • no linked SI:   "Invoice INV-0042 posted."
+    ///
+    /// Step-1 success + Step-2 failure leaves a draft sitting in the DB with
+    /// <c>DocumentId</c> populated on the result so the page can deep-link
+    /// the operator to the draft for retry / inspection.
+    /// </summary>
+    public async Task<WriteFlowResult> PostInvoiceAsync(InvoiceDraft draft, CancellationToken cancellationToken = default)
+    {
+        if (draft.CompanyId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Active company is required.", nameof(PostInvoiceAsync), draft);
+        }
+        if (draft.UserId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Active user is required.", nameof(PostInvoiceAsync), draft);
+        }
+        if (draft.CustomerId is null || draft.CustomerId == Guid.Empty)
+        {
+            return new WriteFlowResult(false, "Customer is required.", nameof(PostInvoiceAsync), draft);
+        }
+        if (draft.Lines.Count == 0)
+        {
+            return new WriteFlowResult(false, "At least one line is required.", nameof(PostInvoiceAsync), draft);
+        }
+
+        var savePayload = new
+        {
+            companyId = draft.CompanyId,
+            userId = draft.UserId,
+            customerId = draft.CustomerId.Value,
+            invoiceDate = draft.DocumentDate,
+            dueDate = draft.DueDate ?? draft.DocumentDate,
+            transactionCurrencyCode = string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant(),
+            baseCurrencyCode = string.IsNullOrWhiteSpace(draft.BaseCurrencyCode)
+                ? (string.IsNullOrWhiteSpace(draft.TransactionCurrencyCode) ? "USD" : draft.TransactionCurrencyCode.Trim().ToUpperInvariant())
+                : draft.BaseCurrencyCode.Trim().ToUpperInvariant(),
+            fxSnapshotId = (Guid?)null,
+            fxRate = draft.FxRate,
+            fxEffectiveDate = (DateOnly?)null,
+            fxSource = (string?)null,
+            memo = draft.Memo,
+            lines = draft.Lines.Select(l => new
+            {
+                lineNumber = l.LineNumber,
+                revenueAccountId = l.RevenueAccountId,
+                description = l.Description,
+                quantity = l.Quantity,
+                unitPrice = l.UnitPrice,
+                taxCodeId = l.TaxCodeId,
+                taxAmount = l.TaxAmount,
+            }).ToArray(),
+            customerPoNumber = string.IsNullOrWhiteSpace(draft.CustomerPoNumber) ? null : draft.CustomerPoNumber.Trim(),
+            salesOrderId = draft.SalesOrderId,
+        };
+
+        Guid documentId;
+        string displayNumber;
+        try
+        {
+            using var saveResponse = await _httpClient.PostAsJsonAsync(
+                "accounting/invoices/drafts",
+                savePayload,
+                cancellationToken);
+
+            if (!saveResponse.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(saveResponse, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: error ?? $"Could not save the invoice draft (HTTP {(int)saveResponse.StatusCode}).",
+                    Operation: nameof(PostInvoiceAsync),
+                    DraftEcho: draft);
+            }
+
+            var saved = await saveResponse.Content.ReadFromJsonAsync<InvoiceSaveDraftResponse>(cancellationToken);
+            if (saved is null || saved.DocumentId == Guid.Empty)
+            {
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: "Server saved the draft but did not return a document id.",
+                    Operation: nameof(PostInvoiceAsync),
+                    DraftEcho: draft);
+            }
+
+            documentId = saved.DocumentId;
+            displayNumber = saved.DisplayNumber;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice draft save call failed.");
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: "Could not reach the server to save the invoice draft. Please retry.",
+                Operation: nameof(PostInvoiceAsync),
+                DraftEcho: draft);
+        }
+
+        var postPayload = new
+        {
+            companyId = draft.CompanyId,
+            userId = draft.UserId,
+            acceptedFxSnapshotId = (Guid?)null,
+            idempotencyKey = (string?)null,
+        };
+
+        try
+        {
+            using var postResponse = await _httpClient.PostAsJsonAsync(
+                $"accounting/invoices/{documentId:D}/post",
+                postPayload,
+                cancellationToken);
+
+            if (!postResponse.IsSuccessStatusCode)
+            {
+                var error = await ReadAccountingErrorAsync(postResponse, cancellationToken);
+                return new WriteFlowResult(
+                    Succeeded: false,
+                    Message: $"Saved draft as {displayNumber} but posting failed: {error ?? $"HTTP {(int)postResponse.StatusCode}"}. The draft remains for retry.",
+                    Operation: nameof(PostInvoiceAsync),
+                    DraftEcho: draft)
+                {
+                    DocumentId = documentId,
+                };
+            }
+
+            var posted = await postResponse.Content.ReadFromJsonAsync<InvoicePostResponse>(cancellationToken);
+            return new WriteFlowResult(
+                Succeeded: true,
+                Message: ComposePostInvoiceMessage(displayNumber, posted),
+                Operation: nameof(PostInvoiceAsync),
+                DraftEcho: posted ?? (object)draft)
+            {
+                DocumentId = documentId,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice post call failed.");
+            return new WriteFlowResult(
+                Succeeded: false,
+                Message: $"Saved draft as {displayNumber} but could not reach the server to post. Please retry from the draft.",
+                Operation: nameof(PostInvoiceAsync),
+                DraftEcho: draft)
+            {
+                DocumentId = documentId,
+            };
+        }
+    }
+
+    private static string ComposePostInvoiceMessage(string displayNumber, InvoicePostResponse? posted)
+    {
+        if (posted is null)
+        {
+            return $"Invoice {displayNumber} posted.";
+        }
+
+        var auto = posted.AutoPostedCogs ?? Array.Empty<InvoiceAutoCogsOutcomeDto>();
+        if (auto.Count == 0)
+        {
+            return $"Invoice {displayNumber} posted.";
+        }
+
+        var succeeded = auto.Where(o => o.Succeeded).ToArray();
+        var failed = auto.Where(o => !o.Succeeded).ToArray();
+
+        var parts = new List<string>(3) { $"Invoice {displayNumber} posted." };
+        if (succeeded.Length > 0)
+        {
+            var labels = succeeded
+                .Select(o => string.IsNullOrWhiteSpace(o.JournalEntryDisplayNumber) ? "(unnamed JE)" : o.JournalEntryDisplayNumber)
+                .ToArray();
+            parts.Add(succeeded.Length == 1
+                ? $"COGS auto-posted: {labels[0]}."
+                : $"COGS auto-posted: {string.Join(", ", labels)}.");
+        }
+        if (failed.Length > 0)
+        {
+            parts.Add(failed.Length == 1
+                ? "1 sales-issue needs manual COGS post (see workbench)."
+                : $"{failed.Length} sales-issues need manual COGS post (see workbench).");
+        }
+        return string.Join(" ", parts);
+    }
+
+    private static async Task<string?> ReadAccountingErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var error = await response.Content.ReadFromJsonAsync<AccountingErrorBody>(cancellationToken);
+            return string.IsNullOrWhiteSpace(error?.Message) ? null : error!.Message;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed record InvoiceSaveDraftResponse(
+        Guid DocumentId,
+        string EntityNumber,
+        string DisplayNumber,
+        string Status);
+
+    private sealed record InvoicePostResponse(
+        Guid JournalEntryId,
+        string JournalEntryDisplayNumber,
+        string Status,
+        DateTimeOffset PostedAt,
+        IReadOnlyList<string>? Warnings,
+        IReadOnlyList<InvoiceAutoCogsOutcomeDto>? AutoPostedCogs);
+
+    /// <summary>Wire-shape mirror of <c>InvoiceAutoCogsOutcome</c>.</summary>
+    private sealed record InvoiceAutoCogsOutcomeDto(
+        Guid SalesIssueDocumentId,
+        Guid? JournalEntryId,
+        string? JournalEntryDisplayNumber,
+        bool AlreadyPosted,
+        bool Succeeded,
+        string? ErrorMessage);
+
+    private sealed record AccountingErrorBody(string? Code, string? Message);
 
     public Task<WriteFlowResult> PostBillAsync(BillDraft draft, CancellationToken cancellationToken = default) =>
         Pending(nameof(PostBillAsync), draft);
@@ -530,10 +762,14 @@ public sealed record ManualJournalLineDraft
 
 public sealed record InvoiceDraft
 {
+    public Guid CompanyId { get; init; }
+    public Guid UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public DateOnly? DueDate { get; init; }
     public Guid? CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
+    /// <summary>Company base currency snapshot at submit time — server uses this to validate FX direction.</summary>
+    public string BaseCurrencyCode { get; init; } = string.Empty;
     /// <summary>
     /// Per-document FX rate (transaction → company base currency). Pre-filled
     /// with the recommended D-1 close rate from <c>fx_rates_daily</c> /
@@ -553,7 +789,24 @@ public sealed record InvoiceDraft
     /// applicable). Drives auto-COGS-post linkage and the printed banner.
     /// </summary>
     public Guid? SalesOrderId { get; init; }
-    public IReadOnlyList<DocumentLineDraft> Lines { get; init; } = Array.Empty<DocumentLineDraft>();
+    public IReadOnlyList<InvoiceLineDraft> Lines { get; init; } = Array.Empty<InvoiceLineDraft>();
+}
+
+/// <summary>
+/// Wire-shape line for <see cref="InvoiceDraft"/>. Mirror of
+/// <see cref="SalesReceiptLineDraft"/> — sends the resolved
+/// <c>RevenueAccountId</c> + <c>TaxCodeId</c> Guids the picker already
+/// holds, so the server doesn't have to re-resolve from a code lookup.
+/// </summary>
+public sealed record InvoiceLineDraft
+{
+    public int LineNumber { get; init; }
+    public Guid RevenueAccountId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal UnitPrice { get; init; }
+    public Guid? TaxCodeId { get; init; }
+    public decimal TaxAmount { get; init; }
 }
 
 /// <summary>
