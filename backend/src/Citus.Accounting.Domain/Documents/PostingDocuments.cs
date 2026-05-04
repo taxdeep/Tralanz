@@ -3558,3 +3558,142 @@ public sealed class TaxReturnDocument : IPostingDocument
     /// </summary>
     public FxSnapshotRef? FxSnapshot => null;
 }
+
+/// <summary>
+/// One per-item slice of a sales-issue COGS posting. Each line carries
+/// the resolved item-level COGS + Inventory Asset accounts plus the
+/// total base-currency cost (already rolled up across cost layers and
+/// pre-frozen at receipt FX rate by the inventory engine).
+///
+/// Consuming layer FX context is intentionally NOT carried on the line:
+/// the inventory engine has already converted layer cost to base; the
+/// posting engine just journalises in base. Re-derivation isn't allowed
+/// because that would let drifting spot rates re-cost historical sales.
+/// </summary>
+public sealed record SalesIssueCogsPostingDocumentLine : IPostingDocumentLine
+{
+    public SalesIssueCogsPostingDocumentLine(
+        int lineNumber,
+        Guid itemId,
+        Guid cogsAccountId,
+        Guid inventoryAssetAccountId,
+        string description,
+        decimal amountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+        if (cogsAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("COGS account id is required.", nameof(cogsAccountId));
+        }
+        if (inventoryAssetAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Inventory asset account id is required.", nameof(inventoryAssetAccountId));
+        }
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+        if (amountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amountBase), "Sales-issue COGS line amount must be positive.");
+        }
+
+        LineNumber = lineNumber;
+        ItemId = itemId;
+        CogsAccountId = cogsAccountId;
+        InventoryAssetAccountId = inventoryAssetAccountId;
+        Description = description.Trim();
+        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+    }
+
+    public int LineNumber { get; }
+    public Guid ItemId { get; }
+    public Guid CogsAccountId { get; }
+    public Guid InventoryAssetAccountId { get; }
+    public string Description { get; }
+    public decimal AmountBase { get; }
+}
+
+/// <summary>
+/// Posting document for the M3 sales-issue → COGS bridge. Mirrors
+/// <see cref="ReceiptGrIrPostingDocument"/>:
+///   - one document per sales_issue (the source_id on the produced JE)
+///   - one line per item rolled up across whatever cost layers were
+///     consumed for that item on this issue
+///   - SourceType is the JE's source_type column, which is also the
+///     idempotency key — re-posting the same sales_issue lands on the
+///     existing JE rather than double-posting
+///   - base currency only (cost layers are pre-converted; see line
+///     class XML doc for why FX context isn't carried)
+/// </summary>
+public sealed class SalesIssueCogsPostingDocument : IPostingDocument
+{
+    public SalesIssueCogsPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid salesIssueDocumentId,
+        DateOnly documentDate,
+        CurrencyCode baseCurrencyCode,
+        IEnumerable<SalesIssueCogsPostingDocumentLine> lines)
+    {
+        if (salesIssueDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Sales-issue document id is required.", nameof(salesIssueDocumentId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        SalesIssueDocumentId = salesIssueDocumentId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Sales-issue COGS posting document must contain at least one line.");
+        }
+
+        CogsLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+
+    /// <summary>
+    /// Stamped on the produced journal_entries.source_type. The
+    /// command handler probes for an existing JE with this source_type
+    /// + source_id = SalesIssueDocumentId to enforce idempotency.
+    /// </summary>
+    public string SourceType => "sales_issue_cogs";
+
+    public string Status { get; }
+    public Guid SalesIssueDocumentId { get; }
+    public DateOnly DocumentDate { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public IReadOnlyList<SalesIssueCogsPostingDocumentLine> CogsLines { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+    public decimal TotalAmountBase => CogsLines.Sum(static line => line.AmountBase);
+
+    /// <summary>
+    /// Cost layers are already in base; no FX step happens at posting.
+    /// </summary>
+    public FxSnapshotRef? FxSnapshot => null;
+}

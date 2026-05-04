@@ -125,6 +125,7 @@ builder.Services.AddScoped<IAccountingReportRepository, PostgresAccountingReport
 builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccountingDocumentReviewRepository>();
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
+builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
 builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
 builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
 builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
@@ -178,6 +179,7 @@ builder.Services.AddScoped<PostCreditNoteCommandHandler>();
 builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
+builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
 builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
 builder.Services.AddScoped<PostReceiptGrIrSettlementJournalCommandHandler>();
 builder.Services.AddScoped<ClearReceiptGrIrSettlementOpenItemCommandHandler>();
@@ -9972,6 +9974,45 @@ accounting.MapPost(
         catch (InvalidOperationException ex)
         {
             return AccountingOperationBadRequest(ex);
+        }
+    });
+
+// -----------------------------------------------------------------------
+// M3 — Sales Issue → COGS posting bridge (Inventory V1 plan).
+// Operator-triggered (UI button on the Sales Issue review page, future
+// auto-trigger from Invoice post when the operator opts in). Idempotent
+// at the journal layer: re-running on the same sales-issue returns the
+// existing JE rather than double-posting.
+//
+// Active company id + user id come from the BusinessSession header
+// (matches the modern endpoint convention; the GR/IR endpoint above
+// pre-dates that pattern and will migrate later).
+// -----------------------------------------------------------------------
+accounting.MapPost(
+    "/sales-issues/{documentId:guid}/cogs/post",
+    async (
+        Guid documentId,
+        BusinessSessionContextAccessor sessionAccessor,
+        PostSalesIssueCogsCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new PostSalesIssueCogsCommand(
+                    new(session.ActiveCompanyId),
+                    new(session.UserId),
+                    documentId),
+                cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
         }
     });
 

@@ -421,6 +421,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildReceiptGrIrPostingFragments(grIrPosting).AsReadOnly()),
             ReceiptGrIrSettlementPostingDocument grIrSettlement => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly()),
+            SalesIssueCogsPostingDocument cogsPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -1288,6 +1290,67 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
             $"GR/IR clearing for receipt {document.ReceiptDocumentId}",
             ControlRole: "grir_clearing",
             PostingRole: "control:grir_clearing"));
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// M3 Sales Issue → COGS bridge. Per item: Dr COGS / Cr Inventory
+    /// Asset at the layer-frozen base cost the inventory engine already
+    /// rolled up. No FX step — cost layers are stored in base only by
+    /// the receipt path (per the dual-truth invariant).
+    /// Multiple items grouped by their account so the resulting JE has
+    /// at most one fragment per (account, side).
+    /// </summary>
+    private static List<PostingFragment> BuildSalesIssueCogsPostingFragments(
+        SalesIssueCogsPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+
+        // Debit COGS — group by item-resolved COGS account so a JE with
+        // 50 line items posting to the same COGS account collapses to one
+        // fragment.
+        foreach (var accountGroup in document.CogsLines.GroupBy(static line => line.CogsAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"COGS for sales-issue {document.DisplayNumber.Value}",
+                ControlRole: "cost_of_goods_sold",
+                PostingRole: "inventory:cogs_recognition"));
+        }
+
+        // Credit Inventory Asset — same grouping shape.
+        foreach (var accountGroup in document.CogsLines.GroupBy(static line => line.InventoryAssetAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                0m,
+                amount,
+                0m,
+                amount,
+                $"Inventory consumed by sales-issue {document.DisplayNumber.Value}",
+                ControlRole: "inventory_asset",
+                PostingRole: "inventory:asset_consumption"));
+        }
 
         EnsureBalancedBaseCurrency(fragments);
         return fragments;
