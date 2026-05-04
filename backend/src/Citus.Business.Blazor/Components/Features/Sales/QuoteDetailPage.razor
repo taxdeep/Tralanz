@@ -147,6 +147,10 @@ else
                 <table class="citus-keyvalue">
                     <tbody>
                         <tr><th>Name</th><td>@_quote.CustomerName</td></tr>
+                        @if (!string.IsNullOrWhiteSpace(_quote.CustomerPoNumber))
+                        {
+                            <tr><th>Customer PO #</th><td><span class="citus-inline-code">@_quote.CustomerPoNumber</span></td></tr>
+                        }
                         @if (HasAddress(_quote))
                         {
                             <tr><th>Billing address</th><td>@FormatAddress(_quote.BillingAddressLine, _quote.BillingCity, _quote.BillingProvinceState, _quote.BillingPostalCode, _quote.BillingCountry)</td></tr>

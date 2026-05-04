@@ -175,6 +175,7 @@ public sealed record QuoteSummaryDto(
     string Status,
     string TransactionCurrencyCode,
     decimal TotalAmount,
+    string? CustomerPoNumber,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -214,6 +215,7 @@ public sealed record QuoteRecordDto(
     string? MemoToCustomer,
     string? InternalNote,
     Guid? ConvertedSalesOrderId,
+    string? CustomerPoNumber,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<QuoteLineDto> Lines);
@@ -257,6 +259,7 @@ public sealed record QuoteUpsertPayload(
     Guid? ShippingTaxCodeId,
     string? MemoToCustomer,
     string? InternalNote,
+    string? CustomerPoNumber,
     IReadOnlyList<QuoteLinePayload> Lines);
 
 public sealed record QuoteLinePayload(

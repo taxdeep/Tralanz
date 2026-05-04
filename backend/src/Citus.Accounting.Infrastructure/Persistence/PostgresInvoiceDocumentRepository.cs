@@ -243,6 +243,64 @@ public sealed class PostgresInvoiceDocumentRepository : IInvoiceDocumentReposito
             salesOrderId);
     }
 
+    public async Task<IReadOnlyList<InvoiceListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = await PostgresCommandScope.CreateAsync(
+            _connections,
+            _executionContextAccessor,
+            cancellationToken);
+
+        await using var command = scope.CreateCommand(includeDrafts
+            ? """
+              select i.id, i.entity_number, i.invoice_number, i.status, i.invoice_date, i.due_date,
+                     i.customer_id, coalesce(c.display_name, '') as customer_name,
+                     i.document_currency_code, i.total_amount, i.posted_at,
+                     i.customer_po_number, i.sales_order_id
+              from invoices i
+              left join customers c on c.company_id = i.company_id and c.id = i.customer_id
+              where i.company_id = @company_id
+              order by i.invoice_date desc, i.created_at desc
+              limit 200;
+              """
+            : """
+              select i.id, i.entity_number, i.invoice_number, i.status, i.invoice_date, i.due_date,
+                     i.customer_id, coalesce(c.display_name, '') as customer_name,
+                     i.document_currency_code, i.total_amount, i.posted_at,
+                     i.customer_po_number, i.sales_order_id
+              from invoices i
+              left join customers c on c.company_id = i.company_id and c.id = i.customer_id
+              where i.company_id = @company_id
+                and i.status <> 'draft'
+              order by i.invoice_date desc, i.created_at desc
+              limit 200;
+              """);
+        command.Parameters.AddWithValue("company_id", companyId.Value);
+
+        var rows = new List<InvoiceListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new InvoiceListItem(
+                reader.GetGuid(reader.GetOrdinal("id")),
+                reader.GetString(reader.GetOrdinal("entity_number")),
+                reader.GetString(reader.GetOrdinal("invoice_number")),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("invoice_date")),
+                reader.GetFieldValue<DateOnly>(reader.GetOrdinal("due_date")),
+                reader.GetGuid(reader.GetOrdinal("customer_id")),
+                reader.GetString(reader.GetOrdinal("customer_name")),
+                reader.GetString(reader.GetOrdinal("document_currency_code")),
+                reader.GetDecimal(reader.GetOrdinal("total_amount")),
+                reader.IsDBNull(reader.GetOrdinal("posted_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
+                reader.IsDBNull(reader.GetOrdinal("customer_po_number")) ? null : reader.GetString(reader.GetOrdinal("customer_po_number")),
+                reader.IsDBNull(reader.GetOrdinal("sales_order_id")) ? null : reader.GetGuid(reader.GetOrdinal("sales_order_id"))));
+        }
+        return rows;
+    }
+
     public async Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         InvoiceDraftSaveModel draft,
         CancellationToken cancellationToken)

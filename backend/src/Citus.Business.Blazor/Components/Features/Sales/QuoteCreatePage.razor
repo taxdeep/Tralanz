@@ -203,6 +203,10 @@ else
                 <h2 class="citus-panel__title">Message + notes</h2>
                 <div class="grid grid-cols-1 gap-3">
                     <div>
+                        <label class="text-sm font-medium block mb-1">Customer PO #</label>
+                        <CitusInput TValue="string" @bind-Value="_customerPoNumber" Placeholder="Customer's PO reference (carries through to SO + Invoice)" MaxLength="64" />
+                    </div>
+                    <div>
                         <label class="text-sm font-medium block mb-1">Message displayed on quote</label>
                         <CitusInput TValue="string" @bind-Value="_memoToCustomer" Placeholder="Visible to the customer." />
                     </div>
@@ -344,6 +348,7 @@ else
     private decimal? _shippingAmount;
     private string _memoToCustomer = string.Empty;
     private string _internalNote = string.Empty;
+    private string _customerPoNumber = string.Empty;
 
     private List<LineDraft> _lines = new() { new LineDraft() };
 
@@ -449,6 +454,7 @@ else
         _shippingAmount = quote.ShippingAmount;
         _memoToCustomer = quote.MemoToCustomer ?? string.Empty;
         _internalNote = quote.InternalNote ?? string.Empty;
+        _customerPoNumber = quote.CustomerPoNumber ?? string.Empty;
         _lines = quote.Lines.Select(l => new LineDraft
         {
             Sequence = l.Sequence,
@@ -614,6 +620,7 @@ else
                 ShippingTaxCodeId: null,
                 MemoToCustomer: NullIfEmpty(_memoToCustomer),
                 InternalNote: NullIfEmpty(_internalNote),
+                CustomerPoNumber: NullIfEmpty(_customerPoNumber),
                 Lines: _lines
                     .Where(l => l.Quantity > 0 || l.UnitPrice > 0 || !string.IsNullOrWhiteSpace(l.Description) || l.ItemId is not null)
                     .Select((l, i) => new QuoteLinePayload(

@@ -4,6 +4,7 @@
 @using Radzen.Blazor
 
 @inject BusinessShellState ShellState
+@inject InvoiceClient InvoiceClient
 
 <PageTitle>Invoices | Tralanz Books</PageTitle>
 
@@ -16,18 +17,16 @@
     </Actions>
 </CitusPageHeader>
 
-<CitusAlert Severity="CitusAlertSeverity.Info"
-                 ShowIcon="true"
-                 Message="Invoice list pulls from the existing A/R Aging + Document Review HTTP surface. Posted invoices stay read-only — review opens via the Document drill-down."
-                 Class="mb-4" />
-
 <section class="citus-panel">
     <header class="citus-panel__header">
         <h2 class="citus-panel__title">Recent invoices</h2>
-        <CitusBadge Color="@("blue")">Read-only review</CitusBadge>
+        <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked="@_includeDrafts" @onchange="OnIncludeDraftsChanged" />
+            <span>Include drafts</span>
+        </label>
     </header>
 
-    <CitusAsyncBoundary IsLoading="false"
+    <CitusAsyncBoundary IsLoading="@_isLoading"
                         IsEmpty="@(_invoices.Count == 0)"
                         EmptyIcon="IconName.FileInvoice"
                         EmptyTitle="No invoices for this company yet"
@@ -44,8 +43,7 @@
             <Columns>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.DisplayNumber)" Title="Invoice" Width="180px">
                     <Template Context="invoice">
-                        <a class="citus-link" href="@($"documents/invoice/{invoice.Id:D}")">@invoice.DisplayNumber</a>
-                        <div class="text-fg-subtle text-xs">@invoice.Memo</div>
+                        <a class="citus-link" href="@($"invoices/{invoice.Id:D}")">@invoice.DisplayNumber</a>
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.CustomerName)" Title="Customer" />
@@ -57,7 +55,7 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.Status)" Title="Status" Width="110px">
                     <Template Context="invoice">
-                        <CitusBadge Color="@StatusColor(invoice.Status)">@invoice.Status</CitusBadge>
+                        <CitusBadge Color="@StatusColor(invoice.Status)">@HumanizeStatus(invoice.Status)</CitusBadge>
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="InvoiceListRow" Property="@nameof(InvoiceListRow.CustomerPoNumber)" Title="Customer PO" Width="160px">
@@ -88,17 +86,60 @@
         Subtitle = "Customer-facing receivable anchors. Posted invoices flow into A/R Aging and Receive Payment settlement."
     };
 
-    // Empty until /accounting/invoices HTTP endpoint exists; the list shape
-    // matches what the eventual InvoiceListClient will return.
-    private readonly IReadOnlyList<InvoiceListRow> _invoices = Array.Empty<InvoiceListRow>();
+    private IReadOnlyList<InvoiceListRow> _invoices = Array.Empty<InvoiceListRow>();
+    private bool _isLoading = true;
+    private bool _includeDrafts = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnIncludeDraftsChanged(ChangeEventArgs e)
+    {
+        _includeDrafts = (bool)(e.Value ?? false);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var rows = await InvoiceClient.ListAsync(ShellState.ActiveCompany.Id, _includeDrafts);
+            _invoices = rows.Select(r => new InvoiceListRow(
+                Id: r.Id,
+                DisplayNumber: r.DisplayNumber,
+                CustomerName: string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName,
+                DocumentDate: r.InvoiceDate,
+                DueDate: r.DueDate,
+                Status: r.Status,
+                TotalAmount: r.TotalAmount,
+                Currency: r.TransactionCurrencyCode,
+                CustomerPoNumber: r.CustomerPoNumber)).ToList();
+        }
+        finally { _isLoading = false; }
+    }
 
     private static string StatusColor(string status) => status.ToLowerInvariant() switch
     {
         "posted" => "green",
         "draft" => "blue",
-        "voided" => "red",
-        "overdue" => "orange",
+        "submitted" => "blue",
+        "partially_paid" => "blue",
+        "paid" => "green",
+        "voided" => "default",
+        "reversed" => "orange",
         _ => "default"
+    };
+
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "draft" => "Draft",
+        "submitted" => "Submitted",
+        "posted" => "Posted",
+        "partially_paid" => "Partially paid",
+        "paid" => "Paid",
+        "voided" => "Voided",
+        "reversed" => "Reversed",
+        _ => status
     };
 
     private sealed record class InvoiceListRow(
@@ -110,6 +151,5 @@
         string Status,
         decimal TotalAmount,
         string Currency,
-        string Memo,
-        string? CustomerPoNumber = null);
+        string? CustomerPoNumber);
 }

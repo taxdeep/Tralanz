@@ -25,6 +25,11 @@ public interface IInvoiceDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<InvoiceListItem>> ListAsync(
+        CompanyId companyId,
+        bool includeDrafts,
+        CancellationToken cancellationToken);
+
     Task<SourceDocumentDraftSaveResult> SaveDraftAsync(
         InvoiceDraftSaveModel draft,
         CancellationToken cancellationToken);
@@ -35,6 +40,21 @@ public interface IInvoiceDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken);
 }
+
+public sealed record InvoiceListItem(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    Guid CustomerId,
+    string CustomerName,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber = null,
+    Guid? SalesOrderId = null);
 
 public interface ICreditNoteDocumentRepository
 {

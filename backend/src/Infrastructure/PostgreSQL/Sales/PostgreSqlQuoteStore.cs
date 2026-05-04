@@ -54,9 +54,11 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                 memo_to_customer            TEXT NULL,
                 internal_note               TEXT NULL,
                 converted_sales_order_id    UUID NULL,
+                customer_po_number          TEXT NULL,
                 created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_po_number TEXT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS uq_quotes_company_quote_number
                 ON quotes (company_id, quote_number);
             CREATE INDEX IF NOT EXISTS idx_quotes_company_status
@@ -65,6 +67,9 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                 ON quotes (company_id, customer_id);
             CREATE INDEX IF NOT EXISTS idx_quotes_company_document_date
                 ON quotes (company_id, document_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_quotes_company_customer_po
+                ON quotes (company_id, customer_po_number)
+                WHERE customer_po_number IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS quote_lines (
                 id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -99,6 +104,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                    COALESCE(c.display_name, '') AS customer_name,
                    q.document_date, q.expiration_date, q.status,
                    q.transaction_currency_code, q.total_amount,
+                   q.customer_po_number,
                    q.created_at, q.updated_at
               FROM quotes q
               LEFT JOIN customers c ON c.id = q.customer_id
@@ -191,7 +197,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                     ship_via, shipping_date, tracking_no,
                     tax_mode, discount_kind, discount_value, shipping_amount, shipping_tax_code_id,
                     subtotal_amount, discount_amount, tax_amount, total_amount,
-                    memo_to_customer, internal_note
+                    memo_to_customer, internal_note, customer_po_number
                 )
                 VALUES (
                     @company_id, @quote_number, 'draft', @customer_id,
@@ -202,7 +208,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                     @ship_via, @shipping_date, @tracking_no,
                     @tax_mode, @discount_kind, @discount_value, @shipping_amount, @shipping_tax_code_id,
                     @subtotal_amount, @discount_amount, @tax_amount, @total_amount,
-                    @memo_to_customer, @internal_note
+                    @memo_to_customer, @internal_note, @customer_po_number
                 )
                 RETURNING id;
                 """;
@@ -282,6 +288,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                        total_amount             = @total_amount,
                        memo_to_customer         = @memo_to_customer,
                        internal_note            = @internal_note,
+                       customer_po_number       = @customer_po_number,
                        updated_at               = NOW()
                  WHERE company_id = @company_id AND id = @id;
                 """;
@@ -510,6 +517,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         command.Parameters.AddWithValue("total_amount", total);
         command.Parameters.AddWithValue("memo_to_customer", (object?)input.MemoToCustomer ?? DBNull.Value);
         command.Parameters.AddWithValue("internal_note", (object?)input.InternalNote ?? DBNull.Value);
+        command.Parameters.AddWithValue("customer_po_number", (object?)input.CustomerPoNumber ?? DBNull.Value);
     }
 
     /// <summary>
@@ -534,6 +542,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
                q.tax_mode, q.discount_kind, q.discount_value, q.shipping_amount, q.shipping_tax_code_id,
                q.subtotal_amount, q.discount_amount, q.tax_amount, q.total_amount,
                q.memo_to_customer, q.internal_note, q.converted_sales_order_id,
+               q.customer_po_number,
                q.created_at, q.updated_at
           FROM quotes q
           LEFT JOIN customers c ON c.id = q.customer_id
@@ -550,8 +559,9 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         Status: reader.GetString(7),
         TransactionCurrencyCode: reader.GetString(8),
         TotalAmount: reader.GetDecimal(9),
-        CreatedAt: reader.GetFieldValue<DateTimeOffset>(10),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(11));
+        CustomerPoNumber: reader.IsDBNull(10) ? null : reader.GetString(10),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(11),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(12));
 
     private static QuoteRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<QuoteLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
@@ -589,6 +599,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
         MemoToCustomer: ReadNullableString(reader, "memo_to_customer"),
         InternalNote: ReadNullableString(reader, "internal_note"),
         ConvertedSalesOrderId: ReadNullableGuid(reader, "converted_sales_order_id"),
+        CustomerPoNumber: ReadNullableString(reader, "customer_po_number"),
         CreatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
         UpdatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
         Lines: lines);

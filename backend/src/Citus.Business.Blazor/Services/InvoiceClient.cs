@@ -13,6 +13,24 @@ namespace Citus.Business.Blazor.Services;
 /// </summary>
 public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> logger)
 {
+    public async Task<IReadOnlyList<InvoiceSummaryDto>> ListAsync(
+        Guid companyId,
+        bool includeDrafts = true,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/invoices?companyId={companyId:D}&includeDrafts={(includeDrafts ? "true" : "false")}";
+            var rows = await httpClient.GetFromJsonAsync<InvoiceSummaryDto[]>(url, cancellationToken);
+            return rows ?? Array.Empty<InvoiceSummaryDto>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to list invoices.");
+            return Array.Empty<InvoiceSummaryDto>();
+        }
+    }
+
     public async Task<InvoiceRecordDto?> GetByIdAsync(
         Guid invoiceId,
         Guid companyId,
@@ -36,6 +54,21 @@ public sealed class InvoiceClient(HttpClient httpClient, ILogger<InvoiceClient> 
         }
     }
 }
+
+public sealed record InvoiceSummaryDto(
+    Guid Id,
+    string EntityNumber,
+    string DisplayNumber,
+    string Status,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    Guid CustomerId,
+    string CustomerName,
+    string TransactionCurrencyCode,
+    decimal TotalAmount,
+    DateTimeOffset? PostedAt,
+    string? CustomerPoNumber,
+    Guid? SalesOrderId);
 
 public sealed record InvoiceRecordDto(
     Guid Id,

@@ -83,6 +83,7 @@ public sealed record QuoteUpsertHttpRequest(
     Guid? ShippingTaxCodeId,
     string? MemoToCustomer,
     string? InternalNote,
+    string? CustomerPoNumber,
     IReadOnlyList<QuoteLineHttpRequest>? Lines);
 
 public sealed record QuoteLineHttpRequest(

@@ -5605,7 +5605,7 @@ accounting.MapPost(
             MemoToCustomer: quote.MemoToCustomer,
             InternalNote: quote.InternalNote,
             SourceQuoteId: quote.Id,
-            CustomerPoNumber: null,
+            CustomerPoNumber: quote.CustomerPoNumber,
             Lines: quote.Lines
                 .Select(l => new SalesOrderLineInput(
                     Sequence: l.Sequence,
@@ -5958,6 +5958,7 @@ static QuoteUpsertInput MapQuoteInput(QuoteUpsertHttpRequest request) => new(
     ShippingTaxCodeId: request.ShippingTaxCodeId,
     MemoToCustomer: request.MemoToCustomer,
     InternalNote: request.InternalNote,
+    CustomerPoNumber: string.IsNullOrWhiteSpace(request.CustomerPoNumber) ? null : request.CustomerPoNumber.Trim(),
     Lines: (request.Lines ?? Array.Empty<QuoteLineHttpRequest>())
         .Select(l => new QuoteLineInput(
             Sequence: l.Sequence,
@@ -8071,6 +8072,15 @@ accounting.MapPost(
         {
             return AccountingOperationBadRequest(ex);
         }
+    });
+
+accounting.MapGet(
+    "/invoices",
+    async (Guid companyId, bool? includeDrafts, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    {
+        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
+        return Results.Ok(rows);
     });
 
 accounting.MapGet(
