@@ -272,31 +272,50 @@ public sealed class BusinessWriteFlowClient
             return $"Invoice {displayNumber} posted.";
         }
 
+        var parts = new List<string>(4) { $"Invoice {displayNumber} posted." };
+
+        // M3 iter 3: COGS auto-trigger outcomes.
         var auto = posted.AutoPostedCogs ?? Array.Empty<InvoiceAutoCogsOutcomeDto>();
-        if (auto.Count == 0)
+        if (auto.Count > 0)
         {
-            return $"Invoice {displayNumber} posted.";
+            var succeeded = auto.Where(o => o.Succeeded).ToArray();
+            var failed = auto.Where(o => !o.Succeeded).ToArray();
+            if (succeeded.Length > 0)
+            {
+                var labels = succeeded
+                    .Select(o => string.IsNullOrWhiteSpace(o.JournalEntryDisplayNumber) ? "(unnamed JE)" : o.JournalEntryDisplayNumber)
+                    .ToArray();
+                parts.Add(succeeded.Length == 1
+                    ? $"COGS auto-posted: {labels[0]}."
+                    : $"COGS auto-posted: {string.Join(", ", labels)}.");
+            }
+            if (failed.Length > 0)
+            {
+                parts.Add(failed.Length == 1
+                    ? "1 sales-issue needs manual COGS post (see workbench)."
+                    : $"{failed.Length} sales-issues need manual COGS post (see workbench).");
+            }
         }
 
-        var succeeded = auto.Where(o => o.Succeeded).ToArray();
-        var failed = auto.Where(o => !o.Succeeded).ToArray();
+        // M5 iter 4: customer-deposit pro-rata application outcome.
+        var dep = posted.AppliedCustomerDeposits;
+        if (dep is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(dep.ErrorMessage))
+            {
+                parts.Add($"Deposit application failed: {dep.ErrorMessage}");
+            }
+            else if (dep.TotalAppliedBase > 0m && dep.Slices is { Count: > 0 })
+            {
+                var sliceLabels = dep.Slices
+                    .Select(s => $"{s.CustomerDepositDisplayNumber} ({s.AppliedAmountBase:N2})")
+                    .ToArray();
+                parts.Add(dep.Slices.Count == 1
+                    ? $"Deposit applied: {sliceLabels[0]}."
+                    : $"Deposits applied: {string.Join(", ", sliceLabels)}.");
+            }
+        }
 
-        var parts = new List<string>(3) { $"Invoice {displayNumber} posted." };
-        if (succeeded.Length > 0)
-        {
-            var labels = succeeded
-                .Select(o => string.IsNullOrWhiteSpace(o.JournalEntryDisplayNumber) ? "(unnamed JE)" : o.JournalEntryDisplayNumber)
-                .ToArray();
-            parts.Add(succeeded.Length == 1
-                ? $"COGS auto-posted: {labels[0]}."
-                : $"COGS auto-posted: {string.Join(", ", labels)}.");
-        }
-        if (failed.Length > 0)
-        {
-            parts.Add(failed.Length == 1
-                ? "1 sales-issue needs manual COGS post (see workbench)."
-                : $"{failed.Length} sales-issues need manual COGS post (see workbench).");
-        }
         return string.Join(" ", parts);
     }
 
@@ -325,7 +344,8 @@ public sealed class BusinessWriteFlowClient
         string Status,
         DateTimeOffset PostedAt,
         IReadOnlyList<string>? Warnings,
-        IReadOnlyList<InvoiceAutoCogsOutcomeDto>? AutoPostedCogs);
+        IReadOnlyList<InvoiceAutoCogsOutcomeDto>? AutoPostedCogs,
+        InvoiceDepositApplicationOutcomeDto? AppliedCustomerDeposits);
 
     /// <summary>Wire-shape mirror of <c>InvoiceAutoCogsOutcome</c>.</summary>
     private sealed record InvoiceAutoCogsOutcomeDto(
@@ -335,6 +355,20 @@ public sealed class BusinessWriteFlowClient
         bool AlreadyPosted,
         bool Succeeded,
         string? ErrorMessage);
+
+    /// <summary>Wire-shape mirror of M5 iter 4's <c>InvoiceDepositApplicationOutcome</c>.</summary>
+    private sealed record InvoiceDepositApplicationOutcomeDto(
+        Guid? JournalEntryId,
+        string? JournalEntryDisplayNumber,
+        decimal TotalAppliedBase,
+        IReadOnlyList<InvoiceDepositApplicationSliceDto> Slices,
+        string? ErrorMessage);
+
+    private sealed record InvoiceDepositApplicationSliceDto(
+        Guid CustomerDepositId,
+        string CustomerDepositDisplayNumber,
+        decimal AppliedAmountBase,
+        bool DepositFullyClosed);
 
     private sealed record AccountingErrorBody(string? Code, string? Message);
 

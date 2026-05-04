@@ -16,7 +16,8 @@ public sealed record PostInvoiceCommandResult(
     string Status,
     DateTimeOffset PostedAt,
     IReadOnlyList<string> Warnings,
-    IReadOnlyList<InvoiceAutoCogsOutcome> AutoPostedCogs)
+    IReadOnlyList<InvoiceAutoCogsOutcome> AutoPostedCogs,
+    InvoiceDepositApplicationOutcome? AppliedCustomerDeposits)
 {
     public static PostInvoiceCommandResult FromPostingResult(PostingResult result) =>
         new(
@@ -25,8 +26,29 @@ public sealed record PostInvoiceCommandResult(
             result.Status,
             result.PostedAt,
             result.Warnings,
-            Array.Empty<InvoiceAutoCogsOutcome>());
+            Array.Empty<InvoiceAutoCogsOutcome>(),
+            AppliedCustomerDeposits: null);
 }
+
+/// <summary>
+/// Per-invoice summary of M5 iter 4 deposit clearing. Null on the
+/// invoice result when no deposit application happened (no SO link, no
+/// open deposits, share=0, or the apply failed soft). When non-null,
+/// at least one deposit slice was applied and a Dr Customer Deposit /
+/// Cr AR JE was posted.
+/// </summary>
+public sealed record InvoiceDepositApplicationOutcome(
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    decimal TotalAppliedBase,
+    IReadOnlyList<InvoiceDepositApplicationSlice> Slices,
+    string? ErrorMessage);
+
+public sealed record InvoiceDepositApplicationSlice(
+    Guid CustomerDepositId,
+    string CustomerDepositDisplayNumber,
+    decimal AppliedAmountBase,
+    bool DepositFullyClosed);
 
 /// <summary>
 /// Per-sales-issue COGS-post outcome surfaced by

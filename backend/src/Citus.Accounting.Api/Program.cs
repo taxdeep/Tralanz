@@ -128,6 +128,7 @@ builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPos
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
+builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
 builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
 builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
 builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
@@ -183,6 +184,7 @@ builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
 builder.Services.AddScoped<PostCustomerDepositCommandHandler>();
+builder.Services.AddScoped<ApplyCustomerDepositsToInvoiceCommandHandler>();
 builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
 builder.Services.AddScoped<PostReceiptGrIrSettlementJournalCommandHandler>();
 builder.Services.AddScoped<ClearReceiptGrIrSettlementOpenItemCommandHandler>();

@@ -3786,6 +3786,127 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
 }
 
 /// <summary>
+/// M5 iter 4: Customer Deposit → Invoice application. After an invoice
+/// posts, any open customer_deposits for the same SO get pro-rata applied
+/// against it: the deposit's liability balance is debited, the invoice's
+/// AR open item is credited, and a settlement_applications row links
+/// the two open items. Net economic effect: the customer's deposit
+/// payment converts into invoice settlement; AR shows only the unpaid
+/// remainder; the Customer Deposit liability shrinks by the applied amount.
+///
+/// GL math (per applied line):
+///   Dr  Customer Deposit (24700)   AppliedAmountBase
+///   Cr  Accounts Receivable        AppliedAmountBase
+///
+/// SourceType is 'customer_deposit_application'; SourceId is the
+/// document Id (a fresh GUID per application JE) so re-running on the
+/// same invoice + deposit pair stays journal-layer idempotent.
+/// </summary>
+public sealed record CustomerDepositApplicationDocumentLine : IPostingDocumentLine
+{
+    public CustomerDepositApplicationDocumentLine(
+        int lineNumber,
+        Guid sourceCustomerDepositId,
+        Guid sourceCustomerDepositArOpenItemId,
+        Guid targetInvoiceArOpenItemId,
+        string description,
+        decimal appliedAmountBase)
+    {
+        if (lineNumber <= 0)
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        if (sourceCustomerDepositId == Guid.Empty)
+            throw new ArgumentException("Source customer-deposit id is required.", nameof(sourceCustomerDepositId));
+        if (sourceCustomerDepositArOpenItemId == Guid.Empty)
+            throw new ArgumentException("Source AR open item id is required.", nameof(sourceCustomerDepositArOpenItemId));
+        if (targetInvoiceArOpenItemId == Guid.Empty)
+            throw new ArgumentException("Target invoice AR open item id is required.", nameof(targetInvoiceArOpenItemId));
+        if (string.IsNullOrWhiteSpace(description))
+            throw new ArgumentException("Description is required.", nameof(description));
+        if (appliedAmountBase <= 0m)
+            throw new ArgumentOutOfRangeException(nameof(appliedAmountBase), "Applied amount must be positive.");
+
+        LineNumber = lineNumber;
+        SourceCustomerDepositId = sourceCustomerDepositId;
+        SourceCustomerDepositArOpenItemId = sourceCustomerDepositArOpenItemId;
+        TargetInvoiceArOpenItemId = targetInvoiceArOpenItemId;
+        Description = description.Trim();
+        AppliedAmountBase = Math.Round(appliedAmountBase, 6, MidpointRounding.ToEven);
+    }
+
+    public int LineNumber { get; }
+    public Guid SourceCustomerDepositId { get; }
+    public Guid SourceCustomerDepositArOpenItemId { get; }
+    public Guid TargetInvoiceArOpenItemId { get; }
+    public string Description { get; }
+    public decimal AppliedAmountBase { get; }
+}
+
+public sealed class CustomerDepositApplicationDocument : IPostingDocument
+{
+    public CustomerDepositApplicationDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        DateOnly documentDate,
+        Guid customerId,
+        Guid receivableAccountId,
+        Guid customerDepositAccountId,
+        CurrencyCode baseCurrencyCode,
+        IEnumerable<CustomerDepositApplicationDocumentLine> lines,
+        Guid invoiceDocumentId)
+    {
+        if (customerId == Guid.Empty)
+            throw new ArgumentException("Customer id is required.", nameof(customerId));
+        if (receivableAccountId == Guid.Empty)
+            throw new ArgumentException("Receivable account id is required.", nameof(receivableAccountId));
+        if (customerDepositAccountId == Guid.Empty)
+            throw new ArgumentException("Customer deposit account id is required.", nameof(customerDepositAccountId));
+        if (invoiceDocumentId == Guid.Empty)
+            throw new ArgumentException("Invoice document id is required.", nameof(invoiceDocumentId));
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        DocumentDate = documentDate;
+        PartyId = customerId;
+        ReceivableAccountId = receivableAccountId;
+        CustomerDepositAccountId = customerDepositAccountId;
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+        InvoiceDocumentId = invoiceDocumentId;
+        FxSnapshot = null;
+
+        var materialized = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materialized.Length == 0)
+            throw new InvalidOperationException("Customer deposit application must contain at least one line.");
+
+        ApplicationLines = Array.AsReadOnly(materialized);
+        Lines = Array.AsReadOnly(materialized.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+    public string SourceType => "customer_deposit_application";
+    public string Status => "draft";
+    public DateOnly DocumentDate { get; }
+    public Guid PartyId { get; }
+    public Guid ReceivableAccountId { get; }
+    public Guid CustomerDepositAccountId { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public FxSnapshotRef? FxSnapshot { get; }
+    public Guid InvoiceDocumentId { get; }
+    public IReadOnlyList<CustomerDepositApplicationDocumentLine> ApplicationLines { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+
+    public decimal TotalAmountBase => ApplicationLines.Sum(static line => line.AppliedAmountBase);
+}
+
+/// <summary>
 /// M5 iter 3: standalone Customer Deposit posting. The customer pays
 /// against an open / confirmed Sales Order (no invoice exists yet);
 /// the cash lands as a liability on the Customer Deposit account

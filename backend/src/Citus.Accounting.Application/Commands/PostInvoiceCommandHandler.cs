@@ -12,6 +12,7 @@ public sealed class PostInvoiceCommandHandler
     private readonly IArOpenItemRepository _openItems;
     private readonly IInventoryShipmentStore _inventoryShipmentStore;
     private readonly PostSalesIssueCogsCommandHandler _cogsHandler;
+    private readonly ApplyCustomerDepositsToInvoiceCommandHandler _depositApplicationHandler;
     private readonly IUnitOfWork _unitOfWork;
 
     public PostInvoiceCommandHandler(
@@ -20,6 +21,7 @@ public sealed class PostInvoiceCommandHandler
         IArOpenItemRepository openItems,
         IInventoryShipmentStore inventoryShipmentStore,
         PostSalesIssueCogsCommandHandler cogsHandler,
+        ApplyCustomerDepositsToInvoiceCommandHandler depositApplicationHandler,
         IUnitOfWork unitOfWork)
     {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
@@ -27,6 +29,7 @@ public sealed class PostInvoiceCommandHandler
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
         _inventoryShipmentStore = inventoryShipmentStore ?? throw new ArgumentNullException(nameof(inventoryShipmentStore));
         _cogsHandler = cogsHandler ?? throw new ArgumentNullException(nameof(cogsHandler));
+        _depositApplicationHandler = depositApplicationHandler ?? throw new ArgumentNullException(nameof(depositApplicationHandler));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
@@ -93,7 +96,70 @@ public sealed class PostInvoiceCommandHandler
         // workbench at /company/inventory/cogs-postings).
         var cogsOutcomes = await TryAutoPostCogsAsync(command, cancellationToken);
 
-        return invoicePostResult with { AutoPostedCogs = cogsOutcomes };
+        // Step 3 — M5 iter 4: pro-rata clear any open SO-linked customer
+        // deposits against this invoice. Same soft-failure rule as COGS:
+        // failure leaves the invoice posted; operator can apply manually
+        // later (M5 iter 5+ workbench) or via a future re-run endpoint.
+        var depositOutcome = await TryApplyCustomerDepositsAsync(command, cancellationToken);
+
+        return invoicePostResult with
+        {
+            AutoPostedCogs = cogsOutcomes,
+            AppliedCustomerDeposits = depositOutcome,
+        };
+    }
+
+    /// <summary>
+    /// M5 iter 4 hook. Returns null when no deposit application happens
+    /// (no SO link, no open deposits, share=0). Returns a populated
+    /// outcome (possibly with ErrorMessage set) when a try was made.
+    /// Never throws; the invoice is already committed by the time we get
+    /// here and a deposit-application failure must not invalidate it.
+    /// </summary>
+    private async Task<InvoiceDepositApplicationOutcome?> TryApplyCustomerDepositsAsync(
+        PostInvoiceCommand command,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _depositApplicationHandler.HandleAsync(
+                new ApplyCustomerDepositsToInvoiceCommand(
+                    command.CompanyId,
+                    command.UserId,
+                    command.DocumentId),
+                cancellationToken);
+
+            if (result.Applications.Count == 0)
+            {
+                return null;
+            }
+
+            var slices = result.Applications
+                .Select(a => new InvoiceDepositApplicationSlice(
+                    CustomerDepositId: a.CustomerDepositId,
+                    CustomerDepositDisplayNumber: a.CustomerDepositDisplayNumber,
+                    AppliedAmountBase: a.AppliedAmountBase,
+                    DepositFullyClosed: a.DepositFullyClosed))
+                .ToArray();
+
+            return new InvoiceDepositApplicationOutcome(
+                JournalEntryId: result.JournalEntryId,
+                JournalEntryDisplayNumber: result.JournalEntryDisplayNumber,
+                TotalAppliedBase: result.TotalAppliedBase,
+                Slices: slices,
+                ErrorMessage: null);
+        }
+        catch (Exception ex)
+        {
+            // Soft failure — record the message so the operator sees what
+            // went wrong but the invoice stays posted.
+            return new InvoiceDepositApplicationOutcome(
+                JournalEntryId: null,
+                JournalEntryDisplayNumber: null,
+                TotalAppliedBase: 0m,
+                Slices: Array.Empty<InvoiceDepositApplicationSlice>(),
+                ErrorMessage: ex.Message);
+        }
     }
 
     /// <summary>

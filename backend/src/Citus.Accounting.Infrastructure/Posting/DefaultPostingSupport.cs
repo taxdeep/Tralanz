@@ -425,6 +425,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly()),
             CustomerDepositPostingDocument deposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCustomerDepositFragments(deposit).AsReadOnly()),
+            CustomerDepositApplicationDocument depositApp => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildCustomerDepositApplicationFragments(depositApp).AsReadOnly()),
             _ => throw new NotSupportedException(
                 $"Document type '{document.SourceType}' is not yet supported by the fragment builder.")
         };
@@ -1352,6 +1354,48 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 $"Inventory consumed by sales-issue {document.DisplayNumber.Value}",
                 ControlRole: "inventory_asset",
                 PostingRole: "inventory:asset_consumption"));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// M5 iter 4: per-line Dr Customer Deposit / Cr AR fragment for each
+    /// applied deposit slice. Total per fragment is base-only (V1
+    /// same-currency assumption inherited from M5 iter 3).
+    /// </summary>
+    private static List<PostingFragment> BuildCustomerDepositApplicationFragments(
+        CustomerDepositApplicationDocument document)
+    {
+        var fragments = new List<PostingFragment>(document.ApplicationLines.Count * 2);
+        foreach (var line in document.ApplicationLines)
+        {
+            fragments.Add(new PostingFragment(
+                document.CustomerDepositAccountId,
+                document.BaseCurrencyCode,
+                line.AppliedAmountBase,
+                0m,
+                line.AppliedAmountBase,
+                0m,
+                $"Customer deposit applied to invoice (line {line.LineNumber})",
+                ControlRole: "customer_deposit",
+                PartyId: document.PartyId,
+                PostingRole: "settlement:customer_deposit_clear",
+                SourceLineNumber: line.LineNumber));
+
+            fragments.Add(new PostingFragment(
+                document.ReceivableAccountId,
+                document.BaseCurrencyCode,
+                0m,
+                line.AppliedAmountBase,
+                0m,
+                line.AppliedAmountBase,
+                $"AR reduction from customer deposit application (line {line.LineNumber})",
+                ControlRole: "accounts_receivable",
+                PartyId: document.PartyId,
+                PostingRole: "settlement:credit_application_target",
+                SourceLineNumber: line.LineNumber));
         }
 
         EnsureBalancedBaseCurrency(fragments);
