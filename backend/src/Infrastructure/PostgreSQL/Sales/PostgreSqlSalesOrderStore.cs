@@ -55,10 +55,12 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 source_quote_id             UUID NULL,
                 invoice_number              TEXT NULL,
                 customer_po_number          TEXT NULL,
+                confirmed_at                TIMESTAMPTZ NULL,
                 created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS customer_po_number TEXT NULL;
+            ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_orders_company_so_number
                 ON sales_orders (company_id, sales_order_number);
             CREATE INDEX IF NOT EXISTS idx_sales_orders_company_status
@@ -82,8 +84,14 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 unit_price      NUMERIC(18,4) NOT NULL DEFAULT 0,
                 tax_code_id     UUID NULL,
                 account_code    TEXT NULL,
-                line_total      NUMERIC(18,4) NOT NULL DEFAULT 0
+                line_total      NUMERIC(18,4) NOT NULL DEFAULT 0,
+                reserved_qty    NUMERIC(18,4) NOT NULL DEFAULT 0,
+                backorder_qty   NUMERIC(18,4) NOT NULL DEFAULT 0,
+                shipped_qty     NUMERIC(18,4) NOT NULL DEFAULT 0
             );
+            ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS reserved_qty  NUMERIC(18,4) NOT NULL DEFAULT 0;
+            ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS backorder_qty NUMERIC(18,4) NOT NULL DEFAULT 0;
+            ALTER TABLE sales_order_lines ADD COLUMN IF NOT EXISTS shipped_qty   NUMERIC(18,4) NOT NULL DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_sales_order_lines_so
                 ON sales_order_lines (sales_order_id, sequence);
             """;
@@ -106,6 +114,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                    s.transaction_currency_code, s.total_amount,
                    s.source_quote_id, s.invoice_number,
                    s.customer_po_number,
+                   s.confirmed_at,
                    s.created_at, s.updated_at
               FROM sales_orders s
               LEFT JOIN customers c ON c.id = s.customer_id
@@ -330,6 +339,218 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         return await GetByIdAsync(companyId, salesOrderId, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<SalesOrderRecord?> ConfirmAsync(
+        Guid companyId,
+        Guid salesOrderId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Status guard — only Open SOs can confirm. Re-confirming a Confirmed
+        // SO would double-bump reservations; this guard makes that impossible.
+        await using (var statusCommand = connection.CreateCommand())
+        {
+            statusCommand.Transaction = transaction;
+            statusCommand.CommandText = "SELECT status FROM sales_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
+            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("id", salesOrderId);
+            var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (statusObj is null) return null;
+            var currentStatus = (string)statusObj;
+            if (!SalesOrderStatus.CanConfirm(currentStatus))
+            {
+                throw new InvalidOperationException(
+                    $"Sales order in status '{currentStatus}' cannot be confirmed. Only Open SOs can confirm.");
+            }
+        }
+
+        // Resolve the company's single warehouse (V1 assumption). If no
+        // warehouse exists yet (Inventory module not activated, or company
+        // hasn't created one), confirm still flips status but skips
+        // reservation logic — every line is treated as service-style.
+        Guid? warehouseId = null;
+        await using (var warehouseCommand = connection.CreateCommand())
+        {
+            warehouseCommand.Transaction = transaction;
+            warehouseCommand.CommandText = """
+                SELECT id FROM inventory_warehouses
+                 WHERE company_id = @company_id AND is_active = true
+                 ORDER BY created_at
+                 LIMIT 1;
+                """;
+            warehouseCommand.Parameters.AddWithValue("company_id", companyId);
+            var result = await warehouseCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is Guid id) warehouseId = id;
+        }
+
+        // Read all lines + their item kind + backorder mode in one shot. Lines
+        // with no inventory item (free-form description) are service-style and
+        // get reserved=0/backorder=0 unconditionally.
+        var reservationLines = new List<ReservationLine>();
+        await using (var linesCommand = connection.CreateCommand())
+        {
+            linesCommand.Transaction = transaction;
+            linesCommand.CommandText = """
+                SELECT sol.id AS line_id,
+                       sol.item_id,
+                       sol.quantity,
+                       ii.item_kind,
+                       ii.backorder_mode,
+                       COALESCE(ii.name, sol.description) AS item_label
+                  FROM sales_order_lines sol
+                  LEFT JOIN inventory_items ii
+                    ON ii.company_id = @company_id AND ii.id = sol.item_id
+                 WHERE sol.sales_order_id = @so_id
+                 ORDER BY sol.sequence;
+                """;
+            linesCommand.Parameters.AddWithValue("company_id", companyId);
+            linesCommand.Parameters.AddWithValue("so_id", salesOrderId);
+            await using var reader = await linesCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                reservationLines.Add(new ReservationLine(
+                    LineId: reader.GetGuid(0),
+                    ItemId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                    Quantity: reader.GetDecimal(2),
+                    ItemKind: reader.IsDBNull(3) ? null : reader.GetString(3),
+                    BackorderMode: reader.IsDBNull(4) ? null : reader.GetString(4),
+                    ItemLabel: reader.GetString(5)));
+            }
+        }
+
+        // Per-line split: only Stock-kind items with a warehouse get reserved.
+        var splits = new List<ReservationSplit>(reservationLines.Count);
+        foreach (var line in reservationLines)
+        {
+            // Service / NonStock / no-item lines: skip reservation entirely.
+            if (warehouseId is null
+                || line.ItemId is null
+                || !string.Equals(line.ItemKind, "stock", StringComparison.OrdinalIgnoreCase))
+            {
+                splits.Add(new ReservationSplit(line.LineId, ItemId: null, Reserved: 0m, Backorder: 0m));
+                continue;
+            }
+
+            // available = max(0, on_hand - reserved). Missing balance row = 0.
+            decimal available = 0m;
+            await using (var balanceCommand = connection.CreateCommand())
+            {
+                balanceCommand.Transaction = transaction;
+                balanceCommand.CommandText = """
+                    SELECT GREATEST(on_hand_qty - reserved_qty, 0) AS available_qty
+                      FROM item_warehouse_balances
+                     WHERE company_id = @company_id AND item_id = @item_id AND warehouse_id = @warehouse_id
+                     LIMIT 1;
+                    """;
+                balanceCommand.Parameters.AddWithValue("company_id", companyId);
+                balanceCommand.Parameters.AddWithValue("item_id", line.ItemId.Value);
+                balanceCommand.Parameters.AddWithValue("warehouse_id", warehouseId.Value);
+                var result = await balanceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (result is decimal d) available = d;
+            }
+
+            var reserved = Math.Min(line.Quantity, available);
+            var backorder = line.Quantity - reserved;
+
+            if (backorder > 0m
+                && string.Equals(line.BackorderMode, "disallow", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot confirm: insufficient stock for '{line.ItemLabel}' (need {line.Quantity:0.##}, " +
+                    $"available {available:0.##}) and item is set to disallow backorder.");
+            }
+
+            splits.Add(new ReservationSplit(line.LineId, line.ItemId, reserved, backorder));
+        }
+
+        // Apply per-line counter updates.
+        foreach (var split in splits)
+        {
+            await using var updateLine = connection.CreateCommand();
+            updateLine.Transaction = transaction;
+            updateLine.CommandText = """
+                UPDATE sales_order_lines
+                   SET reserved_qty  = @reserved_qty,
+                       backorder_qty = @backorder_qty
+                 WHERE id = @line_id;
+                """;
+            updateLine.Parameters.AddWithValue("line_id", split.LineId);
+            updateLine.Parameters.AddWithValue("reserved_qty", split.Reserved);
+            updateLine.Parameters.AddWithValue("backorder_qty", split.Backorder);
+            await updateLine.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Aggregate reservations by item (multiple lines can share one item)
+        // and bump the warehouse balance once per item.
+        if (warehouseId is { } whId)
+        {
+            var perItemReserved = splits
+                .Where(s => s.ItemId is not null && s.Reserved > 0m)
+                .GroupBy(s => s.ItemId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Reserved));
+
+            foreach (var (itemId, reservedDelta) in perItemReserved)
+            {
+                await using var upsertBalance = connection.CreateCommand();
+                upsertBalance.Transaction = transaction;
+                // ON CONFLICT targets the (company_id, item_id, warehouse_id)
+                // unique index ux_item_warehouse_balances_company_item_warehouse.
+                upsertBalance.CommandText = """
+                    INSERT INTO item_warehouse_balances
+                        (company_id, item_id, warehouse_id, on_hand_qty, reserved_qty,
+                         in_transit_out_qty, in_transit_in_qty, updated_at)
+                    VALUES
+                        (@company_id, @item_id, @warehouse_id, 0, @reserved_delta,
+                         0, 0, now())
+                    ON CONFLICT (company_id, item_id, warehouse_id)
+                    DO UPDATE SET
+                        reserved_qty = item_warehouse_balances.reserved_qty + EXCLUDED.reserved_qty,
+                        updated_at = now();
+                    """;
+                upsertBalance.Parameters.AddWithValue("company_id", companyId);
+                upsertBalance.Parameters.AddWithValue("item_id", itemId);
+                upsertBalance.Parameters.AddWithValue("warehouse_id", whId);
+                upsertBalance.Parameters.AddWithValue("reserved_delta", reservedDelta);
+                await upsertBalance.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // Status flip + confirmed_at stamp.
+        await using (var headerCommand = connection.CreateCommand())
+        {
+            headerCommand.Transaction = transaction;
+            headerCommand.CommandText = """
+                UPDATE sales_orders
+                   SET status       = 'confirmed',
+                       confirmed_at = now(),
+                       updated_at   = now()
+                 WHERE company_id = @company_id AND id = @id;
+                """;
+            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("id", salesOrderId);
+            await headerCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return await GetByIdAsync(companyId, salesOrderId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed record ReservationLine(
+        Guid LineId,
+        Guid? ItemId,
+        decimal Quantity,
+        string? ItemKind,
+        string? BackorderMode,
+        string ItemLabel);
+
+    private sealed record ReservationSplit(
+        Guid LineId,
+        Guid? ItemId,
+        decimal Reserved,
+        decimal Backorder);
+
     public async Task<SalesOrderRecord?> SetStatusAsync(
         Guid companyId,
         Guid salesOrderId,
@@ -369,7 +590,8 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, sales_order_id, sequence, service_date, item_id, description,
-                   quantity, unit_price, tax_code_id, account_code, line_total
+                   quantity, unit_price, tax_code_id, account_code, line_total,
+                   reserved_qty, backorder_qty, shipped_qty
               FROM sales_order_lines
              WHERE sales_order_id = @so_id
              ORDER BY sequence;
@@ -389,7 +611,10 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                 UnitPrice: reader.GetDecimal(7),
                 TaxCodeId: reader.IsDBNull(8) ? null : reader.GetGuid(8),
                 AccountCode: reader.IsDBNull(9) ? null : reader.GetString(9),
-                LineTotal: reader.GetDecimal(10)));
+                LineTotal: reader.GetDecimal(10),
+                ReservedQty: reader.GetDecimal(11),
+                BackorderQty: reader.GetDecimal(12),
+                ShippedQty: reader.GetDecimal(13)));
         }
         return lines;
     }
@@ -526,6 +751,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                s.source_quote_id, q.quote_number AS source_quote_number,
                s.invoice_number,
                s.customer_po_number,
+               s.confirmed_at,
                s.created_at, s.updated_at
           FROM sales_orders s
           LEFT JOIN customers c ON c.id = s.customer_id
@@ -545,8 +771,9 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         SourceQuoteId: reader.IsDBNull(9) ? null : reader.GetGuid(9),
         InvoiceNumber: reader.IsDBNull(10) ? null : reader.GetString(10),
         CustomerPoNumber: reader.IsDBNull(11) ? null : reader.GetString(11),
-        CreatedAt: reader.GetFieldValue<DateTimeOffset>(12),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(13));
+        ConfirmedAt: reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(13),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(14));
 
     private static SalesOrderRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<SalesOrderLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
@@ -586,6 +813,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         SourceQuoteNumber: ReadNullableString(reader, "source_quote_number"),
         InvoiceNumber: ReadNullableString(reader, "invoice_number"),
         CustomerPoNumber: ReadNullableString(reader, "customer_po_number"),
+        ConfirmedAt: ReadNullableTimestamp(reader, "confirmed_at"),
         CreatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
         UpdatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
         Lines: lines);
@@ -612,5 +840,11 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     {
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : DateOnly.FromDateTime(reader.GetDateTime(ordinal));
+    }
+
+    private static DateTimeOffset? ReadNullableTimestamp(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
     }
 }

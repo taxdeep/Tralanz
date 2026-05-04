@@ -57,19 +57,24 @@ else
         <div class="flex flex-wrap gap-2 items-center">
             @if (_so.Status == "open")
             {
-                @* Primary path: create the actual invoice. The new invoice
-                   carries this SO's id as a back-link, which drives the
-                   M3 iter 3 auto-COGS bridge on post. The SO status itself
-                   does NOT auto-flip — partial billing is allowed; use
-                   "Mark Invoiced" below when this SO is fully billed. *@
-                <a class="citus-button citus-button--primary" href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")">
+                @* M5 iter 1: confirming reserves on-hand stock per line and
+                   flips status to 'confirmed'. Items with backorder_mode=
+                   'disallow' fail with a precise shortage message. *@
+                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="ConfirmAsync">
+                    <CitusIcon Name="IconName.CircleCheck" Size="IconSize.Inline" />
+                    <span>Confirm</span>
+                </CitusButton>
+
+                @* Direct-invoice path stays available for SOs that don't
+                   need reservation tracking (services, single-shot). The new
+                   invoice carries this SO's id as a back-link, which drives
+                   the M3 iter 3 auto-COGS bridge on post. *@
+                <a class="citus-button citus-button--ghost" href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")">
                     <CitusIcon Name="IconName.FileInvoice" Size="IconSize.Inline" />
                     <span>Create Invoice</span>
                 </a>
 
-                @* Manual mark — for "I billed this in another system" / final
-                   close-out after partial-billing rounds. Free-text, no link
-                   to a real Invoice document. *@
+                @* Manual mark — for "I billed this in another system". *@
                 <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
                     Mark Invoiced
@@ -78,6 +83,28 @@ else
                              OnClick="@(() => SetStatusAsync("cancelled", "Sales order cancelled."))">
                     Cancel
                 </CitusButton>
+            }
+            else if (_so.Status == "confirmed")
+            {
+                @* Confirmed: reservations are in place. Operator goes
+                   straight to invoicing, or can still mark / cancel. M5
+                   iter 5 will wire reservation release on cancel. *@
+                <a class="citus-button citus-button--primary" href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")">
+                    <CitusIcon Name="IconName.FileInvoice" Size="IconSize.Inline" />
+                    <span>Create Invoice</span>
+                </a>
+                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                    Mark Invoiced
+                </CitusButton>
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
+                             OnClick="@(() => SetStatusAsync("cancelled", "Sales order cancelled."))">
+                    Cancel
+                </CitusButton>
+                @if (_so.ConfirmedAt is { } confirmedAt)
+                {
+                    <span class="text-fg-subtle text-xs">Confirmed @confirmedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm").</span>
+                }
             }
             else if (_so.Status == "invoiced")
             {
@@ -100,6 +127,15 @@ else
                             <th style="width: 3rem">#</th>
                             <th>Description</th>
                             <th class="text-right" style="width: 5rem">Qty</th>
+                            @* Show reservation columns only once any line has a non-zero
+                               reserved/backorder/shipped — keeps the table compact for
+                               unconfirmed / service-only SOs. *@
+                            @if (_showReservationColumns)
+                            {
+                                <th class="text-right" style="width: 6rem">Reserved</th>
+                                <th class="text-right" style="width: 6rem">Backorder</th>
+                                <th class="text-right" style="width: 6rem">Shipped</th>
+                            }
                             <th class="text-right" style="width: 7rem">Rate</th>
                             <th class="text-right" style="width: 8rem">Amount</th>
                         </tr>
@@ -111,6 +147,12 @@ else
                                 <td>@line.Sequence</td>
                                 <td>@(string.IsNullOrEmpty(line.Description) ? "—" : line.Description)</td>
                                 <td class="text-right">@line.Quantity.ToString("0.##")</td>
+                                @if (_showReservationColumns)
+                                {
+                                    <td class="text-right tabular-nums">@FormatQty(line.ReservedQty)</td>
+                                    <td class="text-right tabular-nums">@FormatQty(line.BackorderQty)</td>
+                                    <td class="text-right tabular-nums">@FormatQty(line.ShippedQty)</td>
+                                }
                                 <td class="text-right">@line.UnitPrice.ToString("0.0000")</td>
                                 <td class="text-right">@line.LineTotal.ToString("N2")</td>
                             </tr>
@@ -204,6 +246,44 @@ else
         };
     }
 
+    /// <summary>
+    /// True when any line carries a non-zero reserved/backorder/shipped
+    /// counter — reveals the M5 reservation columns in the lines table.
+    /// </summary>
+    private bool _showReservationColumns =>
+        _so?.Lines.Any(l => l.ReservedQty > 0 || l.BackorderQty > 0 || l.ShippedQty > 0) ?? false;
+
+    private static string FormatQty(decimal qty) =>
+        qty == 0m ? "—" : qty.ToString("0.##");
+
+    private async Task ConfirmAsync()
+    {
+        if (_so is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await SalesOrderClient.ConfirmAsync(_so.Id);
+            if (!outcome.Succeeded)
+            {
+                _error = outcome.ErrorMessage ?? "Confirm failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _so = outcome.Saved;
+            ApplyHeader();
+
+            // Compose a per-line summary in the toast so the operator sees
+            // exactly what got reserved vs queued for backorder.
+            var totalReserved = _so?.Lines.Sum(l => l.ReservedQty) ?? 0m;
+            var totalBackorder = _so?.Lines.Sum(l => l.BackorderQty) ?? 0m;
+            var msg = totalBackorder > 0m
+                ? $"Sales Order confirmed — reserved {totalReserved:0.##}, on backorder {totalBackorder:0.##}."
+                : $"Sales Order confirmed — reserved {totalReserved:0.##} units.";
+            await Message.SuccessAsync(msg);
+        }
+        finally { _isMutating = false; }
+    }
+
     private async Task SetStatusAsync(string newStatus, string successMessage)
     {
         if (_so is null || _isMutating) return;
@@ -253,6 +333,33 @@ else
 
     private static bool IsEditable(string status) => status is "open";
 
+    private static string HumanizeStatus(string status) => status switch
+    {
+        "open" => "Open",
+        "confirmed" => "Confirmed",
+        "invoiced" => "Invoiced",
+        "cancelled" => "Cancelled",
+        _ => status
+    };
+
+    private static string StatusHint(string status) => status switch
+    {
+        "open" => "Awaiting confirmation or direct billing.",
+        "confirmed" => "Stock reserved; awaiting fulfillment / billing.",
+        "invoiced" => "Customer has been billed.",
+        "cancelled" => "Cancelled.",
+        _ => string.Empty
+    };
+
+    private static StatTone StatusTone(string status) => status switch
+    {
+        "open" => StatTone.Info,
+        "confirmed" => StatTone.Success,
+        "invoiced" => StatTone.Success,
+        "cancelled" => StatTone.Neutral,
+        _ => StatTone.Neutral
+    };
+
     private static bool HasAddress(SalesOrderRecordDto so) =>
         !string.IsNullOrWhiteSpace(so.BillingAddressLine) || !string.IsNullOrWhiteSpace(so.BillingCity);
 
@@ -267,27 +374,4 @@ else
         return parts.Count == 0 ? "—" : string.Join(", ", parts);
     }
 
-    private static string HumanizeStatus(string status) => status switch
-    {
-        "open" => "Open",
-        "invoiced" => "Invoiced",
-        "cancelled" => "Cancelled",
-        _ => status
-    };
-
-    private static string StatusHint(string status) => status switch
-    {
-        "open" => "Awaiting fulfillment / billing.",
-        "invoiced" => "Customer has been billed.",
-        "cancelled" => "Cancelled.",
-        _ => string.Empty
-    };
-
-    private static StatTone StatusTone(string status) => status switch
-    {
-        "open" => StatTone.Info,
-        "invoiced" => StatTone.Success,
-        "cancelled" => StatTone.Neutral,
-        _ => StatTone.Neutral
-    };
 }

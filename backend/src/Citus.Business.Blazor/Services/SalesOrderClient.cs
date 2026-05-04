@@ -114,6 +114,37 @@ public sealed class SalesOrderClient(HttpClient httpClient, ILogger<SalesOrderCl
         }
     }
 
+    /// <summary>
+    /// M5 iter 1: confirms an Open SO. Server splits each Stock-line's
+    /// quantity into reserved / backorder, bumps the warehouse balance,
+    /// and flips status to 'confirmed'. Backorder-disallowed items fail
+    /// with a precise shortage message returned in
+    /// <see cref="SalesOrderMutationOutcome.ErrorMessage"/>.
+    /// </summary>
+    public async Task<SalesOrderMutationOutcome> ConfirmAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsync(
+                $"accounting/sales-orders/{id:D}/confirm",
+                content: null,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new SalesOrderMutationOutcome(false, null, await ReadMessageAsync(response, cancellationToken));
+            }
+            var saved = await response.Content.ReadFromJsonAsync<SalesOrderRecordDto>(cancellationToken);
+            return new SalesOrderMutationOutcome(true, saved, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to confirm sales order.");
+            return new SalesOrderMutationOutcome(false, null, "Unable to reach the server. Please try again.");
+        }
+    }
+
     private async Task<SalesOrderMutationOutcome> SendUpsertAsync(
         HttpMethod method,
         string path,
@@ -175,6 +206,7 @@ public sealed record SalesOrderSummaryDto(
     Guid? SourceQuoteId,
     string? InvoiceNumber,
     string? CustomerPoNumber,
+    DateTimeOffset? ConfirmedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -216,6 +248,7 @@ public sealed record SalesOrderRecordDto(
     string? SourceQuoteNumber,
     string? InvoiceNumber,
     string? CustomerPoNumber,
+    DateTimeOffset? ConfirmedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<SalesOrderLineDto> Lines);
@@ -231,7 +264,10 @@ public sealed record SalesOrderLineDto(
     decimal UnitPrice,
     Guid? TaxCodeId,
     string? AccountCode,
-    decimal LineTotal);
+    decimal LineTotal,
+    decimal ReservedQty = 0m,
+    decimal BackorderQty = 0m,
+    decimal ShippedQty = 0m);
 
 public sealed record SalesOrderUpsertPayload(
     Guid CustomerId,

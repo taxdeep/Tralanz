@@ -116,6 +116,7 @@
     private static string StatusColor(string status) => status switch
     {
         "open" => "blue",
+        "confirmed" => "geekblue",
         "invoiced" => "green",
         "cancelled" => "default",
         _ => "default"
@@ -124,6 +125,7 @@
     private static string HumanizeStatus(string status) => status switch
     {
         "open" => "Open",
+        "confirmed" => "Confirmed",
         "invoiced" => "Invoiced",
         "cancelled" => "Cancelled",
         _ => status

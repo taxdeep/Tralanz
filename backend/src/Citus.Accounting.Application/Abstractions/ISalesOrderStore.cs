@@ -6,16 +6,23 @@ namespace Citus.Accounting.Application.Abstractions;
 /// (the SO is "completed" once an invoice is issued). No GL impact at
 /// any stage — accounting hits the books only when the invoice posts.
 ///
-/// Status lifecycle:
+/// Status lifecycle (M5 iter 1):
 ///
-///   Open ──Mark Invoiced──▶ Invoiced ──(terminal)
-///       │                  ▲
-///       │                  │
-///       └──Cancel──▶ Cancelled
+///   Open ──Confirm──▶ Confirmed ──Mark Invoiced──▶ Invoiced (terminal)
+///     │                  │           ▲
+///     │                  │           │
+///     │                  └──Cancel──┘
+///     │                              │
+///     └──Mark Invoiced──────────────┘   (legacy direct path, no reservations)
+///     │
+///     └──Cancel──▶ Cancelled (terminal)
 ///
-/// SO does not have a "Draft" stage — it is born from a Quote
-/// conversion (or a manual create) and is immediately Open. Open SOs
-/// remain editable; Invoiced and Cancelled are terminal.
+/// "Confirm" is the M5 entry point that activates inventory reservations:
+/// per line, the requested qty is split into <see cref="SalesOrderLineRecord.ReservedQty"/>
+/// (= min(qty, available)) and <see cref="SalesOrderLineRecord.BackorderQty"/> (= remainder),
+/// and <c>item_warehouse_balances.reserved_qty</c> bumps to match.
+/// SOs created without confirmation can still be invoiced directly
+/// (legacy V0 behaviour) — they just skip the reservation lane.
 /// </summary>
 public interface ISalesOrderStore
 {
@@ -59,6 +66,23 @@ public interface ISalesOrderStore
         Guid salesOrderId,
         string newStatus,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// M5 iter 1: confirms the SO and reserves on-hand stock per line.
+    /// For each Stock-kind line, splits the requested quantity into
+    /// `reserved_qty` (= min(qty, available)) and `backorder_qty` (= rest),
+    /// then bumps <c>item_warehouse_balances.reserved_qty</c> by the
+    /// reserved total. Service / NonStock lines are skipped (no inventory
+    /// impact). Items configured with backorder_mode='disallow' fail the
+    /// confirm with a clear shortage message rather than silently creating
+    /// a backorder. Status flips Open → Confirmed; <c>confirmed_at</c>
+    /// stamps the FIFO timestamp used by future M5 iter 2 receipt-side
+    /// auto-promotion.
+    /// </summary>
+    Task<SalesOrderRecord?> ConfirmAsync(
+        Guid companyId,
+        Guid salesOrderId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record SalesOrderListFilter(
@@ -80,6 +104,7 @@ public sealed record SalesOrderSummary(
     Guid? SourceQuoteId,
     string? InvoiceNumber,
     string? CustomerPoNumber,
+    DateTimeOffset? ConfirmedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -121,6 +146,7 @@ public sealed record SalesOrderRecord(
     string? SourceQuoteNumber,
     string? InvoiceNumber,
     string? CustomerPoNumber,
+    DateTimeOffset? ConfirmedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<SalesOrderLineRecord> Lines);
@@ -136,7 +162,10 @@ public sealed record SalesOrderLineRecord(
     decimal UnitPrice,
     Guid? TaxCodeId,
     string? AccountCode,
-    decimal LineTotal);
+    decimal LineTotal,
+    decimal ReservedQty,
+    decimal BackorderQty,
+    decimal ShippedQty);
 
 public sealed record SalesOrderUpsertInput(
     Guid CustomerId,
@@ -180,12 +209,29 @@ public sealed record SalesOrderLineInput(
 public static class SalesOrderStatus
 {
     public const string Open = "open";
+    /// <summary>
+    /// SO has been confirmed: reservations have been bumped on
+    /// item_warehouse_balances per Stock line; backorder lines are
+    /// awaiting M5 iter 2's receipt-side auto-promotion. Confirmed SOs
+    /// can still be cancelled (releases reservations) or marked
+    /// invoiced.
+    /// </summary>
+    public const string Confirmed = "confirmed";
     public const string Invoiced = "invoiced";
     public const string Cancelled = "cancelled";
 
-    public static bool IsValid(string? status) => status is Open or Invoiced or Cancelled;
+    public static bool IsValid(string? status) =>
+        status is Open or Confirmed or Invoiced or Cancelled;
 
     public static bool IsTerminal(string status) => status is Invoiced or Cancelled;
 
+    /// <summary>
+    /// Open SOs are line-editable. Confirmed SOs are NOT — reservations
+    /// have been bumped, so editing a line would desynchronise the
+    /// reserved_qty trail. To edit a confirmed SO, cancel + re-create.
+    /// </summary>
     public static bool IsEditable(string status) => status is Open;
+
+    /// <summary>True for statuses where confirmation (reserve stock) is allowed.</summary>
+    public static bool CanConfirm(string status) => status is Open;
 }

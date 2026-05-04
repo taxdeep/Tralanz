@@ -5778,6 +5778,34 @@ accounting.MapPost(
         return saved is null ? Results.NotFound() : Results.Ok(saved);
     });
 
+// M5 iter 1: confirm an Open SO. Splits each line's qty into reserved /
+// backorder based on current item_warehouse_balances.available, bumps
+// reserved_qty on the balance, and flips status to 'confirmed'. Service
+// or non-stock items skip reservation. Items with backorder_mode='disallow'
+// fail the confirm with an InvalidOperationException so the operator sees
+// a precise shortage message.
+accounting.MapPost(
+    "/sales-orders/{salesOrderId:guid}/confirm",
+    async (
+        Guid salesOrderId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var saved = await store.ConfirmAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
+            return saved is null ? Results.NotFound() : Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
 static string? ValidateQuoteInput(QuoteUpsertHttpRequest request)
 {
     if (request.CustomerId == Guid.Empty) return "Customer is required.";
