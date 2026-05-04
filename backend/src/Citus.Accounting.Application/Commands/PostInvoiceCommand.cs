@@ -15,7 +15,8 @@ public sealed record PostInvoiceCommandResult(
     string JournalEntryDisplayNumber,
     string Status,
     DateTimeOffset PostedAt,
-    IReadOnlyList<string> Warnings)
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<InvoiceAutoCogsOutcome> AutoPostedCogs)
 {
     public static PostInvoiceCommandResult FromPostingResult(PostingResult result) =>
         new(
@@ -23,5 +24,21 @@ public sealed record PostInvoiceCommandResult(
             result.JournalEntryDisplayNumber,
             result.Status,
             result.PostedAt,
-            result.Warnings);
+            result.Warnings,
+            Array.Empty<InvoiceAutoCogsOutcome>());
 }
+
+/// <summary>
+/// Per-sales-issue COGS-post outcome surfaced by
+/// <see cref="PostInvoiceCommandHandler"/> after the invoice journal entry
+/// commits. One entry per linked sales-issue. Soft-failure semantics: a
+/// failed COGS post does not roll back the invoice — the workbench
+/// (<c>/company/inventory/cogs-postings</c>) remains as the recovery path.
+/// </summary>
+public sealed record InvoiceAutoCogsOutcome(
+    Guid SalesIssueDocumentId,
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    bool AlreadyPosted,
+    bool Succeeded,
+    string? ErrorMessage);
