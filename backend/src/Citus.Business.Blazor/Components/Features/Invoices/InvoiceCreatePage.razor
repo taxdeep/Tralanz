@@ -7,6 +7,8 @@
 @inject CustomerClient CustomerClient
 @inject ItemClient ItemClient
 @inject AccountClient AccountClient
+@inject TaxCodeClient TaxCodeClient
+@inject SalesOrderClient SalesOrderClient
 @inject NavigationManager NavigationManager
 @inject CitusToastService Message
 
@@ -238,7 +240,16 @@
 </div>
 
 @code {
-    private readonly PageHeaderModel _header = new()
+    /// <summary>
+    /// Optional source-SO id passed via query string. When present (the
+    /// "Invoice this SO" flow from the SO detail page) the create page
+    /// pre-fills customer + currency + Customer PO# + lines from the SO,
+    /// and stores the SO id back-link on the new invoice so the M3 iter 3
+    /// auto-COGS bridge can resolve the linked SalesIssue.
+    /// </summary>
+    [SupplyParameterFromQuery] public Guid? FromSalesOrderId { get; set; }
+
+    private PageHeaderModel _header = new()
     {
         Eyebrow = "Sales & Get Paid",
         Title = "New invoice",
@@ -258,6 +269,12 @@
     private decimal? _fxRate;
     private string _memo = string.Empty;
     private string _customerPoNumber = string.Empty;
+    /// <summary>
+    /// Back-link to the source Sales Order, populated when the page is
+    /// opened via "Invoice this SO" (FromSalesOrderId query param). Sent
+    /// to the backend on save so M3 iter 3's auto-COGS bridge can find
+    /// the SalesIssue tied to this SO.
+    /// </summary>
     private Guid? _salesOrderId;
     private string? _salesOrderNumber;
     /// <summary>
@@ -308,6 +325,106 @@
         _itemsById = items.ToDictionary(i => i.Id);
         var accounts = await AccountClient.ListAsync();
         _accountsById = accounts.ToDictionary(a => a.Id);
+
+        if (FromSalesOrderId is { } soId && soId != Guid.Empty)
+        {
+            await PrefillFromSalesOrderAsync(soId);
+        }
+    }
+
+    /// <summary>
+    /// Pre-fills the form from an existing Sales Order. Best-effort:
+    /// missing items / accounts / tax codes leave their respective
+    /// per-line cells blank rather than blocking the whole prefill, and
+    /// the operator sees the inline validation when they go to post.
+    /// </summary>
+    private async Task PrefillFromSalesOrderAsync(Guid salesOrderId)
+    {
+        var so = await SalesOrderClient.GetByIdAsync(salesOrderId);
+        if (so is null)
+        {
+            await Message.WarningAsync("Source sales order not found in this company; starting a blank invoice.");
+            return;
+        }
+
+        // Header pre-fill
+        _customerId = so.CustomerId;
+        _customerDisplay = so.CustomerName;
+        _currency = so.TransactionCurrencyCode;
+        _fxRate = so.FxRate;
+        _customerPoNumber = so.CustomerPoNumber ?? string.Empty;
+        _salesOrderId = so.Id;
+        _salesOrderNumber = so.SalesOrderNumber;
+        _memo = so.MemoToCustomer ?? string.Empty;
+
+        _header = _header with
+        {
+            Title = $"New invoice from {so.SalesOrderNumber}",
+            Subtitle = $"Pre-filled from {so.SalesOrderNumber} for {so.CustomerName}. Review and post."
+        };
+
+        // Tax codes are loaded only on this path so the display labels in
+        // the per-line tax picker render correctly. Normal "blank invoice"
+        // start skips this round-trip.
+        Dictionary<Guid, TaxCodeSummary> taxById;
+        try
+        {
+            var taxCodes = await TaxCodeClient.ListAsync(appliesTo: "sales");
+            taxById = taxCodes.ToDictionary(t => t.Id);
+        }
+        catch
+        {
+            taxById = new Dictionary<Guid, TaxCodeSummary>();
+        }
+
+        // Lines pre-fill — replace the seeded blank line with the SO lines.
+        _lines.Clear();
+        foreach (var soLine in so.Lines.OrderBy(l => l.Sequence))
+        {
+            var itemId = soLine.ItemId ?? Guid.Empty;
+            string itemDisplay = string.Empty;
+            Guid? accountId = null;
+            string accountCode = string.Empty;
+            string accountDisplay = string.Empty;
+
+            if (itemId != Guid.Empty && _itemsById.TryGetValue(itemId, out var item))
+            {
+                itemDisplay = item.Name;
+                if (item.DefaultSalesRevenueAccountId is { } itemAccountId
+                    && _accountsById.TryGetValue(itemAccountId, out var account))
+                {
+                    accountId = account.Id;
+                    accountCode = account.Code;
+                    accountDisplay = $"{account.Code} {account.Name}";
+                }
+            }
+
+            string taxDisplay = string.Empty;
+            if (soLine.TaxCodeId is { } taxId && taxById.TryGetValue(taxId, out var tax))
+            {
+                taxDisplay = tax.Code;
+            }
+
+            _lines.Add(new InvoiceLineEditState(
+                ItemId: itemId,
+                ItemDisplay: itemDisplay,
+                Description: soLine.Description ?? string.Empty,
+                Quantity: soLine.Quantity,
+                UnitPrice: soLine.UnitPrice,
+                AccountId: accountId,
+                AccountDisplay: accountDisplay,
+                AccountCode: accountCode,
+                TaxCodeId: soLine.TaxCodeId,
+                TaxCode: taxDisplay));
+        }
+
+        // Always keep one trailing blank line so the operator can append
+        // an extra line (shipping, surcharge, etc.) without re-clicking
+        // "Add line".
+        if (_lines.Count == 0 || _lines[^1].HasContent)
+        {
+            _lines.Add(new InvoiceLineEditState());
+        }
     }
 
     private async Task OnCustomerSelected(UnitySearchPickerOption option)

@@ -57,8 +57,21 @@ else
         <div class="flex flex-wrap gap-2 items-center">
             @if (_so.Status == "open")
             {
-                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="Invoice number…" />
-                <CitusButton Variant="CitusButtonVariant.Primary" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
+                @* Primary path: create the actual invoice. The new invoice
+                   carries this SO's id as a back-link, which drives the
+                   M3 iter 3 auto-COGS bridge on post. The SO status itself
+                   does NOT auto-flip — partial billing is allowed; use
+                   "Mark Invoiced" below when this SO is fully billed. *@
+                <a class="citus-button citus-button--primary" href="@($"invoices/new?fromSalesOrderId={_so.Id:D}")">
+                    <CitusIcon Name="IconName.FileInvoice" Size="IconSize.Inline" />
+                    <span>Create Invoice</span>
+                </a>
+
+                @* Manual mark — for "I billed this in another system" / final
+                   close-out after partial-billing rounds. Free-text, no link
+                   to a real Invoice document. *@
+                <CitusInput TValue="string" @bind-Value="_invoiceNumberInput" Placeholder="External invoice #…" />
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
                     Mark Invoiced
                 </CitusButton>
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
