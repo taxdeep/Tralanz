@@ -942,6 +942,29 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create unique index if not exists ux_bom_lines_bom_line_no
                   on bom_lines (bom_id, line_no);
+
+                -- Stamp companies.inventory_module_locked_at on the first
+                -- inventory_documents insert ever (any kind: receipt,
+                -- shipment, issue, adjustment, transfer, manufacturing).
+                -- One trigger covers all 9 doc-type stores so a future
+                -- store can't forget to wire it. Idempotent: only sets
+                -- the timestamp when null, so subsequent inserts no-op.
+                create or replace function inventory_documents_stamp_module_lock()
+                  returns trigger as $$
+                begin
+                  update companies
+                  set inventory_module_locked_at = now()
+                  where id = NEW.company_id
+                    and inventory_module_locked_at is null;
+                  return NEW;
+                end;
+                $$ language plpgsql;
+
+                drop trigger if exists trg_inventory_documents_lock_module on inventory_documents;
+                create trigger trg_inventory_documents_lock_module
+                  after insert on inventory_documents
+                  for each row
+                  execute function inventory_documents_stamp_module_lock();
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
             _schemaEnsured = true;

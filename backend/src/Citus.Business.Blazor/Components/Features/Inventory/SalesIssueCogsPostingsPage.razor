@@ -1,0 +1,188 @@
+@page "/company/inventory/cogs-postings"
+
+@inject BusinessShellState ShellState
+@inject SalesIssueCogsClient CogsClient
+@inject NavigationManager NavigationManager
+@inject CitusToastService Message
+
+<PageTitle>Sales Issue COGS | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Refresh"
+                     Disabled="_isLoading"
+                     OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (!ShellState.ActiveCompany.InventoryModuleEnabled)
+{
+    <section class="citus-panel">
+        <div class="text-center py-8">
+            <CitusIcon Name="IconName.Receipt" Size="IconSize.Display" />
+            <h2 class="text-lg font-semibold mt-3">Tralanz Inventory is not enabled.</h2>
+            <p class="text-fg-muted text-sm mt-2 mb-4 max-w-md mx-auto">
+                The Sales Issue COGS workbench appears once you enable the
+                Inventory paid module. Without it, sales-issues are not generated
+                and there is no cost-layer truth to journalise.
+            </p>
+            <a class="citus-button citus-button--primary" href="company/inventory/activate">
+                Enable Tralanz Inventory →
+            </a>
+        </div>
+    </section>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_validation))
+    {
+        <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+    }
+
+    <section class="citus-panel">
+        <CitusAsyncBoundary IsLoading="@_isLoading"
+                            IsEmpty="@(_rows.Count == 0)"
+                            EmptyIcon="IconName.Receipt"
+                            EmptyTitle="No posted sales issues yet"
+                            EmptyMessage="Once a sales issue posts (consuming cost layers), it appears here so the Dr COGS / Cr Inventory journal entry can be generated.">
+            <table class="citus-data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8rem">Date</th>
+                        <th style="width: 14rem">Sales Issue</th>
+                        <th class="text-right" style="width: 10rem">Estimated COGS</th>
+                        <th>COGS Journal</th>
+                        <th style="width: 8rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        var isPosting = _postingId == row.SalesIssueDocumentId;
+                        var alreadyPosted = row.JournalEntryId.HasValue;
+                        <tr>
+                            <td>@row.PostingDate.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                <div class="font-medium">@(row.SourceDocumentNumber ?? "—")</div>
+                                <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@row.SalesIssueDocumentId.ToString("N")[..12].ToUpperInvariant()</span></div>
+                            </td>
+                            <td class="text-right tabular-nums">@FormatAmount(row.EstimatedCogsBase) <span class="text-fg-subtle text-xs">@_baseCurrencyCode</span></td>
+                            <td>
+                                @if (alreadyPosted)
+                                {
+                                    <span class="font-medium">@row.JournalEntryDisplayNumber</span>
+                                    <span class="text-fg-subtle text-xs ml-2">posted</span>
+                                }
+                                else
+                                {
+                                    <span class="text-fg-muted text-sm">— not yet posted —</span>
+                                }
+                            </td>
+                            <td class="text-right">
+                                @if (alreadyPosted)
+                                {
+                                    <a class="citus-button citus-button--ghost citus-button--small"
+                                       href="@($"journal-entry/{row.JournalEntryId:D}")">
+                                        View JE
+                                    </a>
+                                }
+                                else if (row.EstimatedCogsBase <= 0m)
+                                {
+                                    <span class="text-fg-subtle text-xs">no cost layers</span>
+                                }
+                                else
+                                {
+                                    <CitusButton Variant="CitusButtonVariant.Primary"
+                                                 Size="CitusButtonSize.Small"
+                                                 Disabled="@(isPosting || _postingId.HasValue)"
+                                                 OnClick="@(() => PostAsync(row))">
+                                        @(isPosting ? "Posting…" : "Post COGS")
+                                    </CitusButton>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </CitusAsyncBoundary>
+    </section>
+
+    <p class="text-fg-subtle text-xs mt-3">
+        Estimated COGS rolls up <code>inventory_layer_consumptions</code> per sales-issue.
+        Posting produces a single Dr COGS / Cr Inventory journal entry per item account; the
+        entry is marked <code>source_type=sales_issue_cogs</code> so re-running on the same
+        sales-issue is idempotent.
+    </p>
+}
+
+@code {
+    private readonly PageHeaderModel _header = new()
+    {
+        Eyebrow = "Warehouse",
+        Title = "Sales Issue COGS",
+        Subtitle = "Posted sales issues with their COGS-bridge state. Click Post COGS to journalise the Dr COGS / Cr Inventory entry."
+    };
+
+    private IReadOnlyList<SalesIssueCogsStatusSummary> _rows = Array.Empty<SalesIssueCogsStatusSummary>();
+    private bool _isLoading = true;
+    private string? _validation;
+    private Guid? _postingId;
+    private string _baseCurrencyCode = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _baseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode;
+        if (ShellState.ActiveCompany.InventoryModuleEnabled)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _validation = null;
+        try
+        {
+            _rows = await CogsClient.ListAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task PostAsync(SalesIssueCogsStatusSummary row)
+    {
+        _validation = null;
+        _postingId = row.SalesIssueDocumentId;
+        try
+        {
+            var outcome = await CogsClient.PostAsync(row.SalesIssueDocumentId);
+            if (!outcome.Succeeded)
+            {
+                _validation = outcome.ErrorMessage ?? "Could not post COGS for this sales-issue.";
+                return;
+            }
+
+            var saved = outcome.Saved!;
+            await Message.SuccessAsync(saved.AlreadyPosted
+                ? $"COGS already journalised as {saved.JournalEntryDisplayNumber}."
+                : $"Posted {saved.JournalEntryDisplayNumber} — Dr COGS / Cr Inventory {FormatAmount(saved.TotalAmountBase)} {_baseCurrencyCode}.");
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _postingId = null;
+        }
+    }
+
+    private static string FormatAmount(decimal amount) =>
+        amount.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+}

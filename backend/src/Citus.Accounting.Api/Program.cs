@@ -126,6 +126,7 @@ builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccounti
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
+builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
 builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
 builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
@@ -10041,6 +10042,25 @@ accounting.MapPost(
 // (matches the modern endpoint convention; the GR/IR endpoint above
 // pre-dates that pattern and will migrate later).
 // -----------------------------------------------------------------------
+// M3 iter 2 — workbench listing for posted sales-issues + their COGS
+// bridge state. LEFT JOIN to journal_entries shows already-posted vs
+// eligible without a persisted bridge table; that may come later if
+// per-line slice tracking becomes a requirement.
+accounting.MapGet(
+    "/sales-issues/cogs-status",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesIssueCogsStatusReader reader,
+        int? take,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await reader.ListAsync(new(session.ActiveCompanyId), take ?? 100, cancellationToken);
+        return Results.Ok(rows);
+    });
+
 accounting.MapPost(
     "/sales-issues/{documentId:guid}/cogs/post",
     async (
