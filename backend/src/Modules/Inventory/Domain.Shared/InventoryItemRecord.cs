@@ -17,6 +17,7 @@ public sealed record class InventoryItemRecord(
     Guid? DefaultWriteOffAccountId,
     Guid? DefaultPurchaseVarianceAccountId,
     Guid? DefaultSalesRevenueAccountId,
+    Guid? DefaultDropShipClearingAccountId,
     Guid? DefaultSalesTaxCodeId,
     Guid? DefaultPurchaseTaxCodeId,
     bool IsActive);

@@ -1548,6 +1548,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
             "stock" => InventoryItemKind.Stock,
             "non_stock" => InventoryItemKind.NonStock,
             "service" => InventoryItemKind.Service,
+            "drop_ship" => InventoryItemKind.DropShip,
             _ => throw new InvalidOperationException($"Unsupported inventory item kind '{value}'.")
         };
 

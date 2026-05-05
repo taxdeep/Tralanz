@@ -1778,6 +1778,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
     {
         "stock" => InventoryItemKind.Stock,
         "service" => InventoryItemKind.Service,
+        "drop_ship" => InventoryItemKind.DropShip,
         _ => InventoryItemKind.NonStock
     };
 

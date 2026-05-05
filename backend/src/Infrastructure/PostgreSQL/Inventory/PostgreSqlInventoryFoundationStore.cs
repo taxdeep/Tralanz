@@ -160,6 +160,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                         default_writeoff_account_id = @default_writeoff_account_id,
                         default_purchase_variance_account_id = @default_purchase_variance_account_id,
                         default_sales_revenue_account_id = @default_sales_revenue_account_id,
+                        default_drop_ship_clearing_account_id = @default_drop_ship_clearing_account_id,
                         default_sales_price = @default_sales_price,
                         default_purchase_price = @default_purchase_price,
                         default_sales_tax_code_id = @default_sales_tax_code_id,
@@ -194,6 +195,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 updateCommand.Parameters.AddWithValue(
                     "default_sales_revenue_account_id",
                     request.DefaultSalesRevenueAccountId.HasValue ? (object)request.DefaultSalesRevenueAccountId.Value : DBNull.Value);
+                updateCommand.Parameters.AddWithValue(
+                    "default_drop_ship_clearing_account_id",
+                    request.DefaultDropShipClearingAccountId.HasValue ? (object)request.DefaultDropShipClearingAccountId.Value : DBNull.Value);
                 updateCommand.Parameters.AddWithValue(
                     "default_sales_price",
                     request.DefaultSalesPrice.HasValue ? (object)request.DefaultSalesPrice.Value : DBNull.Value);
@@ -238,6 +242,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   default_writeoff_account_id,
                   default_purchase_variance_account_id,
                   default_sales_revenue_account_id,
+                  default_drop_ship_clearing_account_id,
                   default_sales_price,
                   default_purchase_price,
                   default_sales_tax_code_id,
@@ -263,6 +268,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   @default_writeoff_account_id,
                   @default_purchase_variance_account_id,
                   @default_sales_revenue_account_id,
+                  @default_drop_ship_clearing_account_id,
                   @default_sales_price,
                   @default_purchase_price,
                   @default_sales_tax_code_id,
@@ -298,6 +304,9 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             insertCommand.Parameters.AddWithValue(
                 "default_sales_revenue_account_id",
                 request.DefaultSalesRevenueAccountId.HasValue ? (object)request.DefaultSalesRevenueAccountId.Value : DBNull.Value);
+            insertCommand.Parameters.AddWithValue(
+                "default_drop_ship_clearing_account_id",
+                request.DefaultDropShipClearingAccountId.HasValue ? (object)request.DefaultDropShipClearingAccountId.Value : DBNull.Value);
             insertCommand.Parameters.AddWithValue(
                 "default_sales_price",
                 request.DefaultSalesPrice.HasValue ? (object)request.DefaultSalesPrice.Value : DBNull.Value);
@@ -384,6 +393,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
               default_writeoff_account_id,
               default_purchase_variance_account_id,
               default_sales_revenue_account_id,
+              default_drop_ship_clearing_account_id,
               default_sales_price,
               default_purchase_price,
               default_sales_tax_code_id,
@@ -423,6 +433,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 ReadNullableGuid(reader, "default_writeoff_account_id"),
                 ReadNullableGuid(reader, "default_purchase_variance_account_id"),
                 ReadNullableGuid(reader, "default_sales_revenue_account_id"),
+                ReadNullableGuid(reader, "default_drop_ship_clearing_account_id"),
                 ReadNullableDecimal(reader, "default_sales_price"),
                 ReadNullableDecimal(reader, "default_purchase_price"),
                 ReadNullableGuid(reader, "default_sales_tax_code_id"),
@@ -670,7 +681,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   created_at timestamptz not null default now(),
                   updated_at timestamptz not null default now(),
                   constraint ck_inventory_items_item_kind
-                    check (item_kind in ('stock', 'non_stock', 'service')),
+                    check (item_kind in ('stock', 'non_stock', 'service', 'drop_ship')),
                   constraint ck_inventory_items_manage_inventory_method
                     check (manage_inventory_method in ('dont_manage_stock', 'manage_stock', 'manage_stock_by_sku')),
                   constraint ck_inventory_items_default_costing_method
@@ -716,6 +727,29 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 alter table inventory_items
                   add column if not exists default_sales_revenue_account_id uuid null references accounts(id);
+
+                -- M6: drop-ship clearing account on the item master. Defaulted
+                -- per-item; the bill-line / invoice-line posting paths fall
+                -- back to the company-level `system_role = 'drop_ship_clearing'`
+                -- account when this is null.
+                alter table inventory_items
+                  add column if not exists default_drop_ship_clearing_account_id uuid null references accounts(id);
+
+                -- M6: extend item_kind enum to include 'drop_ship'. The inline
+                -- check in the create-table block above already lists all four
+                -- values for fresh installs; this drop+add reconciles existing
+                -- installs that were created when the constraint only knew the
+                -- original three values.
+                do $$
+                begin
+                  alter table inventory_items drop constraint if exists ck_inventory_items_item_kind;
+                  alter table inventory_items add constraint ck_inventory_items_item_kind
+                    check (item_kind in ('stock', 'non_stock', 'service', 'drop_ship'));
+                exception when others then
+                  -- swallow: races on first-boot are fine because the inline
+                  -- create-table version already includes drop_ship.
+                  null;
+                end $$;
 
                 create table if not exists inventory_warehouses (
                   id uuid primary key default gen_random_uuid(),
@@ -1455,6 +1489,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             InventoryItemKind.Stock => "stock",
             InventoryItemKind.NonStock => "non_stock",
             InventoryItemKind.Service => "service",
+            InventoryItemKind.DropShip => "drop_ship",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported inventory item kind.")
         };
 
@@ -1499,6 +1534,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             "stock" => InventoryItemKind.Stock,
             "non_stock" => InventoryItemKind.NonStock,
             "service" => InventoryItemKind.Service,
+            "drop_ship" => InventoryItemKind.DropShip,
             _ => throw new InvalidOperationException($"Unsupported inventory item kind '{value}'.")
         };
 

@@ -59,6 +59,7 @@
                         @bind="_draft.ItemKind">
                     <option value="service">Service</option>
                     <option value="non_stock">Non-stock</option>
+                    <option value="drop_ship">Drop-ship</option>
                     <option value="stock" disabled="@(!ShellState.ActiveCompany.InventoryModuleEnabled && _draft.ItemKind != "stock")">
                         Stock@(ShellState.ActiveCompany.InventoryModuleEnabled ? string.Empty : " — requires Tralanz Inventory")
                     </option>
@@ -193,6 +194,28 @@
                                    SelectedDisplayText="@AccountDisplay(_draft.DefaultPurchaseVarianceAccountId)"
                                    OnAccountSelected="@(a => _draft.DefaultPurchaseVarianceAccountId = a.Id)"
                                    OnCleared="@(() => _draft.DefaultPurchaseVarianceAccountId = null)" />
+                </div>
+            }
+            @if (_draft.ItemKind == "drop_ship")
+            {
+                @* Drop-ship items hold no inventory, so Inventory Asset /
+                   COGS / Write-off / Purchase Variance never apply. The
+                   one item-level account that matters is the Drop-ship
+                   Clearing target, which the bill-line and invoice-line
+                   posting paths read in M6 iter 2 / iter 3. Empty selection
+                   falls back to the company-level account resolved by
+                   system_role = 'drop_ship_clearing'. *@
+                <div>
+                    <label class="text-sm font-medium block mb-1">Drop-ship clearing account</label>
+                    <AccountPicker CompanyId="@ShellState.ActiveCompany.Id"
+                                   UserId="@(ShellState.User.Id == Guid.Empty ? null : ShellState.User.Id)"
+                                   Context="items.drop_ship_clearing"
+                                   DefaultCurrencyCode="@ShellState.ActiveCompany.BaseCurrencyCode"
+                                   SelectedId="@_draft.DefaultDropShipClearingAccountId"
+                                   SelectedDisplayText="@AccountDisplay(_draft.DefaultDropShipClearingAccountId)"
+                                   Placeholder="Defaults to company Drop-ship Clearing"
+                                   OnAccountSelected="@(a => _draft.DefaultDropShipClearingAccountId = a.Id)"
+                                   OnCleared="@(() => _draft.DefaultDropShipClearingAccountId = null)" />
                 </div>
             }
         </div>
@@ -395,6 +418,7 @@ else
                 DefaultWriteOffAccountId: _draft.ItemKind == "stock" ? _draft.DefaultWriteOffAccountId : null,
                 DefaultPurchaseVarianceAccountId: _draft.ItemKind == "stock" ? _draft.DefaultPurchaseVarianceAccountId : null,
                 DefaultSalesRevenueAccountId: _draft.DefaultSalesRevenueAccountId,
+                DefaultDropShipClearingAccountId: _draft.ItemKind == "drop_ship" ? _draft.DefaultDropShipClearingAccountId : null,
                 DefaultSalesPrice: _draft.DefaultSalesPrice,
                 DefaultPurchasePrice: _draft.DefaultPurchasePrice,
                 DefaultSalesTaxCodeId: _draft.DefaultSalesTaxCodeId == Guid.Empty ? null : _draft.DefaultSalesTaxCodeId,
@@ -434,7 +458,8 @@ else
     private static string KindHint(string kind) => kind switch
     {
         "stock" => "Tracked in inventory; needs Inventory asset + COGS accounts.",
-        "non_stock" => "Sold or bought but not held in inventory (e.g. drop-shipped).",
+        "non_stock" => "Sold or bought but not held in inventory.",
+        "drop_ship" => "Vendor ships directly to customer; bill posts to Drop-ship Clearing, invoice clears it on COGS.",
         _ => "Time / labour / consulting — never held in inventory."
     };
 
@@ -442,6 +467,7 @@ else
     {
         "stock" => "Stock",
         "non_stock" => "Non-stock",
+        "drop_ship" => "Drop-ship",
         _ => "Service"
     };
 
@@ -449,6 +475,7 @@ else
     {
         "stock" => "blue",
         "non_stock" => "geekblue",
+        "drop_ship" => "purple",
         _ => "default"
     };
 
@@ -471,6 +498,7 @@ else
         public Guid? DefaultWriteOffAccountId { get; set; }
         public Guid? DefaultPurchaseVarianceAccountId { get; set; }
         public Guid? DefaultSalesRevenueAccountId { get; set; }
+        public Guid? DefaultDropShipClearingAccountId { get; set; }
         public decimal? DefaultSalesPrice { get; set; }
         public decimal? DefaultPurchasePrice { get; set; }
         public Guid DefaultSalesTaxCodeId { get; set; }
@@ -495,6 +523,7 @@ else
             DefaultWriteOffAccountId = item.DefaultWriteOffAccountId,
             DefaultPurchaseVarianceAccountId = item.DefaultPurchaseVarianceAccountId,
             DefaultSalesRevenueAccountId = item.DefaultSalesRevenueAccountId,
+            DefaultDropShipClearingAccountId = item.DefaultDropShipClearingAccountId,
             DefaultSalesPrice = item.DefaultSalesPrice,
             DefaultPurchasePrice = item.DefaultPurchasePrice,
             DefaultSalesTaxCodeId = item.DefaultSalesTaxCodeId ?? Guid.Empty,

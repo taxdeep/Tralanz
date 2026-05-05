@@ -24,6 +24,7 @@ public sealed record InventoryItemUpsertHttpRequest(
     Guid? DefaultWriteOffAccountId,
     Guid? DefaultPurchaseVarianceAccountId,
     Guid? DefaultSalesRevenueAccountId,
+    Guid? DefaultDropShipClearingAccountId,
     decimal? DefaultSalesPrice,
     decimal? DefaultPurchasePrice,
     Guid? DefaultSalesTaxCodeId,
@@ -46,7 +47,7 @@ internal static class InventoryItemRequestMapper
 
         if (!TryParseItemKind(request.ItemKind, out _))
         {
-            return $"Item kind '{request.ItemKind}' is not recognized. Use 'stock', 'non_stock', or 'service'.";
+            return $"Item kind '{request.ItemKind}' is not recognized. Use 'stock', 'non_stock', 'service', or 'drop_ship'.";
         }
 
         if (request.DefaultSalesPrice is < 0) return "Default sales price cannot be negative.";
@@ -85,6 +86,7 @@ internal static class InventoryItemRequestMapper
             DefaultWriteOffAccountId: request.DefaultWriteOffAccountId,
             DefaultPurchaseVarianceAccountId: request.DefaultPurchaseVarianceAccountId,
             DefaultSalesRevenueAccountId: request.DefaultSalesRevenueAccountId,
+            DefaultDropShipClearingAccountId: request.DefaultDropShipClearingAccountId,
             DefaultSalesPrice: request.DefaultSalesPrice,
             DefaultPurchasePrice: request.DefaultPurchasePrice,
             DefaultSalesTaxCodeId: request.DefaultSalesTaxCodeId,
@@ -105,6 +107,11 @@ internal static class InventoryItemRequestMapper
                 return true;
             case "service":
                 kind = InventoryItemKind.Service;
+                return true;
+            case "drop_ship":
+            case "drop-ship":
+            case "dropship":
+                kind = InventoryItemKind.DropShip;
                 return true;
             default:
                 kind = InventoryItemKind.Service;
@@ -172,6 +179,7 @@ internal static class InventoryItemRequestMapper
         row.DefaultWriteOffAccountId,
         row.DefaultPurchaseVarianceAccountId,
         row.DefaultSalesRevenueAccountId,
+        row.DefaultDropShipClearingAccountId,
         row.DefaultSalesPrice,
         row.DefaultPurchasePrice,
         row.DefaultSalesTaxCodeId,
@@ -186,6 +194,7 @@ internal static class InventoryItemRequestMapper
         InventoryItemKind.Stock => "stock",
         InventoryItemKind.NonStock => "non_stock",
         InventoryItemKind.Service => "service",
+        InventoryItemKind.DropShip => "drop_ship",
         _ => "service"
     };
 

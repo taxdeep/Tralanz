@@ -4,5 +4,6 @@ public enum InventoryItemKind
 {
     Stock = 0,
     NonStock = 1,
-    Service = 2
+    Service = 2,
+    DropShip = 3
 }
