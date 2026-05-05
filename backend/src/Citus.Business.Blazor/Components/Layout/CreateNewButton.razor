@@ -10,9 +10,12 @@
     rows with a "Coming soon" tooltip — the menu's full surface is
     visible so the user can see what's planned.
 
-    Outside-click close is handled by the shared citus-user-menu.js
-    listener (it scans for any details.citus-popover[open] and
-    collapses on outside click).
+    Close behaviour is handled by the shared citus-user-menu.js
+    listener:
+      • outside click               → close
+      • click an <a> inside         → close (then navigate)
+      • click anywhere else inside  → keep open
+    Buttons that aren't <a> can opt in via data-citus-popover-close.
 *@
 
 @namespace Citus.Business.Blazor.Components.Layout
