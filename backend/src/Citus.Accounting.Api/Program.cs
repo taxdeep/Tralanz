@@ -5810,6 +5810,39 @@ accounting.MapPost(
         }
     });
 
+// M5 iter 5: SO cancellation orchestrator. Releases reservations on
+// confirmed SOs, zeroes per-line counters, flips status to 'cancelled',
+// and surfaces a deposit warning if any open customer_deposits still
+// point at this SO (V1 doesn't auto-refund — operator handles via
+// Refund Receipt).
+accounting.MapPost(
+    "/sales-orders/{salesOrderId:guid}/cancel",
+    async (
+        Guid salesOrderId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ISalesOrderStore store,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        try
+        {
+            var result = await store.CancelAsync(session.ActiveCompanyId, salesOrderId, cancellationToken);
+            if (result is null) return Results.NotFound();
+            return Results.Ok(new
+            {
+                salesOrder = result.SalesOrder,
+                openDepositCount = result.OpenDepositSummary.OpenDepositCount,
+                openDepositTotalBase = result.OpenDepositSummary.TotalOpenAmountBase,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
 // M5 iter 3: standalone Customer Deposit on an SO. Operator collects a
 // prepayment against an open / confirmed SO before any invoice exists.
 // Persists customer_deposits + ar_open_items credit row + posts JE

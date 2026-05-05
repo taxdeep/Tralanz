@@ -83,7 +83,41 @@ public interface ISalesOrderStore
         Guid companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// M5 iter 5: cancellation orchestrator. Releases any reservations
+    /// the SO holds (decrements <c>item_warehouse_balances.reserved_qty</c>
+    /// by each line's <c>reserved_qty</c>, zeroes the per-line
+    /// reserved/backorder counters), flips status to 'cancelled', and
+    /// returns the updated SO alongside a summary of any open customer
+    /// deposits still pointed at this SO. Open deposits are NOT
+    /// auto-refunded in V1 — the operator handles them via the existing
+    /// Refund Receipt flow (or applies them to another SO). The summary
+    /// in <see cref="SalesOrderCancelResult.OpenDepositSummary"/> tells
+    /// the UI what to flag in the cancellation toast.
+    ///
+    /// Only Open and Confirmed SOs can cancel. Invoiced / Cancelled SOs
+    /// stay terminal — re-issuing a cancellation throws
+    /// InvalidOperationException with a precise message.
+    /// </summary>
+    Task<SalesOrderCancelResult?> CancelAsync(
+        Guid companyId,
+        Guid salesOrderId,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Returned by <see cref="ISalesOrderStore.CancelAsync"/>. Carries the
+/// updated SO record plus a deposit summary the UI uses to warn the
+/// operator about leftover liability.
+/// </summary>
+public sealed record SalesOrderCancelResult(
+    SalesOrderRecord SalesOrder,
+    SalesOrderCancelDepositSummary OpenDepositSummary);
+
+public sealed record SalesOrderCancelDepositSummary(
+    int OpenDepositCount,
+    decimal TotalOpenAmountBase);
 
 public sealed record SalesOrderListFilter(
     string? Status,

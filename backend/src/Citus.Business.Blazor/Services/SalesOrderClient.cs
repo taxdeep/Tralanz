@@ -145,6 +145,40 @@ public sealed class SalesOrderClient(HttpClient httpClient, ILogger<SalesOrderCl
         }
     }
 
+    /// <summary>
+    /// M5 iter 5: cancels an Open or Confirmed SO. Server releases any
+    /// reservations and surfaces an open-deposit count + total in the
+    /// outcome so the UI can warn the operator about leftover liability.
+    /// </summary>
+    public async Task<SalesOrderCancelOutcome> CancelAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient.PostAsync(
+                $"accounting/sales-orders/{id:D}/cancel",
+                content: null,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new SalesOrderCancelOutcome(false, null, 0, 0m, await ReadMessageAsync(response, cancellationToken));
+            }
+            var body = await response.Content.ReadFromJsonAsync<SalesOrderCancelResponseDto>(cancellationToken);
+            return new SalesOrderCancelOutcome(
+                Succeeded: true,
+                Saved: body?.SalesOrder,
+                OpenDepositCount: body?.OpenDepositCount ?? 0,
+                OpenDepositTotalBase: body?.OpenDepositTotalBase ?? 0m,
+                ErrorMessage: null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to cancel sales order.");
+            return new SalesOrderCancelOutcome(false, null, 0, 0m, "Unable to reach the server. Please try again.");
+        }
+    }
+
     private async Task<SalesOrderMutationOutcome> SendUpsertAsync(
         HttpMethod method,
         string path,
@@ -309,3 +343,15 @@ public sealed record SalesOrderLinePayload(
     string? AccountCode);
 
 public sealed record SalesOrderMutationOutcome(bool Succeeded, SalesOrderRecordDto? Saved, string? ErrorMessage);
+
+public sealed record SalesOrderCancelOutcome(
+    bool Succeeded,
+    SalesOrderRecordDto? Saved,
+    int OpenDepositCount,
+    decimal OpenDepositTotalBase,
+    string? ErrorMessage);
+
+internal sealed record SalesOrderCancelResponseDto(
+    SalesOrderRecordDto SalesOrder,
+    int OpenDepositCount,
+    decimal OpenDepositTotalBase);

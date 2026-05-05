@@ -80,8 +80,7 @@ else
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
                     Mark Invoiced
                 </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("cancelled", "Sales order cancelled."))">
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
                     Cancel
                 </CitusButton>
             }
@@ -98,8 +97,7 @@ else
                 <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="MarkInvoicedAsync">
                     Mark Invoiced
                 </CitusButton>
-                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating"
-                             OnClick="@(() => SetStatusAsync("cancelled", "Sales order cancelled."))">
+                <CitusButton Variant="CitusButtonVariant.Ghost" Disabled="_isMutating" OnClick="CancelAsync">
                     Cancel
                 </CitusButton>
                 @if (_so.ConfirmedAt is { } confirmedAt)
@@ -371,6 +369,42 @@ else
             await LoadAsync();
         }
         finally { _depositSubmitting = false; }
+    }
+
+    /// <summary>
+    /// M5 iter 5: cancellation. Calls the orchestrator endpoint that
+    /// releases reservations and surfaces a deposit warning if open
+    /// deposits remain pointed at this SO.
+    /// </summary>
+    private async Task CancelAsync()
+    {
+        if (_so is null || _isMutating) return;
+        _isMutating = true;
+        try
+        {
+            var outcome = await SalesOrderClient.CancelAsync(_so.Id);
+            if (!outcome.Succeeded || outcome.Saved is null)
+            {
+                _error = outcome.ErrorMessage ?? "Cancel failed.";
+                await Message.WarningAsync(_error);
+                return;
+            }
+            _so = outcome.Saved;
+            ApplyHeader();
+
+            if (outcome.OpenDepositCount > 0)
+            {
+                await Message.WarningAsync(
+                    $"Sales order cancelled. {outcome.OpenDepositCount} open customer deposit(s) " +
+                    $"totaling {outcome.OpenDepositTotalBase:N2} remain — issue a Refund Receipt or " +
+                    $"apply them to another SO as needed.");
+            }
+            else
+            {
+                await Message.SuccessAsync("Sales order cancelled.");
+            }
+        }
+        finally { _isMutating = false; }
     }
 
     private async Task ConfirmAsync()

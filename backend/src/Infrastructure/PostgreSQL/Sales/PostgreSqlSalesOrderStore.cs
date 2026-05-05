@@ -551,6 +551,176 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         decimal Reserved,
         decimal Backorder);
 
+    public async Task<SalesOrderCancelResult?> CancelAsync(
+        Guid companyId,
+        Guid salesOrderId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Status guard — only Open / Confirmed SOs are cancellable. Invoiced
+        // / Cancelled / future statuses stay terminal.
+        string currentStatus;
+        await using (var statusCommand = connection.CreateCommand())
+        {
+            statusCommand.Transaction = transaction;
+            statusCommand.CommandText = "SELECT status FROM sales_orders WHERE company_id = @company_id AND id = @id LIMIT 1;";
+            statusCommand.Parameters.AddWithValue("company_id", companyId);
+            statusCommand.Parameters.AddWithValue("id", salesOrderId);
+            var statusObj = await statusCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (statusObj is null) return null;
+            currentStatus = (string)statusObj;
+            if (currentStatus is not (SalesOrderStatus.Open or SalesOrderStatus.Confirmed))
+            {
+                throw new InvalidOperationException(
+                    $"Sales order in status '{currentStatus}' cannot be cancelled. " +
+                    "Only Open and Confirmed SOs are cancellable.");
+            }
+        }
+
+        // Confirmed SOs may carry reservations to release. Open SOs have
+        // counters at 0 by definition (no Confirm has run yet) so the
+        // release loop below is a no-op for them — single code path keeps
+        // future "auto-confirm on create" experiments safe.
+        Guid? warehouseId = null;
+        await using (var warehouseCommand = connection.CreateCommand())
+        {
+            warehouseCommand.Transaction = transaction;
+            warehouseCommand.CommandText = """
+                SELECT id FROM inventory_warehouses
+                 WHERE company_id = @company_id AND is_active = true
+                 ORDER BY created_at
+                 LIMIT 1;
+                """;
+            warehouseCommand.Parameters.AddWithValue("company_id", companyId);
+            var result = await warehouseCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is Guid id) warehouseId = id;
+        }
+
+        // Per-item aggregation — a single SO can carry multiple lines for
+        // the same item; we want one balance UPDATE per item rather than
+        // N (avoids stomp-then-restomp on the trigger from M5 iter 2).
+        var perItemRelease = new Dictionary<Guid, decimal>();
+        await using (var linesCommand = connection.CreateCommand())
+        {
+            linesCommand.Transaction = transaction;
+            linesCommand.CommandText = """
+                SELECT item_id, reserved_qty
+                  FROM sales_order_lines
+                 WHERE sales_order_id = @so_id
+                   AND item_id IS NOT NULL
+                   AND reserved_qty > 0;
+                """;
+            linesCommand.Parameters.AddWithValue("so_id", salesOrderId);
+            await using var reader = await linesCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var itemId = reader.GetGuid(0);
+                var reservedQty = reader.GetDecimal(1);
+                perItemRelease[itemId] = perItemRelease.TryGetValue(itemId, out var existing)
+                    ? existing + reservedQty
+                    : reservedQty;
+            }
+        }
+
+        // Decrement warehouse reservations. GREATEST(...,0) guards against
+        // any drift between SO line counters and the balance row — if the
+        // balance somehow under-counts (data corruption / partial repair),
+        // we don't push it negative.
+        if (warehouseId is { } whId && perItemRelease.Count > 0)
+        {
+            foreach (var (itemId, reservedDelta) in perItemRelease)
+            {
+                await using var updateBalance = connection.CreateCommand();
+                updateBalance.Transaction = transaction;
+                updateBalance.CommandText = """
+                    UPDATE item_warehouse_balances
+                       SET reserved_qty = GREATEST(reserved_qty - @reserved_delta, 0),
+                           updated_at = now()
+                     WHERE company_id = @company_id
+                       AND item_id = @item_id
+                       AND warehouse_id = @warehouse_id;
+                    """;
+                updateBalance.Parameters.AddWithValue("company_id", companyId);
+                updateBalance.Parameters.AddWithValue("item_id", itemId);
+                updateBalance.Parameters.AddWithValue("warehouse_id", whId);
+                updateBalance.Parameters.AddWithValue("reserved_delta", reservedDelta);
+                await updateBalance.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // Zero the per-line counters in one statement.
+        await using (var clearCounters = connection.CreateCommand())
+        {
+            clearCounters.Transaction = transaction;
+            clearCounters.CommandText = """
+                UPDATE sales_order_lines
+                   SET reserved_qty  = 0,
+                       backorder_qty = 0
+                 WHERE sales_order_id = @so_id
+                   AND (reserved_qty > 0 OR backorder_qty > 0);
+                """;
+            clearCounters.Parameters.AddWithValue("so_id", salesOrderId);
+            await clearCounters.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Flip status.
+        await using (var headerCommand = connection.CreateCommand())
+        {
+            headerCommand.Transaction = transaction;
+            headerCommand.CommandText = """
+                UPDATE sales_orders
+                   SET status = 'cancelled',
+                       updated_at = now()
+                 WHERE company_id = @company_id AND id = @id;
+                """;
+            headerCommand.Parameters.AddWithValue("company_id", companyId);
+            headerCommand.Parameters.AddWithValue("id", salesOrderId);
+            await headerCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Look up open customer deposits for this SO (V1: not auto-refunded;
+        // operator handles via Refund Receipt or re-applies elsewhere).
+        var depositCount = 0;
+        var depositTotalBase = 0m;
+        await using (var depositsCommand = connection.CreateCommand())
+        {
+            depositsCommand.Transaction = transaction;
+            depositsCommand.CommandText = """
+                SELECT count(*)::int, COALESCE(SUM(oi.open_amount_base), 0)
+                  FROM customer_deposits cd
+                  JOIN ar_open_items oi
+                    ON oi.company_id = cd.company_id
+                   AND oi.source_type = 'customer_deposit'
+                   AND oi.source_id = cd.id
+                 WHERE cd.company_id = @company_id
+                   AND cd.source_sales_order_id = @so_id
+                   AND cd.status IN ('open', 'partially_applied')
+                   AND oi.open_amount_base > 0;
+                """;
+            depositsCommand.Parameters.AddWithValue("company_id", companyId);
+            depositsCommand.Parameters.AddWithValue("so_id", salesOrderId);
+            await using var reader = await depositsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                depositCount = reader.GetInt32(0);
+                depositTotalBase = reader.GetDecimal(1);
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        var saved = await GetByIdAsync(companyId, salesOrderId, cancellationToken).ConfigureAwait(false);
+        if (saved is null) return null;
+
+        return new SalesOrderCancelResult(
+            SalesOrder: saved,
+            OpenDepositSummary: new SalesOrderCancelDepositSummary(
+                OpenDepositCount: depositCount,
+                TotalOpenAmountBase: depositTotalBase));
+    }
+
     public async Task<SalesOrderRecord?> SetStatusAsync(
         Guid companyId,
         Guid salesOrderId,
