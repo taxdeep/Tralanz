@@ -1,0 +1,99 @@
+@page "/settings/year-end-pre-close"
+
+@inject BusinessShellState ShellState
+@inject YearEndPreCloseClient PreCloseClient
+
+<PageTitle>Year-end pre-close | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Refresh"
+                     Disabled="_isLoading"
+                     OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+<CitusAsyncBoundary IsLoading="@_isLoading"
+                    IsEmpty="@(_checks is null)"
+                    EmptyIcon="IconName.AlertCircle"
+                    EmptyTitle="Pre-close checks unavailable"
+                    EmptyMessage="The accounting API didn't return pre-close data. Refresh after a moment, or check the API status.">
+    @if (_checks is not null)
+    {
+        var totalOpen = _checks.GrIrAged.Count + _checks.DropShipClearingAged.Count + _checks.SalesOrderBackorderAged.Count;
+        var allClear = totalOpen == 0;
+
+        <CitusAlert Severity="@(allClear ? CitusAlertSeverity.Success : CitusAlertSeverity.Warning)"
+                    Class="mb-4"
+                    ShowIcon="true">
+            @if (allClear)
+            {
+                <span><strong>All clear.</strong> Every soft-block check is at zero — you're free to transition the closing period to <em>closed</em>.</span>
+            }
+            else
+            {
+                <span><strong>@totalOpen open item(s)</strong> across the soft-block checks. These won't refuse a period close, but each is worth resolving so the books reconcile cleanly.</span>
+            }
+        </CitusAlert>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            @RenderCheckCard(_checks.GrIrAged)
+            @RenderCheckCard(_checks.DropShipClearingAged)
+            @RenderCheckCard(_checks.SalesOrderBackorderAged)
+        </div>
+
+        <p class="text-fg-subtle text-xs mt-4">
+            These three checks summarise the open balances most likely to surprise an auditor at year-end.
+            They are <strong>soft</strong> blocks — Tralanz won't refuse a period close on a non-zero count;
+            the warning is informational so you can resolve before sealing the books. The hard rule is the
+            period state machine (Settings → Accounting Periods): once a period is <em>closed</em>, no new
+            posts can land with effective dates in that range.
+        </p>
+    }
+</CitusAsyncBoundary>
+
+@code {
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings · Accounting",
+        Title = "Year-end pre-close checks",
+        Subtitle = "Open-balance soft blocks worth resolving before you close the books.",
+    };
+
+    private YearEndPreCloseChecksDto? _checks;
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _checks = await PreCloseClient.ReadAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private RenderFragment RenderCheckCard(YearEndPreCloseCheckDto check) => __builder =>
+    {
+        var isClear = check.Count == 0;
+        <section class="citus-panel">
+            <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="font-medium">@check.Title</div>
+                <CitusBadge Color="@(isClear ? "green" : "gold")">@check.Count</CitusBadge>
+            </div>
+            <p class="text-fg-muted text-sm">@check.Description</p>
+            @if (!isClear)
+            {
+                <p class="text-fg-subtle text-xs mt-3">
+                    <strong>Resolve:</strong> @check.ResolutionHint
+                </p>
+            }
+        </section>
+    };
+}

@@ -124,6 +124,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Currencies", Href = "settings/currencies", Icon = IconName.Coin },
                 new NavMenuItem { Title = "Fiscal Year", Href = "settings/fiscal-year", Icon = IconName.Calendar },
                 new NavMenuItem { Title = "Accounting Periods", Href = "settings/accounting-periods", Icon = IconName.Clock },
+                new NavMenuItem { Title = "Year-end Pre-close", Href = "settings/year-end-pre-close", Icon = IconName.AlertCircle },
                 new NavMenuItem { Title = "Tax Rates", Href = "settings/tax-rates", Icon = IconName.Receipt },
                 new NavMenuItem { Title = "Tax Returns", Href = "tax-returns", Icon = IconName.ReportAnalytics },
                 new NavMenuItem { Title = "Payment Terms", Href = "settings/payment-terms", Icon = IconName.Calendar },

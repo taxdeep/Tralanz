@@ -309,6 +309,14 @@ builder.Services.AddHttpClient<AccountingPeriodClient>(
         })
     .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
 
+builder.Services.AddHttpClient<YearEndPreCloseClient>(
+        (serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<AppHostOptions>>().Value;
+            client.BaseAddress = new Uri(options.AccountingApiBaseUrl, UriKind.Absolute);
+        })
+    .AddHttpMessageHandler<BusinessSessionHeaderHandler>();
+
 builder.Services.AddHttpClient<PaymentTermClient>(
         (serviceProvider, client) =>
         {

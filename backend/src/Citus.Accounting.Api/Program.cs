@@ -130,6 +130,7 @@ builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoic
 builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
 builder.Services.AddScoped<IAccountingPeriodRepository, PostgresAccountingPeriodRepository>();
+builder.Services.AddScoped<IYearEndPreCloseChecksReader, PostgresYearEndPreCloseChecksReader>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
@@ -5914,6 +5915,24 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+    });
+
+// M7 iter 4: year-end pre-close checks. Returns three soft-block
+// counters the dashboard surfaces before the operator transitions
+// the most recent period through closing -> closed. Read-only;
+// each non-zero count is informational and operators decide how to
+// resolve.
+accounting.MapGet(
+    "/year-end/pre-close-checks",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IYearEndPreCloseChecksReader reader,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var checks = await reader.ReadAsync(new(session.ActiveCompanyId), cancellationToken);
+        return Results.Ok(checks);
     });
 
 // M7 iter 1: accounting period state machine endpoints. List returns
