@@ -44,6 +44,16 @@ public static class BusinessApprovalAuthority
     public static bool CanExecuteGrIrSettlement(BusinessSessionContext? session) =>
         session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
 
+    /// <summary>
+    /// M7 iter 1: only owners / book-governance roles can transition
+    /// accounting periods. Reuses the OpenItemAdjustment role set
+    /// because the authority profile is the same — both touch the
+    /// books in a way that the operator role shouldn't unilaterally
+    /// trigger.
+    /// </summary>
+    public static bool CanTransitionAccountingPeriod(BusinessSessionContext? session) =>
+        session?.Roles.Any(IsOpenItemAdjustmentApprovalRole) == true;
+
     public static bool CanApprovePurchaseOrder(BusinessSessionContext? session) =>
         session?.Roles.Any(IsPurchaseOrderApprovalRole) == true;
 

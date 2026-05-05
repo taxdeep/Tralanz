@@ -1,0 +1,197 @@
+@page "/settings/accounting-periods"
+
+@inject BusinessShellState ShellState
+@inject AccountingPeriodClient PeriodClient
+@inject CitusToastService Message
+
+<PageTitle>Accounting periods | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Refresh"
+                     Disabled="_isLoading"
+                     OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+<section class="citus-panel">
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_periods.Count == 0)"
+                        EmptyIcon="IconName.Calendar"
+                        EmptyTitle="No accounting periods"
+                        EmptyMessage="Periods are seeded automatically on first load — refresh to bootstrap the current fiscal year.">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th style="width: 14rem">Period</th>
+                    <th style="width: 7rem">Status</th>
+                    <th>Timeline</th>
+                    <th style="width: 16rem"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var period in _periods)
+                {
+                    var transitioning = _transitioningId == period.Id;
+                    var nextStatus = NextStatus(period.Status);
+                    <tr>
+                        <td>
+                            <div class="font-medium">@FormatRange(period)</div>
+                            <div class="text-fg-subtle text-xs">
+                                @period.PeriodStart.ToString("yyyy-MM-dd") → @period.PeriodEnd.ToString("yyyy-MM-dd")
+                            </div>
+                        </td>
+                        <td><CitusBadge Color="@StatusColor(period.Status)">@StatusLabel(period.Status)</CitusBadge></td>
+                        <td>
+                            <div class="text-fg-subtle text-xs flex flex-col gap-0.5">
+                                @if (period.ClosingStartedAt.HasValue)
+                                {
+                                    <span>Closing started @period.ClosingStartedAt.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                                }
+                                @if (period.ClosedAt.HasValue)
+                                {
+                                    <span>Closed @period.ClosedAt.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                                }
+                                @if (period.LockedAt.HasValue)
+                                {
+                                    <span>Locked @period.LockedAt.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                                }
+                                @if (!period.ClosingStartedAt.HasValue && !period.ClosedAt.HasValue && !period.LockedAt.HasValue)
+                                {
+                                    <span>Open since @period.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd")</span>
+                                }
+                            </div>
+                        </td>
+                        <td class="text-right">
+                            @if (nextStatus is not null)
+                            {
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             Disabled="@transitioning"
+                                             OnClick="@(() => TransitionAsync(period, nextStatus))">
+                                    @(transitioning ? "Working…" : NextActionLabel(period.Status))
+                                </CitusButton>
+                            }
+                            else
+                            {
+                                <span class="text-fg-subtle text-xs">terminal state</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </CitusAsyncBoundary>
+</section>
+
+<p class="text-fg-subtle text-xs mt-3">
+    Periods seed monthly from the company's fiscal-year-end setting on first load.
+    State machine is forward-only: <strong>open → closing → closed → locked</strong>.
+    Closing limits posting to admin-only effective dates inside the period; closed
+    blocks new posts entirely; locked is audit-only. Reversals into a closed period
+    must be re-keyed into the current open period — re-opening is not supported in V1.
+</p>
+
+@code {
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings · Accounting",
+        Title = "Accounting periods",
+        Subtitle = "Per-month period state controls the backdating policy on every posting path.",
+    };
+
+    private List<AccountingPeriodDto> _periods = new();
+    private bool _isLoading = true;
+    private string? _validation;
+    private Guid? _transitioningId;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _validation = null;
+        try
+        {
+            var rows = await PeriodClient.ListAsync();
+            _periods = rows.OrderByDescending(p => p.PeriodStart).ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task TransitionAsync(AccountingPeriodDto period, string targetStatus)
+    {
+        _transitioningId = period.Id;
+        _validation = null;
+        try
+        {
+            var outcome = await PeriodClient.TransitionAsync(period.Id, targetStatus);
+            if (outcome.Succeeded)
+            {
+                await Message.SuccessAsync($"{FormatRange(period)} → {StatusLabel(targetStatus)}.");
+                await LoadAsync();
+            }
+            else
+            {
+                _validation = outcome.ErrorMessage ?? "Could not transition the period.";
+                await Message.InfoAsync(_validation);
+            }
+        }
+        finally
+        {
+            _transitioningId = null;
+        }
+    }
+
+    private static string FormatRange(AccountingPeriodDto p)
+    {
+        if (p.PeriodStart.Year == p.PeriodEnd.Year && p.PeriodStart.Month == p.PeriodEnd.Month)
+        {
+            return p.PeriodStart.ToString("yyyy MMM");
+        }
+        return $"{p.PeriodStart:yyyy-MM-dd} → {p.PeriodEnd:yyyy-MM-dd}";
+    }
+
+    private static string? NextStatus(string status) => status switch
+    {
+        "open" => "closing",
+        "closing" => "closed",
+        "closed" => "locked",
+        _ => null,
+    };
+
+    private static string NextActionLabel(string status) => status switch
+    {
+        "open" => "Start close",
+        "closing" => "Close period",
+        "closed" => "Lock period",
+        _ => string.Empty,
+    };
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "open" => "Open",
+        "closing" => "Closing",
+        "closed" => "Closed",
+        "locked" => "Locked",
+        _ => status,
+    };
+
+    private static string StatusColor(string status) => status switch
+    {
+        "open" => "green",
+        "closing" => "gold",
+        "closed" => "geekblue",
+        "locked" => "default",
+        _ => "default",
+    };
+}

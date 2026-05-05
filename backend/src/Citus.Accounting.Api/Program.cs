@@ -129,6 +129,7 @@ builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueC
 builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
 builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
+builder.Services.AddScoped<IAccountingPeriodRepository, PostgresAccountingPeriodRepository>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
@@ -5907,6 +5908,60 @@ accounting.MapPost(
                     IdempotencyKey: request.IdempotencyKey),
                 cancellationToken);
             return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+// M7 iter 1: accounting period state machine endpoints. List returns
+// every period for the active company (lazy-seeds the current fiscal
+// year of monthly periods on first call). Transition flips status
+// forward through the open → closing → closed → locked path with an
+// audit-log entry; gated to owner / book-governance roles.
+accounting.MapGet(
+    "/periods",
+    async (
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingPeriodRepository periods,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var rows = await periods.ListAsync(new(session.ActiveCompanyId), cancellationToken);
+        return Results.Ok(rows);
+    });
+
+accounting.MapPost(
+    "/periods/{periodId:guid}/transition",
+    async (
+        Guid periodId,
+        AccountingPeriodTransitionHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAccountingPeriodRepository periods,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (request is null || string.IsNullOrWhiteSpace(request.TargetStatus))
+        {
+            return Results.BadRequest(new { message = "TargetStatus is required." });
+        }
+        if (!BusinessApprovalAuthority.CanTransitionAccountingPeriod(session))
+        {
+            return Results.BadRequest(new { message = "Only a company owner or book-governance user can transition accounting periods." });
+        }
+
+        try
+        {
+            var updated = await periods.TransitionAsync(
+                new(session.ActiveCompanyId),
+                new(session.UserId),
+                periodId,
+                request.TargetStatus.Trim().ToLowerInvariant(),
+                cancellationToken);
+            return Results.Ok(updated);
         }
         catch (InvalidOperationException ex)
         {
@@ -12917,6 +12972,11 @@ internal sealed record DropShipClearingWriteOffHttpRequest(
     decimal ExpectedNetClearingBase,
     string? Memo,
     string? IdempotencyKey);
+
+// M7 iter 1: target status for an accounting-period transition. The
+// repository validates the value against the allowed forward path
+// (open → closing → closed → locked); same-value targets are no-ops.
+internal sealed record AccountingPeriodTransitionHttpRequest(string TargetStatus);
 
 internal sealed record class SalesReceiptSaveAndPostHttpRequest
 {
