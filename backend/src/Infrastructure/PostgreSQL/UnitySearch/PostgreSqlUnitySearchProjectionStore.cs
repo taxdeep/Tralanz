@@ -616,11 +616,13 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
             return;
         }
 
-        // Stock-only mirror of the inventory_item projection — used by Bill /
-        // PO line pickers that should only surface inventory-tracked items.
-        // Stock items end up indexed twice (once as 'inventory_item', once
-        // as 'inventory_stock_item'); the redundancy is small (one extra
-        // row per stock item) and keeps policy filtering trivial.
+        // Bill / PO line picker projection. Originally stock-only; M6
+        // added drop-ship items because they're billable too (vendor
+        // invoices for drop-shipped goods) — the entity_type stays
+        // 'inventory_stock_item' so the search policy doesn't fork.
+        // Service / non-stock items are intentionally excluded: their
+        // bill flow goes through a generic expense category, not a
+        // per-item picker.
         await ExecuteCompanyProjectionStepAsync(
             connection,
             transaction,
@@ -650,7 +652,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               1
             from inventory_items item
             where item.company_id = @company_id
-              and item.item_kind = 'stock';
+              and item.item_kind in ('stock', 'drop_ship');
             """,
             cancellationToken);
     }

@@ -202,6 +202,18 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             }
         }
 
+        // M6 iter 2: drop-ship line account override. For lines that
+        // reference a drop-ship item, replace whatever expense_account_id
+        // the user picked at draft time with the resolved Drop-ship Clearing
+        // account: per-item override (inventory_items.default_drop_ship_clearing_account_id)
+        // → company-level account with system_role = 'drop_ship_clearing'
+        // (CoA code 21600). The override happens here (load-for-posting)
+        // rather than at draft save so existing drafts pick up the right
+        // routing automatically and the rule lives in one place. Iter 4
+        // builds the matching workbench that reconciles these debits
+        // against invoice-side credits.
+        lines = await ApplyDropShipClearingOverrideAsync(scope, companyId.Value, lines, cancellationToken);
+
         var transactionCurrency = new CurrencyCode(documentCurrencyCode);
         var baseCurrency = new CurrencyCode(baseCurrencyCode);
         FxSnapshotRef? fxSnapshot = null;
@@ -569,6 +581,109 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         await transaction.CommitAsync(cancellationToken);
 
         return new SourceDocumentDraftSaveResult(documentId, entityNumber, displayNumber, "cancelled");
+    }
+
+    private static async Task<List<BillDocumentLine>> ApplyDropShipClearingOverrideAsync(
+        PostgresCommandScope scope,
+        Guid companyId,
+        List<BillDocumentLine> lines,
+        CancellationToken cancellationToken)
+    {
+        // Collect distinct items referenced by lines. Skip the round-trip
+        // entirely when no line carries an item id (the common case for
+        // expense-style bills).
+        var distinctItemIds = lines
+            .Where(static l => l.ItemId.HasValue)
+            .Select(static l => l.ItemId!.Value)
+            .Distinct()
+            .ToArray();
+        if (distinctItemIds.Length == 0)
+        {
+            return lines;
+        }
+
+        // One round-trip pulls (kind, per-item-clearing-account) for every
+        // referenced item. Non-drop-ship items come back too — we just skip
+        // them when building the override map.
+        var dropShipMap = new Dictionary<Guid, Guid?>();
+        await using (var itemsCommand = scope.CreateCommand(
+                         """
+                         select id, item_kind, default_drop_ship_clearing_account_id
+                         from inventory_items
+                         where company_id = @company_id
+                           and id = any(@item_ids);
+                         """))
+        {
+            itemsCommand.Parameters.AddWithValue("company_id", companyId);
+            itemsCommand.Parameters.Add(new NpgsqlParameter("item_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+            {
+                Value = distinctItemIds
+            });
+            await using var reader = await itemsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var kind = reader.GetString(1);
+                if (!string.Equals(kind, "drop_ship", StringComparison.Ordinal)) continue;
+                dropShipMap[reader.GetGuid(0)] = reader.IsDBNull(2) ? null : reader.GetGuid(2);
+            }
+        }
+
+        if (dropShipMap.Count == 0)
+        {
+            return lines;
+        }
+
+        // Resolve the company-level fallback once — only if at least one
+        // drop-ship line lacks a per-item override.
+        Guid? companyDefault = null;
+        var needsCompanyFallback = dropShipMap.Values.Any(static v => v is null);
+        if (needsCompanyFallback)
+        {
+            companyDefault = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
+                scope, companyId, cancellationToken,
+                "drop_ship_clearing");
+        }
+
+        var rewritten = new List<BillDocumentLine>(lines.Count);
+        foreach (var line in lines)
+        {
+            if (!line.ItemId.HasValue || !dropShipMap.TryGetValue(line.ItemId.Value, out var perItem))
+            {
+                rewritten.Add(line);
+                continue;
+            }
+
+            var resolved = perItem ?? companyDefault;
+            if (resolved is null || resolved.Value == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    $"Drop-ship bill line {line.LineNumber} references item {line.ItemId.Value:D} but no Drop-ship Clearing account is configured. " +
+                    "Set the item's Drop-ship Clearing account, or seed the company-level account with system_role='drop_ship_clearing' (CoA code 21600).");
+            }
+
+            // Re-build the line with the overridden expense account. All
+            // other fields stay as-is — itemId is preserved (used by the
+            // M6 iter 4 aging workbench), warehouse/qty/cost stay null
+            // (drop-ship lines never carry them), tax fields unchanged.
+            rewritten.Add(new BillDocumentLine(
+                line.LineNumber,
+                resolved.Value,
+                line.Description,
+                line.LineAmount,
+                line.TaxAmount,
+                line.IsTaxRecoverable,
+                line.RecoverableTaxAccountId,
+                line.TaxCodeId,
+                line.ItemId,
+                line.WarehouseId,
+                line.UomCode,
+                line.Quantity,
+                line.UnitCost,
+                line.PurchaseOrderId,
+                line.PurchaseOrderLineNumber));
+        }
+
+        return rewritten;
     }
 
     private static void ValidateDraft(BillDraftSaveModel draft)

@@ -443,16 +443,21 @@ else
 
     private void OnItemPicked(int index, UnitySearchPickerOption option)
     {
-        // Bill picker is restricted to stock-kind items (BillItemPicker
-        // policy → InventoryStockItem). The auto-fill account is always
-        // the item's Inventory Asset account — receiving stock on a bill
-        // debits inventory, never an expense. If the item lacks one
-        // configured, the existing "every line needs a category"
-        // validator catches it at save.
+        // Bill picker (BillItemPicker policy → 'inventory_stock_item'
+        // projection) surfaces stock + drop-ship items. Auto-fill the
+        // line's account by item kind:
+        //   stock     → DefaultInventoryAssetAccountId (Dr Inventory)
+        //   drop_ship → DefaultDropShipClearingAccountId (Dr Drop-ship Clearing)
+        // Either way the server-side override in PostgresBillDocumentRepository
+        // re-resolves at post time, so a missing per-item default still
+        // posts correctly via the company-level system_role lookup. The
+        // form-fill is a UX nicety, not a correctness requirement.
         Guid? expenseAccountId = null;
         if (_itemsById.TryGetValue(option.SourceId, out var item))
         {
-            expenseAccountId = item.DefaultInventoryAssetAccountId;
+            expenseAccountId = string.Equals(item.ItemKind, "drop_ship", StringComparison.Ordinal)
+                ? item.DefaultDropShipClearingAccountId
+                : item.DefaultInventoryAssetAccountId;
         }
         UpdateLine(index, l => l with
         {

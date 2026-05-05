@@ -572,8 +572,13 @@ public sealed record BillDocumentLine : IPostingDocumentLine
             throw new InvalidOperationException("Recoverable tax bill lines must resolve to a recoverable tax account.");
         }
 
+        // Stock-receipt-grade lines need the full bundle: item + warehouse +
+        // uom + quantity + unit cost. Drop-ship lines carry only itemId
+        // (used by the M6 aging workbench for clearing-account matching) and
+        // intentionally have no warehouse / qty / cost, since the item never
+        // enters our inventory. So the all-or-nothing rule keys off
+        // warehouseId / uomCode / quantity / unitCost — itemId alone is fine.
         var hasInventorySemantics =
-            itemId.HasValue ||
             warehouseId.HasValue ||
             !string.IsNullOrWhiteSpace(uomCode) ||
             quantity.HasValue ||
