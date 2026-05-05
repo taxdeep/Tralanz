@@ -331,6 +331,24 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                 }
             }
 
+            // M7 iter 3: FIFO backdating guard. Inserting a cost layer
+            // at request.PostingDate when outbound activity for the
+            // same items has already been recorded on or after that
+            // date would shift FIFO consumption order — the existing
+            // sales-issues consumed cost layers that didn't include
+            // this one. The full re-flow (re-attribute consumptions +
+            // post a Dr/Cr cost adjustment JE) is V2 work; V1 hard-
+            // blocks instead. The operator's path is to use today as
+            // the receipt date and record the original date in the
+            // memo so the audit trail stays intact.
+            await EnforceFifoBackdatingGuardAsync(
+                connection,
+                transaction,
+                request.CompanyId,
+                request.Lines.Select(l => l.ItemId).Distinct().ToArray(),
+                request.PostingDate,
+                cancellationToken);
+
             var documentId = Guid.NewGuid();
             var documentNumber = BuildReceiptNumber(request.PostingDate);
             var createdAt = DateTimeOffset.UtcNow;
@@ -692,6 +710,56 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
         }
 
         return baseCurrencyCode.Trim().ToUpperInvariant();
+    }
+
+    /// <summary>
+    /// M7 iter 3: blocks a backdated receipt that would shift FIFO
+    /// consumption order. Detects whether any outbound activity for
+    /// the receipt's items exists on or after the receipt date — if
+    /// it does, those issues already consumed cost layers under the
+    /// assumption that this layer didn't exist, and inserting it now
+    /// would invalidate them. The full re-flow (re-attribute + post
+    /// adjustment JE) is V2; V1 is hard-block + memo-on-current-date
+    /// guidance.
+    /// </summary>
+    private static async Task EnforceFifoBackdatingGuardAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid[] itemIds,
+        DateOnly postingDate,
+        CancellationToken cancellationToken)
+    {
+        if (itemIds.Length == 0) return;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            select count(*)
+            from inventory_ledger_entries
+            where company_id = @company_id
+              and item_id = any(@item_ids)
+              and movement_direction = 'outbound'
+              and posting_date >= @posting_date;
+            """;
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.Add(new NpgsqlParameter("item_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid)
+        {
+            Value = itemIds,
+        });
+        command.Parameters.AddWithValue("posting_date", postingDate);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var conflictCount = result is null ? 0 : Convert.ToInt64(result);
+        if (conflictCount > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot backdate this receipt to {postingDate:yyyy-MM-dd}: {conflictCount} outbound movement(s) " +
+                "for these items have already posted on or after that date. Re-keying the cost layer would shift " +
+                "FIFO consumption order on entries that have already recognised COGS. Use today's date as the " +
+                "receipt date and record the original delivery date in the memo.");
+        }
     }
 
     private static async Task<string> LoadVendorDisplayNameAsync(
