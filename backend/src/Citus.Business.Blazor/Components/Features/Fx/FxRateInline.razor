@@ -84,6 +84,11 @@ else
     private bool _loading;
     private bool _recommendationFailed;
     private string? _lastFetchKey;
+    // Tracks user input between fetches. Reset on every key change
+    // (date or currency moved), set true when the user types into the
+    // RadzenNumeric. Lets us re-fill on context change without
+    // trampling a value the user typed mid-fetch.
+    private bool _userTouchedSinceLastFetch;
 
     private string? BaseFlag => CurrencyFlagHelper.GetFlagEmoji(BaseCurrencyCode ?? string.Empty);
     private string? QuoteFlag => CurrencyFlagHelper.GetFlagEmoji(QuoteCurrencyCode ?? string.Empty);
@@ -103,12 +108,17 @@ else
         {
             return;
         }
+        var isFirstFetch = _lastFetchKey is null;
         _lastFetchKey = key;
+        // New (date, base, quote) tuple → forget what the user typed
+        // for the previous tuple. They'll get a fresh recommendation
+        // for the new context and can re-edit if needed.
+        _userTouchedSinceLastFetch = false;
 
-        await FetchAsync();
+        await FetchAsync(isFirstFetch);
     }
 
-    private async Task FetchAsync()
+    private async Task FetchAsync(bool isFirstFetch)
     {
         _loading = true;
         _recommendationFailed = false;
@@ -126,11 +136,24 @@ else
             {
                 _recommendationFailed = true;
             }
-            else if (Rate is null || Rate == 0m)
+            else if (_userTouchedSinceLastFetch)
             {
-                // Only auto-fill when the form hasn't already been
-                // populated. If the user has manually entered a rate,
-                // don't trample it just because we re-fetched.
+                // The user typed into the input while the network call
+                // was in flight — preserve their value.
+            }
+            else if (isFirstFetch && Rate is not null && Rate != 0m)
+            {
+                // First render with a pre-populated Rate (loaded from
+                // an existing draft) — preserve the persisted value;
+                // it's the source of truth for that draft.
+            }
+            else
+            {
+                // Either first render with no value yet, OR a context
+                // change (date / currency moved) — re-fill from the
+                // fresh recommendation. Without this re-fill the rate
+                // would stay frozen at the value from the previous
+                // context, which is wrong for the new effective date.
                 Rate = result.Rate;
                 if (RateChanged.HasDelegate)
                 {
@@ -148,6 +171,7 @@ else
     private async Task OnRateChanged(decimal? value)
     {
         Rate = value;
+        _userTouchedSinceLastFetch = true;
         if (RateChanged.HasDelegate)
         {
             await RateChanged.InvokeAsync(Rate);
