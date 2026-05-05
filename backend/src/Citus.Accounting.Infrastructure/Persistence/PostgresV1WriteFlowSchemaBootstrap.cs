@@ -100,6 +100,13 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               constraint sales_receipt_lines_unique_line unique (sales_receipt_id, line_number)
             );
 
+            -- Backfill for databases that created sales_receipts before
+            -- customer_po_number was added to the inline CREATE TABLE
+            -- above. The create-table-if-not-exists is a no-op when the
+            -- table already exists, so the column has to be re-asserted
+            -- via alter before any dependent index is created.
+            alter table sales_receipts add column if not exists customer_po_number text;
+
             create index if not exists ix_sales_receipts_company_status on sales_receipts (company_id, status);
             create index if not exists ix_sales_receipts_company_customer on sales_receipts (company_id, customer_id);
             create index if not exists ix_sales_receipts_company_customer_po
@@ -161,6 +168,11 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               constraint refund_receipt_lines_unit_price_nonnegative_chk check (unit_price >= 0),
               constraint refund_receipt_lines_unique_line unique (refund_receipt_id, line_number)
             );
+
+            -- Same backfill as sales_receipts above — refund_receipts
+            -- created before customer_po_number was added need an
+            -- explicit alter before the partial index is built.
+            alter table refund_receipts add column if not exists customer_po_number text;
 
             create index if not exists ix_refund_receipts_company_status on refund_receipts (company_id, status);
             create index if not exists ix_refund_receipts_company_customer on refund_receipts (company_id, customer_id);
