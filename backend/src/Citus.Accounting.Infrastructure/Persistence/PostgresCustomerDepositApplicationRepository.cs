@@ -251,19 +251,50 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
             return emptyResult;
         }
 
+        // Reserve entity + display numbers from the shared sequence tables
+        // before committing — keeps the per-second collision risk of a
+        // timestamp-based scheme out of the picture (two near-simultaneous
+        // invoice posts each triggered an application doc with an identical
+        // DEP-APPL-yyMMddHHmmss). Sequence advances inside the transaction
+        // are correctly serialized by the row update on company_numbering_sequences.
+        var documentDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var year = documentDate.Year;
+        var entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            $"entity-number:all:{year}",
+            $"EN{year}",
+            8,
+            await PostgresSourceDocumentDraftNumbering.FindEntitySeedNumberAsync(
+                connection, transaction, year, cancellationToken),
+            cancellationToken);
+
+        // No dedicated parent table for customer-deposit-application docs
+        // (settlement_applications is shared across application types), so
+        // there is nothing to scan for an existing seed — bootstrap from 1
+        // and let the company_numbering_sequences row carry the cursor.
+        var displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
+            connection,
+            transaction,
+            companyId.Value,
+            "customer-deposit-application-display",
+            "DAPL-",
+            6,
+            1L,
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
         // Build the posting document. The application is its own JE source
         // (separate from the invoice JE) so it shows up cleanly in the GL
         // and stays journal-layer idempotent on its own id.
-        var docId = Guid.NewGuid();
-        var displayNumber = $"DEP-APPL-{DateTime.UtcNow:yyMMddHHmmss}";
         var document = new CustomerDepositApplicationDocument(
-            id: docId,
+            id: Guid.NewGuid(),
             companyId: companyId,
-            entityNumber: new EntityNumber($"EN-DEPAPL-{docId:N}"[..18]),
+            entityNumber: new EntityNumber(entityNumber),
             displayNumber: new DocumentNumber(displayNumber),
-            documentDate: DateOnly.FromDateTime(DateTime.UtcNow),
+            documentDate: documentDate,
             customerId: context.CustomerId,
             receivableAccountId: context.ArAccountId,
             customerDepositAccountId: context.CustomerDepositAccountId,

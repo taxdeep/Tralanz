@@ -433,6 +433,21 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             }
 
             // available = max(0, on_hand - reserved). Missing balance row = 0.
+            //
+            // FOR UPDATE row-locks the balance during the read so two
+            // concurrent ConfirmAsync calls for the same item serialize:
+            // T1 reads + later UPSERTs; T2 blocks until T1 commits, then
+            // re-reads the post-T1 reserved_qty. Without the lock both
+            // readers see identical "available" and both UPSERT their
+            // reservation, resulting in over-reservation past on_hand.
+            //
+            // Edge case: if no balance row exists yet (first inbound for
+            // this item never happened), there is nothing to lock —
+            // available defaults to 0, both confirms compute backorder=qty,
+            // both UPSERT (one INSERTs the row, the other DO-UPDATEs the
+            // same row). Net effect: total reserved across both = correct
+            // sum, but no over-reservation either way because available
+            // was 0 to begin with.
             decimal available = 0m;
             await using (var balanceCommand = connection.CreateCommand())
             {
@@ -441,7 +456,8 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
                     SELECT GREATEST(on_hand_qty - reserved_qty, 0) AS available_qty
                       FROM item_warehouse_balances
                      WHERE company_id = @company_id AND item_id = @item_id AND warehouse_id = @warehouse_id
-                     LIMIT 1;
+                     LIMIT 1
+                     FOR UPDATE;
                     """;
                 balanceCommand.Parameters.AddWithValue("company_id", companyId);
                 balanceCommand.Parameters.AddWithValue("item_id", line.ItemId.Value);
@@ -451,7 +467,11 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             }
 
             var reserved = Math.Min(line.Quantity, available);
-            var backorder = line.Quantity - reserved;
+            // Round the backorder to 6 decimals (the column precision) so
+            // reserved + backorder == quantity exactly — without this a
+            // Math.Min on a high-precision decimal could leave sub-µunit
+            // drift in backorder.
+            var backorder = Math.Round(line.Quantity - reserved, 6, MidpointRounding.ToEven);
 
             if (backorder > 0m
                 && string.Equals(line.BackorderMode, "disallow", StringComparison.OrdinalIgnoreCase))
@@ -624,10 +644,16 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
             }
         }
 
-        // Decrement warehouse reservations. GREATEST(...,0) guards against
-        // any drift between SO line counters and the balance row — if the
-        // balance somehow under-counts (data corruption / partial repair),
-        // we don't push it negative.
+        // Decrement warehouse reservations. GREATEST(...,0) keeps the
+        // balance row non-negative when SO-line counters and the balance
+        // row disagree (data corruption, partial repair, or a future
+        // bug). V1 known limit: when drift exists the clamp is silent —
+        // the cancel still completes correctly but the underlying drift
+        // is not surfaced. Detection (warning log + drift-events table)
+        // is deferred to the M9 inventory-hardening iter where it lives
+        // alongside reservation reconciliation. Treating drift as a
+        // hard error here would block legitimate cancels, which is the
+        // worse trade for V1.
         if (warehouseId is { } whId && perItemRelease.Count > 0)
         {
             foreach (var (itemId, reservedDelta) in perItemRelease)
