@@ -38,8 +38,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var valuationStore = new PostgreSqlReceiptInventoryValuationStore(connectionFactory, foundationStore);
             var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(connectionFactory, foundationStore);
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -123,8 +123,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var emissionStore = new PostgreSqlReceiptInventoryCostLayerEmissionStore(connectionFactory, foundationStore);
             var grIrBridgeStore = new PostgreSqlReceiptGrIrBridgeStore(connectionFactory, foundationStore);
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -231,8 +231,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                     new PostgresJournalEntryWriter(accountingConnectionFactory, executionContextAccessor)),
                 new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -341,8 +341,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             var repository = new PostgresReceiptGrIrClearingAccountPolicyRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var assetAccountId = Guid.NewGuid();
 
             await SeedCompanyAsync(schemaConnectionString, companyId);
@@ -406,8 +406,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 accountingConnectionFactory,
                 executionContextAccessor);
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -550,8 +550,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 settlementStore,
                 new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -729,8 +729,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 settlementStore,
                 new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -942,8 +942,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 settlementStore,
                 new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -1177,8 +1177,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 settlementStore,
                 new PostgresUnitOfWork(accountingConnectionFactory, executionContextAccessor));
 
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var receiptId = Guid.NewGuid();
             var billId = Guid.NewGuid();
             var itemId = Guid.NewGuid();

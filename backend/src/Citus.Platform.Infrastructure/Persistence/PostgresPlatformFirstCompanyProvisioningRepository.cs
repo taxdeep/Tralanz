@@ -309,8 +309,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
                 return Failed("owner_email_exists", "The first business owner email is already in use.");
             }
 
-            var ownerUserId = Guid.NewGuid();
-            var companyId = Guid.NewGuid();
+            var ownerUserId = UserId.FromOrdinal(1);
+            var companyId = CompanyId.FromOrdinal(1);
             var membershipId = Guid.NewGuid();
             var companyBookId = Guid.NewGuid();
             var companyEntityNumber = await ReserveEntityNumberAsync(connection, transaction, provisionedAtUtc.Year, cancellationToken);

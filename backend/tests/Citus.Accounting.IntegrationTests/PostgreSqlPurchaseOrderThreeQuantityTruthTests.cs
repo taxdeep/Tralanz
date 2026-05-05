@@ -31,8 +31,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var receiptRepository = new PostgresReceiptDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemAId = Guid.NewGuid();
             var itemBId = Guid.NewGuid();
@@ -201,8 +201,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var receiptRepository = new PostgresReceiptDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 executionContext);
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var warehouseId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
@@ -271,8 +271,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var poRepository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
@@ -322,8 +322,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
@@ -440,8 +440,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 
@@ -520,8 +520,8 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             var repository = new PostgresPurchaseOrderDocumentRepository(
                 new PostgresConnectionFactory(schemaConnectionString),
                 new PostgresExecutionContextAccessor());
-            var companyId = Guid.NewGuid();
-            var userId = Guid.NewGuid();
+            var companyId = CompanyId.FromOrdinal(1);
+            var userId = UserId.FromOrdinal(1);
             var vendorId = Guid.NewGuid();
             var itemId = Guid.NewGuid();
 

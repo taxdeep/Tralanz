@@ -9,9 +9,9 @@ public sealed class CompanySessionContextWorkflowTests
     [Fact]
     public async Task GetAsync_ReturnsPreferredActiveCompanyFromMembershipTruth()
     {
-        var userId = Guid.NewGuid();
-        var firstCompanyId = Guid.NewGuid();
-        var secondCompanyId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(1);
+        var firstCompanyId = CompanyId.FromOrdinal(1);
+        var secondCompanyId = CompanyId.FromOrdinal(2);
         var firstEntityNumber = BuildEntityNumber();
         var secondEntityNumber = BuildEntityNumber();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -54,8 +54,8 @@ public sealed class CompanySessionContextWorkflowTests
     [Fact]
     public async Task GetAsync_ReturnsNullWhenUserHasNoActiveMemberships()
     {
-        var userId = Guid.NewGuid();
-        var companyId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(1);
+        var companyId = CompanyId.FromOrdinal(1);
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var store = new PostgreSqlCompanySessionContextStore(connectionFactory);
         var workflow = new CompanySessionContextWorkflow(store);
@@ -77,8 +77,8 @@ public sealed class CompanySessionContextWorkflowTests
     [Fact]
     public async Task GetAsync_IncludesMembershipPermissionTokensInUserRoles()
     {
-        var userId = Guid.NewGuid();
-        var companyId = Guid.NewGuid();
+        var userId = UserId.FromOrdinal(1);
+        var companyId = CompanyId.FromOrdinal(1);
         var entityNumber = BuildEntityNumber();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
         var store = new PostgreSqlCompanySessionContextStore(connectionFactory);

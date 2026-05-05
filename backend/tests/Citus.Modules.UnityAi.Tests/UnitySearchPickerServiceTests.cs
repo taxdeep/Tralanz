@@ -20,7 +20,7 @@ public sealed class UnitySearchPickerServiceTests
         using var http = new HttpClient(captured) { BaseAddress = new Uri("http://api.test/") };
         var service = new UnitySearchPickerService(http, NullLogger<UnitySearchPickerService>.Instance);
 
-        var companyId = Guid.NewGuid();
+        var companyId = CompanyId.FromOrdinal(1);
         var entityId = Guid.NewGuid();
         var anchorId = Guid.NewGuid();
 
