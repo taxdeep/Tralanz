@@ -8,7 +8,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     PostgreSqlConnectionFactory connections) : ICompanyMembershipGovernanceStore
 {
     public async Task<CompanyMembershipRoleChangeResult?> ChangeRoleFromSysAdminAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         string role,
         string reason,
@@ -101,7 +101,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     private static async Task<MembershipTarget?> ReadTargetForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         CancellationToken cancellationToken)
     {
@@ -134,7 +134,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
 
         return new MembershipTarget(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
             reader.GetString(reader.GetOrdinal("email")).Trim(),
             reader.GetString(reader.GetOrdinal("username")).Trim(),
             reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
@@ -144,7 +144,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     private static async Task<int> CountAndLockActiveOwnersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -173,7 +173,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
     private static async Task InsertAuditLogAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         Guid? sysAdminAccountId,
         MembershipTarget target,
@@ -249,7 +249,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
 
     private sealed record MembershipTarget(
         Guid MembershipId,
-        Guid UserId,
+        UserId UserId,
         string Email,
         string Username,
         string Role,

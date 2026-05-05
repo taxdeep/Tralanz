@@ -46,19 +46,19 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
     }
 
     public Task<IReadOnlyList<JournalEntryAccountOption>> LoadAccountOptionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken) =>
         _accountCatalog.ListManualPostingAccountsAsync(companyId, cancellationToken);
 
     public Task<JournalEntryDraftSaveResult> SaveDraftAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         SaveDraftCoreAsync(draft, userId, cancellationToken);
 
     private async Task<JournalEntryDraftSaveResult> SaveDraftCoreAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await ValidateGovernedCurrencyAsync(draft, cancellationToken);
@@ -71,7 +71,7 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
     public async Task<JournalEntryPostResult> PostDraftAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await ValidateGovernedCurrencyAsync(draft, cancellationToken);
@@ -113,7 +113,7 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
     {
         ArgumentNullException.ThrowIfNull(draft);
 
-        if (draft.CompanyId == Guid.Empty)
+        if (draft.CompanyId.Value is null)
         {
             throw CreateWorkflowException("invalid_draft_shape", "A company context is required.");
         }
@@ -176,7 +176,7 @@ public sealed class JournalEntryWorkflow : IJournalEntryWorkflow
 
     private async Task EnsureGovernedFxSnapshotAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         if (!draft.IsForeignCurrency)

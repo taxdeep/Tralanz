@@ -1,8 +1,8 @@
 namespace Modules.AR.CreditApplication;
 
 public sealed record CreditApplicationDraftContext(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     DateOnly ApplicationDate,
     string? RequestedCurrencyCode,

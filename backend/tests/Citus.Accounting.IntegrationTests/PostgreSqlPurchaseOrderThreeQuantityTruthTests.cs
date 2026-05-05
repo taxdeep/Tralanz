@@ -579,7 +579,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
     private static async Task SeedReceiptAnchorAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         int lineNumber,
         Guid itemId,
@@ -648,7 +648,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
     private static async Task<Guid> SeedBillAnchorAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         int lineNumber,
         Guid itemId,
@@ -744,7 +744,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
 
     private static async Task<IReadOnlyList<string>> ReadPurchaseOrderAuditActionsAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId)
     {
         await using var connection = new NpgsqlConnection(connectionString);

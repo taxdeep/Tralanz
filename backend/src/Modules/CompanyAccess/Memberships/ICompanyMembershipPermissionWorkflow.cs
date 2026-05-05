@@ -5,18 +5,18 @@ public interface ICompanyMembershipPermissionWorkflow
     IReadOnlyList<CompanyMembershipPermissionOption> GetAvailablePermissions();
 
     Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CompanyMembershipPermissionAuditRecord>> ListRecentAuditAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken);
 
     Task<CompanyMembershipPermissionSaveResult> SavePermissionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
-        Guid actorUserId,
+        UserId actorUserId,
         IReadOnlyList<string> permissionTokens,
         CancellationToken cancellationToken);
 }

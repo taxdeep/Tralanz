@@ -49,7 +49,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<IReadOnlyList<VendorRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -70,7 +70,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<VendorRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -85,7 +85,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<VendorRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken)
     {
@@ -130,7 +130,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
     }
 
     public async Task<VendorRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         VendorUpsertRequest request,
         CancellationToken cancellationToken)
@@ -195,7 +195,7 @@ public sealed class PostgreSqlVendorStore(PostgreSqlConnectionFactory connection
 
     private static VendorRecord Map(NpgsqlDataReader reader) => new(
         reader.GetGuid(reader.GetOrdinal("id")),
-        reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         reader.GetString(reader.GetOrdinal("entity_number")),
         reader.GetString(reader.GetOrdinal("display_name")),
         reader.GetString(reader.GetOrdinal("default_currency_code")),

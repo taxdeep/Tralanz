@@ -1346,7 +1346,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task SeedCompanyAsync(string connectionString, Guid companyId)
+    private static async Task SeedCompanyAsync(string connectionString, CompanyId companyId)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -1513,7 +1513,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SeedAccountAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         string code,
         string name,
@@ -1556,7 +1556,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SeedApOpenItemAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         decimal amount = 50m)
     {
@@ -1606,7 +1606,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SeedBillLineAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         Guid expenseAccountId,
         decimal quantity = 5m,
@@ -1670,8 +1670,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SeedReceiptValuationFixtureAsync(
         string connectionString,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptId,
         Guid billId,
         Guid itemId,
@@ -1899,8 +1899,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SeedActivationAndValuationRowsAsync(
         string connectionString,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptId,
         Guid billId,
         Guid itemId,
@@ -1994,7 +1994,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SetDefaultInventoryAssetAccountAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid inventoryAssetAccountId)
     {
@@ -2016,7 +2016,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task SetSettlementProgressAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptId,
         decimal settledQuantity,
         decimal settledAmountBase)
@@ -2070,7 +2070,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task<(string JournalStatus, Guid? JournalEntryId)> GetSettlementBatchJournalStatusAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -2101,7 +2101,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
     private static async Task<(decimal OpenAmountTx, decimal OpenAmountBase, string Status)> GetApOpenItemStateByBillAsync(
         string connectionString,
-        Guid companyId,
+        CompanyId companyId,
         Guid billId)
     {
         await using var connection = new NpgsqlConnection(connectionString);

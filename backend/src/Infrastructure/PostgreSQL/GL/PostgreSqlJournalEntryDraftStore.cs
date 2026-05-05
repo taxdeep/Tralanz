@@ -16,7 +16,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
 
     public async Task<JournalEntryDraftSaveResult> SaveAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -200,7 +200,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
         Guid documentId,
         string documentNumber,
         string entityNumber,
-        Guid userId,
+        UserId userId,
         bool includeIdentity = true)
     {
         command.Parameters.AddWithValue("id", documentId);
@@ -228,7 +228,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
     private static async Task<long> FindManualJournalSeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

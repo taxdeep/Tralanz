@@ -15,7 +15,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
     }
 
     public async Task<IReadOnlyList<ReceivePaymentOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string documentCurrencyCode,
         CancellationToken cancellationToken)
@@ -173,7 +173,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
     private static async Task<IReadOnlyList<ReceivePaymentOpenItemCandidate>> LoadCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string documentCurrencyCode,
         Guid[]? openItemIds,
@@ -255,7 +255,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
     private static async Task EnsureActiveCustomerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -283,7 +283,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
     private static async Task EnsureActiveBankAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid bankAccountId,
         CancellationToken cancellationToken)
     {
@@ -314,7 +314,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
     private static async Task<string> LoadCompanyBaseCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -457,7 +457,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
     private static async Task<long> FindPaymentSeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

@@ -16,14 +16,14 @@ public interface IInvoiceSendHistoryStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<InvoiceSendHistoryRecord>> ListByInvoiceAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceId,
         int limit,
         CancellationToken cancellationToken);
 }
 
 public sealed record InvoiceSendHistoryDraft(
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid InvoiceId,
     Guid SentByUserId,
     string ToEmail,
@@ -35,7 +35,7 @@ public sealed record InvoiceSendHistoryDraft(
 
 public sealed record InvoiceSendHistoryRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid InvoiceId,
     DateTimeOffset SentAt,
     Guid SentByUserId,

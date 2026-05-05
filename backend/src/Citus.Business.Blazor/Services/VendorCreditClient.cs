@@ -13,7 +13,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class VendorCreditClient(HttpClient httpClient, ILogger<VendorCreditClient> logger)
 {
     public async Task<IReadOnlyList<VendorCreditSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -32,7 +32,7 @@ public sealed class VendorCreditClient(HttpClient httpClient, ILogger<VendorCred
 
     public async Task<VendorCreditRecordDto?> GetByIdAsync(
         Guid documentId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -65,7 +65,7 @@ public sealed record VendorCreditSummaryDto(
 
 public sealed record VendorCreditRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

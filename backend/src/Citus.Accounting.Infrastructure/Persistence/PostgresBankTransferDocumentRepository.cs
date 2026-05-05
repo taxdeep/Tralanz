@@ -200,7 +200,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -211,14 +211,14 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
             transferNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "bank-transfer-display",
                 "BT-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "bank_transfers",
                     "transfer_number",
                     "^BT-[0-9]+$",
@@ -277,7 +277,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
         else
         {
             (entityNumber, transferNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -358,11 +358,11 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("transfer_number", transferNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         command.Parameters.AddWithValue("transfer_date", draft.TransferDate);
         command.Parameters.AddWithValue("from_account_id", draft.FromAccountId);
         command.Parameters.AddWithValue("from_currency_code", draft.FromCurrencyCode.Trim().ToUpperInvariant());
@@ -380,7 +380,7 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
     private static async Task<(string EntityNumber, string TransferNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

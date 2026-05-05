@@ -5,8 +5,8 @@ namespace Citus.Accounting.Api.Tests;
 
 public sealed class BusinessSessionDirectoryTests
 {
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid OtherCompanyId = Guid.Parse("e56df08c-39ae-405b-8ed2-247b97d2f9f6");
 
     [Fact]
@@ -170,8 +170,8 @@ public sealed class BusinessSessionDirectoryTests
     };
 
     private static CompanyAccessSessionContext CreatePersistedSessionContext(
-        Guid userId,
-        Guid activeCompanyId,
+        UserId userId,
+        CompanyId activeCompanyId,
         IReadOnlyList<string> roles,
         string status = "active") =>
         new()
@@ -188,7 +188,7 @@ public sealed class BusinessSessionDirectoryTests
             AvailableCompanies = [CreateCompanySummary(activeCompanyId, status)]
         };
 
-    private static CompanyAccessCompanySummary CreateCompanySummary(Guid companyId, string status = "active") =>
+    private static CompanyAccessCompanySummary CreateCompanySummary(CompanyId companyId, string status = "active") =>
         new()
         {
             Id = companyId,
@@ -203,8 +203,8 @@ public sealed class BusinessSessionDirectoryTests
     private sealed class StubCompanySessionContextWorkflow(CompanyAccessSessionContext? context) : ICompanySessionContextWorkflow
     {
         public Task<CompanyAccessSessionContext?> GetAsync(
-            Guid userId,
-            Guid? preferredActiveCompanyId,
+            UserId userId,
+            CompanyId? preferredActiveCompanyId,
             CancellationToken cancellationToken) =>
             Task.FromResult(context);
     }

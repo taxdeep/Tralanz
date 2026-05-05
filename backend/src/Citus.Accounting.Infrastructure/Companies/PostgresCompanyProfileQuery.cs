@@ -12,7 +12,7 @@ public sealed class PostgresCompanyProfileQuery : ICompanyProfileQuery
         _connections = connections;
     }
 
-    public async Task<CompanyProfileSnapshot?> GetByIdAsync(Guid companyId, CancellationToken cancellationToken)
+    public async Task<CompanyProfileSnapshot?> GetByIdAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
         const string sql = """
             select id, entity_number, legal_name, email, phone, address_line, city,

@@ -40,12 +40,12 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
             _executionContextAccessor,
             cancellationToken);
         await EnsureSchemaAsync(scope, cancellationToken);
-        await RefreshJournalStatusAsync(scope, companyId.Value, settlementBatchId, cancellationToken);
-        await AcquireSettlementPostingLockAsync(scope, companyId.Value, settlementBatchId, cancellationToken);
+        await RefreshJournalStatusAsync(scope, companyId, settlementBatchId, cancellationToken);
+        await AcquireSettlementPostingLockAsync(scope, companyId, settlementBatchId, cancellationToken);
 
         return await LoadPostingDocumentAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -139,7 +139,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
     private static async Task AcquireSettlementPostingLockAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -150,7 +150,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
     private static async Task RefreshJournalStatusAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -189,7 +189,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
     private static async Task<ReceiptGrIrSettlementPostingDocument> LoadPostingDocumentAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -283,7 +283,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
 
     private static async Task<IReadOnlyList<ReceiptGrIrSettlementPostingDocumentLine>> LoadPostingLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {

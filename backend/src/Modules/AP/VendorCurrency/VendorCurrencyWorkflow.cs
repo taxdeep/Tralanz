@@ -35,7 +35,7 @@ public sealed class VendorCurrencyWorkflow : IVendorCurrencyWorkflow
     public async Task<VendorCurrencyChangeResult> ChangeDefaultCurrencyAsync(
         Guid vendorId,
         string currencyCode,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         _ = userId;

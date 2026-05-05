@@ -184,9 +184,9 @@
         NavigationManager.NavigateTo(option.NavigationHref);
     }
 
-    private async Task OnCompanyChangedAsync(Guid companyId)
+    private async Task OnCompanyChangedAsync(CompanyId companyId)
     {
-        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.Id)
+        if (companyId.Value is null || companyId == ShellState.ActiveCompany.Id)
         {
             return;
         }

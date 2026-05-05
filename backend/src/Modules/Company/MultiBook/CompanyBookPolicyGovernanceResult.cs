@@ -41,13 +41,13 @@ public sealed record class CompanyBookGovernedChangePreview(
 
 public sealed record class CompanyBookGovernedChangeRequestDraft(
     Guid RequestId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid BookId,
     string Status,
     string RequestedAction,
     DateOnly AsOfDate,
     DateOnly EffectiveFrom,
-    Guid CreatedByUserId,
+    UserId CreatedByUserId,
     DateTimeOffset CreatedAt,
     Guid? SubmittedByUserId,
     DateTimeOffset? SubmittedAt,
@@ -79,13 +79,13 @@ public sealed record class CompanyBookGovernanceSignalWriteResult(
 
 public sealed record class CompanyBookGovernanceSignalRecord(
     Guid SignalId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid BookId,
     string SignalType,
     DateOnly SignalDate,
     string? ReferenceLabel,
     string? Notes,
-    Guid? CreatedByUserId,
+    UserId? CreatedByUserId,
     DateTimeOffset CreatedAt);
 
 public sealed record class CompanyBookMigrationEligibility(

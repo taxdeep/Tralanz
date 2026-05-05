@@ -150,7 +150,7 @@ public sealed class ActionCenterTaskServiceTests
         return (service, store, events, jobRuns);
     }
 
-    private static ActionCenterTaskDraft BuildDraft(Guid companyId, string fingerprint, string title,
+    private static ActionCenterTaskDraft BuildDraft(CompanyId companyId, string fingerprint, string title,
         string reason = "test reason", string? evidenceJson = null)
         => new(
             CompanyId: companyId,
@@ -188,7 +188,7 @@ public sealed class ActionCenterTaskServiceTests
         public string ProviderName { get; }
 
         public Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-            Guid companyId, Guid? userId, DateTimeOffset asOfUtc, CancellationToken cancellationToken)
+            CompanyId companyId, UserId? userId, DateTimeOffset asOfUtc, CancellationToken cancellationToken)
         {
             if (_throwFactory is not null)
             {

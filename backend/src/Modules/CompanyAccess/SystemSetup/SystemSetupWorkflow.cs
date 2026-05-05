@@ -12,12 +12,12 @@ public sealed class SystemSetupWorkflow : ISystemSetupWorkflow
     }
 
     public Task<SystemSetupPreference> GetAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         _store.GetAsync(userId, cancellationToken);
 
     public Task<SystemSetupPreference> SaveNumberDisplayModeAsync(
-        Guid userId,
+        UserId userId,
         string modeCode,
         CancellationToken cancellationToken)
     {

@@ -4,7 +4,7 @@ internal static class PostgresNumberingSequences
 {
     public static async Task<string> ReserveAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,

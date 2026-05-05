@@ -155,19 +155,19 @@ public sealed class UnitysearchAiRerankingEngineTests
         public Task<UnitySearchResult> SearchAsync(UnitySearchQuery query, CancellationToken cancellationToken)
             => Task.FromResult(_result);
 
-        public Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(Guid companyId, Guid userId, string context, int take, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(CompanyId companyId, UserId userId, string context, int take, CancellationToken cancellationToken)
         {
             RecentQueriesCalls++;
             return Task.FromResult<IReadOnlyList<UnitySearchRecentQueryRecord>>(Array.Empty<UnitySearchRecentQueryRecord>());
         }
 
-        public Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(Guid companyId, Guid userId, string context, int take, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(CompanyId companyId, UserId userId, string context, int take, CancellationToken cancellationToken)
         {
             RecentSelectionsCalls++;
             return Task.FromResult<IReadOnlyList<UnitySearchRecentSelectionRecord>>(Array.Empty<UnitySearchRecentSelectionRecord>());
         }
 
-        public Task RecordClickAsync(Guid companyId, Guid userId, string context, string entityType, Guid sourceId, CancellationToken cancellationToken)
+        public Task RecordClickAsync(CompanyId companyId, UserId userId, string context, string entityType, Guid sourceId, CancellationToken cancellationToken)
         {
             RecordClickCalls++;
             return Task.CompletedTask;

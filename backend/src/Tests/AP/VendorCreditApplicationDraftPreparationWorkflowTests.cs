@@ -7,7 +7,7 @@ namespace Tests.AP;
 
 public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
         public IReadOnlyList<VendorCreditApplicationOpenItemCandidate> Candidates { get; set; } = [];
 
         public Task<IReadOnlyList<VendorCreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid vendorId,
             string documentCurrencyCode,
             CancellationToken cancellationToken) =>
@@ -177,7 +177,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
         public Task<VendorCurrencyChangeResult> ChangeDefaultCurrencyAsync(
             Guid vendorId,
             string currencyCode,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
@@ -194,7 +194,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
         }
 
         public Task<CompanyCurrencyProfile> GetProfileAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken)
         {
             var currencies = _enabledCurrencies

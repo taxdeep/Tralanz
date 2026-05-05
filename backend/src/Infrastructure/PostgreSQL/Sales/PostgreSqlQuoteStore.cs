@@ -91,7 +91,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<IReadOnlyList<QuoteSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         QuoteListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -147,7 +147,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         CancellationToken cancellationToken)
     {
@@ -173,7 +173,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         QuoteUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -225,7 +225,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         QuoteUpsertInput input,
         CancellationToken cancellationToken)
@@ -312,7 +312,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         string newStatus,
         CancellationToken cancellationToken)
@@ -342,7 +342,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
     }
 
     public async Task<QuoteRecord?> MarkConvertedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid quoteId,
         Guid salesOrderId,
         CancellationToken cancellationToken)
@@ -478,7 +478,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
 
     private static void BindUpsertParameters(
         NpgsqlCommand command,
-        Guid companyId,
+        CompanyId companyId,
         QuoteUpsertInput input,
         decimal subtotal,
         decimal discount,
@@ -565,7 +565,7 @@ public sealed class PostgreSqlQuoteStore(PostgreSqlConnectionFactory connections
 
     private static QuoteRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<QuoteLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         QuoteNumber: reader.GetString(reader.GetOrdinal("quote_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),
         CustomerId: reader.GetGuid(reader.GetOrdinal("customer_id")),

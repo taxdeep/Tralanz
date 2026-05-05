@@ -1,7 +1,7 @@
 namespace Citus.Modules.UnitySearch.Domain.Shared;
 
 public sealed record class SearchDocumentRecord(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityType,
     Guid SourceId,
     string GroupKey,

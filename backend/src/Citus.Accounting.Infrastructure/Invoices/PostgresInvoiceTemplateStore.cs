@@ -49,7 +49,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     public async Task<IReadOnlyList<InvoiceTemplate>> ListByCompanyAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var rows = await ListInternalAsync(companyId, cancellationToken);
@@ -66,7 +66,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     public async Task<InvoiceTemplate?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         CancellationToken cancellationToken)
     {
@@ -92,7 +92,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     public async Task<InvoiceTemplate?> GetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -128,7 +128,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     public async Task<InvoiceTemplate> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         InvoiceTemplateUpsertRequest request,
         CancellationToken cancellationToken)
     {
@@ -159,7 +159,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     public async Task<InvoiceTemplate?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         InvoiceTemplateUpsertRequest request,
         CancellationToken cancellationToken)
@@ -191,7 +191,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     public async Task<InvoiceTemplate?> SetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid templateId,
         CancellationToken cancellationToken)
     {
@@ -251,7 +251,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
     }
 
     private async Task<IReadOnlyList<InvoiceTemplate>> ListInternalAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -275,7 +275,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         return results;
     }
 
-    private async Task SeedStartersAsync(Guid companyId, CancellationToken cancellationToken)
+    private async Task SeedStartersAsync(CompanyId companyId, CancellationToken cancellationToken)
     {
         const string insertSql = """
             insert into invoice_templates (company_id, name, is_default, config)

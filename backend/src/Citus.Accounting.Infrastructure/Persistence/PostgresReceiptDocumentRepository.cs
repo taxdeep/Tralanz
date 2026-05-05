@@ -256,7 +256,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         await ValidatePurchaseOrderReceiptAnchorsAsync(
             connection,
             transaction,
-            draft.CompanyId.Value,
+            draft.CompanyId,
             draft.VendorId,
             documentId,
             draft.Lines
@@ -281,7 +281,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -291,14 +291,14 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "receipt-display",
                 "RECEIPT-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     ReceiptsTableName,
                     "receipt_number",
                     "^RECEIPT-[0-9]+$",
@@ -357,7 +357,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             (entityNumber, displayNumber, var currentStatus) = await LoadIdentityAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 documentId,
                 cancellationToken);
 
@@ -400,7 +400,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                 where company_id = @company_id
                   and receipt_id = @receipt_id;
                 """;
-            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             deleteLineCommand.Parameters.AddWithValue("receipt_id", documentId);
             await deleteLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -441,7 +441,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             insertLineCommand.Parameters.AddWithValue("receipt_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -481,7 +481,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -493,7 +493,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         await ValidatePersistedPurchaseOrderReceiptAnchorsAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -574,15 +574,15 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         bool includeIdentity)
     {
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("receipt_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
-        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId.Value);
+        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId);
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);
         command.Parameters.AddWithValue("warehouse_id", draft.WarehouseId);
         command.Parameters.AddWithValue("status", ReceiptDocumentStatuses.Draft);
@@ -607,7 +607,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static async Task ValidatePurchaseOrderReceiptAnchorsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptVendorId,
         Guid receiptDocumentId,
         IReadOnlyCollection<PurchaseOrderReceiptAnchorCandidate> candidates,
@@ -696,7 +696,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static async Task ValidatePersistedPurchaseOrderReceiptAnchorsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -777,7 +777,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
     private static async Task<(string EntityNumber, string DisplayNumber, string Status)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

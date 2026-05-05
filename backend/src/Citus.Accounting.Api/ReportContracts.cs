@@ -1,45 +1,45 @@
 namespace Citus.Accounting.Api;
 
 public sealed record TrialBalanceLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate = null,
     bool IncludeZeroBalances = false);
 
 public sealed record IncomeStatementLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? DateFrom = null,
     DateOnly? DateTo = null,
     bool IncludeZeroBalances = false);
 
 public sealed record BalanceSheetLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate = null,
     bool IncludeZeroBalances = false);
 
 public sealed record ArAgingLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate = null);
 
 public sealed record ApAgingLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate = null);
 
 public sealed record SalesCashFlowLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate = null);
 
 public sealed record IncomeOverTimeLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? FromDate = null,
     DateOnly? ToDate = null,
     bool CompareToPreviousYear = false);
 
 public sealed record ExpenseCashOutflowLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? AsOfDate = null);
 
 public sealed record ExpenseOverTimeLookupQuery(
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly? FromDate = null,
     DateOnly? ToDate = null,
     bool CompareToPreviousYear = false);

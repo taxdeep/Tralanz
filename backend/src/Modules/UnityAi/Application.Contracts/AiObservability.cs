@@ -64,7 +64,7 @@ public interface IAiJobRunStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         string? jobType,
         int limit,
         CancellationToken cancellationToken);
@@ -84,7 +84,7 @@ public interface IAiRequestLogStore
     Task<Guid> WriteAsync(AiRequestLogRecord record, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(
-        Guid companyId,
+        CompanyId companyId,
         string? taskType,
         int limit,
         CancellationToken cancellationToken);

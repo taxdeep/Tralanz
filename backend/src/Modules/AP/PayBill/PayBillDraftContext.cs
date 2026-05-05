@@ -1,8 +1,8 @@
 namespace Modules.AP.PayBill;
 
 public sealed record PayBillDraftContext(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid VendorId,
     Guid BankAccountId,
     DateOnly PaymentDate,

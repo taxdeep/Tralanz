@@ -4,7 +4,7 @@ public interface ICompanyAccessShellSession
 {
     Guid CurrentUserId { get; }
 
-    Guid ActiveCompanyId { get; }
+    CompanyId ActiveCompanyId { get; }
 
     bool AreWritesBlocked { get; }
 

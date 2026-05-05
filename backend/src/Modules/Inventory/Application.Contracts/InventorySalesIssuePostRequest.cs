@@ -1,8 +1,8 @@
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventorySalesIssuePostRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     DateOnly PostingDate,
     string? SourceModule,

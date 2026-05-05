@@ -50,7 +50,7 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         // Resolve currencies + customer deposit account in one round-trip.
-        var resolution = await ResolveAccountsAsync(connection, transaction, companyId.Value, request.SalesOrderId, cancellationToken);
+        var resolution = await ResolveAccountsAsync(connection, transaction, companyId, request.SalesOrderId, cancellationToken);
         if (resolution is null)
         {
             throw new InvalidOperationException(
@@ -76,7 +76,7 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
         var entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             $"entity-number:all:{year}",
             $"EN{year}",
             8,
@@ -87,14 +87,14 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
         var displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             "customer-deposit-display",
             "DEP-",
             6,
             await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                 connection,
                 transaction,
-                companyId.Value,
+                companyId,
                 "customer_deposits",
                 "display_number",
                 "^DEP-[0-9]+$",
@@ -207,7 +207,7 @@ public sealed class PostgresCustomerDepositPostingRepository : ICustomerDepositP
     private static async Task<AccountResolution?> ResolveAccountsAsync(
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken)
     {

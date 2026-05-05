@@ -145,7 +145,7 @@ public sealed class BillClient(HttpClient httpClient, ILogger<BillClient> logger
 
 public sealed record BillSummaryDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string BillNumber,
     Guid VendorId,
@@ -161,7 +161,7 @@ public sealed record BillSummaryDto(
 
 public sealed record BillRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string BillNumber,
     string Status,

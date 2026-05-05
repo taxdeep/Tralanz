@@ -96,7 +96,7 @@ public sealed class JournalEntry
     {
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         CompanyId = companyId;
-        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        EntityNumber = entityNumber;
         DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
         Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
         SourceType = string.IsNullOrWhiteSpace(sourceType) ? throw new ArgumentException("Source type is required.", nameof(sourceType)) : sourceType.Trim();

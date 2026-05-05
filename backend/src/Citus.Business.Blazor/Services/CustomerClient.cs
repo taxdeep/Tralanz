@@ -130,7 +130,7 @@ public sealed class CustomerClient(HttpClient httpClient, ILogger<CustomerClient
 
 public sealed record CustomerSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayName,
     string DefaultCurrencyCode,

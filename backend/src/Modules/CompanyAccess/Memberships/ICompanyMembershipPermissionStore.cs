@@ -3,28 +3,28 @@ namespace Modules.CompanyAccess.Memberships;
 public interface ICompanyMembershipPermissionStore
 {
     Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CompanyMembershipPermissionAuditRecord>> ListRecentAuditAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken);
 
     Task<CompanyMembershipPermissionListItem?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         CancellationToken cancellationToken);
 
     Task<CompanyMembershipPermissionActorAuthority?> GetActorAuthorityAsync(
-        Guid companyId,
-        Guid actorUserId,
+        CompanyId companyId,
+        UserId actorUserId,
         CancellationToken cancellationToken);
 
     Task<CompanyMembershipPermissionListItem?> SavePermissionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
-        Guid actorUserId,
+        UserId actorUserId,
         IReadOnlyList<string> permissionTokens,
         CancellationToken cancellationToken);
 }

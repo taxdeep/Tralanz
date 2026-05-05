@@ -6,7 +6,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class TaxReturnClient(HttpClient httpClient, ILogger<TaxReturnClient> logger)
 {
     public async Task<IReadOnlyList<TaxReturnSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -25,7 +25,7 @@ public sealed class TaxReturnClient(HttpClient httpClient, ILogger<TaxReturnClie
 
     public async Task<TaxReturnRecordDto?> GetByIdAsync(
         Guid documentId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -60,7 +60,7 @@ public sealed record TaxReturnSummaryDto(
 
 public sealed record TaxReturnRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

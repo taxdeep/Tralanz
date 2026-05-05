@@ -76,7 +76,7 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(
-        Guid companyId, string? jobType, int limit, CancellationToken cancellationToken)
+        CompanyId companyId, string? jobType, int limit, CancellationToken cancellationToken)
     {
         var items = new List<AiJobRunRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -214,7 +214,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
     }
 
     public async Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(
-        Guid companyId, string? taskType, int limit, CancellationToken cancellationToken)
+        CompanyId companyId, string? taskType, int limit, CancellationToken cancellationToken)
     {
         var items = new List<AiRequestLogRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);

@@ -261,7 +261,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -272,14 +272,14 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
             depositNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "bank-deposit-display",
                 "BD-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "bank_deposits",
                     "deposit_number",
                     "^BD-[0-9]+$",
@@ -334,7 +334,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
         else
         {
             (entityNumber, depositNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             var total = Round6(draft.Items.Sum(i => i.Amount));
 
@@ -372,7 +372,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
                 where company_id = @company_id
                   and bank_deposit_id = @bank_deposit_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             deleteCommand.Parameters.AddWithValue("bank_deposit_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -415,7 +415,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
                 );
                 """;
             insertItemCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertItemCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            insertItemCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             insertItemCommand.Parameters.AddWithValue("bank_deposit_id", documentId);
             insertItemCommand.Parameters.AddWithValue("line_number", item.LineNumber);
             insertItemCommand.Parameters.AddWithValue("source_item_kind", string.IsNullOrWhiteSpace(item.SourceItemKind) ? "manual" : item.SourceItemKind.Trim().ToLowerInvariant());
@@ -483,11 +483,11 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("deposit_number", depositNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         command.Parameters.AddWithValue("deposit_date", draft.DepositDate);
         command.Parameters.AddWithValue("deposit_to_account_id", draft.DepositToAccountId);
         command.Parameters.AddWithValue("document_currency_code", draft.TransactionCurrencyCode.Trim().ToUpperInvariant());
@@ -499,7 +499,7 @@ public sealed class PostgresBankDepositDocumentRepository : IBankDepositDocument
     private static async Task<(string EntityNumber, string DepositNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

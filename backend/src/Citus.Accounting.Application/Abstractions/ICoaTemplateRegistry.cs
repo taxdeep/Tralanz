@@ -23,7 +23,7 @@ public interface ICoaTemplateRegistry
 public interface ICoaTemplateSeeder
 {
     Task<CoaSeedSummary> SeedAsync(
-        Guid companyId,
+        CompanyId companyId,
         string templateKey,
         CancellationToken cancellationToken);
 }

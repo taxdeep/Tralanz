@@ -3,7 +3,7 @@ namespace Modules.AR.ReceivePayment;
 public interface IReceivePaymentDraftPreparationWorkflow
 {
     Task<IReadOnlyList<ReceivePaymentOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken);
 

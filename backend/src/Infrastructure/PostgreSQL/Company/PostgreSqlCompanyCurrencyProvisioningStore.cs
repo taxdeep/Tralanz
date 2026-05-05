@@ -14,7 +14,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     }
 
     public async Task<CompanyCurrencyProfile> GetProfileAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -22,7 +22,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     }
 
     public async Task<CompanyControlAccountSlots> AllocateControlAccountSlotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -36,7 +36,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task<int> GetAccountCodeLengthAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -67,7 +67,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task<string> AllocateNextFamilyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string familyPrefix,
         int accountCodeLength,
         CancellationToken cancellationToken)
@@ -121,7 +121,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     }
 
     public async Task<CompanyCurrencyGovernanceResult> EnableCurrencyAsync(
-        Guid companyId,
+        CompanyId companyId,
         string currencyCode,
         IReadOnlyList<ControlAccountProvisioningRequest> controlAccounts,
         CancellationToken cancellationToken)
@@ -160,7 +160,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task EnableMultiCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -202,7 +202,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task EnsureCompanyCurrencyEnabledAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string currencyCode,
         CancellationToken cancellationToken)
     {
@@ -236,7 +236,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task<ProvisionedControlAccount> EnsureControlAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         ControlAccountProvisioningRequest request,
         CancellationToken cancellationToken)
     {
@@ -376,7 +376,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task<CompanyCurrencyProfile> GetProfileAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var companyRow = await GetCompanyRowAsync(connection, transaction, companyId, cancellationToken);
@@ -434,7 +434,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
     private static async Task<(string LegalName, string BaseCurrencyCode, bool MultiCurrencyEnabled)> GetCompanyRowAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

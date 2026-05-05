@@ -417,13 +417,13 @@ public sealed class SysAdminAuthenticationClient(HttpClient httpClient, ILogger<
 
         public string FailureMessage { get; set; } = string.Empty;
 
-        public Guid CompanyId { get; set; }
+        public CompanyId CompanyId { get; set; }
 
         public string CompanyEntityNumber { get; set; } = string.Empty;
 
         public string CompanyName { get; set; } = string.Empty;
 
-        public Guid OwnerUserId { get; set; }
+        public UserId OwnerUserId { get; set; }
 
         public string OwnerEmail { get; set; } = string.Empty;
 

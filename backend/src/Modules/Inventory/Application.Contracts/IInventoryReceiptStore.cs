@@ -3,21 +3,21 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IInventoryReceiptStore
 {
     Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryBillReceiptHandoffSummary> GetBillHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyDictionary<Guid, InventoryBillReceiptPostingGateSnapshot>> GetBillPostingGateSnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> billDocumentIds,
         CancellationToken cancellationToken);
 
     Task<LegacyInboundReceiptPathSnapshot?> GetLegacyInboundReceiptPathSnapshotAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken);
 

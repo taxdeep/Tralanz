@@ -2,8 +2,8 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record ActionCenterTaskRecord(
     Guid Id,
-    Guid CompanyId,
-    Guid? AssignedUserId,
+    CompanyId CompanyId,
+    UserId? AssignedUserId,
     string TaskType,
     string SourceEngine,
     string SourceType,
@@ -31,8 +31,8 @@ public sealed record ActionCenterTaskRecord(
 /// unchanged data must produce the same fingerprint.
 /// </summary>
 public sealed record ActionCenterTaskDraft(
-    Guid CompanyId,
-    Guid? AssignedUserId,
+    CompanyId CompanyId,
+    UserId? AssignedUserId,
     string TaskType,
     string SourceEngine,
     string SourceType,
@@ -58,8 +58,8 @@ public interface IActionCenterTaskProvider
     string ProviderName { get; }
 
     Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken);
 }
@@ -73,38 +73,38 @@ public sealed record ActionCenterGenerationResult(
 public interface IActionCenterTaskService
 {
     Task<ActionCenterGenerationResult> RegenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ActionCenterTaskRecord>> GetTasksAsync(
-        Guid companyId,
-        Guid? assignedUserId,
+        CompanyId companyId,
+        UserId? assignedUserId,
         IReadOnlyCollection<string>? statuses,
         CancellationToken cancellationToken);
 
-    Task<ActionCenterTaskRecord?> StartAsync(Guid companyId, Guid taskId, Guid? actorUserId, CancellationToken cancellationToken);
-    Task<ActionCenterTaskRecord?> CompleteAsync(Guid companyId, Guid taskId, Guid? actorUserId, CancellationToken cancellationToken);
-    Task<ActionCenterTaskRecord?> DismissAsync(Guid companyId, Guid taskId, Guid? actorUserId, CancellationToken cancellationToken);
-    Task<ActionCenterTaskRecord?> SnoozeAsync(Guid companyId, Guid taskId, Guid? actorUserId, DateTimeOffset until, CancellationToken cancellationToken);
+    Task<ActionCenterTaskRecord?> StartAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, CancellationToken cancellationToken);
+    Task<ActionCenterTaskRecord?> CompleteAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, CancellationToken cancellationToken);
+    Task<ActionCenterTaskRecord?> DismissAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, CancellationToken cancellationToken);
+    Task<ActionCenterTaskRecord?> SnoozeAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, DateTimeOffset until, CancellationToken cancellationToken);
 }
 
 public interface IActionCenterTaskStore
 {
-    Task<ActionCenterTaskRecord?> GetByIdAsync(Guid companyId, Guid taskId, CancellationToken cancellationToken);
+    Task<ActionCenterTaskRecord?> GetByIdAsync(CompanyId companyId, Guid taskId, CancellationToken cancellationToken);
 
-    Task<ActionCenterTaskRecord?> GetByFingerprintAsync(Guid companyId, string fingerprint, CancellationToken cancellationToken);
+    Task<ActionCenterTaskRecord?> GetByFingerprintAsync(CompanyId companyId, string fingerprint, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ActionCenterTaskRecord>> GetTasksAsync(
-        Guid companyId,
-        Guid? assignedUserId,
+        CompanyId companyId,
+        UserId? assignedUserId,
         IReadOnlyCollection<string>? statuses,
         CancellationToken cancellationToken);
 
     Task<Guid> InsertAsync(ActionCenterTaskRecord record, CancellationToken cancellationToken);
 
     Task UpdateStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taskId,
         string status,
         DateTimeOffset? completedAt,
@@ -117,9 +117,9 @@ public interface IActionCenterTaskStore
 public interface IActionCenterTaskEventStore
 {
     Task RecordAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taskId,
-        Guid? userId,
+        UserId? userId,
         string eventType,
         string? metadataJson,
         DateTimeOffset occurredAt,

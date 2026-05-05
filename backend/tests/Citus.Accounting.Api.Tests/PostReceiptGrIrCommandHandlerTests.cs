@@ -100,8 +100,8 @@ public sealed class PostReceiptGrIrCommandHandlerTests
         public int RefreshCalls { get; private set; }
 
         public Task<ReceiptGrIrBridgeSummary> RefreshReceiptGrIrBridgeAsync(
-            Guid companyId,
-            Guid userId,
+            CompanyId companyId,
+            UserId userId,
             Guid receiptDocumentId,
             CancellationToken cancellationToken)
         {
@@ -126,13 +126,13 @@ public sealed class PostReceiptGrIrCommandHandlerTests
         }
 
         public Task<ReceiptGrIrBridgeSummary?> GetReceiptGrIrBridgeSummaryAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid receiptDocumentId,
             CancellationToken cancellationToken) =>
             Task.FromResult<ReceiptGrIrBridgeSummary?>(null);
 
         public Task<IReadOnlyDictionary<Guid, ReceiptGrIrBridgeSummary>> GetReceiptGrIrBridgeSummariesAsync(
-            Guid companyId,
+            CompanyId companyId,
             IReadOnlyCollection<Guid> receiptDocumentIds,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptGrIrBridgeSummary>>(

@@ -152,10 +152,10 @@
     // bind a server-side search keyword later.
     private void OnSearchSubmitted() { }
 
-    private async Task OnSwitchAsync(Guid companyId)
+    private async Task OnSwitchAsync(CompanyId companyId)
     {
         if (_switchingTo is not null) return;
-        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.Id) return;
+        if (companyId.Value is null || companyId == ShellState.ActiveCompany.Id) return;
 
         var previousCompanyId = ShellState.ActiveCompany.Id;
         _switchingTo = companyId;

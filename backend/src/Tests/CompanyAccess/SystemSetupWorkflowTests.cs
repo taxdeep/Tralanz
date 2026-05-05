@@ -32,11 +32,11 @@ public sealed class SystemSetupWorkflowTests
         public SystemSetupPreference Preference { get; private set; } =
             new(Guid.Empty, NumberDisplayModeDefaults.Default, DateTimeOffset.UtcNow);
 
-        public Task<SystemSetupPreference> GetAsync(Guid userId, CancellationToken cancellationToken) =>
+        public Task<SystemSetupPreference> GetAsync(UserId userId, CancellationToken cancellationToken) =>
             Task.FromResult(Preference with { UserId = userId });
 
         public Task<SystemSetupPreference> SaveAsync(
-            Guid userId,
+            UserId userId,
             NumberDisplayMode numberDisplayMode,
             CancellationToken cancellationToken)
         {

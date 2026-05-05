@@ -20,7 +20,7 @@ public interface IPlatformBusinessSessionRepository
 
     Task<PlatformBusinessSessionResult> SwitchActiveCompanyAsync(
         string sessionToken,
-        Guid activeCompanyId,
+        CompanyId activeCompanyId,
         CancellationToken cancellationToken);
 
     Task<PlatformBusinessSessionResult> CompleteSecondFactorAsync(

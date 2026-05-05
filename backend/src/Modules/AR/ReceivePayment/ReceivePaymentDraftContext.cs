@@ -1,8 +1,8 @@
 namespace Modules.AR.ReceivePayment;
 
 public sealed record ReceivePaymentDraftContext(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid CustomerId,
     Guid BankAccountId,
     DateOnly PaymentDate,

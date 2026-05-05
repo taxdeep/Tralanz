@@ -60,7 +60,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
             _executionContextAccessor,
             cancellationToken);
         await EnsureSchemaAsync(scope, cancellationToken);
-        await EnsureActiveAccountAsync(scope, companyId.Value, grIrClearingAccountId, cancellationToken);
+        await EnsureActiveAccountAsync(scope, companyId, grIrClearingAccountId, cancellationToken);
 
         await using var command = scope.CreateCommand(
             """
@@ -90,7 +90,7 @@ public sealed class PostgresReceiptGrIrClearingAccountPolicyRepository : IReceip
 
     private static async Task EnsureActiveAccountAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         CancellationToken cancellationToken)
     {

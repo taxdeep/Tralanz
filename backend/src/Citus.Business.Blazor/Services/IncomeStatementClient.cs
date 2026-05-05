@@ -6,7 +6,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class IncomeStatementClient(HttpClient httpClient, ILogger<IncomeStatementClient> logger)
 {
     public Task<ReportCsvDownload?> ExportCsvAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly dateFrom,
         DateOnly dateTo,
         bool includeZeroBalances,
@@ -20,7 +20,7 @@ public sealed class IncomeStatementClient(HttpClient httpClient, ILogger<IncomeS
             cancellationToken);
 
     public async Task<IncomeStatementReportSummary?> GetReportAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly dateFrom,
         DateOnly dateTo,
         bool includeZeroBalances,

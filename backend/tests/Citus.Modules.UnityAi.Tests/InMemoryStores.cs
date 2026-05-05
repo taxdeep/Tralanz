@@ -30,7 +30,7 @@ internal sealed class InMemoryAiJobRunStore : IAiJobRunStore
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(Guid companyId, string? jobType, int limit, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(CompanyId companyId, string? jobType, int limit, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<AiJobRunRecord>>(Records.Where(r => r.CompanyId == companyId).ToList());
 }
 
@@ -44,7 +44,7 @@ internal sealed class InMemoryAiRequestLogStore : IAiRequestLogStore
         return Task.FromResult(record.Id);
     }
 
-    public Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(Guid companyId, string? taskType, int limit, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(CompanyId companyId, string? taskType, int limit, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<AiRequestLogRecord>>(Records.Where(r => r.CompanyId == companyId).ToList());
 }
 
@@ -54,7 +54,7 @@ internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
 
     public IReadOnlyList<UnitysearchUsageStatRecord> All => _records;
 
-    public Task UpsertOnSelectAsync(Guid companyId, Guid? userId, string context, string entityType, Guid entityId,
+    public Task UpsertOnSelectAsync(CompanyId companyId, UserId? userId, string context, string entityType, Guid entityId,
         int? rankPosition, string? query, DateTimeOffset selectedAt, CancellationToken cancellationToken)
     {
         Upsert(companyId, null, UnitysearchScopeType.Company, context, entityType, entityId, rankPosition, query, selectedAt);
@@ -65,7 +65,7 @@ internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
         return Task.CompletedTask;
     }
 
-    public void Seed(Guid companyId, Guid? userId, string scopeType, string context, string entityType, Guid entityId,
+    public void Seed(CompanyId companyId, UserId? userId, string scopeType, string context, string entityType, Guid entityId,
         int selectCount, DateTimeOffset? lastSelectedAt = null)
     {
         _records.Add(new UnitysearchUsageStatRecord(
@@ -86,7 +86,7 @@ internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
             UpdatedAt: DateTimeOffset.UtcNow));
     }
 
-    private void Upsert(Guid companyId, Guid? userId, string scopeType, string context, string entityType, Guid entityId,
+    private void Upsert(CompanyId companyId, UserId? userId, string scopeType, string context, string entityType, Guid entityId,
         int? rankPosition, string? query, DateTimeOffset selectedAt)
     {
         var existing = _records.FirstOrDefault(r =>
@@ -119,7 +119,7 @@ internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
     }
 
     public Task<IReadOnlyDictionary<Guid, UnitysearchUsageStatRecord>> GetForCandidatesAsync(
-        Guid companyId, Guid? userId, string scopeType, string context, string entityType,
+        CompanyId companyId, UserId? userId, string scopeType, string context, string entityType,
         IReadOnlyCollection<Guid> entityIds, CancellationToken cancellationToken)
     {
         var dict = _records
@@ -130,7 +130,7 @@ internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
     }
 
     public Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
-        Guid companyId, int limit, CancellationToken cancellationToken)
+        CompanyId companyId, int limit, CancellationToken cancellationToken)
     {
         var results = _records
             .Where(r => r.CompanyId == companyId && r.ScopeType == UnitysearchScopeType.Company)
@@ -146,7 +146,7 @@ internal sealed class InMemoryPairStatStore : IUnitysearchPairStatStore
 {
     private readonly List<UnitysearchPairStatRecord> _records = new();
 
-    public Task UpsertOnSelectAsync(Guid companyId, Guid? userId, string sourceContext,
+    public Task UpsertOnSelectAsync(CompanyId companyId, UserId? userId, string sourceContext,
         string anchorEntityType, Guid anchorEntityId, string targetContext,
         string targetEntityType, Guid targetEntityId, DateTimeOffset selectedAt, CancellationToken cancellationToken)
     {
@@ -158,7 +158,7 @@ internal sealed class InMemoryPairStatStore : IUnitysearchPairStatStore
         return Task.CompletedTask;
     }
 
-    public void Seed(Guid companyId, Guid? userId, string scopeType, string sourceContext, string anchorEntityType, Guid anchorEntityId,
+    public void Seed(CompanyId companyId, UserId? userId, string scopeType, string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType, Guid targetEntityId, decimal confidence, int selectCount = 1)
     {
         _records.Add(new UnitysearchPairStatRecord(
@@ -169,7 +169,7 @@ internal sealed class InMemoryPairStatStore : IUnitysearchPairStatStore
             LastSelectedAt: DateTimeOffset.UtcNow, UpdatedAt: DateTimeOffset.UtcNow));
     }
 
-    private void Upsert(Guid companyId, Guid? userId, string scopeType, string sourceContext,
+    private void Upsert(CompanyId companyId, UserId? userId, string scopeType, string sourceContext,
         string anchorEntityType, Guid anchorEntityId, string targetContext, string targetEntityType, Guid targetEntityId,
         DateTimeOffset selectedAt)
     {
@@ -204,7 +204,7 @@ internal sealed class InMemoryPairStatStore : IUnitysearchPairStatStore
     }
 
     public Task<IReadOnlyList<UnitysearchPairStatRecord>> GetForAnchorAsync(
-        Guid companyId, Guid? userId, string scopeType, string sourceContext,
+        CompanyId companyId, UserId? userId, string scopeType, string sourceContext,
         string anchorEntityType, Guid anchorEntityId, string targetContext, string targetEntityType,
         CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<UnitysearchPairStatRecord>>(_records.Where(r =>
@@ -221,7 +221,7 @@ internal sealed class InMemoryRankingHintStore : IUnitysearchRankingHintStore
     public void Seed(UnitysearchRankingHintRecord record) => _records.Add(record);
 
     public Task<IReadOnlyList<UnitysearchRankingHintRecord>> GetActiveAsync(
-        Guid companyId, Guid? userId, string context, string entityType,
+        CompanyId companyId, UserId? userId, string context, string entityType,
         IReadOnlyCollection<Guid>? entityIds, CancellationToken cancellationToken)
     {
         var query = _records.Where(r => r.CompanyId == companyId && r.Context == context && r.EntityType == entityType);
@@ -244,14 +244,14 @@ internal sealed class InMemoryActionCenterTaskStore : IActionCenterTaskStore
 {
     public List<ActionCenterTaskRecord> Records { get; } = new();
 
-    public Task<ActionCenterTaskRecord?> GetByIdAsync(Guid companyId, Guid taskId, CancellationToken cancellationToken)
+    public Task<ActionCenterTaskRecord?> GetByIdAsync(CompanyId companyId, Guid taskId, CancellationToken cancellationToken)
         => Task.FromResult(Records.FirstOrDefault(r => r.CompanyId == companyId && r.Id == taskId));
 
-    public Task<ActionCenterTaskRecord?> GetByFingerprintAsync(Guid companyId, string fingerprint, CancellationToken cancellationToken)
+    public Task<ActionCenterTaskRecord?> GetByFingerprintAsync(CompanyId companyId, string fingerprint, CancellationToken cancellationToken)
         => Task.FromResult(Records.FirstOrDefault(r => r.CompanyId == companyId && r.Fingerprint == fingerprint));
 
     public Task<IReadOnlyList<ActionCenterTaskRecord>> GetTasksAsync(
-        Guid companyId, Guid? assignedUserId, IReadOnlyCollection<string>? statuses, CancellationToken cancellationToken)
+        CompanyId companyId, UserId? assignedUserId, IReadOnlyCollection<string>? statuses, CancellationToken cancellationToken)
     {
         var q = Records.Where(r => r.CompanyId == companyId);
         if (assignedUserId is not null) q = q.Where(r => r.AssignedUserId == assignedUserId || r.AssignedUserId is null);
@@ -265,7 +265,7 @@ internal sealed class InMemoryActionCenterTaskStore : IActionCenterTaskStore
         return Task.FromResult(record.Id);
     }
 
-    public Task UpdateStatusAsync(Guid companyId, Guid taskId, string status,
+    public Task UpdateStatusAsync(CompanyId companyId, Guid taskId, string status,
         DateTimeOffset? completedAt, DateTimeOffset? dismissedAt, DateTimeOffset? snoozedUntil,
         DateTimeOffset updatedAt, CancellationToken cancellationToken)
     {
@@ -287,9 +287,9 @@ internal sealed class InMemoryActionCenterTaskStore : IActionCenterTaskStore
 
 internal sealed class InMemoryActionCenterTaskEventStore : IActionCenterTaskEventStore
 {
-    public List<(Guid CompanyId, Guid TaskId, Guid? UserId, string EventType, DateTimeOffset At)> Events { get; } = new();
+    public List<(CompanyId CompanyId, Guid TaskId, Guid? UserId, string EventType, DateTimeOffset At)> Events { get; } = new();
 
-    public Task RecordAsync(Guid companyId, Guid taskId, Guid? userId, string eventType, string? metadataJson,
+    public Task RecordAsync(CompanyId companyId, Guid taskId, UserId? userId, string eventType, string? metadataJson,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)
     {
         Events.Add((companyId, taskId, userId, eventType, occurredAt));

@@ -86,7 +86,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<IReadOnlyList<PurchaseOrderSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -141,7 +141,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken)
     {
@@ -166,7 +166,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -218,7 +218,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         PurchaseOrderUpsertInput input,
         CancellationToken cancellationToken)
@@ -302,7 +302,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         string newStatus,
         CancellationToken cancellationToken)
@@ -332,7 +332,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
     }
 
     public async Task<PurchaseOrderRecord?> MarkClosedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken)
     {
@@ -459,7 +459,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 
     private static void BindUpsertParameters(
         NpgsqlCommand command,
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderUpsertInput input,
         decimal subtotal,
         decimal discount,
@@ -541,7 +541,7 @@ public sealed class PostgreSqlPurchaseOrderStore(PostgreSqlConnectionFactory con
 
     private static PurchaseOrderRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<PurchaseOrderLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         PurchaseOrderNumber: reader.GetString(reader.GetOrdinal("purchase_order_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),
         VendorId: reader.GetGuid(reader.GetOrdinal("vendor_id")),

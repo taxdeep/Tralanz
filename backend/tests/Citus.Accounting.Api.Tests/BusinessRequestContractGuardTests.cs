@@ -80,8 +80,8 @@ public sealed class BusinessRequestContractGuardTests
 
     public sealed class GuardProbeRequest
     {
-        public Guid CompanyId { get; init; }
+        public CompanyId CompanyId { get; init; }
 
-        public Guid UserId { get; init; }
+        public UserId UserId { get; init; }
     }
 }

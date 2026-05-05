@@ -148,7 +148,7 @@ public sealed class ExpenseClient(HttpClient httpClient, ILogger<ExpenseClient> 
 
 public sealed record ExpenseSummaryDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ExpenseNumber,
     string Status,
     string PayeeKind,
@@ -166,7 +166,7 @@ public sealed record ExpenseSummaryDto(
 
 public sealed record ExpenseRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ExpenseNumber,
     string Status,
     string PayeeKind,

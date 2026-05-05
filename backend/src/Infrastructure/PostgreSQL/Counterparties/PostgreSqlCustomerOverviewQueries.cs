@@ -19,7 +19,7 @@ namespace Infrastructure.PostgreSQL.Counterparties;
 public sealed class PostgreSqlCustomerOverviewQueries(PostgreSqlConnectionFactory connections) : ICustomerOverviewQueries
 {
     public async Task<CustomerFinancialSummary> GetFinancialSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ public sealed class PostgreSqlCustomerOverviewQueries(PostgreSqlConnectionFactor
     }
 
     public async Task<IReadOnlyList<CustomerTransactionRow>> ListTransactionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CustomerTransactionFilter filter,
         CancellationToken cancellationToken)

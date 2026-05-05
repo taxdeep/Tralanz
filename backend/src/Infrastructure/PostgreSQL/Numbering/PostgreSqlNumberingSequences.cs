@@ -7,7 +7,7 @@ internal static class PostgreSqlNumberingSequences
     public static async Task<string> PeekAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -61,7 +61,7 @@ internal static class PostgreSqlNumberingSequences
     public static async Task<string> ReserveAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -117,7 +117,7 @@ internal static class PostgreSqlNumberingSequences
     private static async Task EnsureSeededAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,

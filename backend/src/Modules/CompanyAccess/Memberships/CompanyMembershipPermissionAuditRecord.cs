@@ -4,7 +4,7 @@ public sealed record class CompanyMembershipPermissionAuditRecord
 {
     public Guid AuditId { get; init; }
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public Guid MembershipId { get; init; }
 

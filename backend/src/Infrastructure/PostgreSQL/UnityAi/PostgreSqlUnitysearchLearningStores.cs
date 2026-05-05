@@ -45,7 +45,7 @@ public sealed class PostgreSqlUnitysearchEventStore(PostgreSqlConnectionFactory 
 public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFactory connections) : IUnitysearchUsageStatStore
 {
     public async Task UpsertOnSelectAsync(
-        Guid companyId, Guid? userId, string context, string entityType, Guid entityId,
+        CompanyId companyId, UserId? userId, string context, string entityType, Guid entityId,
         int? rankPosition, string? query, DateTimeOffset selectedAt, CancellationToken cancellationToken)
     {
         // Upsert two rows: company-scope and (when user provided) user-scope.
@@ -60,7 +60,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
 
     private static async Task UpsertOneAsync(
         NpgsqlConnection connection,
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string context, string entityType, Guid entityId,
         int? rankPosition, string? query, DateTimeOffset selectedAt,
         CancellationToken cancellationToken)
@@ -100,7 +100,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
     }
 
     public async Task<IReadOnlyDictionary<Guid, UnitysearchUsageStatRecord>> GetForCandidatesAsync(
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string context, string entityType,
         IReadOnlyCollection<Guid> entityIds,
         CancellationToken cancellationToken)
@@ -157,7 +157,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
     }
 
     public async Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -212,7 +212,7 @@ public sealed class PostgreSqlUnitysearchUsageStatStore(PostgreSqlConnectionFact
 public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFactory connections) : IUnitysearchPairStatStore
 {
     public async Task UpsertOnSelectAsync(
-        Guid companyId, Guid? userId,
+        CompanyId companyId, UserId? userId,
         string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType, Guid targetEntityId,
         DateTimeOffset selectedAt, CancellationToken cancellationToken)
@@ -228,7 +228,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
 
     private static async Task UpsertOneAsync(
         NpgsqlConnection connection,
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType, Guid targetEntityId,
         DateTimeOffset selectedAt, CancellationToken cancellationToken)
@@ -266,7 +266,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
     }
 
     public async Task<IReadOnlyList<UnitysearchPairStatRecord>> GetForAnchorAsync(
-        Guid companyId, Guid? userId, string scopeType,
+        CompanyId companyId, UserId? userId, string scopeType,
         string sourceContext, string anchorEntityType, Guid anchorEntityId,
         string targetContext, string targetEntityType,
         CancellationToken cancellationToken)
@@ -325,7 +325,7 @@ public sealed class PostgreSqlUnitysearchPairStatStore(PostgreSqlConnectionFacto
 public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFactory connections) : IUnitysearchRecentQueryStore
 {
     public async Task RecordAsync(
-        Guid companyId, Guid? userId, string context, string query, string normalizedQuery,
+        CompanyId companyId, UserId? userId, string context, string query, string normalizedQuery,
         bool resultClicked, string? clickedEntityType, Guid? clickedEntityId, int? resultCount,
         DateTimeOffset createdAt, CancellationToken cancellationToken)
     {
@@ -356,7 +356,7 @@ public sealed class PostgreSqlUnitysearchRecentQueryStore(PostgreSqlConnectionFa
 public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFactory connections) : IUnitysearchRankingHintStore
 {
     public async Task<IReadOnlyList<UnitysearchRankingHintRecord>> GetActiveAsync(
-        Guid companyId, Guid? userId, string context, string entityType,
+        CompanyId companyId, UserId? userId, string context, string entityType,
         IReadOnlyCollection<Guid>? entityIds, CancellationToken cancellationToken)
     {
         var items = new List<UnitysearchRankingHintRecord>();
@@ -448,7 +448,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
 public sealed class PostgreSqlUnitysearchDecisionTraceStore(PostgreSqlConnectionFactory connections) : IUnitysearchDecisionTraceStore
 {
     public async Task<Guid> WriteAsync(
-        Guid companyId, Guid? userId, string context, string entityType,
+        CompanyId companyId, UserId? userId, string context, string entityType,
         string? query, string? normalizedQuery, int? returnedCount, string traceJson,
         CancellationToken cancellationToken)
     {

@@ -5,7 +5,7 @@ namespace Tests.Infrastructure;
 
 public sealed class FxRateResolverTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
 
     [Fact]
     public async Task ResolveAsync_ReturnsIdentity_WhenBaseMatchesQuote()
@@ -124,7 +124,7 @@ public sealed class FxRateResolverTests
         public FxSnapshotRecord? PromotedSnapshot { get; private set; }
 
         public Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -137,7 +137,7 @@ public sealed class FxRateResolverTests
             => Task.FromResult(CompanySnapshot);
 
         public Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -166,7 +166,7 @@ public sealed class FxRateResolverTests
             Task.FromResult<IReadOnlyList<FxMarketRateRecord>>(MarketRate is null ? StoredMarketRates : [MarketRate]);
 
         public Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid snapshotId,
             CancellationToken cancellationToken) =>
             Task.FromResult(CompanySnapshot is not null && CompanySnapshot.Id == snapshotId ? CompanySnapshot : PromotedSnapshot);
@@ -185,8 +185,8 @@ public sealed class FxRateResolverTests
         }
 
         public Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -220,8 +220,8 @@ public sealed class FxRateResolverTests
         }
 
         public Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,

@@ -12,10 +12,10 @@ public sealed class InventoryTransferWorkflow
     }
 
     public Task<InventoryTransferDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -29,12 +29,12 @@ public sealed class InventoryTransferWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }
@@ -87,12 +87,12 @@ public sealed class InventoryTransferWorkflow
     }
 
     public Task<InventoryTransferSummary> SubmitAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -102,7 +102,7 @@ public sealed class InventoryTransferWorkflow
             throw new ArgumentException("Transfer id is required.", nameof(transferId));
         }
 
-        if (userId == Guid.Empty)
+        if (userId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(userId));
         }
@@ -111,13 +111,13 @@ public sealed class InventoryTransferWorkflow
     }
 
     public Task<InventoryTransferSummary> ShipAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -127,7 +127,7 @@ public sealed class InventoryTransferWorkflow
             throw new ArgumentException("Transfer id is required.", nameof(transferId));
         }
 
-        if (userId == Guid.Empty)
+        if (userId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(userId));
         }
@@ -136,13 +136,13 @@ public sealed class InventoryTransferWorkflow
     }
 
     public Task<InventoryTransferSummary> ReceiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -152,7 +152,7 @@ public sealed class InventoryTransferWorkflow
             throw new ArgumentException("Transfer id is required.", nameof(transferId));
         }
 
-        if (userId == Guid.Empty)
+        if (userId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(userId));
         }

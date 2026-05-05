@@ -289,7 +289,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -299,14 +299,14 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "vendor-credit-display",
                 "VC-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "vendor_credits",
                     "vendor_credit_number",
                     "^VC-[0-9]+$",
@@ -374,7 +374,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
         }
         else
         {
-            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -417,7 +417,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
                 where company_id = @company_id
                   and vendor_credit_id = @document_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             deleteCommand.Parameters.AddWithValue("document_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -458,7 +458,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             insertLineCommand.Parameters.AddWithValue("vendor_credit_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("expense_account_id", line.ExpenseAccountId);
@@ -517,12 +517,12 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
         var totalAmount = Round6(subtotalAmount + taxAmount);
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("vendor_credit_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);
@@ -570,7 +570,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

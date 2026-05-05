@@ -5,7 +5,7 @@ namespace Tests.Infrastructure;
 
 public sealed class FxRateSelectionServiceTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
 
     [Fact]
     public async Task LoadAsync_ReturnsLocalSnapshotsAndMarketRates()
@@ -56,7 +56,7 @@ public sealed class FxRateSelectionServiceTests
         var service = new FxRateSelectionService(store);
 
         var resolution = await service.PersistManualSnapshotAsync(
-            new FxRateSelectionRequest(CompanyId, Guid.NewGuid(), "USD", "CAD", new DateOnly(2026, 4, 13), "ECB", 7, FxRateType.Spot, FxQuoteBasis.Direct, FxRateUseCase.General, FxPostingReason.Normal),
+            new FxRateSelectionRequest(CompanyId, UserId.FromOrdinal(1), "USD", "CAD", new DateOnly(2026, 4, 13), "ECB", 7, FxRateType.Spot, FxQuoteBasis.Direct, FxRateUseCase.General, FxPostingReason.Normal),
             1.3999m,
             CancellationToken.None);
 
@@ -77,7 +77,7 @@ public sealed class FxRateSelectionServiceTests
         }
 
         public Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -95,7 +95,7 @@ public sealed class FxRateSelectionServiceTests
             Task.FromResult<IReadOnlyList<FxMarketRateRecord>>(_marketRate is null ? [] : [_marketRate]);
 
         public Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid snapshotId,
             CancellationToken cancellationToken) =>
             Task.FromResult(_snapshot is not null && _snapshot.Id == snapshotId ? _snapshot : null);
@@ -106,7 +106,7 @@ public sealed class FxRateSelectionServiceTests
             Task.FromResult(_marketRate is not null && _marketRate.Id == marketRateId ? _marketRate : null);
 
         public Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -135,8 +135,8 @@ public sealed class FxRateSelectionServiceTests
             Task.FromResult(marketRates);
 
         public Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -166,8 +166,8 @@ public sealed class FxRateSelectionServiceTests
                 DateTimeOffset.UtcNow));
 
         public Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,

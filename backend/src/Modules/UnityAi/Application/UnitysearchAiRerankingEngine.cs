@@ -73,15 +73,15 @@ public sealed class UnitysearchAiRerankingEngine : IUnitySearchEngine
     }
 
     public Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(
-        Guid companyId, Guid userId, string context, int take, CancellationToken cancellationToken)
+        CompanyId companyId, UserId userId, string context, int take, CancellationToken cancellationToken)
         => _inner.ListRecentQueriesAsync(companyId, userId, context, take, cancellationToken);
 
     public Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
-        Guid companyId, Guid userId, string context, int take, CancellationToken cancellationToken)
+        CompanyId companyId, UserId userId, string context, int take, CancellationToken cancellationToken)
         => _inner.ListRecentSelectionsAsync(companyId, userId, context, take, cancellationToken);
 
     public Task RecordClickAsync(
-        Guid companyId, Guid userId, string context, string entityType, Guid sourceId, CancellationToken cancellationToken)
+        CompanyId companyId, UserId userId, string context, string entityType, Guid sourceId, CancellationToken cancellationToken)
         => _inner.RecordClickAsync(companyId, userId, context, entityType, sourceId, cancellationToken);
 
     private async Task<IReadOnlyList<UnitySearchSuggestion>?> TryRerankGroupAsync(

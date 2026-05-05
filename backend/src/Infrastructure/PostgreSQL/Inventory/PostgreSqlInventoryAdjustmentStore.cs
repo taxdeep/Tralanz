@@ -20,7 +20,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     }
 
     public async Task<InventoryAdjustmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var summary = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -513,7 +513,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -538,7 +538,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -578,7 +578,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -618,7 +618,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<Dictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {
@@ -663,7 +663,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             var item = new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -704,7 +704,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -732,7 +732,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -748,7 +748,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<InventoryManagedWarehouseSummary?> LoadWarehouseAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid warehouseId,
         CancellationToken cancellationToken)
     {
@@ -780,7 +780,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
         return new InventoryManagedWarehouseSummary(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("warehouse_code")),
             reader.GetString(reader.GetOrdinal("name")),
             reader.IsDBNull(reader.GetOrdinal("description"))
@@ -793,7 +793,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<InventoryAdjustmentSummary>> LoadRecentAdjustmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -851,7 +851,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         {
             results.Add(new InventoryAdjustmentSummary(
                 reader.GetGuid(reader.GetOrdinal("document_id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 ParseAdjustmentKind(reader.GetString(reader.GetOrdinal("document_type"))),
@@ -880,7 +880,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<InventoryAdjustmentSummary?> LoadAdjustmentSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -941,7 +941,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
         return new InventoryAdjustmentSummary(
             reader.GetGuid(reader.GetOrdinal("document_id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("document_number")),
             reader.GetString(reader.GetOrdinal("status")),
             ParseAdjustmentKind(reader.GetString(reader.GetOrdinal("document_type"))),
@@ -967,7 +967,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<AdjustmentDocumentSnapshot?> LoadAdjustmentDocumentForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -1000,7 +1000,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
         return new AdjustmentDocumentSnapshot(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("document_number")),
             ParseAdjustmentKind(reader.GetString(reader.GetOrdinal("document_type"))),
             reader.GetString(reader.GetOrdinal("status")),
@@ -1016,7 +1016,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<PendingWriteOffLine>> LoadPendingWriteOffLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -1066,7 +1066,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<ItemWarehouseBalanceSnapshot> LoadCurrentBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1101,7 +1101,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<decimal> LoadCurrentCostBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1127,7 +1127,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task<IReadOnlyList<OpenCostLayer>> LoadOpenCostLayersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1173,7 +1173,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task InsertDocumentLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid lineDocumentId,
         Guid documentId,
         InventoryAdjustmentLineInput line,
@@ -1240,7 +1240,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid ledgerEntryId,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         Guid documentId,
@@ -1286,7 +1286,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task InsertCostLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         Guid sourceLedgerEntryId,
@@ -1326,7 +1326,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task AdjustOnHandAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         decimal quantityDelta,
@@ -1378,7 +1378,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
     private static async Task InsertLayerConsumptionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid issueLedgerEntryId,
         IssueLayerConsumption consumption,
         DateTimeOffset createdAt,
@@ -1664,7 +1664,7 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
 
     private sealed record AdjustmentDocumentSnapshot(
         Guid DocumentId,
-        Guid CompanyId,
+        CompanyId CompanyId,
         string DocumentNumber,
         InventoryAdjustmentKind AdjustmentKind,
         string StoredStatus,

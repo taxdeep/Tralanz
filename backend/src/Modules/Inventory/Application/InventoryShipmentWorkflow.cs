@@ -12,10 +12,10 @@ public sealed class InventoryShipmentWorkflow
     }
 
     public Task<InventoryShipmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -24,11 +24,11 @@ public sealed class InventoryShipmentWorkflow
     }
 
     public Task<InventoryShipmentSummary?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -42,11 +42,11 @@ public sealed class InventoryShipmentWorkflow
     }
 
     public Task<InventoryInvoiceShipmentHandoffSummary> GetInvoiceHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -60,11 +60,11 @@ public sealed class InventoryShipmentWorkflow
     }
 
     public Task<InventoryInvoiceShipmentIssueLaneSummary> GetInvoiceLaneSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -83,12 +83,12 @@ public sealed class InventoryShipmentWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }

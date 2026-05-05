@@ -300,7 +300,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -311,14 +311,14 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
             receiptNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "sales-receipt-display",
                 "SR-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "sales_receipts",
                     "receipt_number",
                     "^SR-[0-9]+$",
@@ -401,7 +401,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
         else
         {
             (entityNumber, receiptNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             var subtotal = Round6(draft.Lines.Sum(l => l.Quantity * l.UnitPrice));
             var taxTotal = Round6(draft.Lines.Sum(l => l.TaxAmount));
@@ -452,7 +452,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                 where company_id = @company_id
                   and sales_receipt_id = @sales_receipt_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             deleteCommand.Parameters.AddWithValue("sales_receipt_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -495,7 +495,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             insertLineCommand.Parameters.AddWithValue("sales_receipt_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("revenue_account_id", line.RevenueAccountId);
@@ -585,11 +585,11 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("receipt_number", receiptNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         command.Parameters.AddWithValue("customer_id", draft.CustomerId);
         command.Parameters.AddWithValue("receipt_date", draft.ReceiptDate);
         command.Parameters.AddWithValue("document_currency_code", draft.TransactionCurrencyCode.Trim().ToUpperInvariant());
@@ -615,7 +615,7 @@ public sealed class PostgresSalesReceiptDocumentRepository : ISalesReceiptDocume
     private static async Task<(string EntityNumber, string ReceiptNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

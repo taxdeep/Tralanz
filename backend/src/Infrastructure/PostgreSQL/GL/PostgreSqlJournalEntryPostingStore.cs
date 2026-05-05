@@ -20,7 +20,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
 
     public async Task<JournalEntryPostResult> PostAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
@@ -306,7 +306,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private async Task<string> ReserveJournalDisplayNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var nextDisplayNumber = await _journalEntryNumberLookup.GetNextDisplayNumberAsync(companyId, cancellationToken);
@@ -326,7 +326,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private static async Task EnsurePostingPeriodOpenAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
@@ -391,7 +391,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private static async Task<LockedManualJournalSource> LockManualJournalSourceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {
@@ -422,7 +422,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
     private static async Task<JournalEntryPostResult?> TryFindExistingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         string sourceDisplayNumber,
         CancellationToken cancellationToken)

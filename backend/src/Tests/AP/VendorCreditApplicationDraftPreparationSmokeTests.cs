@@ -9,7 +9,7 @@ namespace Tests.AP;
 
 public sealed class VendorCreditApplicationDraftPreparationSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             companyStore);
 
         Guid documentId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid sourceOpenItemId = Guid.Empty;
         Guid targetOpenItemId = Guid.Empty;
         var createdUser = false;
@@ -101,7 +101,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
 
     private static async Task<Guid> CreateApOpenItemAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string sourceType,
         string balanceSide,
@@ -172,7 +172,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
         return openItemId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -186,7 +186,7 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
             limit 1;
             """;
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is UserId userId)
         {
             return (userId, false);
         }
@@ -281,11 +281,11 @@ public sealed class VendorCreditApplicationDraftPreparationSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool createdUser,
         CancellationToken cancellationToken)
     {
-        if (!createdUser || userId == Guid.Empty)
+        if (!createdUser || userId.Value is null)
         {
             return;
         }

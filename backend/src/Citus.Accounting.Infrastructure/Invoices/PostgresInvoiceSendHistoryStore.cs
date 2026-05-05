@@ -86,7 +86,7 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
     }
 
     public async Task<IReadOnlyList<InvoiceSendHistoryRecord>> ListByInvoiceAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceId,
         int limit,
         CancellationToken cancellationToken)

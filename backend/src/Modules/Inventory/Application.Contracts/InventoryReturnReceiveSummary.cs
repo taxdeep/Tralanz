@@ -2,7 +2,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryReturnReceiveSummary(
     Guid DocumentId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string DocumentNumber,
     string Status,
     DateOnly PostingDate,

@@ -38,7 +38,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
 
         // Verify the item exists, is drop-ship, and capture display + per-
         // item clearing override.
-        var item = await ReadItemAsync(scope, companyId.Value, itemId, cancellationToken);
+        var item = await ReadItemAsync(scope, companyId, itemId, cancellationToken);
         if (item is null)
         {
             throw new InvalidOperationException(
@@ -51,7 +51,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
         }
 
         // Re-read live residual and compare against operator's expectation.
-        var liveNet = await ReadLiveNetClearingAsync(scope, companyId.Value, itemId, cancellationToken);
+        var liveNet = await ReadLiveNetClearingAsync(scope, companyId, itemId, cancellationToken);
         if (liveNet == 0m)
         {
             throw new InvalidOperationException(
@@ -73,7 +73,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
         if (clearingAccountId is null || clearingAccountId.Value == Guid.Empty)
         {
             clearingAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
-                scope, companyId.Value, cancellationToken, "drop_ship_clearing");
+                scope, companyId, cancellationToken, "drop_ship_clearing");
         }
         if (clearingAccountId is null || clearingAccountId.Value == Guid.Empty)
         {
@@ -83,7 +83,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
         }
 
         var varianceAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
-            scope, companyId.Value, cancellationToken, "purchase_price_variance");
+            scope, companyId, cancellationToken, "purchase_price_variance");
         if (varianceAccountId is null || varianceAccountId.Value == Guid.Empty)
         {
             throw new InvalidOperationException(
@@ -91,7 +91,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
                 "via the activation wizard before writing off drop-ship clearing residuals.");
         }
 
-        var baseCurrency = await ReadBaseCurrencyAsync(scope, companyId.Value, cancellationToken);
+        var baseCurrency = await ReadBaseCurrencyAsync(scope, companyId, cancellationToken);
         var documentDate = DateOnly.FromDateTime(DateTime.UtcNow);
         var docId = Guid.NewGuid();
         var idShort = docId.ToString("N")[..12].ToUpperInvariant();
@@ -115,7 +115,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
 
     private static async Task<ItemRow?> ReadItemAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         CancellationToken cancellationToken)
     {
@@ -142,7 +142,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
 
     private static async Task<decimal> ReadLiveNetClearingAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         CancellationToken cancellationToken)
     {
@@ -178,7 +178,7 @@ public sealed class PostgresDropShipClearingWriteOffRepository : IDropShipCleari
 
     private static async Task<string> ReadBaseCurrencyAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(

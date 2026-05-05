@@ -212,7 +212,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         // routing automatically and the rule lives in one place. Iter 4
         // builds the matching workbench that reconciles these debits
         // against invoice-side credits.
-        lines = await ApplyDropShipClearingOverrideAsync(scope, companyId.Value, lines, cancellationToken);
+        lines = await ApplyDropShipClearingOverrideAsync(scope, companyId, lines, cancellationToken);
 
         var transactionCurrency = new CurrencyCode(documentCurrencyCode);
         var baseCurrency = new CurrencyCode(baseCurrencyCode);
@@ -269,7 +269,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         await ValidatePurchaseOrderBillDraftAnchorsAsync(
             connection,
             transaction,
-            draft.CompanyId.Value,
+            draft.CompanyId,
             draft.VendorId,
             documentId,
             draft.Lines
@@ -294,7 +294,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -304,14 +304,14 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "bill-display",
                 "BILL-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "bills",
                     "bill_number",
                     "^BILL-[0-9]+$",
@@ -379,7 +379,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         }
         else
         {
-            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+            (entityNumber, displayNumber) = await LoadIdentityAsync(connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -422,7 +422,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 where company_id = @company_id
                   and bill_id = @document_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             deleteCommand.Parameters.AddWithValue("document_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -477,7 +477,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             insertLineCommand.Parameters.AddWithValue("bill_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("expense_account_id", line.ExpenseAccountId);
@@ -513,7 +513,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         var (entityNumber, displayNumber) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -554,7 +554,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         var (entityNumber, displayNumber) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -585,7 +585,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
 
     private static async Task<List<BillDocumentLine>> ApplyDropShipClearingOverrideAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         List<BillDocumentLine> lines,
         CancellationToken cancellationToken)
     {
@@ -782,12 +782,12 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
         var totalAmount = Round6(subtotalAmount + taxAmount);
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("bill_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);
@@ -835,7 +835,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
     private static async Task ValidatePurchaseOrderBillDraftAnchorsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billVendorId,
         Guid billDocumentId,
         IReadOnlyCollection<PurchaseOrderBillAnchorCandidate> candidates,
@@ -961,7 +961,7 @@ public sealed class PostgresBillDocumentRepository : IBillDocumentRepository
     private static async Task<(string EntityNumber, string DisplayNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

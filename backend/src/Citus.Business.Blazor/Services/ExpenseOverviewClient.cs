@@ -14,7 +14,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class ExpenseOverviewClient(HttpClient httpClient, ILogger<ExpenseOverviewClient> logger)
 {
     public async Task<ExpenseCashOutflowSummary?> GetCashOutflowAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken = default)
     {
@@ -42,7 +42,7 @@ public sealed class ExpenseOverviewClient(HttpClient httpClient, ILogger<Expense
     }
 
     public async Task<ExpenseOverTimeSummary?> GetExpenseOverTimeAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly fromDate,
         DateOnly toDate,
         bool compareToPreviousYear,

@@ -99,7 +99,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<IReadOnlyList<SalesOrderSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         SalesOrderListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -153,7 +153,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<SalesOrderRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken)
     {
@@ -179,7 +179,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<SalesOrderRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         SalesOrderUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -231,7 +231,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<SalesOrderRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         SalesOrderUpsertInput input,
         CancellationToken cancellationToken)
@@ -314,7 +314,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<SalesOrderRecord?> MarkInvoicedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         string invoiceNumber,
         CancellationToken cancellationToken)
@@ -340,7 +340,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<SalesOrderRecord?> ConfirmAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken)
     {
@@ -572,7 +572,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
         decimal Backorder);
 
     public async Task<SalesOrderCancelResult?> CancelAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         CancellationToken cancellationToken)
     {
@@ -748,7 +748,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
     }
 
     public async Task<SalesOrderRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid salesOrderId,
         string newStatus,
         CancellationToken cancellationToken)
@@ -882,7 +882,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
 
     private static void BindUpsertParameters(
         NpgsqlCommand command,
-        Guid companyId,
+        CompanyId companyId,
         SalesOrderUpsertInput input,
         decimal subtotal,
         decimal discount,
@@ -973,7 +973,7 @@ public sealed class PostgreSqlSalesOrderStore(PostgreSqlConnectionFactory connec
 
     private static SalesOrderRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<SalesOrderLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         SalesOrderNumber: reader.GetString(reader.GetOrdinal("sales_order_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),
         CustomerId: reader.GetGuid(reader.GetOrdinal("customer_id")),

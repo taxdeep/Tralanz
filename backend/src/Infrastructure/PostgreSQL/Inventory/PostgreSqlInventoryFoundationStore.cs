@@ -16,7 +16,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<InventoryFoundationSummary> GetSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -42,7 +42,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<InventoryFoundationDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -337,7 +337,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task SetItemActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -366,7 +366,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<IReadOnlyList<InventoryItemListRow>> ListItemsAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -418,7 +418,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             rows.Add(new InventoryItemListRow(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -553,7 +553,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task SetWarehouseActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid warehouseId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -582,7 +582,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     }
 
     public async Task<IReadOnlyList<InventoryWarehouseListRow>> ListWarehousesAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -617,7 +617,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             rows.Add(new InventoryWarehouseListRow(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -1122,7 +1122,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task EnsureCompanyExistsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1181,7 +1181,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<InventoryFoundationSummary> LoadSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var policy = await LoadPolicyAsync(connection, transaction, companyId, cancellationToken);
@@ -1206,7 +1206,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1262,7 +1262,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1302,7 +1302,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<InventoryFoundationAccountCatalog> LoadAccountOptionsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1357,7 +1357,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1387,7 +1387,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1403,7 +1403,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
     private static async Task<InventoryCostingPolicyRecord?> LoadPolicyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1435,11 +1435,11 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             ParseCostingMethod(reader.GetString(reader.GetOrdinal("default_costing_method"))),
             reader.GetBoolean(reader.GetOrdinal("negative_stock_allowed")),
             reader.GetBoolean(reader.GetOrdinal("require_writeoff_approval")),
-            reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             reader.IsDBNull(reader.GetOrdinal("updated_by_user_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("updated_by_user_id")),
+                : UserId.Parse(reader.GetString(reader.GetOrdinal("updated_by_user_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("effective_updated_at")));
     }
 
@@ -1447,7 +1447,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         string tableName,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken,
         string extraPredicate = "")
     {

@@ -25,7 +25,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -33,7 +33,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.PaymentLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "receive_payment",
@@ -63,7 +63,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -71,7 +71,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.PaymentLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "pay_bill",
@@ -101,7 +101,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -109,7 +109,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.ApplicationLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "credit_application",
@@ -127,7 +127,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 cancellationToken: cancellationToken);
 
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "credit_application",
@@ -153,7 +153,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (await HasExistingApplicationsAsync(document.CompanyId.Value, document.SourceType, document.Id, cancellationToken))
+        if (await HasExistingApplicationsAsync(document.CompanyId, document.SourceType, document.Id, cancellationToken))
         {
             return;
         }
@@ -161,7 +161,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         foreach (var line in document.ApplicationLines)
         {
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "vendor_credit_application",
@@ -179,7 +179,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
                 cancellationToken: cancellationToken);
 
             await ApplySingleAsync(
-                companyId: document.CompanyId.Value,
+                companyId: document.CompanyId,
                 sourceType: document.SourceType,
                 sourceId: document.Id,
                 applicationType: "vendor_credit_application",
@@ -284,7 +284,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     }
 
     private async Task<bool> HasExistingApplicationsAsync(
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         CancellationToken cancellationToken)
@@ -313,7 +313,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
     }
 
     private async Task ApplySingleAsync(
-        Guid companyId,
+        CompanyId companyId,
         string sourceType,
         Guid sourceId,
         string applicationType,
@@ -327,7 +327,7 @@ public sealed class PostgresSettlementApplicationRepository : ISettlementApplica
         decimal? settlementFxRate,
         decimal? realizedFxAmount,
         Guid partyId,
-        Guid createdByUserId,
+        UserId createdByUserId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(

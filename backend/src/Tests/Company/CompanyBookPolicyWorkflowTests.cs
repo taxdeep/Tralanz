@@ -5,7 +5,7 @@ namespace Tests.Company;
 
 public sealed class CompanyBookPolicyWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("6ec42a06-eabf-47bc-8e56-8b2ee0f9a4b2");
+    private static readonly CompanyId CompanyId = Guid.Parse("6ec42a06-eabf-47bc-8e56-8b2ee0f9a4b2");
 
     [Fact]
     public async Task EnsureDefaultPrimaryBookPolicyAsync_SeedsGovernedDefaultsWhenMissing()
@@ -630,13 +630,13 @@ public sealed class CompanyBookPolicyWorkflowTests
         }
 
         public Task<IReadOnlyList<CompanyBookGovernanceState>> ListBookGovernanceAsync(
-            Guid companyId,
+            CompanyId companyId,
             DateOnly asOfDate,
             CancellationToken cancellationToken) =>
             Task.FromResult(_bookGovernance);
 
         public Task<CompanyBookGovernanceSignalSummary> GetGovernanceSignalsAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid bookId,
             DateOnly asOfDate,
             CancellationToken cancellationToken) =>
@@ -645,19 +645,19 @@ public sealed class CompanyBookPolicyWorkflowTests
                 new CompanyBookGovernanceSignalSummary(false, false, false, []));
 
         public Task<CompanyBookGovernedChangeRequestDraft?> GetGovernedChangeRequestDraftAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid requestId,
             CancellationToken cancellationToken) =>
             Task.FromResult(_drafts.FirstOrDefault(d => d.CompanyId == companyId && d.RequestId == requestId));
 
         public Task<CompanyBookGovernanceSignalRecord> CreateGovernanceSignalAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid bookId,
             string signalType,
             DateOnly signalDate,
             string? referenceLabel,
             string? notes,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken)
         {
             var index = _bookGovernance.ToList().FindIndex(state => state.Book.CompanyId == companyId && state.Book.BookId == bookId);
@@ -712,7 +712,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             CompanyBookGovernedChangePreview preview,
             DateOnly asOfDate,
             DateOnly effectiveFrom,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken)
         {
             var draft = new CompanyBookGovernedChangeRequestDraft(
@@ -736,14 +736,14 @@ public sealed class CompanyBookPolicyWorkflowTests
         }
 
         public Task<IReadOnlyList<CompanyBookGovernedChangeRequestDraft>> ListGovernedChangeRequestDraftsAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<CompanyBookGovernedChangeRequestDraft>>(_drafts.Where(d => d.CompanyId == companyId).ToArray());
 
         public Task<CompanyBookGovernedChangeRequestDraft> SubmitGovernedChangeRequestDraftAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid requestId,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken)
         {
             var index = _drafts.FindIndex(d => d.CompanyId == companyId && d.RequestId == requestId);
@@ -759,9 +759,9 @@ public sealed class CompanyBookPolicyWorkflowTests
         }
 
         public Task<CompanyBookGovernedChangeRequestDraft> CancelGovernedChangeRequestDraftAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid requestId,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken)
         {
             var index = _drafts.FindIndex(d => d.CompanyId == companyId && d.RequestId == requestId);
@@ -777,21 +777,21 @@ public sealed class CompanyBookPolicyWorkflowTests
         }
 
         public Task<CompanyBookPolicyGovernanceResult?> TryGetDefaultRemeasurementPolicyAsync(
-            Guid companyId,
+            CompanyId companyId,
             DateOnly asOfDate,
             CancellationToken cancellationToken) =>
             Task.FromResult(_current);
 
         public Task<CompanyBookPolicyGovernanceResult?> TryGetRemeasurementPolicyAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid bookId,
             DateOnly asOfDate,
             CancellationToken cancellationToken) =>
             Task.FromResult(_current);
 
         public Task<CompanyBookPolicyGovernanceResult> EnsureDefaultPrimaryBookPolicyAsync(
-            Guid companyId,
-            Guid userId,
+            CompanyId companyId,
+            UserId userId,
             DateOnly asOfDate,
             CancellationToken cancellationToken)
         {

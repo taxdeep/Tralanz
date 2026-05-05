@@ -4,7 +4,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryManagedItemSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ItemCode,
     string Name,
     string? Description,

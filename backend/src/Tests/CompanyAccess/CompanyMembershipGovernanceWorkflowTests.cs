@@ -4,7 +4,7 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipGovernanceWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.NewGuid();
+    private static readonly CompanyId CompanyId = Guid.NewGuid();
     private static readonly Guid MembershipId = Guid.NewGuid();
     private static readonly Guid AccountId = Guid.NewGuid();
     private static readonly Guid SysAdminAccountId = Guid.NewGuid();
@@ -89,7 +89,7 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
         public Guid? SavedSysAdminAccountId { get; private set; }
 
         public Task<CompanyMembershipRoleChangeResult?> ChangeRoleFromSysAdminAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid membershipId,
             string role,
             string reason,

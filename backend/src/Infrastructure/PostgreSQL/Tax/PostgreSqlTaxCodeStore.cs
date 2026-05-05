@@ -59,7 +59,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<IReadOnlyList<TaxCodeRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -80,7 +80,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         CancellationToken cancellationToken)
     {
@@ -95,7 +95,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         TaxCodeUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -136,7 +136,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         TaxCodeUpsertInput input,
         CancellationToken cancellationToken)
@@ -174,7 +174,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<TaxCodeRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taxCodeId,
         bool isActive,
         CancellationToken cancellationToken)

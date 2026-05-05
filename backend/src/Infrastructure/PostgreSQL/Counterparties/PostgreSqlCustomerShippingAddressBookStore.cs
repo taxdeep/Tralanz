@@ -49,7 +49,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     }
 
     public async Task<IReadOnlyList<CustomerShippingAddressBookEntry>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     }
 
     public async Task<CustomerShippingAddressBookEntry?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CancellationToken cancellationToken)
@@ -107,7 +107,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     }
 
     public async Task<CustomerShippingAddressBookEntry> InsertAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CustomerShippingAddressBookUpsertRequest request,
         CancellationToken cancellationToken)
@@ -156,7 +156,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     }
 
     public async Task<CustomerShippingAddressBookEntry?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CustomerShippingAddressBookUpsertRequest request,
@@ -206,7 +206,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     }
 
     public async Task<bool> DeleteAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CancellationToken cancellationToken)
@@ -230,7 +230,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     }
 
     public async Task<CustomerShippingAddressBookEntry?> SetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CancellationToken cancellationToken)
@@ -273,7 +273,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
     private static async Task ClearExistingDefaultAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid? excludeId,
         CancellationToken cancellationToken)
@@ -297,7 +297,7 @@ public sealed class PostgreSqlCustomerShippingAddressBookStore(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static void BindUpsert(NpgsqlCommand command, Guid companyId, Guid customerId, CustomerShippingAddressBookUpsertRequest request)
+    private static void BindUpsert(NpgsqlCommand command, CompanyId companyId, Guid customerId, CustomerShippingAddressBookUpsertRequest request)
     {
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("customer_id", customerId);

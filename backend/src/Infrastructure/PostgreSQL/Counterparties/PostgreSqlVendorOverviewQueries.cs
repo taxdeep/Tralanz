@@ -19,7 +19,7 @@ namespace Infrastructure.PostgreSQL.Counterparties;
 public sealed class PostgreSqlVendorOverviewQueries(PostgreSqlConnectionFactory connections) : IVendorOverviewQueries
 {
     public async Task<VendorFinancialSummary> GetFinancialSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -74,7 +74,7 @@ public sealed class PostgreSqlVendorOverviewQueries(PostgreSqlConnectionFactory 
     }
 
     public async Task<IReadOnlyList<VendorTransactionRow>> ListTransactionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         VendorTransactionFilter filter,
         CancellationToken cancellationToken)

@@ -7,7 +7,7 @@ internal static class PostgresSourceDocumentDraftNumbering
     public static async Task<string> ReserveAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,
@@ -184,7 +184,7 @@ internal static class PostgresSourceDocumentDraftNumbering
     public static async Task<long> FindDisplaySeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string tableName,
         string displayColumn,
         string prefixPattern,
@@ -217,7 +217,7 @@ internal static class PostgresSourceDocumentDraftNumbering
     private static async Task EnsureSeededAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string scopeKey,
         string prefix,
         short padding,

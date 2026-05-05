@@ -262,7 +262,7 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -273,14 +273,14 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
             returnNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "tax-return-display",
                 "TR-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     "tax_returns",
                     "return_number",
                     "^TR-[0-9]+$",
@@ -345,7 +345,7 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
         else
         {
             (entityNumber, returnNumber) = await LoadIdentityAsync(
-                connection, transaction, draft.CompanyId.Value, documentId, cancellationToken);
+                connection, transaction, draft.CompanyId, documentId, cancellationToken);
 
             await using var updateCommand = connection.CreateCommand();
             updateCommand.Transaction = transaction;
@@ -420,11 +420,11 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("return_number", returnNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         command.Parameters.AddWithValue("tax_regime", draft.TaxRegime.Trim());
         command.Parameters.AddWithValue("filing_frequency", draft.FilingFrequency.Trim().ToLowerInvariant());
         command.Parameters.AddWithValue("period_start", draft.PeriodStart);
@@ -442,7 +442,7 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
     private static async Task<(string EntityNumber, string ReturnNumber)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {

@@ -4,7 +4,7 @@ internal static class PostgresControlAccountLookup
 {
     public static async Task<Guid?> TryResolveAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string controlRoleBase,
         string transactionCurrencyCode,
         string baseCurrencyCode,

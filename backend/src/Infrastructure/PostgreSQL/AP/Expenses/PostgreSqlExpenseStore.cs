@@ -93,7 +93,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<IReadOnlyList<ExpenseSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         ExpenseListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -151,7 +151,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<ExpenseRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid expenseId,
         CancellationToken cancellationToken)
     {
@@ -176,8 +176,8 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<ExpenseRecord> CreateAsync(
-        Guid companyId,
-        Guid createdByUserId,
+        CompanyId companyId,
+        UserId createdByUserId,
         ExpenseUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -273,7 +273,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<ExpenseRecord?> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid expenseId,
         CancellationToken cancellationToken)
     {
@@ -405,7 +405,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
     private static async Task<string> ReadBaseCurrencyAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -422,7 +422,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
     private static async Task<(string CurrencyCode, string? DetailType)> ReadPaymentAccountAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         CancellationToken cancellationToken)
     {
@@ -491,7 +491,7 @@ public sealed class PostgreSqlExpenseStore(PostgreSqlConnectionFactory connectio
 
     private static ExpenseRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<ExpenseLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         ExpenseNumber: reader.GetString(reader.GetOrdinal("expense_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),
         PayeeKind: reader.GetString(reader.GetOrdinal("payee_kind")),

@@ -20,7 +20,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     }
 
     public async Task<InventoryReturnReceiveDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -38,7 +38,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     }
 
     public async Task<InventoryReturnReceiveHandoffSummary> GetShipmentHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -245,7 +245,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<InventoryReturnReceiveHandoffSummary> LoadShipmentHandoffSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -277,7 +277,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<ShipmentHeaderSnapshot?> LoadShipmentHeaderAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -334,7 +334,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryReturnReceiveHandoffLineSummary>> LoadShipmentReturnLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -435,7 +435,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryShipmentSummary>> LoadRecentShipmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -494,7 +494,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             var totalQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("total_quantity")), 6, MidpointRounding.AwayFromZero);
             shipments.Add(new InventoryShipmentSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -533,7 +533,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryReturnReceiveSummary>> LoadRecentReturnsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -624,7 +624,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task<IReadOnlyList<InventoryReturnReceiveSummary>> LoadShipmentAnchoredReturnsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -714,7 +714,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
             var returnedQuantity = decimal.Round(reader.GetFieldValue<decimal>(reader.GetOrdinal("returned_quantity")), 6, MidpointRounding.AwayFromZero);
             returns.Add(new InventoryReturnReceiveSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -743,7 +743,7 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
     private static async Task InsertDocumentLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         InventoryReturnReceiveLineInput line,
         CancellationToken cancellationToken)

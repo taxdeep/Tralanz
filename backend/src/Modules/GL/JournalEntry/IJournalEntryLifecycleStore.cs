@@ -3,14 +3,14 @@ namespace Modules.GL.JournalEntry;
 public interface IJournalEntryLifecycleStore
 {
     Task<JournalEntryLifecycleResult> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<JournalEntryLifecycleResult> ReverseAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 }

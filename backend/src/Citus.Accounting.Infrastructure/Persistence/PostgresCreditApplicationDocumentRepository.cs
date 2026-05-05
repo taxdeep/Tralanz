@@ -148,8 +148,8 @@ public sealed class PostgresCreditApplicationDocumentRepository : ICreditApplica
         var lines = new List<CreditApplicationDocumentLine>();
         foreach (var rawLine in rawLines)
         {
-            var source = await LoadArOpenItemAsync(scope, companyId.Value, rawLine.SourceCreditArOpenItemId, cancellationToken);
-            var target = await LoadArOpenItemAsync(scope, companyId.Value, rawLine.TargetInvoiceArOpenItemId, cancellationToken);
+            var source = await LoadArOpenItemAsync(scope, companyId, rawLine.SourceCreditArOpenItemId, cancellationToken);
+            var target = await LoadArOpenItemAsync(scope, companyId, rawLine.TargetInvoiceArOpenItemId, cancellationToken);
 
             if (source.CustomerId != customerId || target.CustomerId != customerId)
             {
@@ -211,13 +211,13 @@ public sealed class PostgresCreditApplicationDocumentRepository : ICreditApplica
         {
             realizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_gain",
                 "fx_gain_realized");
             realizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_loss",
                 "fx_loss_realized");
@@ -263,7 +263,7 @@ public sealed class PostgresCreditApplicationDocumentRepository : ICreditApplica
 
     private static async Task<ArOpenItemTarget> LoadArOpenItemAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid openItemId,
         CancellationToken cancellationToken)
     {

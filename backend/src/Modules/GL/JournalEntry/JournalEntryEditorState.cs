@@ -6,7 +6,7 @@ namespace Modules.GL.JournalEntry;
 public sealed class JournalEntryEditorState
 {
     private const int DefaultVisibleRows = 8;
-    private static readonly Guid DemoCompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId DemoCompanyId = CompanyId.FromOrdinal(1);
     private readonly List<JournalEntryCurrencyOption> _currencyOptions;
     private readonly List<JournalEntryAccountOption> _accountOptions;
 

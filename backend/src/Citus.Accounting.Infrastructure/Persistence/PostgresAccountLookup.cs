@@ -6,7 +6,7 @@ internal static class PostgresAccountLookup
 {
     public static async Task<Guid?> TryResolveActiveAccountIdAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken,
         params string[] markers)
     {

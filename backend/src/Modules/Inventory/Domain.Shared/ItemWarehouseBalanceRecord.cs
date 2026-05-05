@@ -1,7 +1,7 @@
 namespace Citus.Modules.Inventory.Domain.Shared;
 
 public sealed record class ItemWarehouseBalanceRecord(
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid ItemId,
     Guid WarehouseId,
     decimal OnHandQty,

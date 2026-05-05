@@ -37,7 +37,7 @@ public sealed record class AccountingDocumentReviewSummary
 
     public Guid Id { get; init; }
 
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public string EntityNumber { get; init; } = string.Empty;
 

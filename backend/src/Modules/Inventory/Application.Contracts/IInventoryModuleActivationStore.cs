@@ -20,17 +20,17 @@ public interface IInventoryModuleActivationStore
     /// active" vs "newly activated" UX.
     /// </summary>
     Task<InventoryModuleActivationStateRecord> MarkEnabledAsync(
-        Guid companyId,
+        CompanyId companyId,
         string profileTag,
         CancellationToken cancellationToken);
 
     Task<InventoryModuleActivationStateRecord?> GetStateAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 }
 
 public sealed record class InventoryModuleActivationStateRecord(
-    Guid CompanyId,
+    CompanyId CompanyId,
     bool ModuleEnabled,
     DateTimeOffset? EnabledAt,
     DateTimeOffset? LockedAt,

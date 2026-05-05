@@ -431,7 +431,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
     public async Task<PlatformBusinessSessionResult> SwitchActiveCompanyAsync(
         string sessionToken,
-        Guid activeCompanyId,
+        CompanyId activeCompanyId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sessionToken))
@@ -708,7 +708,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private static async Task<Guid?> ReadPreferredActiveCompanyIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -733,7 +733,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private static async Task<MembershipContextRecord?> ResolveMembershipContextAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         Guid? preferredCompanyId,
         CancellationToken cancellationToken)
     {
@@ -778,8 +778,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private static async Task<MembershipContextRecord?> ReadMembershipContextAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
-        Guid companyId,
+        UserId userId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -817,7 +817,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
         return new MembershipContextRecord(
             reader.GetGuid(reader.GetOrdinal("membership_id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("role")).Trim().ToLowerInvariant(),
             reader.IsDBNull(reader.GetOrdinal("permissions_json"))
                 ? "[]"
@@ -829,7 +829,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string tokenHash,
-        Guid userId,
+        UserId userId,
         MembershipContextRecord membership,
         string securityStampSnapshot,
         DateTimeOffset expiresAtUtc,
@@ -954,8 +954,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
         return new SessionRecord(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("user_id")),
-            reader.GetGuid(reader.GetOrdinal("active_company_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("active_company_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("expires_at")),
             reader.GetString(reader.GetOrdinal("security_stamp_snapshot")).Trim(),
             reader.GetString(reader.GetOrdinal("account_status")).Trim().ToLowerInvariant(),
@@ -988,7 +988,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid challengeId,
-        Guid userId,
+        UserId userId,
         string destination,
         MembershipContextRecord membership,
         string codeHash,
@@ -1048,7 +1048,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private async Task<bool> VerifyTotpChallengeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         string verificationCode,
         CancellationToken cancellationToken)
     {
@@ -1060,7 +1060,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private async Task<TotpEnrollmentRecord?> ReadActiveTotpEnrollmentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1093,7 +1093,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private static async Task MarkTotpEnrollmentUsedAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1113,7 +1113,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private static async Task InvalidateActiveMfaChallengesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1180,8 +1180,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
         return new MfaChallengeRecord(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("user_id")),
-            reader.GetGuid(reader.GetOrdinal("active_company_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("active_company_id"))),
             reader.GetString(reader.GetOrdinal("factor")).Trim().ToLowerInvariant(),
             reader.GetString(reader.GetOrdinal("code_hash")).Trim(),
             reader.GetInt32(reader.GetOrdinal("failed_attempts")),
@@ -1220,7 +1220,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
     private static async Task LockAccountForMfaFailuresAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid userId,
+        UserId userId,
         DateTimeOffset lockedUntilUtc,
         CancellationToken cancellationToken)
     {
@@ -1291,15 +1291,15 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
     private sealed record MembershipContextRecord(
         Guid MembershipId,
-        Guid CompanyId,
+        CompanyId CompanyId,
         string Role,
         string PermissionsJson,
         string CompanyStatus);
 
     private sealed record SessionRecord(
         Guid SessionId,
-        Guid UserId,
-        Guid ActiveCompanyId,
+        UserId UserId,
+        CompanyId ActiveCompanyId,
         DateTimeOffset ExpiresAtUtc,
         string SecurityStampSnapshot,
         string AccountStatus,
@@ -1308,8 +1308,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
     private sealed record MfaChallengeRecord(
         Guid Id,
-        Guid UserId,
-        Guid ActiveCompanyId,
+        UserId UserId,
+        CompanyId ActiveCompanyId,
         string Factor,
         string CodeHash,
         int FailedAttempts,

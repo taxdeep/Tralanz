@@ -37,14 +37,14 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
         if (scope.Transaction is not null)
         {
             await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-            await RefreshForBillsAsync(scope.Connection, scope.Transaction, companyId.Value, new[] { billDocumentId }, cancellationToken);
-            return await LoadBillLaneSummaryAsync(scope.Connection, scope.Transaction, companyId.Value, billDocumentId, cancellationToken);
+            await RefreshForBillsAsync(scope.Connection, scope.Transaction, companyId, new[] { billDocumentId }, cancellationToken);
+            return await LoadBillLaneSummaryAsync(scope.Connection, scope.Transaction, companyId, billDocumentId, cancellationToken);
         }
 
         await using var transaction = await scope.Connection.BeginTransactionAsync(cancellationToken);
         await EnsureSchemaAsync(scope.Connection, transaction, cancellationToken);
-        await RefreshForBillsAsync(scope.Connection, transaction, companyId.Value, new[] { billDocumentId }, cancellationToken);
-        var summary = await LoadBillLaneSummaryAsync(scope.Connection, transaction, companyId.Value, billDocumentId, cancellationToken);
+        await RefreshForBillsAsync(scope.Connection, transaction, companyId, new[] { billDocumentId }, cancellationToken);
+        var summary = await LoadBillLaneSummaryAsync(scope.Connection, transaction, companyId, billDocumentId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return summary;
     }
@@ -69,14 +69,14 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
         if (scope.Transaction is not null)
         {
             await EnsureSchemaAsync(scope.Connection, scope.Transaction, cancellationToken);
-            await RefreshForBillsAsync(scope.Connection, scope.Transaction, companyId.Value, requestedBillIds, cancellationToken);
-            return await LoadPostingGateSnapshotsAsync(scope.Connection, scope.Transaction, companyId.Value, requestedBillIds, cancellationToken);
+            await RefreshForBillsAsync(scope.Connection, scope.Transaction, companyId, requestedBillIds, cancellationToken);
+            return await LoadPostingGateSnapshotsAsync(scope.Connection, scope.Transaction, companyId, requestedBillIds, cancellationToken);
         }
 
         await using var transaction = await scope.Connection.BeginTransactionAsync(cancellationToken);
         await EnsureSchemaAsync(scope.Connection, transaction, cancellationToken);
-        await RefreshForBillsAsync(scope.Connection, transaction, companyId.Value, requestedBillIds, cancellationToken);
-        var snapshots = await LoadPostingGateSnapshotsAsync(scope.Connection, transaction, companyId.Value, requestedBillIds, cancellationToken);
+        await RefreshForBillsAsync(scope.Connection, transaction, companyId, requestedBillIds, cancellationToken);
+        var snapshots = await LoadPostingGateSnapshotsAsync(scope.Connection, transaction, companyId, requestedBillIds, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return snapshots;
     }
@@ -84,7 +84,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<BillReceiptMatchingLaneSummary> LoadBillLaneSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -199,7 +199,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyDictionary<Guid, BillReceiptPostingGateSnapshot>> LoadPostingGateSnapshotsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -303,7 +303,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchingReceiptSummary>> LoadMatchedReceiptsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -373,7 +373,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchingLineSummary>> LoadLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -468,7 +468,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchingDiscrepancySummary>> LoadDiscrepanciesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
@@ -538,7 +538,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task RefreshForBillsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -589,7 +589,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchingAnchor>> LoadCurrentBillGroupsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -626,7 +626,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchingAnchor>> LoadAllocatedBillGroupsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -673,7 +673,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task DeleteAllocationsForBillsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -696,7 +696,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task DeleteDiscrepanciesForBillsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -719,7 +719,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task DeleteAllocationsForGroupsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyList<BillReceiptMatchingAnchor> groups,
         CancellationToken cancellationToken)
     {
@@ -752,7 +752,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchBillLineCandidate>> LoadBillCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyList<BillReceiptMatchingAnchor> groups,
         CancellationToken cancellationToken)
     {
@@ -823,7 +823,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchReceiptLineCandidate>> LoadReceiptCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyList<BillReceiptMatchingAnchor> groups,
         CancellationToken cancellationToken)
     {
@@ -887,7 +887,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task InsertAllocationsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyList<BillReceiptMatchAllocation> allocations,
         CancellationToken cancellationToken)
     {
@@ -955,7 +955,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task RefreshDiscrepanciesForBillsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -992,7 +992,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<Dictionary<(Guid BillId, int BillLineNumber, string DiscrepancyType), DateTimeOffset>> LoadExistingDiscrepancyFirstDetectedAtAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -1029,7 +1029,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task<IReadOnlyList<BillReceiptMatchingDiscrepancySummary>> LoadDiscrepancyCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] billDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -1143,7 +1143,7 @@ public sealed class PostgresBillReceiptMatchingRepository : IBillReceiptMatching
     private static async Task InsertDiscrepanciesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyList<BillReceiptMatchingDiscrepancySummary> discrepancies,
         IReadOnlyDictionary<(Guid BillId, int BillLineNumber, string DiscrepancyType), DateTimeOffset> existingDiscrepancies,
         CancellationToken cancellationToken)

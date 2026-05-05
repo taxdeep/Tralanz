@@ -110,7 +110,7 @@ public sealed class VendorClient(HttpClient httpClient, ILogger<VendorClient> lo
 
 public sealed record VendorSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayName,
     string DefaultCurrencyCode,

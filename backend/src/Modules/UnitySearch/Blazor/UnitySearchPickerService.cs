@@ -7,8 +7,8 @@ namespace Citus.Modules.UnitySearch.Blazor;
 public sealed class UnitySearchPickerService(HttpClient httpClient, ILogger<UnitySearchPickerService> logger)
 {
     public async Task<IReadOnlyList<UnitySearchPickerOption>> SearchAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string context,
         string searchText,
         int take,
@@ -124,7 +124,7 @@ public sealed class UnitySearchPickerService(HttpClient httpClient, ILogger<Unit
 /// </summary>
 public sealed record UnitysearchUsageEvent
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
     public string? SessionId { get; init; }
     public string Context { get; init; } = string.Empty;
     public string EntityType { get; init; } = string.Empty;

@@ -15,8 +15,8 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
     }
 
     public async Task<CompanyAccessSessionContext?> GetAsync(
-        Guid userId,
-        Guid? preferredActiveCompanyId,
+        UserId userId,
+        CompanyId? preferredActiveCompanyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -64,7 +64,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
         };
 
     private static CompanyMembershipCompanyRecord ResolveActiveCompany(
-        Guid? preferredActiveCompanyId,
+        CompanyId? preferredActiveCompanyId,
         IReadOnlyList<CompanyMembershipCompanyRecord> companies)
     {
         if (preferredActiveCompanyId.HasValue)
@@ -82,7 +82,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
 
     private static async Task<CompanyAccessUserSummary?> ReadUserAsync(
         NpgsqlConnection connection,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var hasStatusColumn = await HasColumnAsync(connection, "users", "status", cancellationToken);
@@ -136,7 +136,7 @@ public sealed class PostgreSqlCompanySessionContextStore : ICompanySessionContex
 
     private static async Task<IReadOnlyList<CompanyMembershipCompanyRecord>> ReadCompaniesAsync(
         NpgsqlConnection connection,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         var hasPermissionsColumn = await HasMembershipPermissionsColumnAsync(connection, cancellationToken);

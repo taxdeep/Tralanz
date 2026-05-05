@@ -13,7 +13,7 @@ namespace Tests.AP;
 
 public sealed class PayBillDraftPreparationSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -33,7 +33,7 @@ public sealed class PayBillDraftPreparationSmokeTests
 
         Guid documentId = Guid.Empty;
         Guid bankAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         var createdUser = false;
         var originalLock = await ReadVendorLockAsync(connectionFactory, VendorId, CancellationToken.None);
 
@@ -119,7 +119,7 @@ public sealed class PayBillDraftPreparationSmokeTests
 
     private static async Task<Guid> CreateBankAccountAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -169,7 +169,7 @@ public sealed class PayBillDraftPreparationSmokeTests
         return accountId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -183,7 +183,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             limit 1;
             """;
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is UserId userId)
         {
             return (userId, false);
         }
@@ -373,11 +373,11 @@ public sealed class PayBillDraftPreparationSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool created,
         CancellationToken cancellationToken)
     {
-        if (!created || userId == Guid.Empty)
+        if (!created || userId.Value is null)
         {
             return;
         }
@@ -404,7 +404,7 @@ public sealed class PayBillDraftPreparationSmokeTests
     private sealed class StubFxRateStore : IFxRateStore
     {
         public Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -420,7 +420,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FxMarketRateRecord>>([]);
 
         public Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid snapshotId,
             CancellationToken cancellationToken) => Task.FromResult<FxSnapshotRecord?>(null);
 
@@ -429,7 +429,7 @@ public sealed class PayBillDraftPreparationSmokeTests
             CancellationToken cancellationToken) => Task.FromResult<FxMarketRateRecord?>(null);
 
         public Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -455,8 +455,8 @@ public sealed class PayBillDraftPreparationSmokeTests
             CancellationToken cancellationToken) => Task.FromResult(marketRates);
 
         public Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -486,8 +486,8 @@ public sealed class PayBillDraftPreparationSmokeTests
                 DateTimeOffset.UtcNow));
 
         public Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,

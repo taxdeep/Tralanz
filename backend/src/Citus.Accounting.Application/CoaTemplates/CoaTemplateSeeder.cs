@@ -14,7 +14,7 @@ public sealed class CoaTemplateSeeder(
     IAccountStore accountStore) : ICoaTemplateSeeder
 {
     public async Task<CoaSeedSummary> SeedAsync(
-        Guid companyId,
+        CompanyId companyId,
         string templateKey,
         CancellationToken cancellationToken)
     {

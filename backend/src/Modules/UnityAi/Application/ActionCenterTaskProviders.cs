@@ -29,8 +29,8 @@ public sealed class NullActionCenterTaskProvider : IActionCenterTaskProvider
     public string ProviderName => _name;
 
     public Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken)
     {
@@ -67,8 +67,8 @@ public sealed class SystemSetupActionCenterTaskProvider : IActionCenterTaskProvi
     public string ProviderName => "system_setup";
 
     public async Task<IReadOnlyList<ActionCenterTaskDraft>> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken)
     {

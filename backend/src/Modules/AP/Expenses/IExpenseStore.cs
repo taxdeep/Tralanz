@@ -25,12 +25,12 @@ public interface IExpenseStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ExpenseSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         ExpenseListFilter filter,
         CancellationToken cancellationToken);
 
     Task<ExpenseRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid expenseId,
         CancellationToken cancellationToken);
 
@@ -42,13 +42,13 @@ public interface IExpenseStore
     /// <paramref name="input"/>.PaymentMethod.
     /// </summary>
     Task<ExpenseRecord> CreateAsync(
-        Guid companyId,
-        Guid createdByUserId,
+        CompanyId companyId,
+        UserId createdByUserId,
         ExpenseUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<ExpenseRecord?> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid expenseId,
         CancellationToken cancellationToken);
 }
@@ -61,7 +61,7 @@ public sealed record ExpenseListFilter(
 
 public sealed record ExpenseSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ExpenseNumber,
     string Status,
     string PayeeKind,
@@ -79,7 +79,7 @@ public sealed record ExpenseSummary(
 
 public sealed record ExpenseRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ExpenseNumber,
     string Status,
     string PayeeKind,

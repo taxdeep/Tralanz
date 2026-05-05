@@ -12,10 +12,10 @@ public sealed class InventoryReceiptWorkflow
     }
 
     public Task<InventoryPurchaseReceiptDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -24,11 +24,11 @@ public sealed class InventoryReceiptWorkflow
     }
 
     public Task<InventoryBillReceiptHandoffSummary> GetBillHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(companyId));
         }
@@ -47,12 +47,12 @@ public sealed class InventoryReceiptWorkflow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.CompanyId == Guid.Empty)
+        if (request.CompanyId.Value is null)
         {
             throw new ArgumentException("Company id is required.", nameof(request));
         }
 
-        if (request.UserId == Guid.Empty)
+        if (request.UserId.Value is null)
         {
             throw new ArgumentException("User id is required.", nameof(request));
         }

@@ -24,8 +24,8 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     }
 
     public async Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -72,7 +72,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     }
 
     public async Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -92,7 +92,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> GetReceiptValuationSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -119,8 +119,8 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     private static async Task InsertValuationLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -233,7 +233,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     private static async Task<ReceiptInventoryValuationSummary?> LoadReceiptValuationSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         bool hasActivationLines,
         bool hasMatchingAllocations,
@@ -253,7 +253,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
     private static async Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> LoadReceiptValuationSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         bool hasActivationLines,
         bool hasMatchingAllocations,

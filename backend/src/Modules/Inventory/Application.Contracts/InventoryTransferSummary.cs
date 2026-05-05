@@ -2,7 +2,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryTransferSummary(
     Guid TransferId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string TransferNumber,
     string Status,
     Guid SourceWarehouseId,

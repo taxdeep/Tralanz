@@ -21,7 +21,7 @@ namespace Citus.Modules.UnityAi.Application;
 public interface IUnitysearchHintDistillationService
 {
     Task<UnitysearchHintDistillationResult> DistillForCompanyAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid? triggeredByUserId,
         string triggerType,
         CancellationToken cancellationToken);
@@ -86,7 +86,7 @@ public sealed class UnitysearchHintDistillationService : IUnitysearchHintDistill
     }
 
     public async Task<UnitysearchHintDistillationResult> DistillForCompanyAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid? triggeredByUserId,
         string triggerType,
         CancellationToken cancellationToken)

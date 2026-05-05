@@ -16,7 +16,7 @@ namespace Citus.Accounting.Application.Abstractions;
 /// </summary>
 public sealed record AccountRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string Code,
     string Name,
@@ -99,17 +99,17 @@ public interface IAccountStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<AccountRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken);
 
     Task<AccountRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         CancellationToken cancellationToken);
 
     Task<AccountRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         AccountUpsertInput input,
         CancellationToken cancellationToken);
 
@@ -119,13 +119,13 @@ public interface IAccountStore
     /// for those rows in the UI.
     /// </summary>
     Task<AccountRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         AccountUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<AccountRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         bool isActive,
         CancellationToken cancellationToken);
@@ -139,7 +139,7 @@ public interface IAccountStore
     /// instead of failing the whole seed.
     /// </summary>
     Task<AccountRecord?> SeedSystemAccountAsync(
-        Guid companyId,
+        CompanyId companyId,
         AccountSeedInput input,
         CancellationToken cancellationToken);
 }

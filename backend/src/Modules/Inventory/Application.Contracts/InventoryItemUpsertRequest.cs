@@ -3,8 +3,8 @@ using Citus.Modules.Inventory.Domain.Shared;
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryItemUpsertRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? ItemId,
     string ItemCode,
     string Name,

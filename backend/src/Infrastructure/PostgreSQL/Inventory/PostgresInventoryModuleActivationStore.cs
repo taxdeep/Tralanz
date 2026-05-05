@@ -24,11 +24,11 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
     }
 
     public async Task<InventoryModuleActivationStateRecord> MarkEnabledAsync(
-        Guid companyId,
+        CompanyId companyId,
         string profileTag,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new ArgumentException("companyId is required.", nameof(companyId));
         }
@@ -65,10 +65,10 @@ public sealed class PostgresInventoryModuleActivationStore : IInventoryModuleAct
     }
 
     public async Task<InventoryModuleActivationStateRecord?> GetStateAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             return null;
         }

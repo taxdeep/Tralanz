@@ -1,8 +1,8 @@
 namespace Engines.FX.FxRateLookup;
 
 public sealed record class FxRateLookupRequest(
-    Guid CompanyId,
-    Guid? CreatedByUserId,
+    CompanyId CompanyId,
+    UserId? CreatedByUserId,
     string BaseCurrencyCode,
     string QuoteCurrencyCode,
     DateOnly RequestedDate,

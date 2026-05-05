@@ -6,7 +6,7 @@ internal static class PostgresSettlementDraftingSupport
 {
     public static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -29,7 +29,7 @@ internal static class PostgresSettlementDraftingSupport
 
     public static async Task EnsureActiveBankAccountAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid bankAccountId,
         string errorMessage,
         CancellationToken cancellationToken)
@@ -56,7 +56,7 @@ internal static class PostgresSettlementDraftingSupport
 
     public static async Task<FxSnapshotRef?> LoadAcceptedFxSnapshotAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string transactionCurrencyCode,
         DateOnly requestedDate,

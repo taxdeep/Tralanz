@@ -17,8 +17,8 @@ namespace Tests.GL;
 
 public sealed class JournalEntryPersistenceSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
 
     [Fact]
     public async Task SaveDraftAndPost_PersistsManualJournalAndLedgerTruth()
@@ -254,7 +254,7 @@ public sealed class JournalEntryPersistenceSmokeTests
 
     private static async Task SeedClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         Guid signalId,
         DateOnly closedThrough,
@@ -381,7 +381,7 @@ public sealed class JournalEntryPersistenceSmokeTests
 
     private static async Task CleanupClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         Guid signalId,
         CancellationToken cancellationToken)
@@ -454,7 +454,7 @@ public sealed class JournalEntryPersistenceSmokeTests
     private static async Task<int> ReadSingleIntByCompanyAndSourceAsync(
         NpgsqlConnection connection,
         string sql,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {

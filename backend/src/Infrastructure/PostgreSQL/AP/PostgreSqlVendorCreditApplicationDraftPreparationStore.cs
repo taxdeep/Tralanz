@@ -14,7 +14,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
     }
 
     public async Task<IReadOnlyList<VendorCreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string documentCurrencyCode,
         CancellationToken cancellationToken)
@@ -234,7 +234,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
     private static async Task<IReadOnlyList<VendorCreditApplicationOpenItemCandidate>> LoadCandidatesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string documentCurrencyCode,
         Guid[]? openItemIds,
@@ -317,7 +317,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
     private static async Task EnsureActiveVendorAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         CancellationToken cancellationToken)
     {
@@ -345,7 +345,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
     private static async Task<string> LoadCompanyBaseCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -470,7 +470,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
     private static async Task<long> FindApplicationSeedNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

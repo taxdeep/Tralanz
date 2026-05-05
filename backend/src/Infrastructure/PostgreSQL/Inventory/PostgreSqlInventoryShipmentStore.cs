@@ -21,7 +21,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryShipmentDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -43,7 +43,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryShipmentSummary?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -108,7 +108,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         }
 
         var documentId = reader.GetGuid(reader.GetOrdinal("id"));
-        var summaryCompanyId = reader.GetGuid(reader.GetOrdinal("company_id"));
+        var summaryCompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")));
         var documentNumber = reader.GetString(reader.GetOrdinal("document_number"));
         var status = reader.GetString(reader.GetOrdinal("status"));
         var postingDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date"));
@@ -167,7 +167,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryInvoiceShipmentHandoffSummary> GetInvoiceHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -199,7 +199,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<InventoryInvoiceShipmentIssueLaneSummary> GetInvoiceLaneSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -243,7 +243,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     }
 
     public async Task<IReadOnlyDictionary<Guid, InventoryInvoiceShipmentPostingGateSnapshot>> GetInvoicePostingGateSnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -723,7 +723,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -748,7 +748,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<string> LoadCustomerDisplayNameAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -777,7 +777,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyDictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] itemIds,
         CancellationToken cancellationToken)
     {
@@ -826,7 +826,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             var id = reader.GetGuid(reader.GetOrdinal("id"));
             items[id] = new InventoryManagedItemSummary(
                 id,
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -866,7 +866,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyDictionary<Guid, InventoryManagedWarehouseSummary>> LoadWarehouseMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] warehouseIds,
         CancellationToken cancellationToken)
     {
@@ -905,7 +905,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
             var id = reader.GetGuid(reader.GetOrdinal("id"));
             warehouses[id] = new InventoryManagedWarehouseSummary(
                 id,
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -921,7 +921,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var ids = await LoadIdsAsync(connection, transaction, companyId, "inventory_items", cancellationToken);
@@ -932,7 +932,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var ids = await LoadIdsAsync(connection, transaction, companyId, "inventory_warehouses", cancellationToken);
@@ -943,7 +943,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<Guid[]> LoadIdsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string tableName,
         CancellationToken cancellationToken)
     {
@@ -964,7 +964,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentLineInput>> LoadShipmentLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1012,7 +1012,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<(int LineCount, decimal TotalQuantity)> LoadInvoiceOutboundSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1047,7 +1047,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryInvoiceShipmentHandoffLineSummary>> LoadInvoiceHandoffLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1164,7 +1164,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentSummary>> LoadInvoiceAnchoredShipmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1225,7 +1225,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             shipments.Add(new InventoryShipmentSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -1264,7 +1264,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentSummary>> LoadRecentShipmentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1321,7 +1321,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             shipments.Add(new InventoryShipmentSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -1360,7 +1360,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task RefreshInvoiceShipmentLanesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -1542,7 +1542,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task RefreshInvoiceShipmentIssueLanesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1578,7 +1578,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task RefreshShipmentIssueLaneAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1712,7 +1712,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task ReplaceMatchingLaneRowsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string laneType,
         Guid[] sourceDocumentIds,
         IReadOnlyCollection<(Guid SourceDocumentId, MatchingLaneRow Row)> rows,
@@ -1805,7 +1805,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task ReplaceDiscrepancyLaneRowsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         string discrepancyType,
         Guid[] sourceDocumentIds,
         IReadOnlyCollection<(Guid SourceDocumentId, DiscrepancyLaneRow Row)> rows,
@@ -1895,7 +1895,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyDictionary<Guid, string?>> LoadInvoiceStatusMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -1932,7 +1932,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<InvoiceShipmentCoverageRow> LoadInvoiceShipmentCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1980,7 +1980,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<InvoiceCoverageRow> LoadInvoiceCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         InvoiceShipmentCoverageRow shipmentCoverage,
         CancellationToken cancellationToken)
@@ -2038,7 +2038,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<ShipmentIssueCoverageRow> LoadShipmentIssueCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2104,7 +2104,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryShipmentIssueLineSummary>> LoadShipmentIssueLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2165,7 +2165,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<ShipmentIssueCoverageRow> LoadInvoiceIssueCoverageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2239,7 +2239,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryInvoiceShipmentIssueLineLaneSummary>> LoadInvoiceIssueLaneSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2359,7 +2359,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventoryOutboundDiscrepancySummary>> LoadInvoiceOutboundDiscrepanciesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2458,7 +2458,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadInvoiceAnchoredIssuesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2522,7 +2522,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadShipmentAnchoredIssuesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2585,7 +2585,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
         {
             issues.Add(new InventorySalesIssueSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),

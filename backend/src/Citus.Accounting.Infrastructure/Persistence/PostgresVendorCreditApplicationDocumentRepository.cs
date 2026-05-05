@@ -148,8 +148,8 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
         var lines = new List<VendorCreditApplicationDocumentLine>();
         foreach (var rawLine in rawLines)
         {
-            var source = await LoadApOpenItemAsync(scope, companyId.Value, rawLine.SourceVendorCreditApOpenItemId, cancellationToken);
-            var target = await LoadApOpenItemAsync(scope, companyId.Value, rawLine.TargetBillApOpenItemId, cancellationToken);
+            var source = await LoadApOpenItemAsync(scope, companyId, rawLine.SourceVendorCreditApOpenItemId, cancellationToken);
+            var target = await LoadApOpenItemAsync(scope, companyId, rawLine.TargetBillApOpenItemId, cancellationToken);
 
             if (source.VendorId != vendorId || target.VendorId != vendorId)
             {
@@ -211,13 +211,13 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
         {
             realizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_gain",
                 "fx_gain_realized");
             realizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 cancellationToken,
                 "realized_fx_loss",
                 "fx_loss_realized");
@@ -263,7 +263,7 @@ public sealed class PostgresVendorCreditApplicationDocumentRepository : IVendorC
 
     private static async Task<ApOpenItemTarget> LoadApOpenItemAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid openItemId,
         CancellationToken cancellationToken)
     {

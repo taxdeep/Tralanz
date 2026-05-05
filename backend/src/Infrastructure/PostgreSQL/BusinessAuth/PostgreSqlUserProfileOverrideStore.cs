@@ -24,7 +24,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<UserProfileOverrideRecord?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<UserProfileOverrideRecord?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
@@ -50,7 +50,7 @@ public sealed class PostgreSqlUserProfileOverrideStore(PostgreSqlConnectionFacto
     }
 
     public async Task<UserProfileOverrideRecord> UpsertDisplayNameAsync(
-        Guid userId,
+        UserId userId,
         string displayName,
         CancellationToken cancellationToken)
     {

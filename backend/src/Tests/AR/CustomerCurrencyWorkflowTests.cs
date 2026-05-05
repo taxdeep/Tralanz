@@ -6,7 +6,7 @@ namespace Tests.AR;
 
 public sealed class CustomerCurrencyWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class CustomerCurrencyWorkflowTests
         }
 
         public Task<CompanyCurrencyProfile> GetProfileAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken)
         {
             var currencies = _enabledCurrencies

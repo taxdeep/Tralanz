@@ -166,7 +166,7 @@ public sealed class PurchaseOrderClient(HttpClient httpClient, ILogger<PurchaseO
 
 public sealed record PurchaseOrderSummaryDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string PurchaseOrderNumber,
     Guid VendorId,
     string VendorName,
@@ -180,7 +180,7 @@ public sealed record PurchaseOrderSummaryDto(
 
 public sealed record PurchaseOrderRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string PurchaseOrderNumber,
     string Status,
     Guid VendorId,

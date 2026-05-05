@@ -9,7 +9,7 @@ namespace Tests.AR;
 
 public sealed class ReceivePaymentDraftPreparationWorkflowTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
         public IReadOnlyList<ReceivePaymentOpenItemCandidate> Candidates { get; set; } = [];
 
         public Task<IReadOnlyList<ReceivePaymentOpenItemCandidate>> ListOpenItemCandidatesAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid customerId,
             string documentCurrencyCode,
             CancellationToken cancellationToken) =>
@@ -179,7 +179,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
         public Task<CustomerCurrencyChangeResult> ChangeDefaultCurrencyAsync(
             Guid customerId,
             string currencyCode,
-            Guid userId,
+            UserId userId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
@@ -196,7 +196,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
         }
 
         public Task<CompanyCurrencyProfile> GetProfileAsync(
-            Guid companyId,
+            CompanyId companyId,
             CancellationToken cancellationToken)
         {
             var currencies = _enabledCurrencies
@@ -227,7 +227,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
     private sealed class StubFxRateStore : IFxRateStore
     {
         public Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -243,7 +243,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<FxMarketRateRecord>>([]);
 
         public Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid snapshotId,
             CancellationToken cancellationToken) => Task.FromResult<FxSnapshotRecord?>(null);
 
@@ -252,7 +252,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
             CancellationToken cancellationToken) => Task.FromResult<FxMarketRateRecord?>(null);
 
         public Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-            Guid companyId,
+            CompanyId companyId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -278,8 +278,8 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
             CancellationToken cancellationToken) => Task.FromResult(marketRates);
 
         public Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,
@@ -309,8 +309,8 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
                 DateTimeOffset.UtcNow));
 
         public Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-            Guid companyId,
-            Guid? createdByUserId,
+            CompanyId companyId,
+            UserId? createdByUserId,
             string baseCurrencyCode,
             string quoteCurrencyCode,
             DateOnly requestedDate,

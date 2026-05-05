@@ -12,8 +12,8 @@ public sealed class CompanySessionContextWorkflow : ICompanySessionContextWorkfl
     }
 
     public Task<CompanyAccessSessionContext?> GetAsync(
-        Guid userId,
-        Guid? preferredActiveCompanyId,
+        UserId userId,
+        CompanyId? preferredActiveCompanyId,
         CancellationToken cancellationToken) =>
         _store.GetAsync(userId, preferredActiveCompanyId, cancellationToken);
 }

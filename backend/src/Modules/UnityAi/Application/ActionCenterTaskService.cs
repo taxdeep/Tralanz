@@ -36,8 +36,8 @@ public sealed class ActionCenterTaskService : IActionCenterTaskService
     }
 
     public async Task<ActionCenterGenerationResult> RegenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         CancellationToken cancellationToken)
     {
         if (!_flags.ActionCenterEnabled)
@@ -138,28 +138,28 @@ public sealed class ActionCenterTaskService : IActionCenterTaskService
     }
 
     public Task<IReadOnlyList<ActionCenterTaskRecord>> GetTasksAsync(
-        Guid companyId,
-        Guid? assignedUserId,
+        CompanyId companyId,
+        UserId? assignedUserId,
         IReadOnlyCollection<string>? statuses,
         CancellationToken cancellationToken)
         => _store.GetTasksAsync(companyId, assignedUserId, statuses, cancellationToken);
 
-    public async Task<ActionCenterTaskRecord?> StartAsync(Guid companyId, Guid taskId, Guid? actorUserId, CancellationToken cancellationToken)
+    public async Task<ActionCenterTaskRecord?> StartAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, CancellationToken cancellationToken)
         => await TransitionAsync(companyId, taskId, actorUserId, ActionCenterTaskStatus.InProgress, ActionCenterTaskEventType.Started, cancellationToken).ConfigureAwait(false);
 
-    public async Task<ActionCenterTaskRecord?> CompleteAsync(Guid companyId, Guid taskId, Guid? actorUserId, CancellationToken cancellationToken)
+    public async Task<ActionCenterTaskRecord?> CompleteAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, CancellationToken cancellationToken)
         => await TransitionAsync(companyId, taskId, actorUserId, ActionCenterTaskStatus.Done, ActionCenterTaskEventType.Completed, cancellationToken).ConfigureAwait(false);
 
-    public async Task<ActionCenterTaskRecord?> DismissAsync(Guid companyId, Guid taskId, Guid? actorUserId, CancellationToken cancellationToken)
+    public async Task<ActionCenterTaskRecord?> DismissAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, CancellationToken cancellationToken)
         => await TransitionAsync(companyId, taskId, actorUserId, ActionCenterTaskStatus.Dismissed, ActionCenterTaskEventType.Dismissed, cancellationToken).ConfigureAwait(false);
 
-    public async Task<ActionCenterTaskRecord?> SnoozeAsync(Guid companyId, Guid taskId, Guid? actorUserId, DateTimeOffset until, CancellationToken cancellationToken)
+    public async Task<ActionCenterTaskRecord?> SnoozeAsync(CompanyId companyId, Guid taskId, UserId? actorUserId, DateTimeOffset until, CancellationToken cancellationToken)
         => await TransitionAsync(companyId, taskId, actorUserId, ActionCenterTaskStatus.Snoozed, ActionCenterTaskEventType.Snoozed, cancellationToken, snoozedUntil: until).ConfigureAwait(false);
 
     private async Task<ActionCenterTaskRecord?> TransitionAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid taskId,
-        Guid? actorUserId,
+        UserId? actorUserId,
         string newStatus,
         string eventType,
         CancellationToken cancellationToken,

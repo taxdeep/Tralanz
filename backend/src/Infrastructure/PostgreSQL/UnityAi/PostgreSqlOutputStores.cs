@@ -47,7 +47,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
 
     private static async Task UpsertOneAsync(
         NpgsqlConnection connection,
-        ReportUsageEventInput input, string scopeType, Guid? userId,
+        ReportUsageEventInput input, string scopeType, UserId? userId,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)
     {
         // Map event type to which counter to bump.
@@ -97,7 +97,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
     }
 
     public async Task<IReadOnlyList<ReportUsageStatRecord>> GetForCompanyAsync(
-        Guid companyId, Guid? userId, string scopeType, CancellationToken cancellationToken)
+        CompanyId companyId, UserId? userId, string scopeType, CancellationToken cancellationToken)
     {
         var items = new List<ReportUsageStatRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -141,7 +141,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
 public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFactory connections) : IDashboardUserWidgetStore
 {
     public async Task<IReadOnlyList<DashboardUserWidgetRecord>> GetActiveAsync(
-        Guid companyId, Guid? userId, CancellationToken cancellationToken)
+        CompanyId companyId, UserId? userId, CancellationToken cancellationToken)
     {
         var items = new List<DashboardUserWidgetRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -213,7 +213,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
 
 public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectionFactory connections) : IDashboardWidgetSuggestionStore
 {
-    public async Task<DashboardWidgetSuggestionRecord?> GetByIdAsync(Guid companyId, Guid suggestionId, CancellationToken cancellationToken)
+    public async Task<DashboardWidgetSuggestionRecord?> GetByIdAsync(CompanyId companyId, Guid suggestionId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
@@ -226,7 +226,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
     }
 
     public async Task<IReadOnlyList<DashboardWidgetSuggestionRecord>> GetForUserAsync(
-        Guid companyId, Guid? userId, string? statusFilter, CancellationToken cancellationToken)
+        CompanyId companyId, UserId? userId, string? statusFilter, CancellationToken cancellationToken)
     {
         var items = new List<DashboardWidgetSuggestionRecord>();
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -247,7 +247,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
     }
 
     public async Task<IReadOnlyList<DashboardWidgetSuggestionRecord>> GetExistingForWidgetKeysAsync(
-        Guid companyId, Guid? userId, IReadOnlyCollection<string> widgetKeys, CancellationToken cancellationToken)
+        CompanyId companyId, UserId? userId, IReadOnlyCollection<string> widgetKeys, CancellationToken cancellationToken)
     {
         if (widgetKeys.Count == 0)
         {
@@ -361,7 +361,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
 
 public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory connections) : IActionCenterTaskStore
 {
-    public async Task<ActionCenterTaskRecord?> GetByIdAsync(Guid companyId, Guid taskId, CancellationToken cancellationToken)
+    public async Task<ActionCenterTaskRecord?> GetByIdAsync(CompanyId companyId, Guid taskId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
@@ -372,7 +372,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Map(reader) : null;
     }
 
-    public async Task<ActionCenterTaskRecord?> GetByFingerprintAsync(Guid companyId, string fingerprint, CancellationToken cancellationToken)
+    public async Task<ActionCenterTaskRecord?> GetByFingerprintAsync(CompanyId companyId, string fingerprint, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
@@ -384,7 +384,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
     }
 
     public async Task<IReadOnlyList<ActionCenterTaskRecord>> GetTasksAsync(
-        Guid companyId, Guid? assignedUserId,
+        CompanyId companyId, UserId? assignedUserId,
         IReadOnlyCollection<string>? statuses, CancellationToken cancellationToken)
     {
         var items = new List<ActionCenterTaskRecord>();
@@ -452,7 +452,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
     }
 
     public async Task UpdateStatusAsync(
-        Guid companyId, Guid taskId, string status,
+        CompanyId companyId, Guid taskId, string status,
         DateTimeOffset? completedAt, DateTimeOffset? dismissedAt, DateTimeOffset? snoozedUntil,
         DateTimeOffset updatedAt, CancellationToken cancellationToken)
     {
@@ -514,7 +514,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
 public sealed class PostgreSqlActionCenterTaskEventStore(PostgreSqlConnectionFactory connections) : IActionCenterTaskEventStore
 {
     public async Task RecordAsync(
-        Guid companyId, Guid taskId, Guid? userId, string eventType, string? metadataJson,
+        CompanyId companyId, Guid taskId, UserId? userId, string eventType, string? metadataJson,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken).ConfigureAwait(false);

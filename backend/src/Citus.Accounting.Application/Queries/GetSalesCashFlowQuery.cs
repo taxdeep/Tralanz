@@ -44,7 +44,7 @@ public sealed record class SalesCashFlowMonthBucket
 
 public sealed record class SalesCashFlowReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly AsOfDate { get; init; }
 

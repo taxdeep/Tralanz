@@ -13,10 +13,10 @@ public sealed class CompanyMembershipPermissionWorkflow : ICompanyMembershipPerm
         CompanyMembershipPermissionCatalog.Options;
 
     public Task<IReadOnlyList<CompanyMembershipPermissionListItem>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new InvalidOperationException("Company context is required to list company membership permissions.");
         }
@@ -25,11 +25,11 @@ public sealed class CompanyMembershipPermissionWorkflow : ICompanyMembershipPerm
     }
 
     public Task<IReadOnlyList<CompanyMembershipPermissionAuditRecord>> ListRecentAuditAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new InvalidOperationException("Company context is required to list company membership permission audit events.");
         }
@@ -39,13 +39,13 @@ public sealed class CompanyMembershipPermissionWorkflow : ICompanyMembershipPerm
     }
 
     public async Task<CompanyMembershipPermissionSaveResult> SavePermissionsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
-        Guid actorUserId,
+        UserId actorUserId,
         IReadOnlyList<string> permissionTokens,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new InvalidOperationException("Company context is required to save company membership permissions.");
         }
@@ -55,7 +55,7 @@ public sealed class CompanyMembershipPermissionWorkflow : ICompanyMembershipPerm
             throw new InvalidOperationException("Membership id is required to save company membership permissions.");
         }
 
-        if (actorUserId == Guid.Empty)
+        if (actorUserId.Value is null)
         {
             throw new InvalidOperationException("An acting user is required to save company membership permissions.");
         }

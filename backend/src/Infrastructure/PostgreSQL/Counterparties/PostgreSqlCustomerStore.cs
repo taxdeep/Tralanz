@@ -47,7 +47,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<IReadOnlyList<CustomerRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -68,7 +68,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<CustomerRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -83,7 +83,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<CustomerRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         CustomerUpsertRequest request,
         CancellationToken cancellationToken)
     {
@@ -128,7 +128,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<CustomerRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CustomerUpsertRequest request,
         CancellationToken cancellationToken)
@@ -175,7 +175,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<IReadOnlyList<CustomerShippingAddressRecord>> ListShippingAddressHistoryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         int limit,
         CancellationToken cancellationToken)
@@ -273,7 +273,7 @@ public sealed class PostgreSqlCustomerStore(PostgreSqlConnectionFactory connecti
 
     private static CustomerRecord Map(NpgsqlDataReader reader) => new(
         reader.GetGuid(reader.GetOrdinal("id")),
-        reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         reader.GetString(reader.GetOrdinal("entity_number")),
         reader.GetString(reader.GetOrdinal("display_name")),
         reader.GetString(reader.GetOrdinal("default_currency_code")),

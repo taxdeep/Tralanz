@@ -29,7 +29,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -70,7 +70,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             order by a.code, a.name;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", query.CompanyId);
         command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -92,7 +92,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
         }
 
         return TrialBalanceReport.Create(
-            query.CompanyId.Value,
+            query.CompanyId,
             query.AsOfDate,
             baseCurrencyCode,
             query.IncludeZeroBalanceAccounts,
@@ -112,7 +112,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -155,7 +155,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             order by a.code, a.name;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", query.CompanyId);
         command.Parameters.AddWithValue("date_from", query.DateFrom);
         command.Parameters.AddWithValue("date_to", query.DateTo);
 
@@ -178,7 +178,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
         }
 
         return IncomeStatementReport.Create(
-            query.CompanyId.Value,
+            query.CompanyId,
             query.DateFrom,
             query.DateTo,
             baseCurrencyCode,
@@ -199,7 +199,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -241,7 +241,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                          order by a.code, a.name;
                          """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -265,12 +265,12 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var currentEarnings = await CalculateCurrentEarningsAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             query.AsOfDate,
             cancellationToken);
 
         return BalanceSheetReport.Create(
-            query.CompanyId.Value,
+            query.CompanyId,
             query.AsOfDate,
             baseCurrencyCode,
             query.IncludeZeroBalanceAccounts,
@@ -291,7 +291,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -393,7 +393,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
               oi.display_number asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", query.CompanyId);
         command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -426,7 +426,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
         }
 
         return ArAgingReport.Create(
-            query.CompanyId.Value,
+            query.CompanyId,
             query.AsOfDate,
             baseCurrencyCode,
             rows);
@@ -445,7 +445,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -547,7 +547,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
               oi.display_number asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", query.CompanyId);
         command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -580,7 +580,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
         }
 
         return ApAgingReport.Create(
-            query.CompanyId.Value,
+            query.CompanyId,
             query.AsOfDate,
             baseCurrencyCode,
             rows);
@@ -599,7 +599,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -630,7 +630,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("from_date", fromMonthStart);
             command.Parameters.AddWithValue("to_date", asOfMonthStart.AddMonths(1).AddDays(-1));
 
@@ -700,7 +700,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
             command.Parameters.AddWithValue("forecast_from", asOfMonthStart.AddMonths(1));
             command.Parameters.AddWithValue("forecast_to", forecastWindowEnd);
@@ -740,7 +740,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         return new SalesCashFlowReport
         {
-            CompanyId = query.CompanyId.Value,
+            CompanyId = query.CompanyId,
             AsOfDate = query.AsOfDate,
             BaseCurrencyCode = baseCurrencyCode!.Trim().ToUpperInvariant(),
             Months = buckets,
@@ -765,7 +765,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -797,7 +797,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                  group by 1
                  order by 1;
                 """);
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("from_date", windowStart);
             command.Parameters.AddWithValue("to_date", windowEnd);
 
@@ -837,7 +837,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         return new IncomeOverTimeReport
         {
-            CompanyId = query.CompanyId.Value,
+            CompanyId = query.CompanyId,
             FromDate = query.FromDate,
             ToDate = query.ToDate,
             BaseCurrencyCode = baseCurrencyCode!.Trim().ToUpperInvariant(),
@@ -862,7 +862,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -906,7 +906,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("from_date", fromMonthStart);
             command.Parameters.AddWithValue("to_date", asOfMonthStart.AddMonths(1).AddDays(-1));
 
@@ -975,7 +975,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
             command.Parameters.AddWithValue("forecast_from", asOfMonthStart.AddMonths(1));
             command.Parameters.AddWithValue("forecast_to", forecastWindowEnd);
@@ -1012,7 +1012,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         return new ExpenseCashOutflowReport
         {
-            CompanyId = query.CompanyId.Value,
+            CompanyId = query.CompanyId,
             AsOfDate = query.AsOfDate,
             BaseCurrencyCode = baseCurrencyCode!.Trim().ToUpperInvariant(),
             Months = buckets,
@@ -1037,7 +1037,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         var baseCurrencyCode = await TryGetBaseCurrencyCodeAsync(
             scope,
-            query.CompanyId.Value,
+            query.CompanyId,
             cancellationToken);
 
         if (string.IsNullOrWhiteSpace(baseCurrencyCode))
@@ -1082,7 +1082,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                  group by 1
                  order by 1;
                 """);
-            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
+            command.Parameters.AddWithValue("company_id", query.CompanyId);
             command.Parameters.AddWithValue("from_date", windowStart);
             command.Parameters.AddWithValue("to_date", windowEnd);
 
@@ -1122,7 +1122,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
         return new ExpenseOverTimeReport
         {
-            CompanyId = query.CompanyId.Value,
+            CompanyId = query.CompanyId,
             FromDate = query.FromDate,
             ToDate = query.ToDate,
             BaseCurrencyCode = baseCurrencyCode!.Trim().ToUpperInvariant(),
@@ -1136,7 +1136,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
     private static async Task<string?> TryGetBaseCurrencyCodeAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -1155,7 +1155,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
 
     private static async Task<decimal> CalculateCurrentEarningsAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {

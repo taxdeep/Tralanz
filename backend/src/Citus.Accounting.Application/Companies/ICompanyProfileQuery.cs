@@ -8,7 +8,7 @@ namespace Citus.Accounting.Application.Companies;
 /// </summary>
 public interface ICompanyProfileQuery
 {
-    Task<CompanyProfileSnapshot?> GetByIdAsync(Guid companyId, CancellationToken cancellationToken);
+    Task<CompanyProfileSnapshot?> GetByIdAsync(CompanyId companyId, CancellationToken cancellationToken);
 }
 
 public sealed record CompanyProfileSnapshot(

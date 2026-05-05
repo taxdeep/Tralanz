@@ -4,6 +4,6 @@ public interface IJournalEntryPostingStore
 {
     Task<JournalEntryPostResult> PostAsync(
         JournalEntryDraft draft,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 }

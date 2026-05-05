@@ -153,7 +153,7 @@ public sealed class CustomerShippingAddressBookClient(
 
 public sealed record CustomerShippingAddressBookDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid CustomerId,
     string? Label,
     string? AddressLine,

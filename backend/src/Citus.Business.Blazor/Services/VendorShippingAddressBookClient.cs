@@ -147,7 +147,7 @@ public sealed class VendorShippingAddressBookClient(
 
 public sealed record VendorShippingAddressBookDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid VendorId,
     string? Label,
     string? AddressLine,

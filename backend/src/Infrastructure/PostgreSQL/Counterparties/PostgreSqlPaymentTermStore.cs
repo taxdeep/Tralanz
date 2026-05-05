@@ -37,7 +37,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<IReadOnlyList<PaymentTermRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -58,7 +58,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         CancellationToken cancellationToken)
     {
@@ -73,7 +73,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         PaymentTermUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -104,7 +104,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         PaymentTermUpsertInput input,
         CancellationToken cancellationToken)
@@ -136,7 +136,7 @@ public sealed class PostgreSqlPaymentTermStore(PostgreSqlConnectionFactory conne
     }
 
     public async Task<PaymentTermRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid paymentTermId,
         bool isActive,
         CancellationToken cancellationToken)

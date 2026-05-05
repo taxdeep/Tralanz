@@ -219,8 +219,8 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
             await ApplyDepositSliceAsync(
                 connection,
                 transaction,
-                companyId.Value,
-                userId.Value,
+                companyId,
+                userId,
                 deposit,
                 context.InvoiceOpenItemId.Value,
                 remainingInvoiceOpen,
@@ -262,7 +262,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
         var entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             $"entity-number:all:{year}",
             $"EN{year}",
             8,
@@ -277,7 +277,7 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
         var displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             "customer-deposit-application-display",
             "DAPL-",
             6,
@@ -308,8 +308,8 @@ public sealed class PostgresCustomerDepositApplicationRepository : ICustomerDepo
     private static async Task ApplyDepositSliceAsync(
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         DepositRow deposit,
         Guid invoiceOpenItemId,
         decimal invoiceOpenRemaining,

@@ -4,7 +4,7 @@ public sealed record class ManualJournalSourceReview
 {
     public required Guid Id { get; init; }
 
-    public required Guid CompanyId { get; init; }
+    public required CompanyId CompanyId { get; init; }
 
     public required string EntityNumber { get; init; }
 
@@ -32,7 +32,7 @@ public sealed record class ManualJournalSourceReview
 
     public DateTimeOffset? PostedAt { get; init; }
 
-    public required Guid CreatedByUserId { get; init; }
+    public required UserId CreatedByUserId { get; init; }
 
     public Guid? LinkedJournalEntryId { get; init; }
 

@@ -14,7 +14,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
     }
 
     public async Task<SystemSetupPreference> GetAsync(
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -45,7 +45,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
     }
 
     public async Task<SystemSetupPreference> SaveAsync(
-        Guid userId,
+        UserId userId,
         NumberDisplayMode numberDisplayMode,
         CancellationToken cancellationToken)
     {

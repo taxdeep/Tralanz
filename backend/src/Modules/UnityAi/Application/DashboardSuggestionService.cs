@@ -61,8 +61,8 @@ public sealed class DashboardSuggestionService : IDashboardSuggestionService
     }
 
     public async Task<DashboardSuggestionGenerationResult> GenerateAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken)

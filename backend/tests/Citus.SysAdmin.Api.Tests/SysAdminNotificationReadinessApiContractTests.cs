@@ -1708,7 +1708,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         }
 
         public Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
-            Guid companyId,
+            CompanyId companyId,
             string status,
             string reason,
             Guid? sysAdminAccountId,
@@ -1824,7 +1824,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         public Guid? LastSysAdminAccountId { get; private set; }
 
         public Task<CompanyMembershipRoleChangeResult> ChangeRoleFromSysAdminAsync(
-            Guid companyId,
+            CompanyId companyId,
             Guid membershipId,
             string role,
             string reason,

@@ -26,7 +26,7 @@ public interface IPlatformSmtpConfigStore
     /// non-empty string rewrites the protected envelope.</summary>
     Task<PlatformSmtpConfigSnapshot> UpsertAsync(
         PlatformSmtpConfigUpsertRequest request,
-        Guid updatedByUserId,
+        UserId updatedByUserId,
         CancellationToken cancellationToken);
 }
 

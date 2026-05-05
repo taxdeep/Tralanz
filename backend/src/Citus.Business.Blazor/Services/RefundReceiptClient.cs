@@ -6,7 +6,7 @@ namespace Citus.Business.Blazor.Services;
 public sealed class RefundReceiptClient(HttpClient httpClient, ILogger<RefundReceiptClient> logger)
 {
     public async Task<IReadOnlyList<RefundReceiptSummaryDto>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeDrafts = true,
         CancellationToken cancellationToken = default)
     {
@@ -25,7 +25,7 @@ public sealed class RefundReceiptClient(HttpClient httpClient, ILogger<RefundRec
 
     public async Task<RefundReceiptRecordDto?> GetByIdAsync(
         Guid documentId,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -47,7 +47,7 @@ public sealed class RefundReceiptClient(HttpClient httpClient, ILogger<RefundRec
 
 public sealed record RefundReceiptRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string DisplayNumber,
     string Status,

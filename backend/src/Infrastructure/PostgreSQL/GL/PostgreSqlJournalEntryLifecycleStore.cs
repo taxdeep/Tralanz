@@ -19,9 +19,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     }
 
     public Task<JournalEntryLifecycleResult> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         ApplyLifecycleAsync(
             companyId,
@@ -33,9 +33,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             cancellationToken);
 
     public Task<JournalEntryLifecycleResult> ReverseAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken) =>
         ApplyLifecycleAsync(
             companyId,
@@ -47,9 +47,9 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             cancellationToken);
 
     private async Task<JournalEntryLifecycleResult> ApplyLifecycleAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
-        Guid userId,
+        UserId userId,
         string originalStatus,
         string? compensationSourceType,
         string actionLabel,
@@ -395,7 +395,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     private async Task<string> ReserveJournalDisplayNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var nextDisplayNumber = await _journalEntryNumberLookup.GetNextDisplayNumberAsync(companyId, cancellationToken);
@@ -463,7 +463,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     private static async Task<LifecycleHeader?> LoadOriginalAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         CancellationToken cancellationToken)
     {
@@ -564,7 +564,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     private static async Task<IReadOnlyList<LifecycleLine>> LoadOriginalLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         CancellationToken cancellationToken)
     {
@@ -635,7 +635,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     private static async Task EnsurePostingPeriodOpenAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         DateOnly postingDate,
         CancellationToken cancellationToken)
     {
@@ -706,7 +706,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
     private static async Task<LifecycleCompensation?> TryFindExistingCompensationAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         string compensationSourceType,
         CancellationToken cancellationToken)

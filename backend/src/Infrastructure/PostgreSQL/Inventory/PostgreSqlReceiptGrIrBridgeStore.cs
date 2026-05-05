@@ -24,8 +24,8 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     }
 
     public async Task<ReceiptGrIrBridgeSummary> RefreshReceiptGrIrBridgeAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -74,7 +74,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     }
 
     public async Task<ReceiptGrIrBridgeSummary?> GetReceiptGrIrBridgeSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -90,7 +90,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptGrIrBridgeSummary>> GetReceiptGrIrBridgeSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -114,7 +114,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     private static async Task AcquireReceiptGrIrBridgeLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -128,8 +128,8 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     private static async Task UpsertBridgeLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -285,7 +285,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     private static async Task<ReceiptGrIrBridgeSummary?> LoadReceiptGrIrBridgeSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         bool hasBridgeLines,
         CancellationToken cancellationToken)
@@ -303,7 +303,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
     private static async Task<IReadOnlyDictionary<Guid, ReceiptGrIrBridgeSummary>> LoadReceiptGrIrBridgeSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         bool hasBridgeLines,
         CancellationToken cancellationToken)

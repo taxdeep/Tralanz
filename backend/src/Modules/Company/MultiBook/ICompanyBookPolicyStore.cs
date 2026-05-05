@@ -5,68 +5,68 @@ namespace Modules.Company.MultiBook;
 public interface ICompanyBookPolicyStore
 {
     Task<IReadOnlyList<CompanyBookGovernanceState>> ListBookGovernanceAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 
     Task<CompanyBookGovernanceSignalSummary> GetGovernanceSignalsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 
     Task<CompanyBookGovernanceSignalRecord> CreateGovernanceSignalAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         string signalType,
         DateOnly signalDate,
         string? referenceLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<CompanyBookGovernedChangeRequestDraft> CreateGovernedChangeRequestDraftAsync(
         CompanyBookGovernedChangePreview preview,
         DateOnly asOfDate,
         DateOnly effectiveFrom,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<CompanyBookGovernedChangeRequestDraft?> GetGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CompanyBookGovernedChangeRequestDraft>> ListGovernedChangeRequestDraftsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<CompanyBookGovernedChangeRequestDraft> SubmitGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<CompanyBookGovernedChangeRequestDraft> CancelGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<CompanyBookPolicyGovernanceResult?> TryGetDefaultRemeasurementPolicyAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 
     Task<CompanyBookPolicyGovernanceResult?> TryGetRemeasurementPolicyAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 
     Task<CompanyBookPolicyGovernanceResult> EnsureDefaultPrimaryBookPolicyAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         DateOnly asOfDate,
         CancellationToken cancellationToken);
 }

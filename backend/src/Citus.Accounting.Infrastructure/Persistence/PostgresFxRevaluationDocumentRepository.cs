@@ -201,13 +201,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         var unrealizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
             scope,
-            companyId.Value,
+            companyId,
             cancellationToken,
             "unrealized_fx_gain",
             "fx_gain_unrealized");
         var unrealizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
             scope,
-            companyId.Value,
+            companyId,
             cancellationToken,
             "unrealized_fx_loss",
             "fx_loss_unrealized");
@@ -277,7 +277,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             {
                 var currentOpenItem = await LoadCurrentOpenItemAsync(
                     scope,
-                    companyId.Value,
+                    companyId,
                     lineRow.TargetOpenItemType,
                     lineRow.TargetOpenItemId,
                     cancellationToken);
@@ -577,7 +577,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         var sourceBatch = await LoadSourceBatchForUnwindAsync(
             scope,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -593,7 +593,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         var activeChain = await LoadActiveRevaluationChainAsync(
             scope,
-            companyId.Value,
+            companyId,
             sourceBatch,
             cancellationToken);
 
@@ -619,7 +619,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             _executionContextAccessor,
             cancellationToken);
 
-        var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(scope, request.CompanyId.Value, cancellationToken);
+        var baseCurrencyCode = await LoadCompanyBaseCurrencyCodeAsync(scope, request.CompanyId, cancellationToken);
         if (string.Equals(baseCurrencyCode, request.TransactionCurrencyCode.Value, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("FX revaluation preparation requires a foreign transaction currency.");
@@ -627,16 +627,16 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         var bookPolicy = await EnsureAndLoadRemeasurementBookPolicyAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             request.BookId,
-            request.UserId.Value,
+            request.UserId,
             baseCurrencyCode,
             request.RevaluationDate,
             cancellationToken);
 
         var fxSnapshot = await LoadAcceptedFxSnapshotAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             baseCurrencyCode,
             request.TransactionCurrencyCode.Value,
             bookPolicy,
@@ -650,13 +650,13 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         var unrealizedFxGainAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             cancellationToken,
             "unrealized_fx_gain",
             "fx_gain_unrealized");
         var unrealizedFxLossAccountId = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             cancellationToken,
             "unrealized_fx_loss",
             "fx_loss_unrealized");
@@ -672,7 +672,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         {
             candidateLines.AddRange(await LoadPreparedArLinesAsync(
                 scope,
-                request.CompanyId.Value,
+                request.CompanyId,
                 baseCurrencyCode,
                 request.TransactionCurrencyCode.Value,
                 fxSnapshot,
@@ -685,7 +685,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         {
             candidateLines.AddRange(await LoadPreparedApLinesAsync(
                 scope,
-                request.CompanyId.Value,
+                request.CompanyId,
                 baseCurrencyCode,
                 request.TransactionCurrencyCode.Value,
                 fxSnapshot,
@@ -709,14 +709,14 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         var batchId = Guid.NewGuid();
         var entityNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             $"entity-number:fx-revaluation:{request.RevaluationDate:yyyy}",
             $"EN{request.RevaluationDate:yyyy}",
             padding: 8,
             cancellationToken);
         var displayNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             "fx-revaluation-display",
             "FXRV-",
             padding: 6,
@@ -725,8 +725,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         await InsertBatchHeaderAsync(
             scope,
             batchId,
-            request.CompanyId.Value,
-            request.UserId.Value,
+            request.CompanyId,
+            request.UserId,
             entityNumber,
             displayNumber,
             "revaluation",
@@ -738,7 +738,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             fxSnapshot,
             request.Memo,
             cancellationToken);
-        await InsertBatchLinesAsync(scope, request.CompanyId.Value, batchId, preparedLines, cancellationToken);
+        await InsertBatchLinesAsync(scope, request.CompanyId, batchId, preparedLines, cancellationToken);
 
         return new FxRevaluationDraftPreparationResult(
             batchId,
@@ -766,7 +766,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
         var sourceBatch = await LoadSourceBatchForUnwindAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             request.ReversalOfDocumentId,
             cancellationToken);
 
@@ -789,19 +789,19 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             sourceBatch.DisplayNumber,
             await FindActiveDescendantRevaluationAsync(
                 scope,
-                request.CompanyId.Value,
+                request.CompanyId,
                 sourceBatch,
                 cancellationToken));
 
         await EnsureNoActiveUnwindAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             request.ReversalOfDocumentId,
             cancellationToken);
 
         var preparedLines = await LoadPreparedUnwindLinesAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             sourceBatch,
             cancellationToken);
 
@@ -813,14 +813,14 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         var batchId = Guid.NewGuid();
         var entityNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             $"entity-number:fx-revaluation:{request.UnwindDate:yyyy}",
             $"EN{request.UnwindDate:yyyy}",
             padding: 8,
             cancellationToken);
         var displayNumber = await PostgresNumberingSequences.ReserveAsync(
             scope,
-            request.CompanyId.Value,
+            request.CompanyId,
             "fx-revaluation-unwind-display",
             "FXUN-",
             padding: 6,
@@ -833,8 +833,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
         await InsertBatchHeaderAsync(
             scope,
             batchId,
-            request.CompanyId.Value,
-            request.UserId.Value,
+            request.CompanyId,
+            request.UserId,
             entityNumber,
             displayNumber,
             "next_period_unwind",
@@ -857,7 +857,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
             sourceBatch.FxSnapshot,
             memo,
             cancellationToken);
-        await InsertBatchLinesAsync(scope, request.CompanyId.Value, batchId, preparedLines, cancellationToken);
+        await InsertBatchLinesAsync(scope, request.CompanyId, batchId, preparedLines, cancellationToken);
 
         return new FxRevaluationDraftPreparationResult(
             batchId,
@@ -875,8 +875,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
     private static async Task InsertBatchHeaderAsync(
         PostgresCommandScope scope,
         Guid batchId,
-        Guid companyId,
-        Guid createdByUserId,
+        CompanyId companyId,
+        UserId createdByUserId,
         string entityNumber,
         string displayNumber,
         string batchKind,
@@ -1025,7 +1025,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task InsertBatchLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid batchId,
         IReadOnlyList<FxRevaluationPreparedLine> preparedLines,
         CancellationToken cancellationToken)
@@ -1096,7 +1096,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -1119,7 +1119,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<FxSnapshotRef?> LoadAcceptedFxSnapshotAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string transactionCurrencyCode,
         ResolvedRemeasurementBookPolicy bookPolicy,
@@ -1216,7 +1216,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<SourceFxRevaluationBatch> LoadSourceBatchForUnwindAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -1333,7 +1333,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task EnsureNoActiveUnwindAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceBatchId,
         CancellationToken cancellationToken)
     {
@@ -1361,7 +1361,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<IReadOnlyList<FxRevaluationCascadePlanner.ActiveRevaluationBatch>> LoadActiveRevaluationChainAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         SourceFxRevaluationBatch sourceBatch,
         CancellationToken cancellationToken)
     {
@@ -1426,7 +1426,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<FxRevaluationChainGuard.ActiveDescendantRevaluation?> FindActiveDescendantRevaluationAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         SourceFxRevaluationBatch sourceBatch,
         CancellationToken cancellationToken)
     {
@@ -1472,7 +1472,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<IReadOnlyList<FxRevaluationPreparedLine>> LoadPreparedUnwindLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         SourceFxRevaluationBatch sourceBatch,
         CancellationToken cancellationToken)
     {
@@ -1615,7 +1615,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<IReadOnlyList<decimal>> LoadSettlementSequenceAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string targetOpenItemType,
         Guid targetOpenItemId,
         DateTimeOffset postedAt,
@@ -1649,7 +1649,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<IReadOnlyList<FxRevaluationPreparedLine>> LoadPreparedArLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string transactionCurrencyCode,
         FxSnapshotRef fxSnapshot,
@@ -1734,7 +1734,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<IReadOnlyList<FxRevaluationPreparedLine>> LoadPreparedApLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string transactionCurrencyCode,
         FxSnapshotRef fxSnapshot,
@@ -1819,7 +1819,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<CurrentOpenItemState> LoadCurrentOpenItemAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         string targetOpenItemType,
         Guid targetOpenItemId,
         CancellationToken cancellationToken)
@@ -1919,9 +1919,9 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<ResolvedRemeasurementBookPolicy> EnsureAndLoadRemeasurementBookPolicyAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid? requestedBookId,
-        Guid userId,
+        UserId userId,
         string companyBaseCurrencyCode,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
@@ -2035,8 +2035,8 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task EnsureDefaultPrimaryBookPolicyAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string companyBaseCurrencyCode,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
@@ -2159,7 +2159,7 @@ public sealed class PostgresFxRevaluationDocumentRepository : IFxRevaluationDocu
 
     private static async Task<ResolvedRemeasurementBookPolicy?> LoadRemeasurementBookPolicyAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid? bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)

@@ -812,7 +812,7 @@ public sealed class PostgresSysAdminAuthRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string actorType,
-        Guid? actorId,
+        UserId? actorId,
         string entityType,
         Guid entityId,
         string action,

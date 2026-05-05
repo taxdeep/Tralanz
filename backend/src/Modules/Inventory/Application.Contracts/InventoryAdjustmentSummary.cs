@@ -4,7 +4,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryAdjustmentSummary(
     Guid DocumentId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string DocumentNumber,
     string Status,
     InventoryAdjustmentKind AdjustmentKind,

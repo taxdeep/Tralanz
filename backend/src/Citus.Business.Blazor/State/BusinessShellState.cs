@@ -138,7 +138,7 @@ public sealed class BusinessShellState
 
     public Guid CurrentUserId => User.Id;
 
-    public bool TrySetActiveCompany(Guid companyId)
+    public bool TrySetActiveCompany(CompanyId companyId)
     {
         var company = AvailableCompanies.FirstOrDefault(candidate => candidate.Id == companyId);
         if (company is null)

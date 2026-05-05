@@ -31,4 +31,7 @@
     <FileVersion>0.0.0.0</FileVersion>
     <InformationalVersion>0.00.000.0000.00.3X</InformationalVersion>
   </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'SharedKernel'">
+    <Using Include="SharedKernel.Identity" />
+  </ItemGroup>
 </Project>

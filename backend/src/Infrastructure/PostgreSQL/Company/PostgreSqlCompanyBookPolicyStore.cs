@@ -26,7 +26,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<IReadOnlyList<CompanyBookGovernanceState>> ListBookGovernanceAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -128,7 +128,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         {
             var book = new CompanyBookRecord(
                 reader.GetGuid(reader.GetOrdinal("book_id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("book_code")),
                 reader.GetString(reader.GetOrdinal("book_name")),
                 reader.GetString(reader.GetOrdinal("book_role")),
@@ -148,7 +148,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             {
                 policy = new CompanyBookRemeasurementPolicy(
                     reader.GetGuid(reader.GetOrdinal("policy_id")),
-                    reader.GetGuid(reader.GetOrdinal("company_id")),
+                    CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                     reader.GetGuid(reader.GetOrdinal("book_id")),
                     reader.GetString(reader.GetOrdinal("rate_type")),
                     reader.GetString(reader.GetOrdinal("quote_basis")),
@@ -197,20 +197,20 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public Task<CompanyBookGovernanceSignalSummary> GetGovernanceSignalsAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken) =>
         GetGovernanceSignalsCoreAsync(companyId, bookId, asOfDate, cancellationToken);
 
     public async Task<CompanyBookGovernanceSignalRecord> CreateGovernanceSignalAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         string signalType,
         DateOnly signalDate,
         string? referenceLabel,
         string? notes,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -267,7 +267,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         CompanyBookGovernedChangePreview preview,
         DateOnly asOfDate,
         DateOnly effectiveFrom,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preview);
@@ -467,7 +467,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<CompanyBookGovernedChangeRequestDraft?> GetGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
         CancellationToken cancellationToken)
     {
@@ -476,7 +476,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<IReadOnlyList<CompanyBookGovernedChangeRequestDraft>> ListGovernedChangeRequestDraftsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -549,9 +549,9 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<CompanyBookGovernedChangeRequestDraft> SubmitGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -582,9 +582,9 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<CompanyBookGovernedChangeRequestDraft> CancelGovernedChangeRequestDraftAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -615,7 +615,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<CompanyBookPolicyGovernanceResult?> TryGetDefaultRemeasurementPolicyAsync(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -631,7 +631,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<CompanyBookPolicyGovernanceResult?> TryGetRemeasurementPolicyAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
@@ -648,8 +648,8 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     public async Task<CompanyBookPolicyGovernanceResult> EnsureDefaultPrimaryBookPolicyAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -709,9 +709,9 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     private static async Task<Guid> EnsurePrimaryBookAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
-        Guid userId,
+        UserId userId,
         DateOnly effectiveFrom,
         CancellationToken cancellationToken)
     {
@@ -798,9 +798,9 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     private static async Task EnsureRemeasurementPolicyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
-        Guid userId,
+        UserId userId,
         DateOnly effectiveFrom,
         CancellationToken cancellationToken)
     {
@@ -882,7 +882,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     private static async Task<(string BaseCurrencyCode, string Status)> GetCompanyRowAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -917,7 +917,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     private static async Task<CompanyBookPolicyGovernanceResult?> TryLoadPolicyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid? bookId,
         bool requirePrimaryBook,
         DateOnly asOfDate,
@@ -983,7 +983,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
 
         var book = new CompanyBookRecord(
             reader.GetGuid(reader.GetOrdinal("book_id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("book_code")),
             reader.GetString(reader.GetOrdinal("book_name")),
             reader.GetString(reader.GetOrdinal("book_role")),
@@ -1000,7 +1000,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
 
         var policy = new CompanyBookRemeasurementPolicy(
             reader.GetGuid(reader.GetOrdinal("policy_id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetGuid(reader.GetOrdinal("book_id")),
             reader.GetString(reader.GetOrdinal("rate_type")),
             reader.GetString(reader.GetOrdinal("quote_basis")),
@@ -1016,7 +1016,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
 
     private static async Task<CompanyBookGovernedChangeRequestDraft?> GetGovernedChangeRequestDraftAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
         CancellationToken cancellationToken)
     {
@@ -1092,7 +1092,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     private static CompanyBookGovernedChangeRequestDraft MapGovernedChangeRequestDraft(NpgsqlDataReader reader)
     {
         var bookId = reader.GetGuid(reader.GetOrdinal("company_book_id"));
-        var companyId = reader.GetGuid(reader.GetOrdinal("company_id"));
+        var companyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")));
         var book = new CompanyBookRecord(
             bookId,
             companyId,
@@ -1194,7 +1194,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             requestedAction,
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("as_of_date")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("effective_from")),
-            reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             reader.IsDBNull(reader.GetOrdinal("submitted_by_user_id"))
                 ? null
@@ -1219,7 +1219,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
     }
 
     private async Task<CompanyBookGovernanceSignalSummary> GetGovernanceSignalsCoreAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
@@ -1235,7 +1235,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
 
     private static async Task<CompanyBookGovernanceSignalSummary> LoadGovernanceSignalsAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly asOfDate,
         CancellationToken cancellationToken,
@@ -1272,7 +1272,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
         {
             signals.Add(new CompanyBookGovernanceSignalRecord(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetGuid(reader.GetOrdinal("company_book_id")),
                 reader.GetString(reader.GetOrdinal("signal_type")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("signal_date")),
@@ -1284,7 +1284,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
                     : reader.GetString(reader.GetOrdinal("notes")),
                 reader.IsDBNull(reader.GetOrdinal("created_by_user_id"))
                     ? null
-                    : reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
+                    : UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"))));
         }
 

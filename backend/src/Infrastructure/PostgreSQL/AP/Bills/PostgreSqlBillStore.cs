@@ -38,7 +38,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     }
 
     public async Task<IReadOnlyList<BillSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         BillListFilter filter,
         CancellationToken cancellationToken)
     {
@@ -94,7 +94,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     }
 
     public async Task<BillRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken)
     {
@@ -120,8 +120,8 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     }
 
     public async Task<BillRecord> CreateAsync(
-        Guid companyId,
-        Guid createdByUserId,
+        CompanyId companyId,
+        UserId createdByUserId,
         BillUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -172,7 +172,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     }
 
     public async Task<BillRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         BillUpsertInput input,
         CancellationToken cancellationToken)
@@ -242,7 +242,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     }
 
     public async Task<BillRecord?> PostAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken)
     {
@@ -279,7 +279,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     }
 
     public async Task<BillRecord?> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken)
     {
@@ -347,7 +347,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
     private static async Task InsertLinesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         IReadOnlyList<BillLineInput> lines,
         CancellationToken cancellationToken)
@@ -380,7 +380,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
 
     private static void BindUpsertParameters(
         NpgsqlCommand command,
-        Guid companyId,
+        CompanyId companyId,
         BillUpsertInput input,
         string baseCurrencyCode)
     {
@@ -412,7 +412,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
 
     private static async Task<string> ReadBaseCurrencyAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
@@ -491,7 +491,7 @@ public sealed class PostgreSqlBillStore(PostgreSqlConnectionFactory connections)
 
     private static BillRecord MapRecord(NpgsqlDataReader reader, IReadOnlyList<BillLineRecord> lines) => new(
         Id: reader.GetGuid(reader.GetOrdinal("id")),
-        CompanyId: reader.GetGuid(reader.GetOrdinal("company_id")),
+        CompanyId: CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
         EntityNumber: reader.GetString(reader.GetOrdinal("entity_number")),
         BillNumber: reader.GetString(reader.GetOrdinal("bill_number")),
         Status: reader.GetString(reader.GetOrdinal("status")),

@@ -104,7 +104,7 @@ public sealed record class BalanceSheetAccountAmount
 
 public sealed record class BalanceSheetReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly AsOfDate { get; init; }
 
@@ -133,7 +133,7 @@ public sealed record class BalanceSheetReport
     public IReadOnlyList<BalanceSheetAccountAmount> EquityRows { get; init; } = Array.Empty<BalanceSheetAccountAmount>();
 
     public static BalanceSheetReport Create(
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         string baseCurrencyCode,
         bool includeZeroBalanceAccounts,

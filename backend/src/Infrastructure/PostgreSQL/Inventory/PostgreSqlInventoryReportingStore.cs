@@ -18,7 +18,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
     }
 
     public async Task<InventoryAvailabilityDashboard> GetAvailabilityDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter filter,
         CancellationToken cancellationToken)
     {
@@ -58,7 +58,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -81,7 +81,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -120,7 +120,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -147,7 +147,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -174,7 +174,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
@@ -187,7 +187,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryItemAvailabilitySummary>> LoadAvailabilityRowsAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -274,7 +274,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<IReadOnlyList<InventoryLedgerEntrySummary>> LoadRecentLedgerEntriesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter? filter,
         CancellationToken cancellationToken)
     {
@@ -348,7 +348,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static Task<InventoryAvailabilityLedgerDrillDown?> BuildDrillDownAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter filter,
         IReadOnlyList<InventoryManagedItemSummary> activeItems,
         IReadOnlyList<InventoryManagedWarehouseSummary> activeWarehouses,
@@ -388,7 +388,7 @@ public sealed class PostgreSqlInventoryReportingStore : IInventoryReportingStore
 
     private static async Task<InventoryAvailabilityLedgerDrillDown?> BuildDrillDownAsyncCore(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         InventoryAvailabilityFilter filter,
         string? itemDisplayText,
         string? warehouseDisplayText,

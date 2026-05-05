@@ -27,7 +27,7 @@ public interface IPlatformGovernanceRepository
         CancellationToken cancellationToken);
 
     Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         string status,
         string reason,
         Guid? sysAdminAccountId,

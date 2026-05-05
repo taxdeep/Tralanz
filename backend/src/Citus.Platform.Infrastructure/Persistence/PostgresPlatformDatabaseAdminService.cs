@@ -76,7 +76,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
     }
 
     public async Task<PlatformDatabaseBackupRecord> StartBackupAsync(
-        Guid triggeredByUserId,
+        UserId triggeredByUserId,
         CancellationToken cancellationToken)
     {
         var connectionInfo = ParseConnection();
@@ -195,7 +195,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
     }
 
     public async Task<PlatformDatabaseMaintenanceRun> RunVacuumAnalyzeAsync(
-        Guid triggeredByUserId,
+        UserId triggeredByUserId,
         CancellationToken cancellationToken)
     {
         const string insertSql = """

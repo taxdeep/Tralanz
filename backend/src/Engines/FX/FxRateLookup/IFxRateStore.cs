@@ -5,7 +5,7 @@ namespace Engines.FX.FxRateLookup;
 public interface IFxRateStore
 {
     Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -21,7 +21,7 @@ public interface IFxRateStore
         CancellationToken cancellationToken);
 
     Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid snapshotId,
         CancellationToken cancellationToken);
 
@@ -30,7 +30,7 @@ public interface IFxRateStore
         CancellationToken cancellationToken);
 
     Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -56,8 +56,8 @@ public interface IFxRateStore
         CancellationToken cancellationToken);
 
     Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-        Guid companyId,
-        Guid? createdByUserId,
+        CompanyId companyId,
+        UserId? createdByUserId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -70,8 +70,8 @@ public interface IFxRateStore
         CancellationToken cancellationToken);
 
     Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-        Guid companyId,
-        Guid? createdByUserId,
+        CompanyId companyId,
+        UserId? createdByUserId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,

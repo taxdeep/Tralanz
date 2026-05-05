@@ -15,7 +15,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
     }
 
     public async Task<FxSnapshotRecord?> FindLatestCompanySnapshotAsync(
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -81,7 +81,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
     }
 
     public async Task<IReadOnlyList<FxSnapshotRecord>> ListCompanySnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -234,7 +234,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
     }
 
     public async Task<FxSnapshotRecord?> FindCompanySnapshotByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid snapshotId,
         CancellationToken cancellationToken)
     {
@@ -391,8 +391,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
     }
 
     public async Task<FxSnapshotRecord> UpsertCompanySnapshotAsync(
-        Guid companyId,
-        Guid? createdByUserId,
+        CompanyId companyId,
+        UserId? createdByUserId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -565,8 +565,8 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
     }
 
     public async Task<FxSnapshotRecord> CreateManualCompanySnapshotAsync(
-        Guid companyId,
-        Guid? createdByUserId,
+        CompanyId companyId,
+        UserId? createdByUserId,
         string baseCurrencyCode,
         string quoteCurrencyCode,
         DateOnly requestedDate,
@@ -666,7 +666,7 @@ public sealed class PostgreSqlFxRateStore : IFxRateStore
     private static FxSnapshotRecord ReadSnapshot(NpgsqlDataReader reader) =>
         new(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("company_id")),
+            CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             reader.GetString(reader.GetOrdinal("base_currency_code")),
             reader.GetString(reader.GetOrdinal("quote_currency_code")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("requested_date")),

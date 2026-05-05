@@ -21,7 +21,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     }
 
     public async Task<InventorySalesIssueDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         _ = await _foundationStore.GetSummaryAsync(companyId, cancellationToken);
@@ -43,7 +43,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     }
 
     public async Task<InventoryInvoiceIssueHandoffSummary> GetInvoiceHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -103,7 +103,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     }
 
     public async Task<IReadOnlyDictionary<Guid, InventoryInvoiceIssuePostingGateSnapshot>> GetInvoicePostingGateSnapshotsAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> invoiceDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -643,7 +643,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<string> LoadCompanyBaseCurrencyCodeAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -668,7 +668,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<string> LoadCustomerDisplayNameAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken)
     {
@@ -698,7 +698,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<Dictionary<Guid, InventoryManagedItemSummary>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {
@@ -743,7 +743,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             var summary = new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -784,7 +784,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<Dictionary<Guid, InventoryManagedWarehouseSummary>> LoadWarehouseMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> warehouseIds,
         CancellationToken cancellationToken)
     {
@@ -819,7 +819,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             var summary = new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -836,7 +836,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<ItemWarehouseBalanceSnapshot> LoadCurrentBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -872,7 +872,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<decimal> LoadCurrentCostBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -896,7 +896,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<IReadOnlyList<OpenCostLayer>> LoadOpenCostLayersAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -1058,7 +1058,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task UpsertBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         decimal quantityDelta,
@@ -1105,7 +1105,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<IReadOnlyList<InventoryManagedItemSummary>> LoadActiveItemsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1145,7 +1145,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             items.Add(new InventoryManagedItemSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("item_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1185,7 +1185,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<IReadOnlyList<InventoryManagedWarehouseSummary>> LoadActiveWarehousesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1213,7 +1213,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             warehouses.Add(new InventoryManagedWarehouseSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("warehouse_code")),
                 reader.GetString(reader.GetOrdinal("name")),
                 reader.IsDBNull(reader.GetOrdinal("description"))
@@ -1229,7 +1229,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<(int LineCount, decimal TotalQuantity)> LoadInvoiceOutboundSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1264,7 +1264,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<IReadOnlyList<InventoryInvoiceIssueHandoffLineSummary>> LoadInvoiceHandoffLineSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1384,7 +1384,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadInvoiceAnchoredIssuesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1439,7 +1439,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             issues.Add(new InventorySalesIssueSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),
@@ -1463,7 +1463,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
     private static async Task<IReadOnlyList<InventorySalesIssueSummary>> LoadRecentIssuesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1514,7 +1514,7 @@ public sealed class PostgreSqlInventoryIssueStore : IInventoryIssueStore
         {
             issues.Add(new InventorySalesIssueSummary(
                 reader.GetGuid(reader.GetOrdinal("id")),
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("document_number")),
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetFieldValue<DateOnly>(reader.GetOrdinal("posting_date")),

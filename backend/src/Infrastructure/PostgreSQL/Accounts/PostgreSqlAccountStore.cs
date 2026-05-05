@@ -55,7 +55,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<IReadOnlyList<AccountRecord>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         bool includeInactive,
         CancellationToken cancellationToken)
     {
@@ -76,7 +76,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         CancellationToken cancellationToken)
     {
@@ -91,7 +91,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         AccountUpsertInput input,
         CancellationToken cancellationToken)
     {
@@ -134,7 +134,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         AccountUpsertInput input,
         CancellationToken cancellationToken)
@@ -177,7 +177,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> SetActiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid accountId,
         bool isActive,
         CancellationToken cancellationToken)
@@ -208,7 +208,7 @@ public sealed class PostgreSqlAccountStore(PostgreSqlConnectionFactory connectio
     }
 
     public async Task<AccountRecord?> SeedSystemAccountAsync(
-        Guid companyId,
+        CompanyId companyId,
         AccountSeedInput input,
         CancellationToken cancellationToken)
     {

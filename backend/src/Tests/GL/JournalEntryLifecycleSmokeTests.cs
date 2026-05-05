@@ -12,8 +12,8 @@ namespace Tests.GL;
 
 public sealed class JournalEntryLifecycleSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
 
     [Fact]
     public async Task VoidAsync_CreatesCompensationJournalAndMarksOriginalVoided()
@@ -422,7 +422,7 @@ public sealed class JournalEntryLifecycleSmokeTests
 
     private static async Task SeedClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         DateOnly journalDate,
         CancellationToken cancellationToken)
@@ -536,7 +536,7 @@ public sealed class JournalEntryLifecycleSmokeTests
 
     private static async Task CleanupClosedPrimaryBookAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid bookId,
         CancellationToken cancellationToken)
     {

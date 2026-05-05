@@ -114,7 +114,7 @@ else if (_companies.Count > 0)
         _isLoading = false;
     }
 
-    private async Task SwitchCompanyAsync(Guid companyId)
+    private async Task SwitchCompanyAsync(CompanyId companyId)
     {
         var context = await SysAdminControlClient.SetActiveCompanyAsync(companyId);
 
@@ -128,7 +128,7 @@ else if (_companies.Count > 0)
         await Message.SuccessAsync($"Active company switched to {context.ActiveCompany.CompanyName}.");
     }
 
-    private bool IsStatusUpdating(Guid companyId) => _statusUpdates.Contains(companyId);
+    private bool IsStatusUpdating(CompanyId companyId) => _statusUpdates.Contains(companyId);
 
     private async Task SetCompanyStatusAsync(CompanyWorkspaceSummary company, string status)
     {

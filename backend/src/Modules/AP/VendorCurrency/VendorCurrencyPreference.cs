@@ -2,7 +2,7 @@ namespace Modules.AP.VendorCurrency;
 
 public sealed record VendorCurrencyPreference(
     Guid VendorId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string DisplayName,
     string DefaultCurrencyCode,
     bool CurrencyLocked,

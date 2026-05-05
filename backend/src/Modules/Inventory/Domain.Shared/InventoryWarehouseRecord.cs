@@ -2,7 +2,7 @@ namespace Citus.Modules.Inventory.Domain.Shared;
 
 public sealed record class InventoryWarehouseRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string WarehouseCode,
     string Name,
     string AddressLine,

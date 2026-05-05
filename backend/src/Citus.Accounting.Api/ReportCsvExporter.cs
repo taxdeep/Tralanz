@@ -419,7 +419,7 @@ public static class ReportCsvExporter
     private static void AppendAgingMetadata(
         CsvBuilder builder,
         string reportName,
-        Guid companyId,
+        CompanyId companyId,
         DateOnly asOfDate,
         string baseCurrencyCode,
         int counterpartyCount,

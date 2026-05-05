@@ -139,13 +139,13 @@ public sealed class PostReceiptWorkflowTests
 
         public int ActivateCalls { get; private set; }
 
-        public Task ValidateCanActivateAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken)
+        public Task ValidateCanActivateAsync(CompanyId companyId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {
             ValidateCalls++;
             return Task.CompletedTask;
         }
 
-        public Task<ReceiptInventoryActivationSummary> ActivatePostedReceiptAsync(Guid companyId, Guid userId, Guid receiptDocumentId, CancellationToken cancellationToken)
+        public Task<ReceiptInventoryActivationSummary> ActivatePostedReceiptAsync(CompanyId companyId, UserId userId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {
             ActivateCalls++;
             return Task.FromResult(new ReceiptInventoryActivationSummary(
@@ -160,13 +160,13 @@ public sealed class PostReceiptWorkflowTests
                 DateTimeOffset.UtcNow));
         }
 
-        public Task RecordActivationFailureAsync(Guid companyId, Guid userId, Guid receiptDocumentId, string failureMessage, CancellationToken cancellationToken) =>
+        public Task RecordActivationFailureAsync(CompanyId companyId, UserId userId, Guid receiptDocumentId, string failureMessage, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task<ReceiptInventoryActivationSummary?> GetReceiptActivationSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+        public Task<ReceiptInventoryActivationSummary?> GetReceiptActivationSummaryAsync(CompanyId companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
             Task.FromResult<ReceiptInventoryActivationSummary?>(null);
 
-        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>> GetReceiptActivationSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>> GetReceiptActivationSummariesAsync(CompanyId companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>>(new Dictionary<Guid, ReceiptInventoryActivationSummary>());
     }
 
@@ -174,7 +174,7 @@ public sealed class PostReceiptWorkflowTests
     {
         public int RefreshCalls { get; private set; }
 
-        public Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(Guid companyId, Guid userId, Guid receiptDocumentId, CancellationToken cancellationToken)
+        public Task<ReceiptInventoryValuationSummary> RefreshReceiptValuationAsync(CompanyId companyId, UserId userId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {
             RefreshCalls++;
             return Task.FromResult(new ReceiptInventoryValuationSummary(
@@ -189,10 +189,10 @@ public sealed class PostReceiptWorkflowTests
                 DateTimeOffset.UtcNow));
         }
 
-        public Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+        public Task<ReceiptInventoryValuationSummary?> GetReceiptValuationSummaryAsync(CompanyId companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
             Task.FromResult<ReceiptInventoryValuationSummary?>(null);
 
-        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> GetReceiptValuationSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>> GetReceiptValuationSummariesAsync(CompanyId companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryValuationSummary>>(new Dictionary<Guid, ReceiptInventoryValuationSummary>());
     }
 
@@ -200,7 +200,7 @@ public sealed class PostReceiptWorkflowTests
     {
         public int EmitCalls { get; private set; }
 
-        public Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(Guid companyId, Guid userId, Guid receiptDocumentId, CancellationToken cancellationToken)
+        public Task<ReceiptInventoryCostLayerEmissionSummary> EmitReceiptCostLayersAsync(CompanyId companyId, UserId userId, Guid receiptDocumentId, CancellationToken cancellationToken)
         {
             EmitCalls++;
             return Task.FromResult(new ReceiptInventoryCostLayerEmissionSummary(
@@ -216,16 +216,16 @@ public sealed class PostReceiptWorkflowTests
                 DateTimeOffset.UtcNow));
         }
 
-        public Task<ReceiptInventoryCostLayerEmissionSummary?> GetReceiptCostLayerEmissionSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+        public Task<ReceiptInventoryCostLayerEmissionSummary?> GetReceiptCostLayerEmissionSummaryAsync(CompanyId companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
             Task.FromResult<ReceiptInventoryCostLayerEmissionSummary?>(null);
 
-        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>> GetReceiptCostLayerEmissionSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>> GetReceiptCostLayerEmissionSummariesAsync(CompanyId companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>>(new Dictionary<Guid, ReceiptInventoryCostLayerEmissionSummary>());
 
-        public Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> GetReceiptCostLayerEmissionReconciliationSummaryAsync(Guid companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
+        public Task<ReceiptInventoryCostLayerEmissionReconciliationSummary?> GetReceiptCostLayerEmissionReconciliationSummaryAsync(CompanyId companyId, Guid receiptDocumentId, CancellationToken cancellationToken) =>
             Task.FromResult<ReceiptInventoryCostLayerEmissionReconciliationSummary?>(null);
 
-        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(Guid companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>> GetReceiptCostLayerEmissionReconciliationSummariesAsync(CompanyId companyId, IReadOnlyCollection<Guid> receiptDocumentIds, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyDictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>>(new Dictionary<Guid, ReceiptInventoryCostLayerEmissionReconciliationSummary>());
     }
 }

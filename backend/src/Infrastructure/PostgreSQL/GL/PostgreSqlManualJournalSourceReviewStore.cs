@@ -13,7 +13,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
     }
 
     public async Task<ManualJournalSourceReview?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -67,7 +67,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                 review = new ManualJournalSourceReview
                 {
                     Id = reader.GetGuid(reader.GetOrdinal("id")),
-                    CompanyId = reader.GetGuid(reader.GetOrdinal("company_id")),
+                    CompanyId = CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                     EntityNumber = reader.GetString(reader.GetOrdinal("entity_number")),
                     DisplayNumber = reader.GetString(reader.GetOrdinal("display_number")),
                     Status = reader.GetString(reader.GetOrdinal("status")),
@@ -87,7 +87,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
                     PostedAt = reader.IsDBNull(reader.GetOrdinal("posted_at"))
                         ? null
                         : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("posted_at")),
-                    CreatedByUserId = reader.GetGuid(reader.GetOrdinal("created_by_user_id")),
+                    CreatedByUserId = UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id"))),
                     LinkedJournalEntryId = reader.IsDBNull(reader.GetOrdinal("linked_journal_entry_id"))
                         ? null
                         : reader.GetGuid(reader.GetOrdinal("linked_journal_entry_id")),
@@ -163,7 +163,7 @@ public sealed class PostgreSqlManualJournalSourceReviewStore : IManualJournalSou
 
     private static async Task<IReadOnlyList<JournalEntryRelatedEntry>> LoadRelatedEntriesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         Guid sourceId,
         CancellationToken cancellationToken)
     {

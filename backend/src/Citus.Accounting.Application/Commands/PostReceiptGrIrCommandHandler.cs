@@ -36,8 +36,8 @@ public sealed class PostReceiptGrIrCommandHandler
         return _unitOfWork.ExecuteAsync(async ct =>
         {
             await _bridgeStore.RefreshReceiptGrIrBridgeAsync(
-                command.CompanyId.Value,
-                command.UserId.Value,
+                command.CompanyId,
+                command.UserId,
                 command.ReceiptDocumentId,
                 ct);
 

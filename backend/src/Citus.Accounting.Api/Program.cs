@@ -803,8 +803,8 @@ static TimeSpan ResolveBusinessSessionLifetime(IConfiguration configuration)
 
 static async Task<Citus.Ui.Shared.Business.BusinessAuthSessionSummary?> BuildBusinessSessionSummaryAsync(
     Modules.CompanyAccess.SessionContext.ICompanySessionContextWorkflow contextWorkflow,
-    Guid userId,
-    Guid activeCompanyId,
+    UserId userId,
+    CompanyId activeCompanyId,
     CancellationToken cancellationToken)
 {
     var context = await contextWorkflow.GetAsync(userId, activeCompanyId, cancellationToken);
@@ -1399,7 +1399,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         try
         {
@@ -1491,7 +1491,7 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(request.Name)) return Results.BadRequest(new { message = "Name is required." });
 
         try
@@ -1559,7 +1559,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         var validation = ValidateItemRequest(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -1593,7 +1593,7 @@ accounting.MapPut(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         var validation = ValidateItemRequest(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -2839,7 +2839,7 @@ accounting.MapGet(
             {
                 item.OpenItemId,
                 item.OpenItemType,
-                CompanyId = item.CompanyId.Value,
+                CompanyId = item.CompanyId,
                 item.PartyRole,
                 item.PartyId,
                 item.PartyEntityNumber,
@@ -3228,7 +3228,7 @@ accounting.MapGet(
             {
                 item.OpenItemId,
                 item.OpenItemType,
-                CompanyId = item.CompanyId.Value,
+                CompanyId = item.CompanyId,
                 item.PartyRole,
                 item.PartyId,
                 item.PartyEntityNumber,
@@ -3538,7 +3538,7 @@ accounting.MapGet(
                 item.SourceType,
                 SourceTypeLabel = MapDocumentReviewSourceLabel(item.SourceType),
                 item.Id,
-                CompanyId = item.CompanyId.Value,
+                CompanyId = item.CompanyId,
                 item.EntityNumber,
                 item.DisplayNumber,
                 item.Status,
@@ -3600,7 +3600,7 @@ accounting.MapGet(
             preview.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(preview.SourceType),
             preview.Id,
-            CompanyId = preview.CompanyId.Value,
+            CompanyId = preview.CompanyId,
             preview.EntityNumber,
             preview.DisplayNumber,
             preview.Status,
@@ -3657,7 +3657,7 @@ accounting.MapGet(
                 preview.SourceType,
                 SourceTypeLabel = MapDocumentReviewSourceLabel(preview.SourceType),
                 preview.Id,
-                CompanyId = preview.CompanyId.Value,
+                CompanyId = preview.CompanyId,
                 preview.EntityNumber,
                 preview.DisplayNumber,
                 preview.Status,
@@ -3718,7 +3718,7 @@ accounting.MapPost(
             attempt.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(attempt.SourceType),
             attempt.Id,
-            CompanyId = attempt.CompanyId.Value,
+            CompanyId = attempt.CompanyId,
             attempt.EntityNumber,
             attempt.DisplayNumber,
             attempt.Status,
@@ -3776,7 +3776,7 @@ accounting.MapPost(
             attempt.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(attempt.SourceType),
             attempt.Id,
-            CompanyId = attempt.CompanyId.Value,
+            CompanyId = attempt.CompanyId,
             attempt.EntityNumber,
             attempt.DisplayNumber,
             attempt.Status,
@@ -3831,7 +3831,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             request.RequestId,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
             Id = request.DocumentId,
@@ -3986,7 +3986,7 @@ accounting.MapPost(
             result.OutcomeCode,
             Message = result.Message,
             request.RequestId,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
             Id = request.DocumentId,
@@ -4060,7 +4060,7 @@ accounting.MapPost(
             result.OutcomeCode,
             Message = result.Message,
             request.RequestId,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
             Id = request.DocumentId,
@@ -4130,7 +4130,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             request.RequestId,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
             Id = request.DocumentId,
@@ -4225,7 +4225,7 @@ accounting.MapPost(
                 {
                     code = ResolveAccountingOperationErrorCode(ex.Message),
                     request.RequestId,
-                    CompanyId = request.CompanyId.Value,
+                    CompanyId = request.CompanyId,
                     request.SourceType,
                     SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
                     Id = request.DocumentId,
@@ -4244,7 +4244,7 @@ accounting.MapPost(
         var payload = new
         {
             request.RequestId,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
             Id = request.DocumentId,
@@ -4311,7 +4311,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             request.RequestId,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(request.SourceType),
             Id = request.DocumentId,
@@ -4365,7 +4365,7 @@ accounting.MapGet(
             review.SourceType,
             SourceTypeLabel = MapDocumentReviewSourceLabel(review.SourceType),
             review.Id,
-            CompanyId = review.CompanyId.Value,
+            CompanyId = review.CompanyId,
             review.EntityNumber,
             review.DisplayNumber,
             review.Status,
@@ -4939,7 +4939,7 @@ accounting.MapPost(
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
-        if (session is null || session.ActiveCompanyId == Guid.Empty || session.UserId == Guid.Empty)
+        if (session is null || session.ActiveCompanyId == Guid.Empty || session.UserId.Value is null)
         {
             return Results.Unauthorized();
         }
@@ -4999,14 +4999,14 @@ accounting.MapGet(
         CancellationToken cancellationToken) =>
     {
         var userId = query.UserId ?? sessionAccessor.Current?.UserId;
-        if (!userId.HasValue || userId == Guid.Empty)
+        if (!userId.HasValue || userId.Value is null)
         {
             return Results.Ok(Array.Empty<UnitySearchRecentQueryRecord>());
         }
 
         var results = await engine.ListRecentQueriesAsync(
             query.CompanyId,
-            userId.Value,
+            userId,
             string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
             query.Take ?? 10,
             cancellationToken);
@@ -5023,14 +5023,14 @@ accounting.MapGet(
         CancellationToken cancellationToken) =>
     {
         var userId = query.UserId ?? sessionAccessor.Current?.UserId;
-        if (!userId.HasValue || userId == Guid.Empty)
+        if (!userId.HasValue || userId.Value is null)
         {
             return Results.Ok(Array.Empty<UnitySearchRecentSelectionRecord>());
         }
 
         var results = await engine.ListRecentSelectionsAsync(
             query.CompanyId,
-            userId.Value,
+            userId,
             string.IsNullOrWhiteSpace(query.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : query.Context.Trim(),
             query.Take ?? 8,
             cancellationToken);
@@ -5046,15 +5046,15 @@ accounting.MapPost(
         IUnitySearchEngine engine,
         CancellationToken cancellationToken) =>
     {
-        var userId = request.UserId == Guid.Empty ? sessionAccessor.Current?.UserId : request.UserId;
-        if (!userId.HasValue || userId == Guid.Empty)
+        var userId = request.UserId.Value is null ? sessionAccessor.Current?.UserId : request.UserId;
+        if (!userId.HasValue || userId.Value is null)
         {
             return Results.Accepted();
         }
 
         await engine.RecordClickAsync(
             request.CompanyId,
-            userId.Value,
+            userId,
             string.IsNullOrWhiteSpace(request.Context) ? Citus.Modules.UnitySearch.Domain.Shared.SearchScopeContext.GlobalTopbar : request.Context.Trim(),
             request.EntityType,
             request.SourceId,
@@ -5090,7 +5090,7 @@ accounting.MapGet(
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
-        if (session is null || session.UserId == Guid.Empty)
+        if (session is null || session.UserId.Value is null)
         {
             return Results.Unauthorized();
         }
@@ -5113,7 +5113,7 @@ accounting.MapPost(
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
-        if (session is null || session.UserId == Guid.Empty)
+        if (session is null || session.UserId.Value is null)
         {
             return Results.Unauthorized();
         }
@@ -6391,7 +6391,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         var validation = ValidateBillInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -6685,7 +6685,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         var po = await poStore.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
         if (po is null) return Results.NotFound();
@@ -6861,7 +6861,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         var validation = ValidateExpenseInput(request);
         if (validation is not null) return Results.BadRequest(new { message = validation });
@@ -6923,7 +6923,7 @@ accounting.MapPost(
         // alongside the PO id.
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         var po = await poStore.GetByIdAsync(session.ActiveCompanyId, purchaseOrderId, cancellationToken);
         if (po is null) return Results.NotFound();
@@ -7369,7 +7369,7 @@ accounting.MapPost(
         }
 
         var companyId = session.ActiveCompanyId;
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var now = DateTimeOffset.UtcNow;
         var normalizedQuery = string.IsNullOrWhiteSpace(request.Query) ? null : request.Query.Trim().ToLowerInvariant();
 
@@ -7430,7 +7430,7 @@ accounting.MapPost(
                     var classification = Citus.Modules.UnitySearch.Application.UnitySearchQueryClassifier.Classify(normalizedQuery);
                     await queryClassPriors.RecordSelectAsync(
                         companyId,
-                        userId.Value,
+                        userId,
                         classification.Tag,
                         request.EntityType.Trim(),
                         cancellationToken);
@@ -7475,7 +7475,7 @@ accounting.MapPost(
         }
 
         var companyId = session.ActiveCompanyId;
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var input = new ReportUsageEventInput(
             CompanyId: companyId,
             UserId: userId,
@@ -7509,7 +7509,7 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var items = await store.GetForUserAsync(session.ActiveCompanyId, userId, status, cancellationToken);
         return Results.Ok(items);
     });
@@ -7523,7 +7523,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var now = DateTimeOffset.UtcNow;
         var result = await service.GenerateAsync(session.ActiveCompanyId, userId, now.AddDays(-30), now, cancellationToken);
         return Results.Ok(result);
@@ -7611,7 +7611,7 @@ accounting.MapGet(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var statusFilter = string.IsNullOrWhiteSpace(status) ? null : status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var tasks = await service.GetTasksAsync(session.ActiveCompanyId, userId, statusFilter, cancellationToken);
         return Results.Ok(tasks);
@@ -7626,7 +7626,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var result = await service.RegenerateAsync(session.ActiveCompanyId, userId, cancellationToken);
         return Results.Ok(result);
     });
@@ -7637,7 +7637,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var updated = await service.StartAsync(session.ActiveCompanyId, id, userId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
@@ -7648,7 +7648,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var updated = await service.CompleteAsync(session.ActiveCompanyId, id, userId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
@@ -7659,7 +7659,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var updated = await service.DismissAsync(session.ActiveCompanyId, id, userId, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     });
@@ -7675,7 +7675,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        var userId = session.UserId == Guid.Empty ? null : (Guid?)session.UserId;
+        var userId = session.UserId.Value is null ? null : (Guid?)session.UserId;
         var until = request.SnoozedUntil ?? DateTimeOffset.UtcNow.AddDays(1);
         var updated = await service.SnoozeAsync(session.ActiveCompanyId, id, userId, until, cancellationToken);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
@@ -7888,7 +7888,7 @@ accounting.MapGet(
             return Results.Ok(new
             {
                 document.Id,
-                CompanyId = document.CompanyId.Value,
+                CompanyId = document.CompanyId,
                 EntityNumber = document.EntityNumber.Value,
                 DisplayNumber = document.DisplayNumber.Value,
                 document.Status,
@@ -7983,7 +7983,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -8047,7 +8047,7 @@ accounting.MapPost(
         CancellationToken cancellationToken) =>
     {
         var session = sessionAccessor.Current;
-        if (session is null || session.ActiveCompanyId == Guid.Empty || session.UserId == Guid.Empty)
+        if (session is null || session.ActiveCompanyId == Guid.Empty || session.UserId.Value is null)
         {
             return Results.Unauthorized();
         }
@@ -8167,7 +8167,7 @@ accounting.MapGet(
             : Results.Ok(new
             {
                 document.Id,
-                CompanyId = document.CompanyId.Value,
+                CompanyId = document.CompanyId,
                 EntityNumber = document.EntityNumber.Value,
                 DisplayNumber = document.DisplayNumber.Value,
                 document.Status,
@@ -8326,7 +8326,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -8381,9 +8381,9 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/invoices",
-    async (Guid companyId, bool? includeDrafts, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, IInvoiceDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
@@ -8398,7 +8398,7 @@ accounting.MapGet(
             : Results.Ok(new
             {
                 document.Id,
-                CompanyId = document.CompanyId.Value,
+                CompanyId = document.CompanyId,
                 EntityNumber = document.EntityNumber.Value,
                 DisplayNumber = document.DisplayNumber.Value,
                 document.Status,
@@ -8524,7 +8524,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -8585,7 +8585,7 @@ accounting.MapGet(
             : Results.Ok(new
             {
                 document.Id,
-                CompanyId = document.CompanyId.Value,
+                CompanyId = document.CompanyId,
                 EntityNumber = document.EntityNumber.Value,
                 DisplayNumber = document.DisplayNumber.Value,
                 document.Status,
@@ -8781,7 +8781,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -9035,7 +9035,7 @@ accounting.MapGet(
         {
             EstimatedAmount = estimatedAmount,
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -9777,7 +9777,7 @@ accounting.MapGet(
             : Results.Ok(new
             {
                 document.Id,
-                CompanyId = document.CompanyId.Value,
+                CompanyId = document.CompanyId,
                 EntityNumber = document.EntityNumber.Value,
                 DisplayNumber = document.DisplayNumber.Value,
                 document.SourceType,
@@ -10394,7 +10394,7 @@ accounting.MapPost(
     {
         var session = sessionAccessor.Current;
         if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
-        if (session.UserId == Guid.Empty) return Results.Unauthorized();
+        if (session.UserId.Value is null) return Results.Unauthorized();
 
         try
         {
@@ -10422,7 +10422,7 @@ accounting.MapGet(
             : Results.Ok(new
             {
                 document.Id,
-                CompanyId = document.CompanyId.Value,
+                CompanyId = document.CompanyId,
                 EntityNumber = document.EntityNumber.Value,
                 DisplayNumber = document.DisplayNumber.Value,
                 document.Status,
@@ -10547,7 +10547,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -10617,7 +10617,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -10909,7 +10909,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -11188,7 +11188,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -11257,7 +11257,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -11327,13 +11327,13 @@ accounting.MapPost(
 app.MapPost(
     "/internal/ai/distill-unitysearch",
     async (
-        Guid companyId,
+        CompanyId companyId,
         IUnitysearchHintDistillationService distillation,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken) =>
     {
         var logger = loggerFactory.CreateLogger("ai.distill.unitysearch");
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             return Results.BadRequest(new { message = "companyId query parameter is required." });
         }
@@ -11382,8 +11382,8 @@ accounting.MapPost(
     {
         // 1. Validate the wire shape. Frontend already does its own
         //    pass; this is the authoritative server-side gate.
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { error = "depositToAccountId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
@@ -11467,8 +11467,8 @@ accounting.MapPost(
         PostRefundReceiptCommandHandler postHandler,
         CancellationToken cancellationToken) =>
     {
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.RefundFromAccountId == Guid.Empty) return Results.BadRequest(new { error = "refundFromAccountId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
@@ -11560,8 +11560,8 @@ accounting.MapPost(
         // is needed, the operator runs Receive Payment with the
         // credit listed alongside the invoice in the open-item
         // picker — that path already exists.
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.CustomerId == Guid.Empty) return Results.BadRequest(new { error = "customerId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
         foreach (var line in request.Lines)
@@ -11663,8 +11663,8 @@ accounting.MapPost(
         // AP open-item handler all already exist; this endpoint is
         // pure adapter work mapping the V1-pending wire shape to the
         // existing draft-save-model.
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.VendorId == Guid.Empty) return Results.BadRequest(new { error = "vendorId required" });
         if (request.Lines.Count == 0) return Results.BadRequest(new { error = "at least one line required" });
         foreach (var line in request.Lines)
@@ -11760,8 +11760,8 @@ accounting.MapPost(
         PostBankTransferCommandHandler postHandler,
         CancellationToken cancellationToken) =>
     {
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.FromAccountId == Guid.Empty) return Results.BadRequest(new { error = "fromAccountId required" });
         if (request.ToAccountId == Guid.Empty) return Results.BadRequest(new { error = "toAccountId required" });
         if (request.FromAccountId == request.ToAccountId) return Results.BadRequest(new { error = "from and to must be different accounts" });
@@ -11826,8 +11826,8 @@ accounting.MapPost(
         PostBankDepositCommandHandler postHandler,
         CancellationToken cancellationToken) =>
     {
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.DepositToAccountId == Guid.Empty) return Results.BadRequest(new { error = "depositToAccountId required" });
         if (request.Items.Count == 0) return Results.BadRequest(new { error = "at least one item required" });
         if (request.Items.Any(i => string.IsNullOrWhiteSpace(i.SourceItemDisplayNumber))) return Results.BadRequest(new { error = "every item needs a sourceItemDisplayNumber" });
@@ -11896,8 +11896,8 @@ accounting.MapPost(
         PostTaxReturnCommandHandler postHandler,
         CancellationToken cancellationToken) =>
     {
-        if (request.CompanyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
-        if (request.UserId == Guid.Empty) return Results.BadRequest(new { error = "userId required" });
+        if (request.CompanyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
+        if (request.UserId.Value is null) return Results.BadRequest(new { error = "userId required" });
         if (request.PeriodEnd < request.PeriodStart) return Results.BadRequest(new { error = "periodEnd must be on or after periodStart" });
         if (string.IsNullOrWhiteSpace(request.TaxRegime)) return Results.BadRequest(new { error = "taxRegime required" });
         if (string.IsNullOrWhiteSpace(request.FilingFrequency)) return Results.BadRequest(new { error = "filingFrequency required" });
@@ -11964,63 +11964,63 @@ accounting.MapPost(
 
 accounting.MapGet(
     "/sales-receipts",
-    async (Guid companyId, bool? includeDrafts, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, ISalesReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/refund-receipts",
-    async (Guid companyId, bool? includeDrafts, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, IRefundReceiptDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/credit-memos",
-    async (Guid companyId, bool? includeDrafts, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, ICreditNoteDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/vendor-credits",
-    async (Guid companyId, bool? includeDrafts, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, IVendorCreditDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/bank-transfers",
-    async (Guid companyId, bool? includeDrafts, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, IBankTransferDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/bank-deposits",
-    async (Guid companyId, bool? includeDrafts, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, IBankDepositDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
 
 accounting.MapGet(
     "/tax-returns",
-    async (Guid companyId, bool? includeDrafts, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, bool? includeDrafts, ITaxReturnDocumentRepository repository, CancellationToken cancellationToken) =>
     {
-        if (companyId == Guid.Empty) return Results.BadRequest(new { error = "companyId required" });
+        if (companyId.Value is null) return Results.BadRequest(new { error = "companyId required" });
         var rows = await repository.ListAsync(new(companyId), includeDrafts ?? true, cancellationToken);
         return Results.Ok(rows);
     });
@@ -12044,7 +12044,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -12088,7 +12088,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -12133,7 +12133,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -12161,7 +12161,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -12198,7 +12198,7 @@ accounting.MapGet(
         return Results.Ok(new
         {
             document.Id,
-            CompanyId = document.CompanyId.Value,
+            CompanyId = document.CompanyId,
             EntityNumber = document.EntityNumber.Value,
             DisplayNumber = document.DisplayNumber.Value,
             document.Status,
@@ -12549,7 +12549,7 @@ static JournalEntryReviewListItemSummary MapJournalEntryReviewListItem(JournalEn
     new()
     {
         Id = item.Id,
-        CompanyId = item.CompanyId.Value,
+        CompanyId = item.CompanyId,
         EntityNumber = item.EntityNumber,
         DisplayNumber = item.DisplayNumber,
         Status = item.Status,
@@ -12572,7 +12572,7 @@ static JournalEntryReviewSummary MapJournalEntryReview(JournalEntryReview review
     new()
     {
         Id = review.Id,
-        CompanyId = review.CompanyId.Value,
+        CompanyId = review.CompanyId,
         EntityNumber = review.EntityNumber,
         DisplayNumber = review.DisplayNumber,
         Status = review.Status,
@@ -12957,7 +12957,7 @@ static ApAgingOpenItemSummary MapApAgingRow(ApAgingOpenItemAmount row) =>
 
 internal sealed record class UnitySearchHttpQuery
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public Guid? UserId { get; init; }
 
@@ -12970,7 +12970,7 @@ internal sealed record class UnitySearchHttpQuery
 
 internal sealed record class UnitySearchRecentHttpQuery
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public Guid? UserId { get; init; }
 
@@ -12981,9 +12981,9 @@ internal sealed record class UnitySearchRecentHttpQuery
 
 internal sealed record class UnitySearchClickHttpRequest
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
-    public Guid UserId { get; init; }
+    public UserId UserId { get; init; }
 
     public string Context { get; init; } = string.Empty;
 
@@ -13036,8 +13036,8 @@ internal sealed record AccountingPeriodTransitionHttpRequest(string TargetStatus
 
 internal sealed record class SalesReceiptSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -13067,8 +13067,8 @@ internal sealed record class SalesReceiptLineHttpRequest
 
 internal sealed record class RefundReceiptSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -13099,8 +13099,8 @@ internal sealed record class RefundReceiptLineHttpRequest
 
 internal sealed record class CreditMemoSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid CustomerId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -13128,8 +13128,8 @@ internal sealed record class CreditMemoLineHttpRequest
 
 internal sealed record class VendorCreditSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid VendorId { get; init; }
     public string TransactionCurrencyCode { get; init; } = string.Empty;
@@ -13155,8 +13155,8 @@ internal sealed record class VendorCreditLineHttpRequest
 
 internal sealed record class BankTransferSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid FromAccountId { get; init; }
     public string FromAccountCode { get; init; } = string.Empty;
@@ -13174,8 +13174,8 @@ internal sealed record class BankTransferSaveAndPostHttpRequest
 
 internal sealed record class BankDepositSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly DocumentDate { get; init; }
     public Guid DepositToAccountId { get; init; }
     public string DepositToAccountCode { get; init; } = string.Empty;
@@ -13198,8 +13198,8 @@ internal sealed record class BankDepositItemHttpRequest
 
 internal sealed record class TaxReturnSaveAndPostHttpRequest
 {
-    public Guid CompanyId { get; init; }
-    public Guid UserId { get; init; }
+    public CompanyId CompanyId { get; init; }
+    public UserId UserId { get; init; }
     public DateOnly PeriodStart { get; init; }
     public DateOnly PeriodEnd { get; init; }
     public string TaxRegime { get; init; } = string.Empty;

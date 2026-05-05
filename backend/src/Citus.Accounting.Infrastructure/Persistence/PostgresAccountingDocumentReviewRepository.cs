@@ -752,7 +752,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         CompanyId companyId,
         string sourceType,
         Guid documentId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var preview = await GetLifecycleActionPreviewAsync(
@@ -970,7 +970,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
@@ -1047,7 +1047,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
@@ -1192,7 +1192,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
@@ -1359,7 +1359,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid compensationJournalEntryId,
         string compensationJournalEntryDisplayNumber,
         string compensationSourceType,
@@ -1633,7 +1633,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         string sourceType,
         Guid documentId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         var normalizedSourceType = NormalizeSourceType(sourceType) ?? sourceType.Trim().ToLowerInvariant();
@@ -1684,7 +1684,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
                     reader.IsDBNull(reader.GetOrdinal("settlement_fx_rate")) ? null : reader.GetDecimal(reader.GetOrdinal("settlement_fx_rate")),
                     reader.IsDBNull(reader.GetOrdinal("realized_fx_amount")) ? null : reader.GetDecimal(reader.GetOrdinal("realized_fx_amount")),
                     reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
-                    reader.IsDBNull(reader.GetOrdinal("created_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("created_by_user_id"))));
+                    reader.IsDBNull(reader.GetOrdinal("created_by_user_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("created_by_user_id")))));
             }
         }
 
@@ -1748,7 +1748,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         SettlementApplicationSnapshot application,
         CancellationToken cancellationToken)
     {
@@ -2213,7 +2213,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         return new ReverseRequestRequestedEvent(
             requestId,
-            new CompanyId(reader.GetGuid(reader.GetOrdinal("company_id"))),
+            new CompanyId(CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")))),
             GetRequiredString(payload, "SourceType"),
             documentId,
             GetRequiredString(payload, "EntityNumber"),
@@ -2237,7 +2237,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         string action,
         object payload,
         CancellationToken cancellationToken)
@@ -3230,7 +3230,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
             scope,
-            companyId.Value,
+            companyId,
             controlRole,
             transactionCurrencyCode,
             baseCurrencyCode,
@@ -3319,7 +3319,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
 
         var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
             scope,
-            companyId.Value,
+            companyId,
             controlRole,
             transactionCurrencyCode,
             baseCurrencyCode,
@@ -3707,7 +3707,7 @@ public sealed class PostgresAccountingDocumentReviewRepository : IAccountingDocu
         decimal? SettlementFxRate,
         decimal? RealizedFxAmount,
         DateTimeOffset CreatedAt,
-        Guid? CreatedByUserId);
+        UserId? CreatedByUserId);
 
     private sealed record SettlementUnapplyResult(
         int ApplicationCount,

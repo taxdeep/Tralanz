@@ -3,6 +3,6 @@ using SharedKernel.CompanyAccess;
 namespace Modules.CompanyAccess.SystemSetup;
 
 public sealed record SystemSetupPreference(
-    Guid UserId,
+    UserId UserId,
     NumberDisplayMode NumberDisplayMode,
     DateTimeOffset UpdatedAt);

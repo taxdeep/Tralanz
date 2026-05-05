@@ -47,13 +47,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
 
-        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
     }
 
@@ -79,12 +79,12 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
 
-        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
     }
 
@@ -110,12 +110,12 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
 
-        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
     }
 
@@ -139,7 +139,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyReceiptSummary(receiptDocumentId);
         }
 
-        return await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+        return await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
     }
 
@@ -173,7 +173,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
                 static id => BuildEmptyReceiptSummary(id));
         }
 
-        return await LoadReceiptSettlementSummariesAsync(scope, companyId.Value, distinctIds, cancellationToken);
+        return await LoadReceiptSettlementSummariesAsync(scope, companyId, distinctIds, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ReceiptGrIrApSettlementBatchSummary>> ListReceiptSettlementBatchesAsync(
@@ -198,7 +198,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         return await LoadReceiptSettlementBatchSummariesAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             cancellationToken);
     }
@@ -225,7 +225,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         return await LoadReceiptPurchaseVarianceLineSummariesAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             cancellationToken);
     }
@@ -250,7 +250,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             return BuildEmptyBillSummary(billDocumentId);
         }
 
-        return await LoadBillSettlementSummaryAsync(scope, companyId.Value, billDocumentId, cancellationToken)
+        return await LoadBillSettlementSummaryAsync(scope, companyId, billDocumentId, cancellationToken)
             ?? BuildEmptyBillSummary(billDocumentId);
     }
 
@@ -277,7 +277,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         var idempotencyKey = BuildSettlementIdempotencyKey(
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             requestedAmountBase,
             request.IdempotencyKey);
@@ -293,14 +293,14 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
 
         var existing = await TryLoadSettlementExecutionResultAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             idempotencyKey,
             cancellationToken);
@@ -311,7 +311,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         var executableLines = await LoadExecutableSettlementLinesAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             cancellationToken);
         if (executableLines.Count == 0)
@@ -331,19 +331,19 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         var batchId = Guid.NewGuid();
         await CreateSettlementBatchAsync(
             scope,
-            companyId.Value,
-            userId.Value,
+            companyId,
+            userId,
             receiptDocumentId,
             batchId,
             idempotencyKey,
             amountToSettleBase,
             allocations,
             cancellationToken);
-        await InsertSettlementBatchLinesAsync(scope, companyId.Value, batchId, allocations, cancellationToken);
-        await ApplySettlementAllocationsAsync(scope, companyId.Value, allocations, cancellationToken);
-        await UpsertReceiptSettlementLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await InsertSettlementBatchLinesAsync(scope, companyId, batchId, allocations, cancellationToken);
+        await ApplySettlementAllocationsAsync(scope, companyId, allocations, cancellationToken);
+        await UpsertReceiptSettlementLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
 
-        var summary = await LoadReceiptSettlementSummaryAsync(scope, companyId.Value, receiptDocumentId, cancellationToken)
+        var summary = await LoadReceiptSettlementSummaryAsync(scope, companyId, receiptDocumentId, cancellationToken)
             ?? BuildEmptyReceiptSummary(receiptDocumentId);
 
         return new ReceiptGrIrApSettlementExecutionResult(
@@ -385,13 +385,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
 
         var existing = await TryLoadExistingOpenItemClearingResultAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -402,7 +402,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         var header = await LoadOpenItemClearingBatchHeaderAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -430,7 +430,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         var allocations = await LoadOpenItemClearingAllocationsAsync(
             scope,
-            companyId.Value,
+            companyId,
             settlementBatchId,
             cancellationToken);
         if (allocations.Count == 0)
@@ -442,8 +442,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         {
             await ApplyOpenItemClearingAllocationAsync(
                 scope,
-                companyId.Value,
-                userId.Value,
+                companyId,
+                userId,
                 settlementBatchId,
                 allocation,
                 cancellationToken);
@@ -451,16 +451,16 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         await MarkOpenItemClearingBatchClearedAsync(
             scope,
-            companyId.Value,
-            userId.Value,
+            companyId,
+            userId,
             settlementBatchId,
             cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
 
         return await LoadOpenItemClearingResultAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -494,13 +494,13 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         }
 
         await EnsureSchemaAsync(scope, cancellationToken);
-        await AcquireSettlementLockAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
-        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId.Value, receiptDocumentId, cancellationToken);
+        await AcquireSettlementLockAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementJournalStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
+        await RefreshReceiptSettlementOpenItemClearingStatusesAsync(scope, companyId, receiptDocumentId, cancellationToken);
 
         var existing = await TryLoadExistingOpenItemClearingReversalResultAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -511,7 +511,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         var header = await LoadOpenItemClearingBatchHeaderAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -535,7 +535,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
         var applications = await LoadOpenItemClearingApplicationsAsync(
             scope,
-            companyId.Value,
+            companyId,
             settlementBatchId,
             cancellationToken);
         if (applications.Count == 0)
@@ -547,30 +547,30 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
         {
             await ReverseOpenItemClearingApplicationAsync(
                 scope,
-                companyId.Value,
+                companyId,
                 application,
                 cancellationToken);
         }
 
         await DeleteOpenItemClearingApplicationsAsync(
             scope,
-            companyId.Value,
+            companyId,
             settlementBatchId,
             cancellationToken);
         await MarkOpenItemClearingBatchReversedAsync(
             scope,
-            companyId.Value,
-            userId.Value,
+            companyId,
+            userId,
             settlementBatchId,
             applications.Count,
             Round6(applications.Sum(static application => application.AppliedAmountTx)),
             Round6(applications.Sum(static application => application.AppliedAmountBase)),
             cancellationToken);
-        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId.Value, userId.Value, receiptDocumentId, cancellationToken);
+        await UpsertReceiptSettlementPurchaseVarianceLinesAsync(scope, companyId, userId, receiptDocumentId, cancellationToken);
 
         return await LoadOpenItemClearingReversalResultAsync(
             scope,
-            companyId.Value,
+            companyId,
             receiptDocumentId,
             settlementBatchId,
             cancellationToken);
@@ -606,7 +606,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
     }
 
     private static string BuildSettlementIdempotencyKey(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         decimal? requestedAmountBase,
         string? explicitKey)
@@ -624,7 +624,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task AcquireSettlementLockAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -635,7 +635,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task RefreshReceiptSettlementJournalStatusesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -674,7 +674,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task RefreshReceiptSettlementOpenItemClearingStatusesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -775,8 +775,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task UpsertReceiptSettlementPurchaseVarianceLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -947,8 +947,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task UpsertReceiptSettlementLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1101,7 +1101,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<ReceiptGrIrApSettlementExecutionResult?> TryLoadSettlementExecutionResultAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         string idempotencyKey,
         CancellationToken cancellationToken)
@@ -1153,7 +1153,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<IReadOnlyList<ExecutableSettlementLine>> LoadExecutableSettlementLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1256,8 +1256,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task CreateSettlementBatchAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         Guid batchId,
         string idempotencyKey,
@@ -1306,7 +1306,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task InsertSettlementBatchLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid batchId,
         IReadOnlyList<SettlementAllocation> allocations,
         CancellationToken cancellationToken)
@@ -1352,7 +1352,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task ApplySettlementAllocationsAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyList<SettlementAllocation> allocations,
         CancellationToken cancellationToken)
     {
@@ -1386,7 +1386,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<ReceiptGrIrApOpenItemClearingResult?> TryLoadExistingOpenItemClearingResultAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -1420,7 +1420,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<OpenItemClearingBatchHeader?> LoadOpenItemClearingBatchHeaderAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -1452,7 +1452,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<IReadOnlyList<OpenItemClearingAllocation>> LoadOpenItemClearingAllocationsAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -1527,8 +1527,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task ApplyOpenItemClearingAllocationAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid settlementBatchId,
         OpenItemClearingAllocation allocation,
         CancellationToken cancellationToken)
@@ -1625,8 +1625,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task MarkOpenItemClearingBatchClearedAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -1653,7 +1653,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<ReceiptGrIrApOpenItemClearingResult> LoadOpenItemClearingResultAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -1706,7 +1706,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<ReceiptGrIrApOpenItemClearingReversalResult?> TryLoadExistingOpenItemClearingReversalResultAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -1738,7 +1738,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<IReadOnlyList<OpenItemClearingApplication>> LoadOpenItemClearingApplicationsAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -1775,7 +1775,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task ReverseOpenItemClearingApplicationAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         OpenItemClearingApplication application,
         CancellationToken cancellationToken)
     {
@@ -1806,7 +1806,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task DeleteOpenItemClearingApplicationsAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
     {
@@ -1824,8 +1824,8 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task MarkOpenItemClearingBatchReversedAsync(
         PostgresCommandScope scope,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid settlementBatchId,
         int applicationCount,
         decimal restoredAmountTx,
@@ -1864,7 +1864,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<ReceiptGrIrApOpenItemClearingReversalResult> LoadOpenItemClearingReversalResultAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         Guid settlementBatchId,
         CancellationToken cancellationToken)
@@ -1913,7 +1913,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<ReceiptGrIrApSettlementSummary?> LoadReceiptSettlementSummaryAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -1928,7 +1928,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<IReadOnlyDictionary<Guid, ReceiptGrIrApSettlementSummary>> LoadReceiptSettlementSummariesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -2052,7 +2052,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<IReadOnlyList<ReceiptGrIrApSettlementBatchSummary>> LoadReceiptSettlementBatchSummariesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2133,7 +2133,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<IReadOnlyList<ReceiptGrIrApPurchaseVarianceLineSummary>> LoadReceiptPurchaseVarianceLineSummariesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -2194,7 +2194,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
     private static async Task<BillGrIrApSettlementSummary?> LoadBillSettlementSummaryAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid billDocumentId,
         CancellationToken cancellationToken)
     {

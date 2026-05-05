@@ -32,18 +32,18 @@ public interface IBillStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<BillSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         BillListFilter filter,
         CancellationToken cancellationToken);
 
     Task<BillRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken);
 
     Task<BillRecord> CreateAsync(
-        Guid companyId,
-        Guid createdByUserId,
+        CompanyId companyId,
+        UserId createdByUserId,
         BillUpsertInput input,
         CancellationToken cancellationToken);
 
@@ -52,7 +52,7 @@ public interface IBillStore
     /// when the bill is no longer Draft.
     /// </summary>
     Task<BillRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         BillUpsertInput input,
         CancellationToken cancellationToken);
@@ -63,7 +63,7 @@ public interface IBillStore
     /// in <c>PostBillCommandHandler</c>.
     /// </summary>
     Task<BillRecord?> PostAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken);
 
@@ -72,7 +72,7 @@ public interface IBillStore
     /// the GL entries lands with the posting wiring batch.
     /// </summary>
     Task<BillRecord?> VoidAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid billId,
         CancellationToken cancellationToken);
 }
@@ -86,7 +86,7 @@ public sealed record BillListFilter(
 
 public sealed record BillSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string BillNumber,
     Guid VendorId,
@@ -102,7 +102,7 @@ public sealed record BillSummary(
 
 public sealed record BillRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string EntityNumber,
     string BillNumber,
     string Status,

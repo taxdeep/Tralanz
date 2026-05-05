@@ -51,7 +51,7 @@ public sealed class PlatformNotificationReadinessWorkflow(
             new PlatformVerificationNotificationMessage
             {
                 DispatchId = Guid.NewGuid(),
-                UserId = Guid.Empty,
+                UserId = default,
                 Purpose = "notification_test",
                 Destination = normalizedDestination,
                 RecipientDisplayName = normalizedRecipient,

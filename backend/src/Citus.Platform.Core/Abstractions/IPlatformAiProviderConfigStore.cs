@@ -15,7 +15,7 @@ public interface IPlatformAiProviderConfigStore
 
     Task<PlatformAiProviderConfigSnapshot> UpsertAsync(
         PlatformAiProviderConfigUpsertRequest request,
-        Guid updatedByUserId,
+        UserId updatedByUserId,
         CancellationToken cancellationToken);
 
     /// <summary>Returns the encrypted envelope so the connection-test

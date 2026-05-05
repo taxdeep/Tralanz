@@ -3,30 +3,30 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IReceiptInventoryActivationStore
 {
     Task ValidateCanActivateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
     Task<ReceiptInventoryActivationSummary> ActivatePostedReceiptAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
     Task RecordActivationFailureAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         string failureMessage,
         CancellationToken cancellationToken);
 
     Task<ReceiptInventoryActivationSummary?> GetReceiptActivationSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>> GetReceiptActivationSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken);
 }

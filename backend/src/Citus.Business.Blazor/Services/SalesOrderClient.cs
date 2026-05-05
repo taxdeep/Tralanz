@@ -229,7 +229,7 @@ public sealed class SalesOrderClient(HttpClient httpClient, ILogger<SalesOrderCl
 
 public sealed record SalesOrderSummaryDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string SalesOrderNumber,
     Guid CustomerId,
     string CustomerName,
@@ -246,7 +246,7 @@ public sealed record SalesOrderSummaryDto(
 
 public sealed record SalesOrderRecordDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string SalesOrderNumber,
     string Status,
     Guid CustomerId,

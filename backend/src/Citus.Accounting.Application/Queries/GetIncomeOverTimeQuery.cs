@@ -32,7 +32,7 @@ public sealed record class IncomeOverTimeMonthBucket
 
 public sealed record class IncomeOverTimeReport
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public DateOnly FromDate { get; init; }
 

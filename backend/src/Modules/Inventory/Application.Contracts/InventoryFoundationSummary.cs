@@ -3,7 +3,7 @@ using Citus.Modules.Inventory.Domain.Shared;
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryFoundationSummary(
-    Guid CompanyId,
+    CompanyId CompanyId,
     InventoryCostingPolicyRecord? CostingPolicy,
     int ItemCount,
     int WarehouseCount,

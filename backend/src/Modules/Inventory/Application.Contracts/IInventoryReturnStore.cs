@@ -3,11 +3,11 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IInventoryReturnStore
 {
     Task<InventoryReturnReceiveDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryReturnReceiveHandoffSummary> GetShipmentHandoffSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid shipmentDocumentId,
         CancellationToken cancellationToken);
 

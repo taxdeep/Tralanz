@@ -32,28 +32,28 @@ public interface IPurchaseOrderStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PurchaseOrderSummary>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderListFilter filter,
         CancellationToken cancellationToken);
 
     Task<PurchaseOrderRecord?> GetByIdAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken);
 
     Task<PurchaseOrderRecord> CreateAsync(
-        Guid companyId,
+        CompanyId companyId,
         PurchaseOrderUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<PurchaseOrderRecord?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         PurchaseOrderUpsertInput input,
         CancellationToken cancellationToken);
 
     Task<PurchaseOrderRecord?> SetStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         string newStatus,
         CancellationToken cancellationToken);
@@ -64,7 +64,7 @@ public interface IPurchaseOrderStore
     /// no-op when the status is already Closed.
     /// </summary>
     Task<PurchaseOrderRecord?> MarkClosedAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken);
 }
@@ -78,7 +78,7 @@ public sealed record PurchaseOrderListFilter(
 
 public sealed record PurchaseOrderSummary(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string PurchaseOrderNumber,
     Guid VendorId,
     string VendorName,
@@ -92,7 +92,7 @@ public sealed record PurchaseOrderSummary(
 
 public sealed record PurchaseOrderRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string PurchaseOrderNumber,
     string Status,
     Guid VendorId,

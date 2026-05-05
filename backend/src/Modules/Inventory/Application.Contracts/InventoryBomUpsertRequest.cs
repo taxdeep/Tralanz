@@ -1,8 +1,8 @@
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryBomUpsertRequest(
-    Guid CompanyId,
-    Guid UserId,
+    CompanyId CompanyId,
+    UserId UserId,
     Guid? BomId,
     string BomCode,
     Guid OutputItemId,

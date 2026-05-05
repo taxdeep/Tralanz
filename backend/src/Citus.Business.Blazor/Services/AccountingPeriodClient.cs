@@ -72,7 +72,7 @@ public sealed class AccountingPeriodClient(HttpClient httpClient, ILogger<Accoun
 
 public sealed record AccountingPeriodDto(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     DateOnly PeriodStart,
     DateOnly PeriodEnd,
     string Status,

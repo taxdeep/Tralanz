@@ -1,8 +1,10 @@
+using SharedKernel.Identity;
+
 namespace SharedKernel.Company;
 
 public sealed record class CompanyBookRemeasurementPolicy(
     Guid PolicyId,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid BookId,
     string RateType,
     string QuoteBasis,

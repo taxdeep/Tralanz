@@ -2,7 +2,7 @@ namespace Citus.Platform.Core.Accounts;
 
 public sealed record class PlatformAccountProfileSummary
 {
-    public Guid UserId { get; init; }
+    public UserId UserId { get; init; }
 
     public string Username { get; init; } = string.Empty;
 

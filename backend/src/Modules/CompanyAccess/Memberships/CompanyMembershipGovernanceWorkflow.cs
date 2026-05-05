@@ -6,14 +6,14 @@ public sealed class CompanyMembershipGovernanceWorkflow(
     private static readonly string[] AllowedRoles = ["owner", "user"];
 
     public async Task<CompanyMembershipRoleChangeResult> ChangeRoleFromSysAdminAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         string role,
         string reason,
         Guid? sysAdminAccountId,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty)
+        if (companyId.Value is null)
         {
             throw new InvalidOperationException("Company context is required to change company membership role.");
         }

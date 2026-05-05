@@ -9,7 +9,7 @@ namespace Tests.AR;
 
 public sealed class CreditApplicationDraftPreparationSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid CustomerId = Guid.Parse("91000000-0000-0000-0000-000000000002");
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class CreditApplicationDraftPreparationSmokeTests
             companyStore);
 
         Guid documentId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid sourceOpenItemId = Guid.Empty;
         Guid targetOpenItemId = Guid.Empty;
         var createdUser = false;
@@ -101,7 +101,7 @@ public sealed class CreditApplicationDraftPreparationSmokeTests
 
     private static async Task<Guid> CreateArOpenItemAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         string sourceType,
         string balanceSide,
@@ -172,7 +172,7 @@ public sealed class CreditApplicationDraftPreparationSmokeTests
         return openItemId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -186,7 +186,7 @@ public sealed class CreditApplicationDraftPreparationSmokeTests
             limit 1;
             """;
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is UserId userId)
         {
             return (userId, false);
         }
@@ -281,11 +281,11 @@ public sealed class CreditApplicationDraftPreparationSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool createdUser,
         CancellationToken cancellationToken)
     {
-        if (!createdUser || userId == Guid.Empty)
+        if (!createdUser || userId.Value is null)
         {
             return;
         }

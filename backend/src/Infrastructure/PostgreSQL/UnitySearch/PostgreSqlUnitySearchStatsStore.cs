@@ -8,8 +8,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     private int _schemaEnsured;
 
     public async Task<IReadOnlyList<UnitySearchRecentQueryRecord>> ListRecentQueriesAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         int take,
         CancellationToken cancellationToken)
@@ -49,8 +49,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     }
 
     public async Task<IReadOnlyList<UnitySearchRecentSelectionRecord>> ListRecentSelectionsAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         int take,
         CancellationToken cancellationToken)
@@ -112,8 +112,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     }
 
     public async Task RecordQueryAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         string queryText,
         CancellationToken cancellationToken)
@@ -194,8 +194,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
     }
 
     public async Task RecordClickAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string context,
         string entityType,
         Guid sourceId,

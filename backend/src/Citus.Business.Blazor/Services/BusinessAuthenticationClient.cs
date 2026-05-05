@@ -276,7 +276,7 @@ public sealed class BusinessAuthenticationClient(
 /// <summary>What the API returns from <c>GET /accounting/auth/me/profile</c>.</summary>
 public sealed class UserProfileSnapshot
 {
-    public Guid UserId { get; set; }
+    public UserId UserId { get; set; }
     public string? DisplayName { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 }

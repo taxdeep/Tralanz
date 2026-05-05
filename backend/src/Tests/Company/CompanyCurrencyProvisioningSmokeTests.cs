@@ -7,7 +7,7 @@ namespace Tests.Company;
 
 public sealed class CompanyCurrencyProvisioningSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
 
     [Fact]
     public async Task EnableCurrencyAsync_UpsertsCompanyCurrencyAndForeignControlAccounts()

@@ -63,9 +63,9 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 
     private static async Task SeedAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid ownerUserId,
-        Guid targetUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
+        UserId targetUserId,
         Guid ownerMembershipId,
         Guid targetMembershipId,
         CancellationToken cancellationToken)
@@ -136,9 +136,9 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 
     private static async Task CleanupAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid ownerUserId,
-        Guid targetUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
+        UserId targetUserId,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.OpenAsync(cancellationToken);

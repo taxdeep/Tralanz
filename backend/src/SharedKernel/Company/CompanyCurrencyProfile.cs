@@ -1,7 +1,9 @@
+using SharedKernel.Identity;
+
 namespace SharedKernel.Company;
 
 public sealed record class CompanyCurrencyProfile(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string LegalName,
     string BaseCurrencyCode,
     bool MultiCurrencyEnabled,

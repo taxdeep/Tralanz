@@ -24,8 +24,8 @@ namespace Tests.GL;
 /// </summary>
 public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
-    private static readonly Guid UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly UserId UserId = Guid.Parse("7bd0e908-cfe7-4f7b-8a0d-f19292e4186d");
 
     /// <summary>
     /// Worked example: company base = USD (per the demo company seed),

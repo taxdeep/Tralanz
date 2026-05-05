@@ -3,7 +3,7 @@ namespace Modules.AR.CreditApplication;
 public interface ICreditApplicationDraftPreparationWorkflow
 {
     Task<IReadOnlyList<CreditApplicationOpenItemCandidate>> ListOpenItemCandidatesAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken);
 

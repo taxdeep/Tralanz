@@ -611,7 +611,7 @@ control.MapGet(
 control.MapGet(
     "/companies/{companyId:guid}/memberships",
     async (
-        Guid companyId,
+        CompanyId companyId,
         ICompanyMembershipPermissionStore membershipStore,
         CancellationToken cancellationToken) =>
     {
@@ -668,7 +668,7 @@ control.MapGet(
 
 control.MapPut(
     "/active-company/{companyId:guid}",
-    async (Guid companyId, HttpContext httpContext, SysAdminControlState state, IPlatformRuntimeStateRepository runtimeRepository, CancellationToken cancellationToken) =>
+    async (CompanyId companyId, HttpContext httpContext, SysAdminControlState state, IPlatformRuntimeStateRepository runtimeRepository, CancellationToken cancellationToken) =>
     {
         if (!state.TrySetActiveCompany(companyId, ToOperatorSummary(GetAuthenticatedSession(httpContext)), out var context))
         {
@@ -753,7 +753,7 @@ control.MapPost(
 control.MapPut(
     "/companies/{companyId:guid}/status",
     async (
-        Guid companyId,
+        CompanyId companyId,
         HttpContext httpContext,
         CompanyStatusUpdateRequest request,
         IPlatformGovernanceRepository governanceRepository,
@@ -962,7 +962,7 @@ control.MapPost(
 control.MapPut(
     "/companies/{companyId:guid}/memberships/{membershipId:guid}/role",
     async (
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         HttpContext httpContext,
         CompanyMembershipRoleUpdateRequest request,

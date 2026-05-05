@@ -362,7 +362,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
     private static async Task<Guid> CreateManualFxSnapshotAsync(
         PostgresConnectionFactory connectionFactory,
         string baseCurrencyCode,
-        Guid userId,
+        UserId userId,
         DateOnly requestedDate,
         decimal rate,
         CancellationToken cancellationToken)
@@ -544,7 +544,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
                 : reader.GetGuid(reader.GetOrdinal("reversal_of_fx_revaluation_batch_id")));
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -559,7 +559,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
             """;
 
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is UserId userId)
         {
             return (userId, false);
         }
@@ -909,11 +909,11 @@ public sealed class FxRevaluationWorkflowSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool createdUser,
         CancellationToken cancellationToken)
     {
-        if (!createdUser || userId == Guid.Empty)
+        if (!createdUser || userId.Value is null)
         {
             return;
         }
@@ -965,7 +965,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         PostFxRevaluationCascadeUnwindCommandHandler PostCascadeHandler,
         string BaseCurrencyCode,
         IReadOnlyList<Guid> CreatedUnrealizedFxAccountIds,
-        Guid UserId,
+        UserId UserId,
         bool CreatedUser);
 
     private sealed record FxBatchMetadata(

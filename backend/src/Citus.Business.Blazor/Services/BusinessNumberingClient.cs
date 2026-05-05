@@ -35,7 +35,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
     ];
 
     public async Task<BusinessNumberingSummary> GetSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
@@ -96,7 +96,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
     }
 
     public async Task<BusinessNumberingRuleSummary> SaveAsync(
-        Guid companyId,
+        CompanyId companyId,
         BusinessNumberingRuleUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -192,7 +192,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
 
     private static async Task SeedKnownRulesAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         foreach (var definition in KnownDefinitions.Where(static item => item.IsRuntimeConnected))
@@ -230,7 +230,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
 
     private static async Task<IReadOnlyList<NumberingRow>> LoadRowsAsync(
         NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -311,7 +311,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
 
 public sealed record BusinessNumberingSummary
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
     public IReadOnlyList<BusinessNumberingRuleSummary> Rules { get; init; } = Array.Empty<BusinessNumberingRuleSummary>();
 }
 

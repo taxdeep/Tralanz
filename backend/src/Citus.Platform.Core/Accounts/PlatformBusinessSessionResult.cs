@@ -6,9 +6,9 @@ public sealed record class PlatformBusinessSessionResult
 
     public string SessionToken { get; init; } = string.Empty;
 
-    public Guid UserId { get; init; }
+    public UserId UserId { get; init; }
 
-    public Guid ActiveCompanyId { get; init; }
+    public CompanyId ActiveCompanyId { get; init; }
 
     public DateTimeOffset ExpiresAtUtc { get; init; }
 

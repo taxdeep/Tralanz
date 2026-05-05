@@ -85,7 +85,7 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
 
     public async Task<PlatformSmtpConfigSnapshot> UpsertAsync(
         PlatformSmtpConfigUpsertRequest request,
-        Guid updatedByUserId,
+        UserId updatedByUserId,
         CancellationToken cancellationToken)
     {
         // Resolve the password column we want to persist: explicit clear

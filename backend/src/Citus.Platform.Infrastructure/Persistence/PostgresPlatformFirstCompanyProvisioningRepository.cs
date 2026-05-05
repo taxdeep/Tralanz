@@ -952,7 +952,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private async Task InsertBusinessOwnerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid ownerUserId,
+        UserId ownerUserId,
         PlatformFirstCompanyProvisioningCommand normalized,
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
@@ -1001,7 +1001,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertCompanyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string companyEntityNumber,
         PlatformFirstCompanyProvisioningCommand normalized,
         (int Month, int Day) fiscalYearEnd,
@@ -1088,8 +1088,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid membershipId,
-        Guid companyId,
-        Guid ownerUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
     {
@@ -1144,7 +1144,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task EnableBaseCurrencyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         string baseCurrencyCode,
         CancellationToken cancellationToken)
     {
@@ -1178,8 +1178,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertCompanySettingsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid ownerUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
         IReadOnlyList<string> starterAccountCodes,
@@ -1266,8 +1266,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid companyBookId,
-        Guid companyId,
-        Guid ownerUserId,
+        CompanyId companyId,
+        UserId ownerUserId,
         string baseCurrencyCode,
         string accountingStandard,
         DateTime effectiveFrom,
@@ -1329,9 +1329,9 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertDefaultRemeasurementPolicyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid companyBookId,
-        Guid ownerUserId,
+        UserId ownerUserId,
         DateTime effectiveFrom,
         DateTimeOffset provisionedAtUtc,
         CancellationToken cancellationToken)
@@ -1385,7 +1385,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertStarterAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         int entityYear,
         string baseCurrencyCode,
         string formattedCode,
@@ -1456,7 +1456,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
     private static async Task InsertChartTemplateBindingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
         DateTimeOffset provisionedAtUtc,
@@ -1525,7 +1525,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid? sysAdminAccountId,
-        Guid companyId,
+        CompanyId companyId,
         PlatformFirstCompanyProvisioningCommand normalized,
         TemplateDefinition template,
         IReadOnlyList<string> starterAccountCodes,

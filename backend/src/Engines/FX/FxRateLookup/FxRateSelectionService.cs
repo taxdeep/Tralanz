@@ -35,7 +35,7 @@ public sealed class FxRateSelectionService : IFxRateSelectionService
     }
 
     public async Task<FxRateResolution> UseCompanySnapshotAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid snapshotId,
         CancellationToken cancellationToken)
     {

@@ -38,7 +38,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         await using var scope = await PostgresCommandScope.CreateAsync(
             _connections, _executionContextAccessor, cancellationToken);
 
-        var periods = await ReadAllAsync(scope, companyId.Value, cancellationToken);
+        var periods = await ReadAllAsync(scope, companyId, cancellationToken);
         if (periods.Count > 0)
         {
             return periods;
@@ -49,7 +49,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         // both seed (the unique constraint on (company_id, period_start,
         // period_end) catches a race; one wins, the other gets back
         // the loser's empty list and re-reads).
-        var seeded = await SeedCurrentFiscalYearAsync(scope, companyId.Value, cancellationToken);
+        var seeded = await SeedCurrentFiscalYearAsync(scope, companyId, cancellationToken);
         return seeded;
     }
 
@@ -222,7 +222,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
 
     private static async Task<List<AccountingPeriod>> ReadAllAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = scope.CreateCommand(
@@ -248,7 +248,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
 
     private async Task<List<AccountingPeriod>> SeedCurrentFiscalYearAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         // Read the company's fiscal year end (default 12-31).
@@ -349,7 +349,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
     {
         return new AccountingPeriod(
             Id: reader.GetGuid(reader.GetOrdinal("id")),
-            CompanyId: new CompanyId(reader.GetGuid(reader.GetOrdinal("company_id"))),
+            CompanyId: new CompanyId(CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id")))),
             PeriodStart: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("period_start")),
             PeriodEnd: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("period_end")),
             Status: reader.GetString(reader.GetOrdinal("status")),

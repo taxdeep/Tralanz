@@ -3,7 +3,7 @@ namespace Modules.CompanyAccess.Memberships;
 public interface ICompanyMembershipGovernanceWorkflow
 {
     Task<CompanyMembershipRoleChangeResult> ChangeRoleFromSysAdminAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid membershipId,
         string role,
         string reason,

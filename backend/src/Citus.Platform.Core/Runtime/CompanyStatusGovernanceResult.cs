@@ -2,7 +2,7 @@ namespace Citus.Platform.Core.Runtime;
 
 public sealed record class CompanyStatusGovernanceResult
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public string EntityNumber { get; init; } = string.Empty;
 

@@ -76,7 +76,7 @@ public sealed class CompanyCurrencyClient(HttpClient httpClient, ILogger<Company
 }
 
 public sealed record CompanyCurrencyProfileSummary(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string LegalName,
     string BaseCurrencyCode,
     bool MultiCurrencyEnabled,

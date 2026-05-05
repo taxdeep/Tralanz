@@ -9,7 +9,7 @@ public interface IFxRateSelectionService
         CancellationToken cancellationToken);
 
     Task<FxRateResolution> UseCompanySnapshotAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid snapshotId,
         CancellationToken cancellationToken);
 

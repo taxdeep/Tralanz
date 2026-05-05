@@ -80,7 +80,7 @@ public sealed class PostgresPlatformAiProviderConfigStore : IPlatformAiProviderC
 
     public async Task<PlatformAiProviderConfigSnapshot> UpsertAsync(
         PlatformAiProviderConfigUpsertRequest request,
-        Guid updatedByUserId,
+        UserId updatedByUserId,
         CancellationToken cancellationToken)
     {
         var existingApiKey = await GetRawApiKeyAsync(cancellationToken);

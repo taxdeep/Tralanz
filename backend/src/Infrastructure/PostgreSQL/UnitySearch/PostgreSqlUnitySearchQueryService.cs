@@ -178,7 +178,7 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
         while (await reader.ReadAsync(cancellationToken))
         {
             results.Add(new SearchDocumentRecord(
-                reader.GetGuid(reader.GetOrdinal("company_id")),
+                CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
                 reader.GetString(reader.GetOrdinal("entity_type")),
                 reader.GetGuid(reader.GetOrdinal("source_id")),
                 reader.GetString(reader.GetOrdinal("group_key")),

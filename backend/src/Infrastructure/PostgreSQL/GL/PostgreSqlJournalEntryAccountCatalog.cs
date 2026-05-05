@@ -12,7 +12,7 @@ public sealed class PostgreSqlJournalEntryAccountCatalog : IJournalEntryAccountC
     }
 
     public async Task<IReadOnlyList<JournalEntryAccountOption>> ListManualPostingAccountsAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);

@@ -2,7 +2,7 @@ namespace Modules.CompanyAccess.Memberships;
 
 public sealed record class CompanyMembershipRoleChangeResult
 {
-    public Guid CompanyId { get; init; }
+    public CompanyId CompanyId { get; init; }
 
     public Guid MembershipId { get; init; }
 

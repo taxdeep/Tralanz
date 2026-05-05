@@ -25,7 +25,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     }
 
     public async Task ValidateCanActivateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -54,8 +54,8 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     }
 
     public async Task<ReceiptInventoryActivationSummary> ActivatePostedReceiptAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -150,8 +150,8 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     }
 
     public async Task RecordActivationFailureAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid receiptDocumentId,
         string failureMessage,
         CancellationToken cancellationToken)
@@ -192,7 +192,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     }
 
     public async Task<ReceiptInventoryActivationSummary?> GetReceiptActivationSummaryAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -202,7 +202,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     }
 
     public async Task<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>> GetReceiptActivationSummariesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -277,8 +277,8 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task InsertInventoryDocumentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         ReceiptActivationRecord receipt,
         Guid inventoryDocumentId,
         string inventoryDocumentNumber,
@@ -341,8 +341,8 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task ActivateLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         ReceiptActivationRecord receipt,
         ReceiptActivationLineRecord line,
         Guid inventoryDocumentId,
@@ -394,7 +394,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task InsertInventoryDocumentLineAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid inventoryDocumentId,
         ReceiptActivationRecord receipt,
         ReceiptActivationLineRecord line,
@@ -458,7 +458,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task InsertInventoryLedgerEntryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid inventoryDocumentId,
         Guid inventoryDocumentLineId,
         Guid ledgerEntryId,
@@ -526,8 +526,8 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task InsertActivationRowAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid inventoryDocumentId,
         Guid inventoryDocumentLineId,
         ReceiptActivationRecord receipt,
@@ -586,7 +586,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<ReceiptInventoryActivationSummary?> LoadReceiptActivationSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -597,7 +597,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<IReadOnlyDictionary<Guid, ReceiptInventoryActivationSummary>> LoadReceiptActivationSummariesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid[] receiptDocumentIds,
         CancellationToken cancellationToken)
     {
@@ -714,7 +714,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<ReceiptActivationRecord> LoadReceiptRecordAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -812,7 +812,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<IReadOnlyList<ReceiptActivationRow>> LoadActivationRowsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {
@@ -852,7 +852,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<Dictionary<Guid, ReceiptActivationItemRecord>> LoadItemMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken)
     {
@@ -899,7 +899,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<Dictionary<Guid, ReceiptActivationWarehouseRecord>> LoadWarehouseMapAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> warehouseIds,
         CancellationToken cancellationToken)
     {
@@ -940,7 +940,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<decimal> LoadCurrentOnHandAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -965,7 +965,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task<decimal> LoadCurrentCostBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         CancellationToken cancellationToken)
@@ -989,7 +989,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task UpsertBalanceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid itemId,
         Guid warehouseId,
         decimal quantityDelta,
@@ -1036,7 +1036,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
     private static async Task ClearActivationFailuresAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid receiptDocumentId,
         CancellationToken cancellationToken)
     {

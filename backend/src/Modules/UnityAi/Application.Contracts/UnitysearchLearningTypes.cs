@@ -1,7 +1,7 @@
 namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record UnitysearchEventInput(
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid? UserId,
     string? SessionId,
     string Context,
@@ -20,7 +20,7 @@ public sealed record UnitysearchEventInput(
 
 public sealed record UnitysearchUsageStatRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ScopeType,
     Guid? UserId,
     string Context,
@@ -37,7 +37,7 @@ public sealed record UnitysearchUsageStatRecord(
 
 public sealed record UnitysearchPairStatRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     string ScopeType,
     Guid? UserId,
     string SourceContext,
@@ -54,7 +54,7 @@ public sealed record UnitysearchPairStatRecord(
 
 public sealed record UnitysearchRankingHintRecord(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid? UserId,
     string Context,
     string EntityType,
@@ -75,8 +75,8 @@ public interface IUnitysearchEventStore
 public interface IUnitysearchUsageStatStore
 {
     Task UpsertOnSelectAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string context,
         string entityType,
         Guid entityId,
@@ -86,8 +86,8 @@ public interface IUnitysearchUsageStatStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyDictionary<Guid, UnitysearchUsageStatRecord>> GetForCandidatesAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string scopeType,
         string context,
         string entityType,
@@ -103,7 +103,7 @@ public interface IUnitysearchUsageStatStore
     /// discovery.
     /// </summary>
     Task<IReadOnlyList<UnitysearchUsageStatRecord>> GetTopByCompanyScopeAsync(
-        Guid companyId,
+        CompanyId companyId,
         int limit,
         CancellationToken cancellationToken);
 }
@@ -111,8 +111,8 @@ public interface IUnitysearchUsageStatStore
 public interface IUnitysearchPairStatStore
 {
     Task UpsertOnSelectAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string sourceContext,
         string anchorEntityType,
         Guid anchorEntityId,
@@ -123,8 +123,8 @@ public interface IUnitysearchPairStatStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<UnitysearchPairStatRecord>> GetForAnchorAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string scopeType,
         string sourceContext,
         string anchorEntityType,
@@ -137,8 +137,8 @@ public interface IUnitysearchPairStatStore
 public interface IUnitysearchRecentQueryStore
 {
     Task RecordAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string context,
         string query,
         string normalizedQuery,
@@ -153,8 +153,8 @@ public interface IUnitysearchRecentQueryStore
 public interface IUnitysearchRankingHintStore
 {
     Task<IReadOnlyList<UnitysearchRankingHintRecord>> GetActiveAsync(
-        Guid companyId,
-        Guid? userId,
+        CompanyId companyId,
+        UserId? userId,
         string context,
         string entityType,
         IReadOnlyCollection<Guid>? entityIds,

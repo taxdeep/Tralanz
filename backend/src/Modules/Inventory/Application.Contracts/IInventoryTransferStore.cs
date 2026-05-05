@@ -3,7 +3,7 @@ namespace Citus.Modules.Inventory.Application.Contracts;
 public interface IInventoryTransferStore
 {
     Task<InventoryTransferDashboard> GetDashboardAsync(
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken);
 
     Task<InventoryTransferSummary> UpsertAsync(
@@ -11,22 +11,22 @@ public interface IInventoryTransferStore
         CancellationToken cancellationToken);
 
     Task<InventoryTransferSummary> SubmitAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken);
 
     Task<InventoryTransferSummary> ShipAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken);
 
     Task<InventoryTransferSummary> ReceiveAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid transferId,
-        Guid userId,
+        UserId userId,
         DateOnly postingDate,
         CancellationToken cancellationToken);
 }

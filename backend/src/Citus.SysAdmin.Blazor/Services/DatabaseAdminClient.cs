@@ -160,7 +160,7 @@ public sealed record DatabaseBackupDto(
     string Status,
     string? FilePath,
     long? SizeBytes,
-    Guid TriggeredByUserId,
+    UserId TriggeredByUserId,
     string? ErrorMessage);
 
 public sealed record DatabaseMaintenanceRunDto(
@@ -170,7 +170,7 @@ public sealed record DatabaseMaintenanceRunDto(
     DateTimeOffset? CompletedAt,
     string Status,
     long? DurationMs,
-    Guid TriggeredByUserId,
+    UserId TriggeredByUserId,
     string? ErrorMessage);
 
 public sealed record DatabaseTableSizeDto(

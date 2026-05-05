@@ -12,7 +12,7 @@ namespace Tests.AP;
 
 public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 {
-    private static readonly Guid CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
+    private static readonly CompanyId CompanyId = Guid.Parse("5e492df2-37ab-47df-a1bb-2d559c876cbc");
     private static readonly Guid VendorId = Guid.Parse("96000000-0000-0000-0000-000000000001");
 
     [Fact]
@@ -24,7 +24,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         var createdUser = false;
@@ -127,7 +127,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         var createdUser = false;
@@ -237,7 +237,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -313,7 +313,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid fxSnapshotId = Guid.Empty;
@@ -430,7 +430,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -503,7 +503,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -572,7 +572,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -644,7 +644,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -716,7 +716,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -800,7 +800,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -885,7 +885,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -972,7 +972,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1109,7 +1109,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         var createdUser = false;
@@ -1215,7 +1215,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid expenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid journalEntryId = Guid.Empty;
         Guid compensationJournalEntryId = Guid.Empty;
@@ -1368,7 +1368,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1599,7 +1599,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -1861,7 +1861,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2138,7 +2138,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid payBillId = Guid.Empty;
         Guid openItemId = Guid.Empty;
@@ -2499,7 +2499,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid vendorCreditApplicationId = Guid.Empty;
@@ -2798,7 +2798,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid vendorCreditId = Guid.Empty;
         Guid billId = Guid.NewGuid();
         Guid vendorCreditApplicationId = Guid.Empty;
@@ -3151,7 +3151,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
         Guid payableControlAccountId = Guid.Empty;
         Guid expenseAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
+        UserId userId = Guid.Empty;
         Guid vendorCreditId = Guid.NewGuid();
         Guid billId = Guid.NewGuid();
         Guid vendorCreditApplicationId = Guid.Empty;
@@ -3371,8 +3371,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         Guid expenseAccountId = Guid.Empty;
         Guid unmappedExpenseAccountId = Guid.Empty;
         Guid payableControlAccountId = Guid.Empty;
-        Guid userId = Guid.Empty;
-        Guid approvalUserId = Guid.Empty;
+        UserId userId = Guid.Empty;
+        UserId approvalUserId = Guid.Empty;
         Guid billId = Guid.Empty;
         Guid openItemId = Guid.Empty;
         Guid adjustmentAccountMappingId = Guid.Empty;
@@ -3696,7 +3696,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreatePayableControlAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -3755,7 +3755,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateExpenseAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         var accountId = Guid.NewGuid();
@@ -3807,7 +3807,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateOpenItemAdjustmentAccountMappingAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         string openItemType,
         string adjustmentType,
         Guid adjustmentAccountId,
@@ -3829,7 +3829,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         return result.Mapping.MappingId;
     }
 
-    private static async Task<(Guid UserId, bool Created)> GetOrCreateUserAsync(
+    private static async Task<(UserId UserId, bool Created)> GetOrCreateUserAsync(
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -3837,7 +3837,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         await using var findCommand = connection.CreateCommand();
         findCommand.CommandText = "select id from users order by created_at limit 1;";
         var existing = await findCommand.ExecuteScalarAsync(cancellationToken);
-        if (existing is Guid userId)
+        if (existing is UserId userId)
         {
             return (userId, false);
         }
@@ -3857,7 +3857,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         return (newUserId, true);
     }
 
-    private static async Task<(Guid UserId, bool Created)> CreateAdditionalUserAsync(
+    private static async Task<(UserId UserId, bool Created)> CreateAdditionalUserAsync(
         PostgresConnectionFactory connectionFactory,
         CancellationToken cancellationToken)
     {
@@ -3983,8 +3983,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertJournalEntryAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string sourceType,
         Guid sourceId,
         string status,
@@ -4061,8 +4061,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertJournalEntryWithBalancedLinesAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string sourceType,
         Guid sourceId,
         Guid debitAccountId,
@@ -4199,7 +4199,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateApOpenItemForSourceAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         Guid vendorId,
         string sourceType,
         Guid sourceId,
@@ -4290,8 +4290,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertPayBillAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid vendorId,
         Guid paymentAccountId,
         Guid targetApOpenItemId,
@@ -4406,8 +4406,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> InsertVendorCreditApplicationAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         Guid vendorId,
         Guid sourceVendorCreditApOpenItemId,
         Guid targetBillApOpenItemId,
@@ -4522,12 +4522,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> CreateSettlementApplicationForOpenItemAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         string targetOpenItemType,
         Guid targetOpenItemId,
         string sourceType,
         Guid sourceId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken,
         decimal appliedAmountTx = 1m,
         decimal appliedAmountBase = 1m)
@@ -4579,12 +4579,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task<Guid> ApplySettlementApplicationForOpenItemAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid companyId,
+        CompanyId companyId,
         string targetOpenItemType,
         Guid targetOpenItemId,
         string sourceType,
         Guid sourceId,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken,
         decimal appliedAmountTx = 1m,
         decimal appliedAmountBase = 1m)
@@ -4772,7 +4772,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
     private static async Task InsertJournalEntryLineAsync(
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         Guid lineId,
         int lineNumber,
@@ -4831,7 +4831,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
     private static async Task InsertLedgerEntryAsync(
         Npgsql.NpgsqlConnection connection,
         Npgsql.NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid journalEntryId,
         Guid journalEntryLineId,
         Guid accountId,
@@ -4892,7 +4892,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         PostgresConnectionFactory connectionFactory,
         string baseCurrencyCode,
         string quoteCurrencyCode,
-        Guid userId,
+        UserId userId,
         DateOnly requestedDate,
         decimal rate,
         CancellationToken cancellationToken)
@@ -5106,11 +5106,11 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task CleanupUserAsync(
         PostgresConnectionFactory connectionFactory,
-        Guid userId,
+        UserId userId,
         bool createdUser,
         CancellationToken cancellationToken)
     {
-        if (!createdUser || userId == Guid.Empty)
+        if (!createdUser || userId.Value is null)
         {
             return;
         }

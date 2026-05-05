@@ -29,7 +29,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         ArgumentNullException.ThrowIfNull(document);
 
         await EnsureOpenItemAsync(
-            companyId: document.CompanyId.Value,
+            companyId: document.CompanyId,
             partyId: document.PartyId,
             sourceType: "bill",
             sourceId: document.Id,
@@ -50,7 +50,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         ArgumentNullException.ThrowIfNull(document);
 
         await EnsureOpenItemAsync(
-            companyId: document.CompanyId.Value,
+            companyId: document.CompanyId,
             partyId: document.PartyId,
             sourceType: "vendor_credit",
             sourceId: document.Id,
@@ -175,7 +175,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         string adjustmentType,
         DateOnly adjustmentDate,
         decimal? adjustmentAmountTx,
-        Guid? actorId,
+        UserId? actorId,
         string? reason,
         CancellationToken cancellationToken)
     {
@@ -277,7 +277,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
             request.RequestId,
             request.OpenItemId,
             request.OpenItemType,
-            CompanyId = request.CompanyId.Value,
+            CompanyId = request.CompanyId,
             request.AdjustmentType,
             request.AdjustmentDate,
             request.RequestStatus,
@@ -375,7 +375,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -447,7 +447,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -519,7 +519,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -615,7 +615,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         CancellationToken cancellationToken)
     {
         await using var scope = await PostgresCommandScope.CreateAsync(
@@ -824,7 +824,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
 
         var controlAccountId = await PostgresControlAccountLookup.TryResolveAsync(
             scope,
-            companyId.Value,
+            companyId,
             "accounts_payable",
             snapshot.DocumentCurrencyCode,
             snapshot.BaseCurrencyCode,
@@ -855,7 +855,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         CompanyId companyId,
         Guid openItemId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         Guid journalEntryId,
         string journalEntryDisplayNumber,
         DateTimeOffset executedAt,
@@ -987,7 +987,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
     }
 
     private async Task EnsureOpenItemAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid partyId,
         string sourceType,
         Guid sourceId,
@@ -1544,7 +1544,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         PostgresCommandScope scope,
         CompanyId companyId,
         Guid requestId,
-        Guid? actorId,
+        UserId? actorId,
         string action,
         object payload,
         CancellationToken cancellationToken)
@@ -1586,7 +1586,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
 
     private static OpenItemAdjustmentRequestTransitionResult? ValidateAdjustmentApprovalAuthority(
         OpenItemAdjustmentRequestRecord request,
-        Guid? actorId,
+        UserId? actorId,
         string transitionCode,
         string openItemLabel)
     {

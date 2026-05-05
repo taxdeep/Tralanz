@@ -13,14 +13,14 @@ public sealed class PostgreSqlUnitySearchQueryClassPriorStore(PostgreSqlConnecti
     : IUnitySearchQueryClassPriorStore
 {
     public async Task RecordSelectAsync(
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string queryClassTag,
         string entityType,
         CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty
-            || userId == Guid.Empty
+        if (companyId.Value is null
+            || userId.Value is null
             || string.IsNullOrWhiteSpace(queryClassTag)
             || string.IsNullOrWhiteSpace(entityType))
         {

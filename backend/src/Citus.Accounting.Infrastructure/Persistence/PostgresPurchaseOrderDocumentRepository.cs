@@ -119,7 +119,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("amendment_started_at"));
         }
 
-        var lines = await LoadLinesAsync(scope, companyId.Value, documentId, cancellationToken);
+        var lines = await LoadLinesAsync(scope, companyId, documentId, cancellationToken);
         return new PurchaseOrderDocument(
             id,
             companyId,
@@ -313,7 +313,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             scope.Connection,
             scope.Transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -333,13 +333,13 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         }
 
         var requestId = Guid.NewGuid();
-        var estimatedAmount = await CalculateEstimatedAmountAsync(scope, companyId.Value, documentId, cancellationToken);
+        var estimatedAmount = await CalculateEstimatedAmountAsync(scope, companyId, documentId, cancellationToken);
         var thresholdAmount = PurchaseOrderApprovalThresholdPolicy.TemporaryGovernanceThresholdAmount;
         await AppendApprovalRequestAuditAsync(
             scope,
-            companyId.Value,
+            companyId,
             requestId,
-            userId.Value,
+            userId,
             "purchase_order_approval_requested",
             new
             {
@@ -480,9 +480,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await AppendApprovalRequestAuditAsync(
             scope,
-            companyId.Value,
+            companyId,
             requestId,
-            userId.Value,
+            userId,
             "purchase_order_approval_submitted",
             new
             {
@@ -544,9 +544,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         await AppendApprovalRequestAuditAsync(
             scope,
-            companyId.Value,
+            companyId,
             requestId,
-            userId.Value,
+            userId,
             "purchase_order_approval_rejected",
             new
             {
@@ -589,7 +589,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             entityNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 $"entity-number:all:{year}",
                 $"EN{year}",
                 8,
@@ -599,14 +599,14 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             displayNumber = await PostgresSourceDocumentDraftNumbering.ReserveAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 "purchase-order-display",
                 "PO-",
                 6,
                 await PostgresSourceDocumentDraftNumbering.FindDisplaySeedNumberAsync(
                     connection,
                     transaction,
-                    draft.CompanyId.Value,
+                    draft.CompanyId,
                     PurchaseOrdersTableName,
                     "purchase_order_number",
                     "^PO-[0-9]+$",
@@ -659,7 +659,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             (entityNumber, displayNumber, var currentStatus) = await LoadIdentityAsync(
                 connection,
                 transaction,
-                draft.CompanyId.Value,
+                draft.CompanyId,
                 documentId,
                 cancellationToken);
 
@@ -700,7 +700,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 where company_id = @company_id
                   and purchase_order_id = @purchase_order_id;
                 """;
-            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             deleteLineCommand.Parameters.AddWithValue("purchase_order_id", documentId);
             await deleteLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -739,7 +739,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
             insertLineCommand.Parameters.AddWithValue("purchase_order_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -773,7 +773,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -811,9 +811,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await InsertLifecycleAuditLogIfAvailableAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
-            userId.Value,
+            userId,
             "purchase_order_approved",
             currentStatus,
             PurchaseOrderDocumentStatuses.Approved,
@@ -838,7 +838,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -876,9 +876,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await InsertLifecycleAuditLogIfAvailableAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
-            userId.Value,
+            userId,
             "purchase_order_released",
             currentStatus,
             PurchaseOrderDocumentStatuses.Issued,
@@ -903,7 +903,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -940,9 +940,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await InsertLifecycleAuditLogIfAvailableAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
-            userId.Value,
+            userId,
             "purchase_order_approval_reversed",
             currentStatus,
             PurchaseOrderDocumentStatuses.Draft,
@@ -967,7 +967,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -976,7 +976,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             throw new InvalidOperationException("Only approved or issued purchase orders can be reopened for amendment.");
         }
 
-        await EnsureCanReopenForAmendmentAsync(connection, transaction, companyId.Value, documentId, cancellationToken);
+        await EnsureCanReopenForAmendmentAsync(connection, transaction, companyId, documentId, cancellationToken);
 
         await using var reopenCommand = connection.CreateCommand();
         reopenCommand.Transaction = transaction;
@@ -1012,9 +1012,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await InsertLifecycleAuditLogIfAvailableAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
-            userId.Value,
+            userId,
             "purchase_order_reopened_for_amendment",
             currentStatus,
             PurchaseOrderDocumentStatuses.Draft,
@@ -1039,7 +1039,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -1080,9 +1080,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await InsertLifecycleAuditLogIfAvailableAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
-            userId.Value,
+            userId,
             "purchase_order_closed",
             currentStatus,
             PurchaseOrderDocumentStatuses.Closed,
@@ -1110,7 +1110,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         var (entityNumber, displayNumber, currentStatus) = await LoadIdentityAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
             cancellationToken);
 
@@ -1153,9 +1153,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         await InsertLifecycleAuditLogIfAvailableAsync(
             connection,
             transaction,
-            companyId.Value,
+            companyId,
             documentId,
-            userId.Value,
+            userId,
             "purchase_order_cancelled",
             currentStatus,
             PurchaseOrderDocumentStatuses.Cancelled,
@@ -1613,7 +1613,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 Array.Empty<PurchaseOrderQuantityDiscrepancySummary>());
         }
 
-        var discrepancyRows = await LoadQuantityDiscrepanciesAsync(scope, companyId.Value, distinctIds, cancellationToken);
+        var discrepancyRows = await LoadQuantityDiscrepanciesAsync(scope, companyId, distinctIds, cancellationToken);
         if (discrepancyRows.Count == 0)
         {
             return summaries;
@@ -1668,7 +1668,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         var existing = await LoadExistingQuantityDiscrepancyReviewStateAsync(
             scope,
-            companyId.Value,
+            companyId,
             purchaseOrderId,
             cancellationToken);
 
@@ -1871,9 +1871,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task AppendApprovalRequestAuditAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
-        Guid actorId,
+        UserId actorId,
         string action,
         object payload,
         CancellationToken cancellationToken)
@@ -2048,19 +2048,19 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     {
         var submitted = await LoadApprovalRequestTransitionAsync(
             scope,
-            companyId.Value,
+            companyId,
             requested.RequestId,
             "purchase_order_approval_submitted",
             cancellationToken);
         var rejected = await LoadApprovalRequestTransitionAsync(
             scope,
-            companyId.Value,
+            companyId,
             requested.RequestId,
             "purchase_order_approval_rejected",
             cancellationToken);
         var currentPurchaseOrderStatus = await LoadPurchaseOrderStatusAsync(
             scope,
-            companyId.Value,
+            companyId,
             requested.PurchaseOrderId,
             cancellationToken) ?? requested.PurchaseOrderStatus;
 
@@ -2104,7 +2104,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<ApprovalRequestTransitionEvent?> LoadApprovalRequestTransitionAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid requestId,
         string action,
         CancellationToken cancellationToken)
@@ -2145,7 +2145,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<string?> LoadPurchaseOrderStatusAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -2165,7 +2165,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<decimal?> CalculateEstimatedAmountAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -2249,7 +2249,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<IReadOnlyList<PurchaseOrderDocumentLine>> LoadLinesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -2330,7 +2330,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     private static async Task EnsureCanReopenForAmendmentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -2369,7 +2369,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string lineTableName,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -2398,9 +2398,9 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     private static async Task InsertLifecycleAuditLogIfAvailableAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
-        Guid actorId,
+        UserId actorId,
         string action,
         string fromStatus,
         string toStatus,
@@ -2478,7 +2478,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<IReadOnlyList<PurchaseOrderQuantityDiscrepancySummary>> LoadQuantityDiscrepanciesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<Guid> purchaseOrderIds,
         CancellationToken cancellationToken)
     {
@@ -2539,7 +2539,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at")),
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_detected_at")),
                 reader.IsDBNull(reader.GetOrdinal("review_note")) ? null : reader.GetString(reader.GetOrdinal("review_note")),
-                reader.IsDBNull(reader.GetOrdinal("reviewed_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("reviewed_by_user_id")),
+                reader.IsDBNull(reader.GetOrdinal("reviewed_by_user_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("reviewed_by_user_id"))),
                 reader.IsDBNull(reader.GetOrdinal("reviewed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reviewed_at"))));
         }
 
@@ -2548,7 +2548,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
     private static async Task<Dictionary<(int LineNumber, string DiscrepancyType), ExistingQuantityDiscrepancyReviewState>> LoadExistingQuantityDiscrepancyReviewStateAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid purchaseOrderId,
         CancellationToken cancellationToken)
     {
@@ -2578,7 +2578,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                     reader.GetString(reader.GetOrdinal("investigation_status")),
                     reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("first_detected_at")),
                     reader.IsDBNull(reader.GetOrdinal("review_note")) ? null : reader.GetString(reader.GetOrdinal("review_note")),
-                    reader.IsDBNull(reader.GetOrdinal("reviewed_by_user_id")) ? null : reader.GetGuid(reader.GetOrdinal("reviewed_by_user_id")),
+                    reader.IsDBNull(reader.GetOrdinal("reviewed_by_user_id")) ? null : UserId.Parse(reader.GetString(reader.GetOrdinal("reviewed_by_user_id"))),
                     reader.IsDBNull(reader.GetOrdinal("reviewed_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reviewed_at")));
         }
 
@@ -2642,15 +2642,15 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         bool includeIdentity)
     {
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("purchase_order_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
         }
 
-        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId.Value);
+        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId);
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);
         command.Parameters.AddWithValue("status", PurchaseOrderDocumentStatuses.Draft);
         command.Parameters.AddWithValue("order_date", draft.OrderDate);
@@ -2671,7 +2671,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
     private static async Task<(string EntityNumber, string DisplayNumber, string Status)> LoadIdentityAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        Guid companyId,
+        CompanyId companyId,
         Guid documentId,
         CancellationToken cancellationToken)
     {
@@ -2891,7 +2891,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         string InvestigationStatus,
         DateTimeOffset FirstDetectedAt,
         string? ReviewNote,
-        Guid? ReviewedByUserId,
+        UserId? ReviewedByUserId,
         DateTimeOffset? ReviewedAt);
 
     private sealed record ApprovalRequestRequestedEvent(

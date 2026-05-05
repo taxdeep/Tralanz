@@ -4,7 +4,7 @@ public interface IUnitySearchProjectionStore
 {
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
-    Task EnsureProjectionFreshAsync(Guid companyId, CancellationToken cancellationToken);
+    Task EnsureProjectionFreshAsync(CompanyId companyId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Drops the in-memory "last refreshed" timestamp for the company so
@@ -18,7 +18,7 @@ public interface IUnitySearchProjectionStore
     /// operator has searched this company yet) since the next search
     /// will rebuild from scratch anyway.
     /// </summary>
-    Task InvalidateAsync(Guid companyId, CancellationToken cancellationToken);
+    Task InvalidateAsync(CompanyId companyId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Bulk lookup of <c>(entity_type, source_id)</c> → display text. Used
@@ -28,7 +28,7 @@ public interface IUnitySearchProjectionStore
     /// silently dropped (caller decides whether to fall back).
     /// </summary>
     Task<IReadOnlyDictionary<(string EntityType, Guid SourceId), SearchDocumentDisplay>> GetDisplayNamesAsync(
-        Guid companyId,
+        CompanyId companyId,
         IReadOnlyCollection<(string EntityType, Guid SourceId)> keys,
         CancellationToken cancellationToken);
 }

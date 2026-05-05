@@ -10,7 +10,7 @@ public sealed class JournalEntryDraft
 
     public string Status { get; set; } = "draft";
 
-    public Guid CompanyId { get; set; }
+    public CompanyId CompanyId { get; set; }
 
     public string JournalNumber { get; set; } = string.Empty;
 

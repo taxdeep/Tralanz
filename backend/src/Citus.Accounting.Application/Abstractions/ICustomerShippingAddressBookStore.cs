@@ -17,31 +17,31 @@ public interface ICustomerShippingAddressBookStore
     Task EnsureSchemaAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CustomerShippingAddressBookEntry>> ListAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CancellationToken cancellationToken);
 
     Task<CustomerShippingAddressBookEntry?> GetAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CancellationToken cancellationToken);
 
     Task<CustomerShippingAddressBookEntry> InsertAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         CustomerShippingAddressBookUpsertRequest request,
         CancellationToken cancellationToken);
 
     Task<CustomerShippingAddressBookEntry?> UpdateAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CustomerShippingAddressBookUpsertRequest request,
         CancellationToken cancellationToken);
 
     Task<bool> DeleteAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CancellationToken cancellationToken);
@@ -53,7 +53,7 @@ public interface ICustomerShippingAddressBookStore
     /// invariant holds at most one row.
     /// </summary>
     Task<CustomerShippingAddressBookEntry?> SetDefaultAsync(
-        Guid companyId,
+        CompanyId companyId,
         Guid customerId,
         Guid addressId,
         CancellationToken cancellationToken);
@@ -67,7 +67,7 @@ public interface ICustomerShippingAddressBookStore
 /// </summary>
 public sealed record CustomerShippingAddressBookEntry(
     Guid Id,
-    Guid CompanyId,
+    CompanyId CompanyId,
     Guid CustomerId,
     string? Label,
     string? AddressLine,

@@ -48,7 +48,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
             _connections, _executionContextAccessor, cancellationToken);
 
         // Idempotency probe — JE already exists for this invoice's drop-ship hook.
-        var existing = await TryReadExistingJournalAsync(scope, companyId.Value, invoiceDocumentId, cancellationToken);
+        var existing = await TryReadExistingJournalAsync(scope, companyId, invoiceDocumentId, cancellationToken);
         if (existing is not null)
         {
             return new InvoiceDropShipCogsPostingPreparation(
@@ -60,7 +60,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
         // Header — invoice must exist + be posted; capture base currency
         // and the date the JE should book under (invoice date matches the
         // M3 sister that uses inventory posting_date).
-        var header = await ReadHeaderAsync(scope, companyId.Value, invoiceDocumentId, cancellationToken);
+        var header = await ReadHeaderAsync(scope, companyId, invoiceDocumentId, cancellationToken);
         if (header is null)
         {
             throw new InvalidOperationException(
@@ -77,7 +77,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
         // join also surfaces the per-item COGS / clearing account
         // overrides (typically null for drop-ship since the items page
         // hides COGS picker, but kept for symmetry with M3).
-        var lines = await ReadLineCandidatesAsync(scope, companyId.Value, invoiceDocumentId, cancellationToken);
+        var lines = await ReadLineCandidatesAsync(scope, companyId, invoiceDocumentId, cancellationToken);
         if (lines.Count == 0)
         {
             // No drop-ship lines — nothing to journalise. Caller treats
@@ -93,9 +93,9 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
         // picker entirely; the clearing picker is optional), so the
         // company-level system_role lookup carries the load.
         var fallbackCogs = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
-            scope, companyId.Value, cancellationToken, "cost_of_goods_sold", "inventory:cogs");
+            scope, companyId, cancellationToken, "cost_of_goods_sold", "inventory:cogs");
         var fallbackClearing = await PostgresAccountLookup.TryResolveActiveAccountIdAsync(
-            scope, companyId.Value, cancellationToken, "drop_ship_clearing");
+            scope, companyId, cancellationToken, "drop_ship_clearing");
 
         var documentLines = new List<InvoiceDropShipCogsPostingDocumentLine>();
         var lineNumber = 0;
@@ -179,7 +179,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
 
     private static async Task<(Guid Id, string DisplayNumber)?> TryReadExistingJournalAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -206,7 +206,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
 
     private static async Task<HeaderRow?> ReadHeaderAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {
@@ -234,7 +234,7 @@ public sealed class PostgresInvoiceDropShipCogsPostingRepository : IInvoiceDropS
 
     private static async Task<List<LineCandidateRow>> ReadLineCandidatesAsync(
         PostgresCommandScope scope,
-        Guid companyId,
+        CompanyId companyId,
         Guid invoiceDocumentId,
         CancellationToken cancellationToken)
     {

@@ -74,11 +74,11 @@ public sealed class SysAdminControlState
         }
     }
 
-    public bool TrySetActiveCompany(Guid companyId, out SysAdminControlContextSummary? context) =>
+    public bool TrySetActiveCompany(CompanyId companyId, out SysAdminControlContextSummary? context) =>
         TrySetActiveCompany(companyId, operatorOverride: null, out context);
 
     public bool TrySetActiveCompany(
-        Guid companyId,
+        CompanyId companyId,
         SysAdminOperatorSummary? operatorOverride,
         out SysAdminControlContextSummary? context)
     {

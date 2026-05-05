@@ -3,7 +3,7 @@ using Citus.Modules.Inventory.Domain.Shared;
 namespace Citus.Modules.Inventory.Application.Contracts;
 
 public sealed record class InventoryAdjustmentDashboard(
-    Guid CompanyId,
+    CompanyId CompanyId,
     string BaseCurrencyCode,
     InventoryCostingPolicyRecord? CostingPolicy,
     IReadOnlyList<InventoryManagedItemSummary> ActiveItems,

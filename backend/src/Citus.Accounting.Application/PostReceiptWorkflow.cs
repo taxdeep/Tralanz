@@ -45,7 +45,7 @@ public sealed class PostReceiptWorkflow
 
         if (string.Equals(document.Status, ReceiptDocumentStatuses.Draft, StringComparison.OrdinalIgnoreCase))
         {
-            await _activationStore.ValidateCanActivateAsync(companyId.Value, documentId, cancellationToken);
+            await _activationStore.ValidateCanActivateAsync(companyId, documentId, cancellationToken);
 
             result = await _documents.PostAsync(
                 companyId,
@@ -69,16 +69,16 @@ public sealed class PostReceiptWorkflow
         try
         {
             await _activationStore.ActivatePostedReceiptAsync(
-                companyId.Value,
-                userId.Value,
+                companyId,
+                userId,
                 documentId,
                 cancellationToken);
         }
         catch (Exception ex)
         {
             await _activationStore.RecordActivationFailureAsync(
-                companyId.Value,
-                userId.Value,
+                companyId,
+                userId,
                 documentId,
                 ex.Message,
                 cancellationToken);
@@ -86,13 +86,13 @@ public sealed class PostReceiptWorkflow
         }
 
         await _valuationStore.RefreshReceiptValuationAsync(
-            companyId.Value,
-            userId.Value,
+            companyId,
+            userId,
             documentId,
             cancellationToken);
         await _emissionStore.EmitReceiptCostLayersAsync(
-            companyId.Value,
-            userId.Value,
+            companyId,
+            userId,
             documentId,
             cancellationToken);
 

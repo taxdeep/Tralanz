@@ -491,7 +491,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             requests.Add(new MfaRecoveryRequestSummary
             {
                 RequestId = reader.GetGuid(reader.GetOrdinal("id")),
-                AccountId = reader.GetGuid(reader.GetOrdinal("user_id")),
+                AccountId = UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
                 DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
                 Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
                 Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
@@ -557,7 +557,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             requests.Add(new MfaRecoveryRequestSummary
             {
                 RequestId = reader.GetGuid(reader.GetOrdinal("id")),
-                AccountId = reader.GetGuid(reader.GetOrdinal("user_id")),
+                AccountId = UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
                 DisplayName = reader.GetString(reader.GetOrdinal("display_name")).Trim(),
                 Email = reader.GetString(reader.GetOrdinal("email")).Trim(),
                 Username = reader.GetString(reader.GetOrdinal("username")).Trim(),
@@ -582,7 +582,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     }
 
     public async Task<CompanyStatusGovernanceResult?> SetCompanyStatusAsync(
-        Guid companyId,
+        CompanyId companyId,
         string status,
         string reason,
         Guid? sysAdminAccountId,
@@ -1191,7 +1191,7 @@ public sealed class PostgresPlatformGovernanceRepository(
     private static async Task<CompanyRecord?> ReadCompanyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid companyId,
+        CompanyId companyId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -1283,7 +1283,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
         return new MfaRecoveryRequestRecord(
             reader.GetGuid(reader.GetOrdinal("id")),
-            reader.GetGuid(reader.GetOrdinal("user_id")),
+            UserId.Parse(reader.GetString(reader.GetOrdinal("user_id"))),
             NormalizeMfaMode(reader.GetString(reader.GetOrdinal("current_mfa_mode"))),
             reader.GetString(reader.GetOrdinal("status")).Trim().ToLowerInvariant(),
             reader.GetString(reader.GetOrdinal("request_reason")).Trim(),
@@ -1549,7 +1549,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             AuditId = reader.GetGuid(reader.GetOrdinal("id")),
             CompanyId = reader.IsDBNull(reader.GetOrdinal("company_id"))
                 ? null
-                : reader.GetGuid(reader.GetOrdinal("company_id")),
+                : CompanyId.Parse(reader.GetString(reader.GetOrdinal("company_id"))),
             CompanyCode = companyCode,
             CompanyName = companyName,
             ScopeLabel = PlatformAuditEvent.BuildScopeLabel(companyName, companyCode),

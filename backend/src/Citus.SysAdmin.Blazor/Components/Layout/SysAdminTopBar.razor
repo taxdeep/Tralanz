@@ -113,9 +113,9 @@
         }
     }
 
-    private async Task OnCompanyChangedAsync(Guid companyId)
+    private async Task OnCompanyChangedAsync(CompanyId companyId)
     {
-        if (companyId == Guid.Empty || companyId == ShellState.ActiveCompany.CompanyId)
+        if (companyId.Value is null || companyId == ShellState.ActiveCompany.CompanyId)
         {
             return;
         }

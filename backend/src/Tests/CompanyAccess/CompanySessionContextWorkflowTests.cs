@@ -123,9 +123,9 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task SeedAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
-        Guid firstCompanyId,
-        Guid secondCompanyId,
+        UserId userId,
+        CompanyId firstCompanyId,
+        CompanyId secondCompanyId,
         string firstEntityNumber,
         string secondEntityNumber,
         CancellationToken cancellationToken)
@@ -141,8 +141,8 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task SeedInactiveMembershipAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
-        Guid companyId,
+        UserId userId,
+        CompanyId companyId,
         string entityNumber,
         CancellationToken cancellationToken)
     {
@@ -155,7 +155,7 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task InsertUserAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid userId,
+        UserId userId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -173,7 +173,7 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task InsertCompanyAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid companyId,
+        CompanyId companyId,
         string entityNumber,
         string legalName,
         string baseCurrencyCode,
@@ -210,8 +210,8 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task InsertMembershipAsync(
         Npgsql.NpgsqlConnection connection,
-        Guid companyId,
-        Guid userId,
+        CompanyId companyId,
+        UserId userId,
         string role,
         bool isActive,
         CancellationToken cancellationToken,
@@ -285,8 +285,8 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static async Task CleanupAsync(
         PostgreSqlConnectionFactory connectionFactory,
-        Guid userId,
-        Guid firstCompanyId,
+        UserId userId,
+        CompanyId firstCompanyId,
         Guid? secondCompanyId,
         CancellationToken cancellationToken)
     {
