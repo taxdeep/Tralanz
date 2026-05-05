@@ -91,6 +91,7 @@ public sealed class BusinessShellState
                 new NavMenuItem { Title = "Products & Services", Href = "items", Icon = IconName.Puzzle },
                 new NavMenuItem { Title = "Warehouses", Href = "company/warehouses", Icon = IconName.BuildingStore },
                 new NavMenuItem { Title = "Sales Issue COGS", Href = "company/inventory/cogs-postings", Icon = IconName.Receipt },
+                new NavMenuItem { Title = "Drop-ship Clearing", Href = "company/inventory/drop-ship-clearing", Icon = IconName.Truck },
                 new NavMenuItem { Title = "Inventory Setup", Href = "company/inventory/activate", Icon = IconName.Settings }
             ]
         },

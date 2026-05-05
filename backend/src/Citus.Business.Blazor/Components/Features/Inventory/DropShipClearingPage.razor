@@ -1,0 +1,180 @@
+@page "/company/inventory/drop-ship-clearing"
+
+@inject BusinessShellState ShellState
+@inject DropShipClearingClient ClearingClient
+@inject CitusToastService Message
+
+<PageTitle>Drop-ship Clearing | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <label class="text-sm flex items-center gap-2 text-fg-muted">
+            <input type="checkbox" @bind="_hideBalanced" @bind:after="LoadAsync" />
+            Hide balanced
+        </label>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Refresh"
+                     Disabled="_isLoading"
+                     OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_validation))
+{
+    <CitusAlert Severity="CitusAlertSeverity.Error" Message="@_validation" ShowIcon="true" Class="mb-4" />
+}
+
+<section class="citus-panel">
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
+                        EmptyIcon="IconName.Receipt"
+                        EmptyTitle="No drop-ship activity yet"
+                        EmptyMessage="When a vendor bill or customer invoice posts against a drop-ship item, the per-item clearing balance shows up here. Use the write-off action to clear stale residuals to Purchase Price Variance.">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="text-right" style="width: 9rem">Bill side</th>
+                    <th class="text-right" style="width: 9rem">Invoice COGS</th>
+                    <th class="text-right" style="width: 9rem">Net residual</th>
+                    <th style="width: 9rem">Activity</th>
+                    <th style="width: 9rem"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    var balanced = Math.Abs(row.NetClearingBase) < 0.005m;
+                    var isWritingOff = _writingOffItemId == row.ItemId;
+                    <tr>
+                        <td>
+                            <div class="font-medium">@row.ItemCode</div>
+                            <div class="text-fg-subtle text-xs">@row.ItemName</div>
+                        </td>
+                        <td class="text-right tabular-nums">
+                            @FormatAmount(row.TotalBilledBase)
+                            <div class="text-fg-subtle text-xs">qty @FormatQty(row.TotalQuantityBilled)</div>
+                        </td>
+                        <td class="text-right tabular-nums">
+                            @FormatAmount(row.TotalInvoicedCogsBase)
+                            <div class="text-fg-subtle text-xs">qty @FormatQty(row.TotalQuantityInvoiced)</div>
+                        </td>
+                        <td class="text-right tabular-nums">
+                            <span class="@NetColorClass(row.NetClearingBase)">@FormatAmount(row.NetClearingBase)</span>
+                            <div class="text-fg-subtle text-xs">@NetHint(row.NetClearingBase)</div>
+                        </td>
+                        <td>
+                            @if (row.LatestActivityDate.HasValue)
+                            {
+                                <div class="text-sm">@row.LatestActivityDate.Value.ToString("yyyy-MM-dd")</div>
+                                @if (row.OldestActivityDate.HasValue && row.OldestActivityDate.Value != row.LatestActivityDate.Value)
+                                {
+                                    <div class="text-fg-subtle text-xs">since @row.OldestActivityDate.Value.ToString("yyyy-MM-dd")</div>
+                                }
+                            }
+                        </td>
+                        <td class="text-right">
+                            @if (!balanced)
+                            {
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             Disabled="@isWritingOff"
+                                             OnClick="@(() => WriteOffAsync(row))">
+                                    @(isWritingOff ? "Writing off…" : "Write off")
+                                </CitusButton>
+                            }
+                            else
+                            {
+                                <span class="text-fg-subtle text-xs">balanced</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </CitusAsyncBoundary>
+</section>
+
+<p class="text-fg-subtle text-xs mt-3">
+    Drop-ship Clearing rolls up posted bill clearing-debits and posted invoice COGS clearing-credits per item.
+    Net residuals lean positive when vendor billed more than we sold (over-billed) and negative when we sold more than the vendor billed (under-billed).
+    Write-off books the residual to Purchase Price Variance and zeros the item's clearing balance.
+</p>
+
+@code {
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Inventory",
+        Title = "Drop-ship Clearing",
+        Subtitle = "Per-item residuals on the Drop-ship Clearing account.",
+    };
+
+    private List<DropShipClearingAgingRowDto> _rows = new();
+    private bool _hideBalanced;
+    private bool _isLoading = true;
+    private string? _validation;
+    private Guid? _writingOffItemId;
+    private string _baseCurrencyCode = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _baseCurrencyCode = ShellState.ActiveCompany.BaseCurrencyCode;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _validation = null;
+        try
+        {
+            var rows = await ClearingClient.ListAgingAsync(_hideBalanced);
+            _rows = rows.ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task WriteOffAsync(DropShipClearingAgingRowDto row)
+    {
+        _writingOffItemId = row.ItemId;
+        _validation = null;
+        try
+        {
+            var outcome = await ClearingClient.WriteOffAsync(
+                row.ItemId,
+                new DropShipClearingWriteOffRequest(
+                    ExpectedNetClearingBase: row.NetClearingBase,
+                    Memo: $"Workbench write-off — {row.ItemCode}"));
+
+            if (outcome.Succeeded)
+            {
+                await Message.SuccessAsync(
+                    $"Wrote off {FormatAmount(Math.Abs(row.NetClearingBase))} on {row.ItemCode} (JE {outcome.Saved?.JournalEntryDisplayNumber}).");
+                await LoadAsync();
+            }
+            else
+            {
+                _validation = outcome.ErrorMessage ?? "Could not write off the clearing residual.";
+                await Message.InfoAsync(_validation);
+            }
+        }
+        finally
+        {
+            _writingOffItemId = null;
+        }
+    }
+
+    private string FormatAmount(decimal value) => value.ToString("N2");
+    private string FormatQty(decimal value) => value == decimal.Truncate(value) ? value.ToString("0") : value.ToString("0.##");
+
+    private string NetColorClass(decimal net) => Math.Abs(net) < 0.005m
+        ? "text-fg-subtle"
+        : net > 0m ? "text-warning font-medium" : "text-info font-medium";
+
+    private string NetHint(decimal net) => Math.Abs(net) < 0.005m
+        ? "balanced"
+        : net > 0m ? "over-billed" : "under-billed";
+}

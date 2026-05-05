@@ -3916,6 +3916,96 @@ public sealed class InvoiceDropShipCogsPostingDocument : IPostingDocument
 }
 
 /// <summary>
+/// M6 iter 4: Drop-ship Clearing write-off. Operator-driven cleanup of
+/// a residual on the Drop-ship Clearing account for a given item — the
+/// gap between SUM(posted bill clearing debits) and SUM(posted invoice
+/// COGS clearing credits). The write-off books the gap to the Purchase
+/// Price Variance account so the clearing returns to zero for that
+/// item.
+///
+/// GL math (sign-aware):
+///   net &gt; 0 (over-billed):  Dr PPV  / Cr Drop-ship Clearing
+///   net &lt; 0 (under-billed): Dr Drop-ship Clearing / Cr PPV
+///
+/// SourceType is <c>drop_ship_clearing_writeoff</c>; SourceId is the
+/// document Id (a fresh GUID per write-off) so each write-off lands on
+/// its own JE and the operator can write off the same item again later
+/// if more activity reopens the clearing.
+/// </summary>
+public sealed class DropShipClearingWriteOffDocument : IPostingDocument
+{
+    public DropShipClearingWriteOffDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        DateOnly documentDate,
+        Guid itemId,
+        string itemCode,
+        Guid dropShipClearingAccountId,
+        Guid varianceAccountId,
+        decimal netClearingAmountBase,
+        CurrencyCode baseCurrencyCode,
+        string? memo)
+    {
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+        if (string.IsNullOrWhiteSpace(itemCode))
+        {
+            throw new ArgumentException("Item code is required.", nameof(itemCode));
+        }
+        if (dropShipClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Drop-ship clearing account id is required.", nameof(dropShipClearingAccountId));
+        }
+        if (varianceAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Variance account id is required.", nameof(varianceAccountId));
+        }
+        if (netClearingAmountBase == 0m)
+        {
+            throw new InvalidOperationException("Drop-ship clearing write-off requires a non-zero net amount.");
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        DocumentDate = documentDate;
+        ItemId = itemId;
+        ItemCode = itemCode.Trim();
+        DropShipClearingAccountId = dropShipClearingAccountId;
+        VarianceAccountId = varianceAccountId;
+        NetClearingAmountBase = Math.Round(netClearingAmountBase, 6, MidpointRounding.ToEven);
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+        Memo = string.IsNullOrWhiteSpace(memo) ? null : memo.Trim();
+
+        Lines = Array.AsReadOnly(Array.Empty<IPostingDocumentLine>());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+    public string SourceType => "drop_ship_clearing_writeoff";
+    public string Status => "draft";
+    public DateOnly DocumentDate { get; }
+    public Guid ItemId { get; }
+    public string ItemCode { get; }
+    public Guid DropShipClearingAccountId { get; }
+    public Guid VarianceAccountId { get; }
+    public decimal NetClearingAmountBase { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public string? Memo { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+    public FxSnapshotRef? FxSnapshot => null;
+}
+
+/// <summary>
 /// M5 iter 4: Customer Deposit → Invoice application. After an invoice
 /// posts, any open customer_deposits for the same SO get pro-rata applied
 /// against it: the deposit's liability balance is debited, the invoice's

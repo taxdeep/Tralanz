@@ -425,6 +425,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly()),
             InvoiceDropShipCogsPostingDocument dropShipCogs => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildInvoiceDropShipCogsPostingFragments(dropShipCogs).AsReadOnly()),
+            DropShipClearingWriteOffDocument dropShipWriteOff => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildDropShipClearingWriteOffFragments(dropShipWriteOff).AsReadOnly()),
             CustomerDepositPostingDocument deposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCustomerDepositFragments(deposit).AsReadOnly()),
             CustomerDepositApplicationDocument depositApp => Task.FromResult<IReadOnlyList<PostingFragment>>(
@@ -1413,6 +1415,86 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 $"Drop-ship clearing settlement for invoice {document.DisplayNumber.Value}",
                 ControlRole: "drop_ship_clearing",
                 PostingRole: "drop_ship:clearing_settlement"));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// M6 iter 4: two-leg variance write-off. The amount sign decides
+    /// which side hits the clearing account:
+    ///   net &gt; 0 → bill total exceeds invoice COGS → Cr Clearing / Dr PPV
+    ///   net &lt; 0 → invoice COGS exceeds bill total → Dr Clearing / Cr PPV
+    /// Either way the clearing returns to zero for the item; the PPV
+    /// account absorbs the difference (favourable variance reads as a
+    /// credit to PPV i.e. a recovery; unfavourable reads as a debit i.e.
+    /// an extra cost).
+    /// </summary>
+    private static List<PostingFragment> BuildDropShipClearingWriteOffFragments(
+        DropShipClearingWriteOffDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+        var amount = Math.Abs(Round6(document.NetClearingAmountBase));
+        if (amount == 0m)
+        {
+            return fragments;
+        }
+
+        var memoSuffix = string.IsNullOrWhiteSpace(document.Memo) ? string.Empty : $" — {document.Memo}";
+
+        if (document.NetClearingAmountBase > 0m)
+        {
+            // Over-billed: clearing carries a debit residual (vendor side
+            // exceeded customer side). Reverse the clearing with a Cr,
+            // and book the variance as an unfavourable Dr to PPV.
+            fragments.Add(new PostingFragment(
+                document.VarianceAccountId,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"Drop-ship variance write-off for {document.ItemCode}{memoSuffix}",
+                ControlRole: "purchase_price_variance",
+                PostingRole: "drop_ship:writeoff_unfavourable"));
+            fragments.Add(new PostingFragment(
+                document.DropShipClearingAccountId,
+                document.BaseCurrencyCode,
+                0m,
+                amount,
+                0m,
+                amount,
+                $"Clear drop-ship residual for {document.ItemCode}{memoSuffix}",
+                ControlRole: "drop_ship_clearing",
+                PostingRole: "drop_ship:clearing_writeoff"));
+        }
+        else
+        {
+            // Under-billed: clearing carries a credit residual (customer
+            // side exceeded vendor side — invoice posted before bill, or
+            // bill arrived under expected cost). Reverse the clearing
+            // with a Dr, book the variance as a favourable Cr to PPV.
+            fragments.Add(new PostingFragment(
+                document.DropShipClearingAccountId,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"Clear drop-ship residual for {document.ItemCode}{memoSuffix}",
+                ControlRole: "drop_ship_clearing",
+                PostingRole: "drop_ship:clearing_writeoff"));
+            fragments.Add(new PostingFragment(
+                document.VarianceAccountId,
+                document.BaseCurrencyCode,
+                0m,
+                amount,
+                0m,
+                amount,
+                $"Drop-ship variance recovery for {document.ItemCode}{memoSuffix}",
+                ControlRole: "purchase_price_variance",
+                PostingRole: "drop_ship:writeoff_favourable"));
         }
 
         EnsureBalancedBaseCurrency(fragments);

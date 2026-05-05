@@ -127,6 +127,8 @@ builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryRe
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
 builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
+builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearingAgingReader>();
+builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
@@ -186,6 +188,7 @@ builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
 builder.Services.AddScoped<PostInvoiceDropShipCogsCommandHandler>();
+builder.Services.AddScoped<WriteOffDropShipClearingCommandHandler>();
 builder.Services.AddScoped<PostCustomerDepositCommandHandler>();
 builder.Services.AddScoped<ApplyCustomerDepositsToInvoiceCommandHandler>();
 builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
@@ -5900,6 +5903,64 @@ accounting.MapPost(
                     DepositToAccountId: request.DepositToAccountId,
                     AmountTx: request.AmountTx,
                     DocumentDate: request.DocumentDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    Memo: request.Memo,
+                    IdempotencyKey: request.IdempotencyKey),
+                cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    });
+
+// M6 iter 4: drop-ship clearing aging workbench. Per-item rollup of
+// posted bill clearing-debits vs posted invoice COGS clearing-credits.
+// Read-only — write-off action is a sister POST endpoint below.
+accounting.MapGet(
+    "/inventory/drop-ship-clearing/aging",
+    async (
+        bool? hideBalanced,
+        BusinessSessionContextAccessor sessionAccessor,
+        IDropShipClearingAgingReader reader,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var rows = await reader.ListAsync(
+            new(session.ActiveCompanyId),
+            hideBalanced ?? false,
+            cancellationToken);
+        return Results.Ok(rows);
+    });
+
+// M6 iter 4: write off the residual on Drop-ship Clearing for one item.
+// Body carries the operator's expected residual; the server re-reads
+// the live amount and rejects the write-off if they disagree (concurrent
+// activity protection). The expected sign decides which side hits the
+// clearing — both lead to a zero balance on the clearing for that item.
+accounting.MapPost(
+    "/inventory/drop-ship-clearing/{itemId:guid}/write-off",
+    async (
+        Guid itemId,
+        DropShipClearingWriteOffHttpRequest request,
+        BusinessSessionContextAccessor sessionAccessor,
+        WriteOffDropShipClearingCommandHandler handler,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        if (request is null) return Results.BadRequest(new { message = "Request body is required." });
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new WriteOffDropShipClearingCommand(
+                    new(session.ActiveCompanyId),
+                    new(session.UserId),
+                    ItemId: itemId,
+                    ExpectedNetClearingBase: request.ExpectedNetClearingBase,
                     Memo: request.Memo,
                     IdempotencyKey: request.IdempotencyKey),
                 cancellationToken);
@@ -12845,6 +12906,15 @@ internal sealed record SalesOrderDepositHttpRequest(
     Guid DepositToAccountId,
     decimal AmountTx,
     DateOnly? DocumentDate,
+    string? Memo,
+    string? IdempotencyKey);
+
+// M6 iter 4: write-off body for the drop-ship clearing workbench.
+// ExpectedNetClearingBase carries the operator's read-from-the-page
+// residual so the server can detect concurrent activity (a new bill /
+// invoice posting between page load and write-off click).
+internal sealed record DropShipClearingWriteOffHttpRequest(
+    decimal ExpectedNetClearingBase,
     string? Memo,
     string? IdempotencyKey);
 
