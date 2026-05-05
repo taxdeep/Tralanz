@@ -129,6 +129,7 @@ builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueC
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
+builder.Services.AddScoped<ICustomerDepositReader, PostgresCustomerDepositReader>();
 builder.Services.AddScoped<IReceiptGrIrClearingAccountPolicyRepository, PostgresReceiptGrIrClearingAccountPolicyRepository>();
 builder.Services.AddScoped<IReceiptGrIrApSettlementControlStore, PostgresReceiptGrIrApSettlementControlStore>();
 builder.Services.AddScoped<IReceiptGrIrSettlementPostingRepository, PostgresReceiptGrIrSettlementPostingRepository>();
@@ -5808,6 +5809,24 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+    });
+
+// M5 wrap-up: read-side projection of customer deposits scoped to an SO.
+// Drives the deposit balance panel on SO detail (collected / applied /
+// remaining + per-deposit table). Returns an empty summary (zero totals,
+// empty list) when the SO has no deposits, so the UI can render "—" cleanly.
+accounting.MapGet(
+    "/sales-orders/{salesOrderId:guid}/deposits",
+    async (
+        Guid salesOrderId,
+        BusinessSessionContextAccessor sessionAccessor,
+        ICustomerDepositReader reader,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+        var summary = await reader.GetForSalesOrderAsync(new(session.ActiveCompanyId), salesOrderId, cancellationToken);
+        return Results.Ok(summary);
     });
 
 // M5 iter 5: SO cancellation orchestrator. Releases reservations on

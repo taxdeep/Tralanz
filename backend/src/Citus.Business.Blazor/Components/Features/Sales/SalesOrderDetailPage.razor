@@ -6,6 +6,9 @@
 @inject CitusToastService Message
 @inject NavigationManager Navigation
 
+@* M5 wrap-up: show deposit balance + per-deposit detail when deposits
+   exist on this SO. *@
+
 <PageTitle>@($"{_pageTitle} | Tralanz Books")</PageTitle>
 
 <CitusPageHeader Model="_header">
@@ -216,6 +219,59 @@ else
                     </tbody>
                 </table>
             </section>
+
+            @* M5 wrap-up: Customer Deposits balance panel. Shown only when
+               at least one deposit has been received against this SO; the
+               summary line surfaces collected / applied / remaining + a
+               per-deposit table for full visibility. *@
+            @if (_depositSummary is { Deposits.Count: > 0 } depSummary)
+            {
+                <section class="citus-panel mt-6">
+                    <header class="citus-panel__header">
+                        <h2 class="citus-panel__title">Customer Deposits</h2>
+                        <span class="text-fg-subtle text-xs">@_so.TransactionCurrencyCode</span>
+                    </header>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                        <CitusStatCard Label="Collected" Value="@FormatMoney(depSummary.TotalOriginalBase)"
+                                       Description="Total received against this SO"
+                                       Icon="IconName.Cash" Tone="StatTone.Primary" />
+                        <CitusStatCard Label="Applied" Value="@FormatMoney(depSummary.TotalAppliedBase)"
+                                       Description="Cleared against invoices"
+                                       Icon="IconName.CircleCheck" Tone="StatTone.Success" />
+                        <CitusStatCard Label="Remaining" Value="@FormatMoney(depSummary.TotalOpenBase)"
+                                       Description="Open liability — apply or refund"
+                                       Icon="IconName.Coin"
+                                       Tone="@(depSummary.TotalOpenBase > 0m ? StatTone.Info : StatTone.Neutral)" />
+                    </div>
+                    <table class="citus-data-table">
+                        <thead>
+                            <tr>
+                                <th>Deposit #</th>
+                                <th style="width: 8rem">Date</th>
+                                <th class="text-right" style="width: 8rem">Original</th>
+                                <th class="text-right" style="width: 8rem">Applied</th>
+                                <th class="text-right" style="width: 8rem">Remaining</th>
+                                <th style="width: 8rem">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var dep in depSummary.Deposits)
+                            {
+                                <tr>
+                                    <td><span class="citus-inline-code">@dep.DisplayNumber</span></td>
+                                    <td>@dep.DepositDate.ToString("yyyy-MM-dd")</td>
+                                    <td class="text-right tabular-nums">@FormatMoney(dep.OriginalAmountBase)</td>
+                                    <td class="text-right tabular-nums">@FormatMoney(dep.AppliedAmountBase)</td>
+                                    <td class="text-right tabular-nums">@FormatMoney(dep.OpenAmountBase)</td>
+                                    <td>
+                                        <CitusBadge Color="@DepositStatusColor(dep.Status)">@HumanizeDepositStatus(dep.Status)</CitusBadge>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
         </div>
 
         <aside class="lg:col-span-4 flex flex-col gap-6">
@@ -279,7 +335,13 @@ else
         _error = null;
         try
         {
-            _so = await SalesOrderClient.GetByIdAsync(SalesOrderId);
+            // Load SO + deposit summary in parallel — deposit lookup is a
+            // separate roundtrip but cheap (single JOIN on indexed cols).
+            var soTask = SalesOrderClient.GetByIdAsync(SalesOrderId);
+            var depositTask = CustomerDepositClient.GetForSalesOrderAsync(SalesOrderId);
+            await Task.WhenAll(soTask, depositTask);
+            _so = soTask.Result;
+            _depositSummary = depositTask.Result;
             ApplyHeader();
         }
         finally { _isLoading = false; }
@@ -319,6 +381,29 @@ else
     private string _depositMemo = string.Empty;
     private bool _depositSubmitting;
     private string? _depositError;
+
+    // M5 wrap-up: deposit balance summary loaded after the SO loads.
+    private SalesOrderCustomerDepositSummaryDto? _depositSummary;
+
+    private static string FormatMoney(decimal amount) => amount.ToString("N2");
+
+    private static string DepositStatusColor(string status) => status switch
+    {
+        "open" => "blue",
+        "partially_applied" => "geekblue",
+        "closed" => "green",
+        "voided" => "default",
+        _ => "default"
+    };
+
+    private static string HumanizeDepositStatus(string status) => status switch
+    {
+        "open" => "Open",
+        "partially_applied" => "Partially applied",
+        "closed" => "Closed",
+        "voided" => "Voided",
+        _ => status
+    };
 
     private void OnDepositBankSelected(AccountSummary account)
     {

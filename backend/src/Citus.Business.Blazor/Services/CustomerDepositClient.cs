@@ -39,6 +39,28 @@ public sealed class CustomerDepositClient(HttpClient httpClient, ILogger<Custome
         }
     }
 
+    /// <summary>
+    /// M5 wrap-up: per-SO deposit balance + per-deposit detail. Returns
+    /// an empty summary when the SO has no deposits — never throws on
+    /// the empty-result case.
+    /// </summary>
+    public async Task<SalesOrderCustomerDepositSummaryDto> GetForSalesOrderAsync(
+        Guid salesOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"accounting/sales-orders/{salesOrderId:D}/deposits";
+            var summary = await httpClient.GetFromJsonAsync<SalesOrderCustomerDepositSummaryDto>(url, cancellationToken);
+            return summary ?? SalesOrderCustomerDepositSummaryDto.Empty(salesOrderId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unable to read deposit summary for SO {SalesOrderId}.", salesOrderId);
+            return SalesOrderCustomerDepositSummaryDto.Empty(salesOrderId);
+        }
+    }
+
     private static async Task<string> ReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -74,3 +96,24 @@ public sealed record CustomerDepositPostOutcome(
     bool Succeeded,
     CustomerDepositPostResult? Saved,
     string? ErrorMessage);
+
+public sealed record SalesOrderCustomerDepositSummaryDto(
+    Guid SalesOrderId,
+    decimal TotalOriginalBase,
+    decimal TotalAppliedBase,
+    decimal TotalOpenBase,
+    IReadOnlyList<CustomerDepositRowDto> Deposits)
+{
+    public static SalesOrderCustomerDepositSummaryDto Empty(Guid salesOrderId) =>
+        new(salesOrderId, 0m, 0m, 0m, Array.Empty<CustomerDepositRowDto>());
+}
+
+public sealed record CustomerDepositRowDto(
+    Guid Id,
+    string DisplayNumber,
+    DateOnly DepositDate,
+    decimal OriginalAmountBase,
+    decimal AppliedAmountBase,
+    decimal OpenAmountBase,
+    string Status,
+    DateTimeOffset? PostedAt);
