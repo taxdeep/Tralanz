@@ -12,6 +12,7 @@ public sealed class PostInvoiceCommandHandler
     private readonly IArOpenItemRepository _openItems;
     private readonly IInventoryShipmentStore _inventoryShipmentStore;
     private readonly PostSalesIssueCogsCommandHandler _cogsHandler;
+    private readonly PostInvoiceDropShipCogsCommandHandler _dropShipCogsHandler;
     private readonly ApplyCustomerDepositsToInvoiceCommandHandler _depositApplicationHandler;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -21,6 +22,7 @@ public sealed class PostInvoiceCommandHandler
         IArOpenItemRepository openItems,
         IInventoryShipmentStore inventoryShipmentStore,
         PostSalesIssueCogsCommandHandler cogsHandler,
+        PostInvoiceDropShipCogsCommandHandler dropShipCogsHandler,
         ApplyCustomerDepositsToInvoiceCommandHandler depositApplicationHandler,
         IUnitOfWork unitOfWork)
     {
@@ -29,6 +31,7 @@ public sealed class PostInvoiceCommandHandler
         _openItems = openItems ?? throw new ArgumentNullException(nameof(openItems));
         _inventoryShipmentStore = inventoryShipmentStore ?? throw new ArgumentNullException(nameof(inventoryShipmentStore));
         _cogsHandler = cogsHandler ?? throw new ArgumentNullException(nameof(cogsHandler));
+        _dropShipCogsHandler = dropShipCogsHandler ?? throw new ArgumentNullException(nameof(dropShipCogsHandler));
         _depositApplicationHandler = depositApplicationHandler ?? throw new ArgumentNullException(nameof(depositApplicationHandler));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
@@ -96,7 +99,18 @@ public sealed class PostInvoiceCommandHandler
         // workbench at /company/inventory/cogs-postings).
         var cogsOutcomes = await TryAutoPostCogsAsync(command, cancellationToken);
 
-        // Step 3 — M5 iter 4: pro-rata clear any open SO-linked customer
+        // Step 3 — M6 iter 3: drop-ship COGS hook. Sister of Step 2 but
+        // for drop-ship items, which never go through the inventory cost-
+        // layer path. The hook reads the invoice's drop-ship lines, looks
+        // up qty × default_purchase_price as the cost basis, and posts
+        // Dr COGS / Cr Drop-ship Clearing. Soft-failure: a missing
+        // purchase price or a misconfigured CoA leaves the invoice
+        // posted; the user fixes the item and can re-trigger from the
+        // (future) drop-ship workbench. NoOp invoices (no drop-ship
+        // lines) leave the field null on the result.
+        var dropShipCogsOutcome = await TryAutoPostDropShipCogsAsync(command, cancellationToken);
+
+        // Step 4 — M5 iter 4: pro-rata clear any open SO-linked customer
         // deposits against this invoice. Same soft-failure rule as COGS:
         // failure leaves the invoice posted; operator can apply manually
         // later (M5 iter 5+ workbench) or via a future re-run endpoint.
@@ -106,7 +120,52 @@ public sealed class PostInvoiceCommandHandler
         {
             AutoPostedCogs = cogsOutcomes,
             AppliedCustomerDeposits = depositOutcome,
+            DropShipCogs = dropShipCogsOutcome,
         };
+    }
+
+    /// <summary>
+    /// M6 iter 3 hook. Returns null when the invoice carries no drop-ship
+    /// lines (the common case). Returns a populated outcome (possibly with
+    /// ErrorMessage set on soft failure) when at least one drop-ship line
+    /// triggered the COGS recognition. Never throws — the invoice is
+    /// already committed by the time we get here.
+    /// </summary>
+    private async Task<InvoiceDropShipCogsOutcome?> TryAutoPostDropShipCogsAsync(
+        PostInvoiceCommand command,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _dropShipCogsHandler.HandleAsync(
+                new PostInvoiceDropShipCogsCommand(
+                    command.CompanyId,
+                    command.UserId,
+                    command.DocumentId),
+                cancellationToken);
+
+            // No drop-ship lines on the invoice → nothing to surface.
+            if (result.NoOp)
+            {
+                return null;
+            }
+
+            return new InvoiceDropShipCogsOutcome(
+                JournalEntryId: result.JournalEntryId,
+                JournalEntryDisplayNumber: result.JournalEntryDisplayNumber,
+                AlreadyPosted: result.AlreadyPosted,
+                TotalAmountBase: result.TotalAmountBase,
+                ErrorMessage: null);
+        }
+        catch (Exception ex)
+        {
+            return new InvoiceDropShipCogsOutcome(
+                JournalEntryId: null,
+                JournalEntryDisplayNumber: null,
+                AlreadyPosted: false,
+                TotalAmountBase: 0m,
+                ErrorMessage: ex.Message);
+        }
     }
 
     /// <summary>

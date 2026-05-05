@@ -3791,6 +3791,131 @@ public sealed class SalesIssueCogsPostingDocument : IPostingDocument
 }
 
 /// <summary>
+/// M6 iter 3: Invoice → Drop-ship COGS recognition. Sister of
+/// <see cref="SalesIssueCogsPostingDocument"/> but for drop-ship items —
+/// we never receive or ship them, so the M3 cost-layer path doesn't
+/// apply. Cost basis is the item's <c>default_purchase_price</c> × line
+/// qty (V1 simplification — see commit message for trade-off vs
+/// per-bill-line lookup or per-line cost capture). One line per item
+/// (rolled up across multiple invoice lines for the same item).
+///
+/// GL math (per item line):
+///   Dr  COGS                           qty × default_purchase_price
+///   Cr  Drop-ship Clearing             qty × default_purchase_price
+///
+/// SourceType is <c>invoice_drop_ship_cogs</c>; SourceId is the
+/// invoice id, so the journal-layer idempotency probe lands on this
+/// JE rather than double-posting.
+/// </summary>
+public sealed record InvoiceDropShipCogsPostingDocumentLine : IPostingDocumentLine
+{
+    public InvoiceDropShipCogsPostingDocumentLine(
+        int lineNumber,
+        Guid itemId,
+        Guid cogsAccountId,
+        Guid dropShipClearingAccountId,
+        string description,
+        decimal amountBase)
+    {
+        if (lineNumber <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lineNumber), "Line number must be positive.");
+        }
+        if (itemId == Guid.Empty)
+        {
+            throw new ArgumentException("Item id is required.", nameof(itemId));
+        }
+        if (cogsAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("COGS account id is required.", nameof(cogsAccountId));
+        }
+        if (dropShipClearingAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Drop-ship clearing account id is required.", nameof(dropShipClearingAccountId));
+        }
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description is required.", nameof(description));
+        }
+        if (amountBase <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amountBase), "Drop-ship COGS line amount must be positive.");
+        }
+
+        LineNumber = lineNumber;
+        ItemId = itemId;
+        CogsAccountId = cogsAccountId;
+        DropShipClearingAccountId = dropShipClearingAccountId;
+        Description = description.Trim();
+        AmountBase = Math.Round(amountBase, 6, MidpointRounding.ToEven);
+    }
+
+    public int LineNumber { get; }
+    public Guid ItemId { get; }
+    public Guid CogsAccountId { get; }
+    public Guid DropShipClearingAccountId { get; }
+    public string Description { get; }
+    public decimal AmountBase { get; }
+}
+
+public sealed class InvoiceDropShipCogsPostingDocument : IPostingDocument
+{
+    public InvoiceDropShipCogsPostingDocument(
+        Guid id,
+        CompanyId companyId,
+        EntityNumber entityNumber,
+        DocumentNumber displayNumber,
+        string status,
+        Guid invoiceDocumentId,
+        DateOnly documentDate,
+        CurrencyCode baseCurrencyCode,
+        IEnumerable<InvoiceDropShipCogsPostingDocumentLine> lines)
+    {
+        if (invoiceDocumentId == Guid.Empty)
+        {
+            throw new ArgumentException("Invoice document id is required.", nameof(invoiceDocumentId));
+        }
+
+        Id = id == Guid.Empty ? Guid.NewGuid() : id;
+        CompanyId = companyId;
+        EntityNumber = entityNumber ?? throw new ArgumentNullException(nameof(entityNumber));
+        DisplayNumber = displayNumber ?? throw new ArgumentNullException(nameof(displayNumber));
+        Status = string.IsNullOrWhiteSpace(status) ? "draft" : status.Trim().ToLowerInvariant();
+        InvoiceDocumentId = invoiceDocumentId;
+        DocumentDate = documentDate;
+        TransactionCurrencyCode = baseCurrencyCode ?? throw new ArgumentNullException(nameof(baseCurrencyCode));
+        BaseCurrencyCode = baseCurrencyCode;
+
+        var materializedLines = lines?.ToArray() ?? throw new ArgumentNullException(nameof(lines));
+        if (materializedLines.Length == 0)
+        {
+            throw new InvalidOperationException("Invoice drop-ship COGS document must contain at least one line.");
+        }
+
+        CogsLines = Array.AsReadOnly(materializedLines);
+        Lines = Array.AsReadOnly(materializedLines.Cast<IPostingDocumentLine>().ToArray());
+    }
+
+    public Guid Id { get; }
+    public CompanyId CompanyId { get; }
+    public EntityNumber EntityNumber { get; }
+    public DocumentNumber DisplayNumber { get; }
+
+    public string SourceType => "invoice_drop_ship_cogs";
+
+    public string Status { get; }
+    public Guid InvoiceDocumentId { get; }
+    public DateOnly DocumentDate { get; }
+    public CurrencyCode TransactionCurrencyCode { get; }
+    public CurrencyCode BaseCurrencyCode { get; }
+    public IReadOnlyList<InvoiceDropShipCogsPostingDocumentLine> CogsLines { get; }
+    public IReadOnlyList<IPostingDocumentLine> Lines { get; }
+    public decimal TotalAmountBase => CogsLines.Sum(static line => line.AmountBase);
+
+    public FxSnapshotRef? FxSnapshot => null;
+}
+
+/// <summary>
 /// M5 iter 4: Customer Deposit → Invoice application. After an invoice
 /// posts, any open customer_deposits for the same SO get pro-rata applied
 /// against it: the deposit's liability balance is debited, the invoice's

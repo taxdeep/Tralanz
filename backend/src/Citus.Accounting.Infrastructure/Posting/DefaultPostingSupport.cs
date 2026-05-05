@@ -423,6 +423,8 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 BuildReceiptGrIrSettlementPostingFragments(grIrSettlement).AsReadOnly()),
             SalesIssueCogsPostingDocument cogsPosting => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildSalesIssueCogsPostingFragments(cogsPosting).AsReadOnly()),
+            InvoiceDropShipCogsPostingDocument dropShipCogs => Task.FromResult<IReadOnlyList<PostingFragment>>(
+                BuildInvoiceDropShipCogsPostingFragments(dropShipCogs).AsReadOnly()),
             CustomerDepositPostingDocument deposit => Task.FromResult<IReadOnlyList<PostingFragment>>(
                 BuildCustomerDepositFragments(deposit).AsReadOnly()),
             CustomerDepositApplicationDocument depositApp => Task.FromResult<IReadOnlyList<PostingFragment>>(
@@ -1354,6 +1356,63 @@ public sealed class AccountingPostingFragmentBuilder : IPostingFragmentBuilder
                 $"Inventory consumed by sales-issue {document.DisplayNumber.Value}",
                 ControlRole: "inventory_asset",
                 PostingRole: "inventory:asset_consumption"));
+        }
+
+        EnsureBalancedBaseCurrency(fragments);
+        return fragments;
+    }
+
+    /// <summary>
+    /// M6 iter 3: per-item Dr COGS / Cr Drop-ship Clearing fragments for
+    /// drop-ship lines on a posted invoice. Mirror of
+    /// <see cref="BuildSalesIssueCogsPostingFragments"/> — same group-by-
+    /// account collapse, same base-currency-only shape — but the credit
+    /// leg targets Drop-ship Clearing (cleared by the matching vendor
+    /// bill from M6 iter 2) instead of Inventory Asset.
+    /// </summary>
+    private static List<PostingFragment> BuildInvoiceDropShipCogsPostingFragments(
+        InvoiceDropShipCogsPostingDocument document)
+    {
+        var fragments = new List<PostingFragment>();
+
+        foreach (var accountGroup in document.CogsLines.GroupBy(static line => line.CogsAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                amount,
+                0m,
+                amount,
+                0m,
+                $"Drop-ship COGS for invoice {document.DisplayNumber.Value}",
+                ControlRole: "cost_of_goods_sold",
+                PostingRole: "drop_ship:cogs_recognition"));
+        }
+
+        foreach (var accountGroup in document.CogsLines.GroupBy(static line => line.DropShipClearingAccountId))
+        {
+            var amount = Round6(accountGroup.Sum(static line => line.AmountBase));
+            if (amount <= 0m)
+            {
+                continue;
+            }
+
+            fragments.Add(new PostingFragment(
+                accountGroup.Key,
+                document.BaseCurrencyCode,
+                0m,
+                amount,
+                0m,
+                amount,
+                $"Drop-ship clearing settlement for invoice {document.DisplayNumber.Value}",
+                ControlRole: "drop_ship_clearing",
+                PostingRole: "drop_ship:clearing_settlement"));
         }
 
         EnsureBalancedBaseCurrency(fragments);

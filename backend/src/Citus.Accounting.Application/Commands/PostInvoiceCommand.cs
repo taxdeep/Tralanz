@@ -17,7 +17,8 @@ public sealed record PostInvoiceCommandResult(
     DateTimeOffset PostedAt,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<InvoiceAutoCogsOutcome> AutoPostedCogs,
-    InvoiceDepositApplicationOutcome? AppliedCustomerDeposits)
+    InvoiceDepositApplicationOutcome? AppliedCustomerDeposits,
+    InvoiceDropShipCogsOutcome? DropShipCogs)
 {
     public static PostInvoiceCommandResult FromPostingResult(PostingResult result) =>
         new(
@@ -27,7 +28,8 @@ public sealed record PostInvoiceCommandResult(
             result.PostedAt,
             result.Warnings,
             Array.Empty<InvoiceAutoCogsOutcome>(),
-            AppliedCustomerDeposits: null);
+            AppliedCustomerDeposits: null,
+            DropShipCogs: null);
 }
 
 /// <summary>
@@ -63,4 +65,18 @@ public sealed record InvoiceAutoCogsOutcome(
     string? JournalEntryDisplayNumber,
     bool AlreadyPosted,
     bool Succeeded,
+    string? ErrorMessage);
+
+/// <summary>
+/// M6 iter 3 outcome surfaced by <see cref="PostInvoiceCommandHandler"/>
+/// when an invoice carries one or more drop-ship lines. NoOp = true
+/// means the invoice had no drop-ship lines (most invoices); the field
+/// is left null on the result in that case so existing callers don't
+/// need to special-case it.
+/// </summary>
+public sealed record InvoiceDropShipCogsOutcome(
+    Guid? JournalEntryId,
+    string? JournalEntryDisplayNumber,
+    bool AlreadyPosted,
+    decimal TotalAmountBase,
     string? ErrorMessage);

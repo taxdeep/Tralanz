@@ -316,6 +316,26 @@ public sealed class BusinessWriteFlowClient
             }
         }
 
+        // M6 iter 3: drop-ship COGS auto-recognition outcome. Field is null
+        // when the invoice carried no drop-ship lines (most invoices).
+        var dropShip = posted.DropShipCogs;
+        if (dropShip is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(dropShip.ErrorMessage))
+            {
+                parts.Add($"Drop-ship COGS post failed: {dropShip.ErrorMessage}");
+            }
+            else if (dropShip.JournalEntryId is not null && dropShip.TotalAmountBase > 0m)
+            {
+                var label = string.IsNullOrWhiteSpace(dropShip.JournalEntryDisplayNumber)
+                    ? "(unnamed JE)"
+                    : dropShip.JournalEntryDisplayNumber;
+                parts.Add(dropShip.AlreadyPosted
+                    ? $"Drop-ship COGS already posted: {label}."
+                    : $"Drop-ship COGS auto-posted: {label} ({dropShip.TotalAmountBase:N2}).");
+            }
+        }
+
         return string.Join(" ", parts);
     }
 
@@ -345,7 +365,16 @@ public sealed class BusinessWriteFlowClient
         DateTimeOffset PostedAt,
         IReadOnlyList<string>? Warnings,
         IReadOnlyList<InvoiceAutoCogsOutcomeDto>? AutoPostedCogs,
-        InvoiceDepositApplicationOutcomeDto? AppliedCustomerDeposits);
+        InvoiceDepositApplicationOutcomeDto? AppliedCustomerDeposits,
+        InvoiceDropShipCogsOutcomeDto? DropShipCogs);
+
+    /// <summary>Wire-shape mirror of M6 iter 3's <c>InvoiceDropShipCogsOutcome</c>.</summary>
+    private sealed record InvoiceDropShipCogsOutcomeDto(
+        Guid? JournalEntryId,
+        string? JournalEntryDisplayNumber,
+        bool AlreadyPosted,
+        decimal TotalAmountBase,
+        string? ErrorMessage);
 
     /// <summary>Wire-shape mirror of <c>InvoiceAutoCogsOutcome</c>.</summary>
     private sealed record InvoiceAutoCogsOutcomeDto(

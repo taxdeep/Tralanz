@@ -126,6 +126,7 @@ builder.Services.AddScoped<IAccountingDocumentReviewRepository, PostgresAccounti
 builder.Services.AddScoped<IJournalEntryReviewRepository, PostgresJournalEntryReviewRepository>();
 builder.Services.AddScoped<IReceiptGrIrPostingRepository, PostgresReceiptGrIrPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsPostingRepository, PostgresSalesIssueCogsPostingRepository>();
+builder.Services.AddScoped<IInvoiceDropShipCogsPostingRepository, PostgresInvoiceDropShipCogsPostingRepository>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
@@ -184,6 +185,7 @@ builder.Services.AddScoped<PostBillCommandHandler>();
 builder.Services.AddScoped<PostReceiptWorkflow>();
 builder.Services.AddScoped<PostReceiptGrIrCommandHandler>();
 builder.Services.AddScoped<PostSalesIssueCogsCommandHandler>();
+builder.Services.AddScoped<PostInvoiceDropShipCogsCommandHandler>();
 builder.Services.AddScoped<PostCustomerDepositCommandHandler>();
 builder.Services.AddScoped<ApplyCustomerDepositsToInvoiceCommandHandler>();
 builder.Services.AddScoped<ExecuteReceiptGrIrSettlementCommandHandler>();
