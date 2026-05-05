@@ -1,0 +1,248 @@
+@page "/settings/audit-logs"
+
+@using System.Text.Json
+@inject BusinessShellState ShellState
+@inject AuditLogClient AuditClient
+
+<PageTitle>Audit logs | Tralanz Books</PageTitle>
+
+<CitusPageHeader Model="_header">
+    <Actions>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     LeadingIcon="IconName.Refresh"
+                     Disabled="_isLoading"
+                     OnClick="LoadAsync">Refresh</CitusButton>
+    </Actions>
+</CitusPageHeader>
+
+<section class="citus-panel mb-4">
+    <h2 class="citus-panel__title">Filters</h2>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Since</span>
+            <input type="date"
+                   class="citus-form-field__input"
+                   value="@_sinceDate.ToString("yyyy-MM-dd")"
+                   @onchange="OnSinceChanged" />
+        </label>
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Action</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   placeholder="e.g. accounting_period_state_changed"
+                   @bind="_actionFilter"
+                   @bind:event="oninput" />
+        </label>
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Entity type</span>
+            <input type="text"
+                   class="citus-form-field__input"
+                   placeholder="e.g. accounting_period · membership"
+                   @bind="_entityTypeFilter"
+                   @bind:event="oninput" />
+        </label>
+        <label class="citus-form-field">
+            <span class="citus-form-field__label">Limit</span>
+            <input type="number"
+                   class="citus-form-field__input"
+                   min="1" max="1000" step="50"
+                   @bind="_limit" />
+        </label>
+    </div>
+    <div class="flex items-center gap-2 mt-3">
+        <CitusButton Variant="CitusButtonVariant.Primary"
+                     Size="CitusButtonSize.Small"
+                     Disabled="_isLoading"
+                     OnClick="LoadAsync">Apply</CitusButton>
+        <CitusButton Variant="CitusButtonVariant.Ghost"
+                     Size="CitusButtonSize.Small"
+                     Disabled="_isLoading"
+                     OnClick="ClearFilters">Clear</CitusButton>
+        <span class="text-fg-subtle text-xs ml-2">
+            @if (_lastLoadedAt.HasValue)
+            {
+                <text>Loaded @_lastLoadedAt.Value.LocalDateTime.ToString("HH:mm:ss") · @_rows.Count entries</text>
+            }
+        </span>
+    </div>
+</section>
+
+<section class="citus-panel">
+    <CitusAsyncBoundary IsLoading="@_isLoading"
+                        IsEmpty="@(_rows.Count == 0)"
+                        EmptyIcon="IconName.Search"
+                        EmptyTitle="No audit entries"
+                        EmptyMessage="Either nothing happened in this window or the filters exclude it. Widen the 'Since' date or clear the action / entity-type fields.">
+        <table class="citus-data-table">
+            <thead>
+                <tr>
+                    <th style="width: 11rem">Time</th>
+                    <th style="width: 16rem">Action</th>
+                    <th style="width: 11rem">Entity</th>
+                    <th style="width: 12rem">Actor</th>
+                    <th>Payload</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    var expanded = _expandedId == row.Id;
+                    <tr>
+                        <td>
+                            <div class="text-sm">@row.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</div>
+                            <div class="text-fg-subtle text-xs">@FormatRelative(row.CreatedAt)</div>
+                        </td>
+                        <td>
+                            <CitusBadge Color="@ActionColor(row.Action)">@row.Action</CitusBadge>
+                        </td>
+                        <td>
+                            <div class="text-sm">@row.EntityType</div>
+                            <div class="text-fg-subtle text-xs"><span class="citus-inline-code">@FormatGuidShort(row.EntityId)</span></div>
+                        </td>
+                        <td>
+                            <div class="text-sm">@(row.ActorDisplay ?? FormatActorFallback(row))</div>
+                            <div class="text-fg-subtle text-xs">@row.ActorType@(row.ActorId.HasValue ? $" · {FormatGuidShort(row.ActorId.Value)}" : "")</div>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(row.PayloadJson) && row.PayloadJson != "{}")
+                            {
+                                <CitusButton Variant="CitusButtonVariant.Ghost"
+                                             Size="CitusButtonSize.Small"
+                                             OnClick="@(() => ToggleExpand(row.Id))">
+                                    @(expanded ? "Hide payload" : "Show payload")
+                                </CitusButton>
+                                @if (expanded)
+                                {
+                                    <pre class="text-xs mt-2 p-2 bg-bg-subtle rounded overflow-x-auto">@PrettyJson(row.PayloadJson)</pre>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-fg-subtle text-xs">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </CitusAsyncBoundary>
+</section>
+
+<p class="text-fg-subtle text-xs mt-3">
+    Audit log is append-only and shared across the platform.
+    Entries land here when an action emits one — period transitions, membership role changes,
+    open-item adjustment requests / approvals, sysadmin operations, and any future workflow that
+    needs a permanent trail. Default window is the last 7 days; widen <strong>Since</strong> to
+    investigate older activity, or filter by <strong>Action</strong> / <strong>Entity type</strong>
+    when you know what you're looking for.
+</p>
+
+@code {
+    private PageHeaderModel _header = new()
+    {
+        Eyebrow = "Settings · Accounting",
+        Title = "Audit logs",
+        Subtitle = "Append-only trail of state-changing actions for this company.",
+    };
+
+    private DateTime _sinceDate = DateTime.Today.AddDays(-7);
+    private string _actionFilter = string.Empty;
+    private string _entityTypeFilter = string.Empty;
+    private int _limit = 200;
+
+    private List<AuditLogEntryDto> _rows = new();
+    private bool _isLoading = true;
+    private DateTimeOffset? _lastLoadedAt;
+    private Guid? _expandedId;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _expandedId = null;
+        try
+        {
+            var since = new DateTimeOffset(_sinceDate.Date, TimeSpan.Zero);
+            var rows = await AuditClient.ListAsync(
+                since,
+                _actionFilter,
+                _entityTypeFilter,
+                _limit > 0 ? _limit : null);
+            _rows = rows.ToList();
+            _lastLoadedAt = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ClearFilters()
+    {
+        _actionFilter = string.Empty;
+        _entityTypeFilter = string.Empty;
+        _sinceDate = DateTime.Today.AddDays(-7);
+        _limit = 200;
+        await LoadAsync();
+    }
+
+    private void OnSinceChanged(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        if (DateTime.TryParse(raw, out var parsed))
+        {
+            _sinceDate = parsed.Date;
+        }
+    }
+
+    private void ToggleExpand(Guid id)
+    {
+        _expandedId = _expandedId == id ? null : id;
+    }
+
+    private static string FormatGuidShort(Guid id) =>
+        id.ToString("N")[..8].ToUpperInvariant();
+
+    private static string FormatActorFallback(AuditLogEntryDto row) =>
+        row.ActorType switch
+        {
+            "sysadmin" => "platform admin",
+            "user" => row.ActorId.HasValue ? $"user {FormatGuidShort(row.ActorId.Value)}" : "user (unknown)",
+            _ => row.ActorType,
+        };
+
+    private static string FormatRelative(DateTimeOffset when)
+    {
+        var span = DateTimeOffset.UtcNow - when;
+        if (span.TotalSeconds < 60) return $"{(int)span.TotalSeconds}s ago";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+
+    private static string ActionColor(string action)
+    {
+        if (action.Contains("approved", StringComparison.Ordinal)) return "green";
+        if (action.Contains("rejected", StringComparison.Ordinal)) return "red";
+        if (action.Contains("requested", StringComparison.Ordinal)) return "gold";
+        if (action.Contains("changed", StringComparison.Ordinal)) return "blue";
+        if (action.Contains("created", StringComparison.Ordinal)) return "geekblue";
+        if (action.Contains("deleted", StringComparison.Ordinal) || action.Contains("voided", StringComparison.Ordinal)) return "red";
+        return "default";
+    }
+
+    private static string PrettyJson(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return raw;
+        }
+    }
+}

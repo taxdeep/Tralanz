@@ -131,6 +131,7 @@ builder.Services.AddScoped<IDropShipClearingAgingReader, PostgresDropShipClearin
 builder.Services.AddScoped<IDropShipClearingWriteOffRepository, PostgresDropShipClearingWriteOffRepository>();
 builder.Services.AddScoped<IAccountingPeriodRepository, PostgresAccountingPeriodRepository>();
 builder.Services.AddScoped<IYearEndPreCloseChecksReader, PostgresYearEndPreCloseChecksReader>();
+builder.Services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
 builder.Services.AddScoped<ISalesIssueCogsStatusReader, PostgresSalesIssueCogsStatusReader>();
 builder.Services.AddScoped<ICustomerDepositPostingRepository, PostgresCustomerDepositPostingRepository>();
 builder.Services.AddScoped<ICustomerDepositApplicationRepository, PostgresCustomerDepositApplicationRepository>();
@@ -5915,6 +5916,35 @@ accounting.MapPost(
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+    });
+
+// Audit log reader. Read-side only — every audit row is written by the
+// path that emitted the action (membership change, period transition,
+// adjustment approval, etc.). Filters scope the result to a sane
+// window so a busy company doesn't dump months of activity by
+// accident; the page surfaces sensible defaults (last 7 days,
+// limit 200).
+accounting.MapGet(
+    "/audit-logs",
+    async (
+        DateTimeOffset? since,
+        string? action,
+        string? entityType,
+        int? limit,
+        BusinessSessionContextAccessor sessionAccessor,
+        IAuditLogReader reader,
+        CancellationToken cancellationToken) =>
+    {
+        var session = sessionAccessor.Current;
+        if (session is null || session.ActiveCompanyId == Guid.Empty) return Results.Unauthorized();
+
+        var query = new AuditLogQuery(
+            Since: since ?? DateTimeOffset.UtcNow.AddDays(-7),
+            Action: action,
+            EntityType: entityType,
+            Limit: limit ?? 200);
+        var rows = await reader.ListAsync(new(session.ActiveCompanyId), query, cancellationToken);
+        return Results.Ok(rows);
     });
 
 // M7 iter 4: year-end pre-close checks. Returns three soft-block
