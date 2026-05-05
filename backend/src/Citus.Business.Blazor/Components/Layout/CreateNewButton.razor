@@ -63,16 +63,21 @@
         }
     };
 
+    // Hrefs reflect the actual /create surface that ships today.
+    // Aliased labels preserved for the operator's mental model:
+    //   "Customer Receipt" → /sales-receipts/new (POS-style instant receipt)
+    //   "Credit Note"      → /credit-memos/new   (jurisdictional naming)
+    //   "Return Receipt"   → /refund-receipts/new
     private static readonly IReadOnlyList<CreateMenuEntry> CustomerItems = new CreateMenuEntry[]
     {
         new("Invoice", "/invoices/new"),
-        new("Quote", null),
-        new("Sales Order", null),
+        new("Quote", "/quotes/new"),
+        new("Sales Order", "/sales-orders/new"),
         new("Customer Deposit", null),
-        new("Customer Receipt", null),
+        new("Customer Receipt", "/sales-receipts/new"),
         new("Receive Payment", "/receive-payment"),
-        new("Credit Note", null),
-        new("Return Receipt", null),
+        new("Credit Note", "/credit-memos/new"),
+        new("Return Receipt", "/refund-receipts/new"),
         new("AR Return", null),
         new("AR Refund", null),
         new("AR Write-Off", null),
@@ -82,11 +87,11 @@
     private static readonly IReadOnlyList<CreateMenuEntry> SupplierItems = new CreateMenuEntry[]
     {
         new("Bill", "/bills/new"),
-        new("Purchase Order", null),
-        new("Expense", null),
+        new("Purchase Order", "/purchase-orders/new"),
+        new("Expense", "/expenses/new"),
         new("Vendor Prepayment", null),
         new("Pay Bills", "/pay-bills"),
-        new("Vendor Credit Note", null),
+        new("Vendor Credit Note", "/vendor-credits/new"),
         new("Return to Vendor", null),
         new("Vendor Return", null),
         new("Vendor Refund", null),
