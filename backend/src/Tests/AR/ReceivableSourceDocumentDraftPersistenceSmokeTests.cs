@@ -3522,6 +3522,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         var openItemRepository = new PostgresArOpenItemRepository(connectionFactory, executionContextAccessor);
         var postingEngine = new DefaultPostingEngine(
             new DefaultPostingValidator(),
+            new NullPostingPeriodPolicyValidator(),
             new NullTaxEngine(),
             new LocalFirstFxResolutionService(new PostgresFxSnapshotRepository(connectionFactory, executionContextAccessor)),
             new AccountingPostingFragmentBuilder(),

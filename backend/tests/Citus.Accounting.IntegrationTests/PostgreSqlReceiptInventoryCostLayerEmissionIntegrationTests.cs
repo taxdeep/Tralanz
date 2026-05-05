@@ -223,6 +223,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 postingRepository,
                 new DefaultPostingEngine(
                     new DefaultPostingValidator(),
+                    new NullPostingPeriodPolicyValidator(),
                     new NullTaxEngine(),
                     new IdentityFxResolutionService(),
                     new AccountingPostingFragmentBuilder(),
@@ -394,6 +395,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 new DefaultPostingEngine(
                     new DefaultPostingValidator(),
+                    new NullPostingPeriodPolicyValidator(),
                     new NullTaxEngine(),
                     new IdentityFxResolutionService(),
                     new AccountingPostingFragmentBuilder(),
@@ -534,6 +536,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 new PostgresReceiptGrIrPostingRepository(accountingConnectionFactory, executionContextAccessor),
                 new DefaultPostingEngine(
                     new DefaultPostingValidator(),
+                    new NullPostingPeriodPolicyValidator(),
                     new NullTaxEngine(),
                     new IdentityFxResolutionService(),
                     new AccountingPostingFragmentBuilder(),
@@ -700,6 +703,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 executionContextAccessor);
             var postingEngine = new DefaultPostingEngine(
                 new DefaultPostingValidator(),
+                new NullPostingPeriodPolicyValidator(),
                 new NullTaxEngine(),
                 new IdentityFxResolutionService(),
                 new AccountingPostingFragmentBuilder(),
@@ -909,6 +913,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 executionContextAccessor);
             var postingEngine = new DefaultPostingEngine(
                 new DefaultPostingValidator(),
+                new NullPostingPeriodPolicyValidator(),
                 new NullTaxEngine(),
                 new IdentityFxResolutionService(),
                 new AccountingPostingFragmentBuilder(),
@@ -1146,6 +1151,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
                 executionContextAccessor);
             var postingEngine = new DefaultPostingEngine(
                 new DefaultPostingValidator(),
+                new NullPostingPeriodPolicyValidator(),
                 new NullTaxEngine(),
                 new IdentityFxResolutionService(),
                 new AccountingPostingFragmentBuilder(),

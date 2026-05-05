@@ -162,6 +162,7 @@ builder.Services.AddScoped<ISettlementApplicationRepository, PostgresSettlementA
 builder.Services.AddScoped<IFxRevaluationApplyRepository, PostgresFxRevaluationApplyRepository>();
 builder.Services.AddScoped<IUnitOfWork, PostgresUnitOfWork>();
 builder.Services.AddScoped<IPostingValidator, DefaultPostingValidator>();
+builder.Services.AddScoped<IPostingPeriodPolicyValidator, PostgresPostingPeriodPolicyValidator>();
 builder.Services.AddScoped<ITaxEngine, NullTaxEngine>();
 builder.Services.AddScoped<IFxResolutionService, LocalFirstFxResolutionService>();
 builder.Services.AddSingleton<IFxRateCacheRepository, PostgresFxRateCacheRepository>();

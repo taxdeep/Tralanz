@@ -3357,6 +3357,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var openItemRepository = new PostgresApOpenItemRepository(connectionFactory, executionContextAccessor);
         var postingEngine = new DefaultPostingEngine(
             new DefaultPostingValidator(),
+            new NullPostingPeriodPolicyValidator(),
             new NullTaxEngine(),
             new LocalFirstFxResolutionService(new PostgresFxSnapshotRepository(connectionFactory, executionContextAccessor)),
             new AccountingPostingFragmentBuilder(),

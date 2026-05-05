@@ -103,6 +103,7 @@ public sealed class ForeignCurrencySettlementPostingTests
         var fxService = new ThrowingFxResolutionService();
         var engine = new DefaultPostingEngine(
             new NoOpPostingValidator(),
+            new NullPostingPeriodPolicyValidator(),
             new NoOpTaxEngine(),
             fxService,
             builder,

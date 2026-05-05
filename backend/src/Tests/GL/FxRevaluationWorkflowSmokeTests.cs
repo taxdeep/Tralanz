@@ -286,6 +286,7 @@ public sealed class FxRevaluationWorkflowSmokeTests
         var applyRepository = new PostgresFxRevaluationApplyRepository(connectionFactory, executionContextAccessor);
         var postingEngine = new DefaultPostingEngine(
             new DefaultPostingValidator(),
+            new NullPostingPeriodPolicyValidator(),
             new NullTaxEngine(),
             new LocalFirstFxResolutionService(new PostgresFxSnapshotRepository(connectionFactory, executionContextAccessor)),
             new AccountingPostingFragmentBuilder(),

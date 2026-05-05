@@ -7,6 +7,7 @@ namespace Citus.Accounting.Infrastructure.Posting;
 public sealed class DefaultPostingEngine : IPostingEngine
 {
     private readonly IPostingValidator _validator;
+    private readonly IPostingPeriodPolicyValidator _periodPolicyValidator;
     private readonly ITaxEngine _taxEngine;
     private readonly IFxResolutionService _fxResolutionService;
     private readonly IPostingFragmentBuilder _fragmentBuilder;
@@ -15,6 +16,7 @@ public sealed class DefaultPostingEngine : IPostingEngine
 
     public DefaultPostingEngine(
         IPostingValidator validator,
+        IPostingPeriodPolicyValidator periodPolicyValidator,
         ITaxEngine taxEngine,
         IFxResolutionService fxResolutionService,
         IPostingFragmentBuilder fragmentBuilder,
@@ -22,6 +24,7 @@ public sealed class DefaultPostingEngine : IPostingEngine
         IJournalEntryWriter writer)
     {
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        _periodPolicyValidator = periodPolicyValidator ?? throw new ArgumentNullException(nameof(periodPolicyValidator));
         _taxEngine = taxEngine ?? throw new ArgumentNullException(nameof(taxEngine));
         _fxResolutionService = fxResolutionService ?? throw new ArgumentNullException(nameof(fxResolutionService));
         _fragmentBuilder = fragmentBuilder ?? throw new ArgumentNullException(nameof(fragmentBuilder));
@@ -38,6 +41,17 @@ public sealed class DefaultPostingEngine : IPostingEngine
         ArgumentNullException.ThrowIfNull(context);
 
         await _validator.ValidateAsync(document, context, cancellationToken);
+
+        // M7 iter 2: enforce accounting-period policy on the document's
+        // effective date. Runs after the structural validator (which
+        // checks line balance, account existence, etc.) so a malformed
+        // document fails with a more actionable error before the period
+        // check fires.
+        await _periodPolicyValidator.ValidateAsync(
+            context.CompanyId,
+            document.DocumentDate,
+            document.SourceType,
+            cancellationToken);
 
         var taxResult = await _taxEngine.CalculateAsync(document, cancellationToken);
 
