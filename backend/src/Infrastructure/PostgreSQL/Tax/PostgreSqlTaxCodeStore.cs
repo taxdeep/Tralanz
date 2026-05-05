@@ -36,10 +36,18 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                 recoverability_mode         TEXT NOT NULL DEFAULT 'full',
                 payable_account_id          UUID NULL,
                 recoverable_account_id      UUID NULL,
+                registration_number         TEXT NULL,
                 is_active                   BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+
+            -- Backfill for databases created before registration_number
+            -- was added to the inline CREATE TABLE above. Without the
+            -- explicit ALTER, existing tables stay missing the column
+            -- and SELECTs that reference it fail at parse time.
+            ALTER TABLE tax_codes ADD COLUMN IF NOT EXISTS registration_number TEXT NULL;
+
             CREATE UNIQUE INDEX IF NOT EXISTS uq_tax_codes_company_code
                 ON tax_codes (company_id, code);
             CREATE UNIQUE INDEX IF NOT EXISTS uq_tax_codes_entity_number
@@ -100,12 +108,12 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         command.CommandText = """
             INSERT INTO tax_codes (
                 id, company_id, entity_number, code, name, rate_percent,
-                applies_to, is_active, created_at, updated_at)
+                applies_to, registration_number, is_active, created_at, updated_at)
             VALUES (
                 @id, @company_id, @entity_number, @code, @name, @rate_percent,
-                @applies_to, @is_active, @now, @now)
+                @applies_to, @registration_number, @is_active, @now, @now)
             RETURNING id, company_id, entity_number, code, name, rate_percent,
-                      applies_to, is_active, created_at, updated_at;
+                      applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("company_id", companyId);
@@ -114,6 +122,8 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("rate_percent", input.RatePercent);
         command.Parameters.AddWithValue("applies_to", input.AppliesTo);
+        command.Parameters.AddWithValue("registration_number",
+            string.IsNullOrWhiteSpace(input.RegistrationNumber) ? (object)DBNull.Value : input.RegistrationNumber.Trim());
         command.Parameters.AddWithValue("is_active", input.IsActive);
         command.Parameters.AddWithValue("now", now);
 
@@ -141,11 +151,12 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                    name = @name,
                    rate_percent = @rate_percent,
                    applies_to = @applies_to,
+                   registration_number = @registration_number,
                    is_active = @is_active,
                    updated_at = @now
              WHERE company_id = @company_id AND id = @id
             RETURNING id, company_id, entity_number, code, name, rate_percent,
-                      applies_to, is_active, created_at, updated_at;
+                      applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
         command.Parameters.AddWithValue("company_id", companyId);
@@ -153,6 +164,8 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         command.Parameters.AddWithValue("name", input.Name.Trim());
         command.Parameters.AddWithValue("rate_percent", input.RatePercent);
         command.Parameters.AddWithValue("applies_to", input.AppliesTo);
+        command.Parameters.AddWithValue("registration_number",
+            string.IsNullOrWhiteSpace(input.RegistrationNumber) ? (object)DBNull.Value : input.RegistrationNumber.Trim());
         command.Parameters.AddWithValue("is_active", input.IsActive);
         command.Parameters.AddWithValue("now", now);
 
@@ -176,7 +189,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
                    updated_at = @now
              WHERE company_id = @company_id AND id = @id
             RETURNING id, company_id, entity_number, code, name, rate_percent,
-                      applies_to, is_active, created_at, updated_at;
+                      applies_to, registration_number, is_active, created_at, updated_at;
             """;
         command.Parameters.AddWithValue("id", taxCodeId);
         command.Parameters.AddWithValue("company_id", companyId);
@@ -202,7 +215,7 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
 
     private const string SelectColumns = """
         SELECT id, company_id, entity_number, code, name, rate_percent,
-               applies_to, is_active, created_at, updated_at
+               applies_to, registration_number, is_active, created_at, updated_at
         FROM tax_codes
         """;
 
@@ -214,7 +227,8 @@ public sealed class PostgreSqlTaxCodeStore(PostgreSqlConnectionFactory connectio
         Name: reader.GetString(4),
         RatePercent: reader.GetDecimal(5),
         AppliesTo: reader.GetString(6),
-        IsActive: reader.GetBoolean(7),
-        CreatedAt: reader.GetFieldValue<DateTimeOffset>(8),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(9));
+        RegistrationNumber: reader.IsDBNull(7) ? null : reader.GetString(7),
+        IsActive: reader.GetBoolean(8),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(9),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(10));
 }

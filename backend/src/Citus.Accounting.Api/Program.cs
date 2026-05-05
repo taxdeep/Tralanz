@@ -5210,6 +5210,7 @@ accounting.MapPost(
                     Name: request.Name!.Trim(),
                     RatePercent: request.RatePercent ?? 0m,
                     AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
+                    RegistrationNumber: request.RegistrationNumber,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
             return Results.Ok(record);
@@ -5252,6 +5253,7 @@ accounting.MapPut(
                     Name: request.Name!.Trim(),
                     RatePercent: request.RatePercent ?? 0m,
                     AppliesTo: request.AppliesTo!.Trim().ToLowerInvariant(),
+                    RegistrationNumber: request.RegistrationNumber,
                     IsActive: request.IsActive ?? true),
                 cancellationToken);
             return updated is null ? Results.NotFound() : Results.Ok(updated);
@@ -5301,6 +5303,10 @@ static string? ValidateTaxCodeInput(TaxCodeUpsertHttpRequest request)
     if (string.IsNullOrWhiteSpace(request.AppliesTo) || !TaxCodeAppliesTo.IsValid(request.AppliesTo.Trim().ToLowerInvariant()))
     {
         return "Applies to must be 'sales', 'purchase', or 'both'.";
+    }
+    if (request.RegistrationNumber is { Length: > 64 })
+    {
+        return "Registration number must be 64 characters or fewer.";
     }
     return null;
 }

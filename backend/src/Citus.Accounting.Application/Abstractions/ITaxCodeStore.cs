@@ -21,6 +21,7 @@ public sealed record TaxCodeRecord(
     string Name,
     decimal RatePercent,
     string AppliesTo,
+    string? RegistrationNumber,
     bool IsActive,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -39,6 +40,7 @@ public sealed record TaxCodeUpsertInput(
     string Name,
     decimal RatePercent,
     string AppliesTo,
+    string? RegistrationNumber,
     bool IsActive);
 
 public interface ITaxCodeStore

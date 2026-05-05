@@ -67,6 +67,7 @@
                     <th>Name</th>
                     <th class="text-right" style="width: 6rem">Rate</th>
                     <th style="width: 8rem">Applies to</th>
+                    <th style="width: 12rem">Registration #</th>
                     <th style="width: 6rem">Status</th>
                     <th style="width: 9rem"></th>
                 </tr>
@@ -79,6 +80,16 @@
                         <td>@row.Name</td>
                         <td class="text-right">@FormatRate(row.RatePercent)</td>
                         <td>@HumanizeAppliesTo(row.AppliesTo)</td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(row.RegistrationNumber))
+                            {
+                                <span class="citus-inline-code">@row.RegistrationNumber</span>
+                            }
+                            else
+                            {
+                                <span class="text-fg-subtle text-xs">—</span>
+                            }
+                        </td>
                         <td>
                             <CitusBadge Color="@(row.IsActive ? "green" : "default")">
                                 @(row.IsActive ? "Active" : "Inactive")
@@ -141,14 +152,19 @@
 
             <label class="citus-form-field">
                 <span class="citus-form-field__label">Rate (%)</span>
-                <input type="number"
-                       class="citus-form-field__input"
-                       step="0.01"
-                       min="0"
-                       max="100"
-                       value="@_formRate"
-                       @oninput="@(e => _formRate = e.Value?.ToString() ?? string.Empty)"
-                       disabled="@_isMutating" />
+                @* RadzenNumeric with two-way @bind-Value works reliably across
+                   browsers; the previous raw <input type="number"> with a manual
+                   oninput handler intermittently rejected keystrokes when the
+                   initial value attribute was set. *@
+                <RadzenNumeric TValue="decimal?"
+                               @bind-Value="_formRate"
+                               Min="0"
+                               Max="100"
+                               Step="0.01m"
+                               Format="0.######"
+                               ShowUpDown="false"
+                               Class="citus-control-full"
+                               Disabled="@_isMutating" />
             </label>
 
             <label class="citus-form-field">
@@ -161,6 +177,23 @@
                     <option value="purchase">Purchases only</option>
                     <option value="both">Sales and purchases</option>
                 </select>
+            </label>
+
+            <label class="citus-form-field md:col-span-2">
+                <span class="citus-form-field__label">
+                    Tax registration number <span class="text-fg-subtle text-xs">(optional)</span>
+                </span>
+                <input type="text"
+                       class="citus-form-field__input"
+                       value="@_formRegistrationNumber"
+                       @oninput="@(e => _formRegistrationNumber = e.Value?.ToString() ?? string.Empty)"
+                       maxlength="64"
+                       placeholder="e.g. GST/HST # 123456789RT0001"
+                       disabled="@_isMutating" />
+                <span class="text-fg-subtle text-xs mt-1">
+                    Issued by the taxing authority (GST/HST #, VAT #, EIN, etc.).
+                    When set, invoices and tax returns surface this number on documents that use this code.
+                </span>
             </label>
 
             <label class="citus-form-field md:col-span-2">
@@ -205,8 +238,9 @@
     private Guid? _editingId;
     private string _formCode = string.Empty;
     private string _formName = string.Empty;
-    private string _formRate = "0";
+    private decimal? _formRate = 0m;
     private string _formAppliesTo = "both";
+    private string _formRegistrationNumber = string.Empty;
     private bool _formIsActive = true;
 
     private List<TaxCodeSummary> _rows = new();
@@ -241,8 +275,9 @@
         _editingId = null;
         _formCode = string.Empty;
         _formName = string.Empty;
-        _formRate = "0";
+        _formRate = 0m;
         _formAppliesTo = "both";
+        _formRegistrationNumber = string.Empty;
         _formIsActive = true;
         _isFormOpen = true;
     }
@@ -252,8 +287,9 @@
         _editingId = row.Id;
         _formCode = row.Code;
         _formName = row.Name;
-        _formRate = row.RatePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        _formRate = row.RatePercent;
         _formAppliesTo = row.AppliesTo;
+        _formRegistrationNumber = row.RegistrationNumber ?? string.Empty;
         _formIsActive = row.IsActive;
         _isFormOpen = true;
     }
@@ -278,8 +314,8 @@
             await Message.WarningAsync("Name is required.");
             return;
         }
-        if (!decimal.TryParse(_formRate, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rate) ||
-            rate < 0m || rate > 100m)
+        var rate = _formRate ?? 0m;
+        if (rate < 0m || rate > 100m)
         {
             await Message.WarningAsync("Rate must be between 0 and 100.");
             return;
@@ -288,11 +324,15 @@
         _isMutating = true;
         try
         {
+            var registration = string.IsNullOrWhiteSpace(_formRegistrationNumber)
+                ? null
+                : _formRegistrationNumber.Trim();
             var payload = new TaxCodeUpsertPayload(
                 Code: _formCode.Trim(),
                 Name: _formName.Trim(),
                 RatePercent: rate,
                 AppliesTo: _formAppliesTo,
+                RegistrationNumber: registration,
                 IsActive: _formIsActive);
 
             TaxCodeMutationOutcome outcome = _editingId is null

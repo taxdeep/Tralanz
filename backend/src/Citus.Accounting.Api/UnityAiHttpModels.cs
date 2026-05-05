@@ -49,6 +49,13 @@ public sealed record TaxCodeUpsertHttpRequest
     public string? Name { get; init; }
     public decimal? RatePercent { get; init; }
     public string? AppliesTo { get; init; }
+    /// <summary>
+    /// Optional. Tax registration number issued to the company by the
+    /// taxing authority (e.g. GST/HST number, VAT number, EIN). When
+    /// present, downstream document templates surface it on invoices
+    /// and tax returns. Null = no registration recorded for this code.
+    /// </summary>
+    public string? RegistrationNumber { get; init; }
     public bool? IsActive { get; init; }
 }
 

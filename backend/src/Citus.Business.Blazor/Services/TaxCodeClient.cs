@@ -139,6 +139,7 @@ public sealed record TaxCodeSummary(
     string Name,
     decimal RatePercent,
     string AppliesTo,
+    string? RegistrationNumber,
     bool IsActive,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -148,6 +149,7 @@ public sealed record TaxCodeUpsertPayload(
     string Name,
     decimal RatePercent,
     string AppliesTo,
+    string? RegistrationNumber,
     bool IsActive);
 
 public sealed record TaxCodeMutationOutcome(bool Succeeded, TaxCodeSummary? Saved, string? ErrorMessage);
