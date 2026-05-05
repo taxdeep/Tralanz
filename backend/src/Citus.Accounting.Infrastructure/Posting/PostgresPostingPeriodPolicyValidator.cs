@@ -6,17 +6,31 @@ using Citus.Accounting.Infrastructure.Persistence;
 namespace Citus.Accounting.Infrastructure.Posting;
 
 /// <summary>
-/// M7 iter 2 implementation. One SELECT per post against
-/// <c>accounting_periods</c>; the existing <c>(company_id, status,
-/// period_start)</c> index keeps it cheap. Period membership uses
-/// <c>BETWEEN period_start AND period_end</c> (inclusive on both
-/// sides — period_end is the last day-of-month that belongs to the
-/// period).
+/// M7 iter 2 implementation. Two cheap queries per post:
+///   1. <c>to_regclass</c> existence check on accounting_periods —
+///      a deploy that never visited Settings → Accounting Periods
+///      hasn't bootstrapped the table, and the validator should be
+///      a no-op in that case (V1 permissive policy when no period
+///      data exists).
+///   2. The actual SELECT against accounting_periods, only run if
+///      step 1 confirmed the table.
+/// Period membership uses BETWEEN period_start AND period_end
+/// (inclusive on both sides — period_end is the last day-of-month).
+///
+/// Two queries instead of one matters because Postgres parses the
+/// real query against the catalog before WHERE evaluation; embedding
+/// the to_regclass guard inside the WHERE clause does NOT prevent the
+/// 'relation does not exist' parse error. The split is the only safe
+/// pattern outside of dynamic SQL (DO + EXECUTE), and it's cheaper.
 /// </summary>
 public sealed class PostgresPostingPeriodPolicyValidator : IPostingPeriodPolicyValidator
 {
     private readonly PostgresConnectionFactory _connections;
     private readonly PostgresExecutionContextAccessor _executionContextAccessor;
+    // Cache the per-process answer; once a database has the table it
+    // never goes away. Saves the to_regclass round-trip on every
+    // subsequent post in the same process lifetime.
+    private int _tableConfirmed;
 
     public PostgresPostingPeriodPolicyValidator(
         PostgresConnectionFactory connections,
@@ -35,12 +49,22 @@ public sealed class PostgresPostingPeriodPolicyValidator : IPostingPeriodPolicyV
         await using var scope = await PostgresCommandScope.CreateAsync(
             _connections, _executionContextAccessor, cancellationToken);
 
-        // Look up the period containing the effective date. If none
-        // exists for the company yet (table not bootstrapped, or
-        // effective date outside the seeded fiscal year), let the
-        // post through — V1 doesn't enforce historical / future
-        // boundaries unless the operator explicitly seeded a closed
-        // period there.
+        if (Volatile.Read(ref _tableConfirmed) == 0)
+        {
+            await using var existsCommand = scope.CreateCommand(
+                "select to_regclass('public.accounting_periods') is not null;");
+            var existsResult = await existsCommand.ExecuteScalarAsync(cancellationToken);
+            if (existsResult is not bool exists || !exists)
+            {
+                // Table not bootstrapped on this database yet — V1
+                // permissive policy. Posts proceed without period
+                // enforcement until Settings → Accounting Periods is
+                // visited (which auto-seeds the table on first read).
+                return;
+            }
+            Volatile.Write(ref _tableConfirmed, 1);
+        }
+
         await using var command = scope.CreateCommand(
             """
             select status, period_start, period_end

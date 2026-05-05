@@ -392,6 +392,10 @@
 /* ---------- Buttons ---------- */
 
 .citus-button {
+    /* box-sizing: border-box keeps width: 100% (Block="true") inside the
+       parent's content box even with horizontal padding. Without it, a
+       block button overflows its panel by 2 × var(--citus-space-4). */
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
