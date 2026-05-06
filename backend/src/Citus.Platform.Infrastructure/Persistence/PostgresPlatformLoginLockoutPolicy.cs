@@ -149,7 +149,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                   (@realm, @account_id, @email_hash, @remote_ip, @user_agent, @succeeded);
                 """;
             insert.Parameters.AddWithValue("realm", attempt.Realm);
-            insert.Parameters.AddWithValue("account_id", (object?)attempt.AccountId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("account_id", attempt.AccountId.HasValue ? (object)attempt.AccountId.Value.Value : DBNull.Value);
             insert.Parameters.AddWithValue("email_hash", emailHash);
             insert.Parameters.AddWithValue("remote_ip", (object?)attempt.RemoteIp ?? DBNull.Value);
             insert.Parameters.AddWithValue("user_agent", (object?)attempt.UserAgent ?? DBNull.Value);
@@ -228,7 +228,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 """;
             insertLockout.Parameters.AddWithValue("realm", attempt.Realm);
             insertLockout.Parameters.AddWithValue("email_hash", emailHash);
-            insertLockout.Parameters.AddWithValue("account_id", (object?)attempt.AccountId ?? DBNull.Value);
+            insertLockout.Parameters.AddWithValue("account_id", attempt.AccountId.HasValue ? (object)attempt.AccountId.Value.Value : DBNull.Value);
             insertLockout.Parameters.AddWithValue("kind", LoginLockoutKinds.Temporary15Min);
             insertLockout.Parameters.AddWithValue("lock_minutes", TempLockoutMinutes);
             await insertLockout.ExecuteNonQueryAsync(cancellationToken);
@@ -272,7 +272,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 """;
             insertPermanent.Parameters.AddWithValue("realm", attempt.Realm);
             insertPermanent.Parameters.AddWithValue("email_hash", emailHash);
-            insertPermanent.Parameters.AddWithValue("account_id", (object?)attempt.AccountId ?? DBNull.Value);
+            insertPermanent.Parameters.AddWithValue("account_id", attempt.AccountId.HasValue ? (object)attempt.AccountId.Value.Value : DBNull.Value);
             insertPermanent.Parameters.AddWithValue("kind", LoginLockoutKinds.Permanent);
             await insertPermanent.ExecuteNonQueryAsync(cancellationToken);
         }

@@ -350,7 +350,7 @@ public sealed class PostgresSysAdminAuthRepository(
                   @user_agent
                 );
                 """;
-            insertSession.Parameters.AddWithValue("sysadmin_account_id", account.Id);
+            insertSession.Parameters.AddWithValue("sysadmin_account_id", account.Id.Value);
             insertSession.Parameters.AddWithValue("session_token_hash", sessionTokenHash);
             insertSession.Parameters.AddWithValue("expires_at", expiresAtUtc);
             insertSession.Parameters.AddWithValue("remote_ip", (object?)NormalizeOptional(remoteIp) ?? DBNull.Value);
@@ -368,7 +368,7 @@ public sealed class PostgresSysAdminAuthRepository(
                     updated_at = now()
                 where id = @id;
                 """;
-            updateAccount.Parameters.AddWithValue("id", account.Id);
+            updateAccount.Parameters.AddWithValue("id", account.Id.Value);
             await updateAccount.ExecuteNonQueryAsync(cancellationToken);
         }
 
