@@ -15,7 +15,7 @@ public sealed class CompanyBookPolicyWorkflowTests
 
         var result = await workflow.EnsureDefaultPrimaryBookPolicyAsync(
             CompanyId,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             new DateOnly(2026, 4, 14),
             CancellationToken.None);
 
@@ -239,7 +239,7 @@ public sealed class CompanyBookPolicyWorkflowTests
     {
         var seedState = CreateState(hasCompanyPostedHistory: true, hasBookSpecificRevaluationHistory: false);
         var existingSignal = new CompanyBookGovernanceSignalRecord(
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CompanyId,
             seedState.Book.BookId,
             "reported_statement",
@@ -276,7 +276,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 new DateOnly(2026, 4, 5),
                 "FY2025 statements",
                 null,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CancellationToken.None));
 
         Assert.Contains("already registered", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -295,7 +295,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             new DateOnly(2026, 3, 31),
             referenceLabel: null,
             notes: null,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Equal("closed_period", result.Signal.SignalType);
@@ -316,7 +316,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 new DateOnly(2026, 4, 15),
                 "   ",
                 null,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CancellationToken.None));
 
         Assert.Contains("Issued statement label is required", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -365,7 +365,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             workflow.PrepareGovernedChangeRequestDraftAsync(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 state.Book.BookId,
                 new DateOnly(2026, 4, 14),
                 new DateOnly(2026, 4, 14),
@@ -394,7 +394,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var workflow = new CompanyBookPolicyWorkflow(store);
         var draft = await workflow.PrepareGovernedChangeRequestDraftAsync(
             CompanyId,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             state.Book.BookId,
             new DateOnly(2026, 4, 14),
             new DateOnly(2026, 5, 1),
@@ -431,7 +431,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var workflow = new CompanyBookPolicyWorkflow(store);
         var draft = await workflow.PrepareGovernedChangeRequestDraftAsync(
             CompanyId,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             state.Book.BookId,
             new DateOnly(2026, 4, 14),
             new DateOnly(2026, 5, 1),
@@ -448,7 +448,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 RevaluationProfile: null,
                 FxRoundingPolicy: null),
             CancellationToken.None);
-        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, Guid.NewGuid(), CancellationToken.None);
+        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, UserId.FromOrdinal(1), CancellationToken.None);
 
         var result = await workflow.CancelGovernedChangeRequestDraftAsync(
             CompanyId,
@@ -469,7 +469,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var workflow = new CompanyBookPolicyWorkflow(store);
         var draft = await workflow.PrepareGovernedChangeRequestDraftAsync(
             CompanyId,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             state.Book.BookId,
             new DateOnly(2026, 4, 14),
             new DateOnly(2026, 4, 14),
@@ -486,7 +486,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 RevaluationProfile: null,
                 FxRoundingPolicy: null),
             CancellationToken.None);
-        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, Guid.NewGuid(), CancellationToken.None);
+        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, UserId.FromOrdinal(1), CancellationToken.None);
 
         var result = await workflow.ValidateGovernedChangeRequestApplyReadinessAsync(
             CompanyId,
@@ -514,7 +514,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var workflow = new CompanyBookPolicyWorkflow(store);
         var draft = await workflow.PrepareGovernedChangeRequestDraftAsync(
             CompanyId,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             state.Book.BookId,
             new DateOnly(2026, 4, 14),
             new DateOnly(2026, 4, 14),
@@ -531,7 +531,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 RevaluationProfile: null,
                 FxRoundingPolicy: null),
             CancellationToken.None);
-        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, Guid.NewGuid(), CancellationToken.None);
+        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, UserId.FromOrdinal(1), CancellationToken.None);
         store.ReplaceGovernance([driftedState]);
 
         var result = await workflow.ValidateGovernedChangeRequestApplyReadinessAsync(
@@ -553,7 +553,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var workflow = new CompanyBookPolicyWorkflow(store);
         var draft = await workflow.PrepareGovernedChangeRequestDraftAsync(
             CompanyId,
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             originalState.Book.BookId,
             new DateOnly(2026, 4, 14),
             new DateOnly(2026, 4, 14),
@@ -570,7 +570,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 RevaluationProfile: null,
                 FxRoundingPolicy: null),
             CancellationToken.None);
-        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, Guid.NewGuid(), CancellationToken.None);
+        await workflow.SubmitGovernedChangeRequestDraftAsync(CompanyId, draft.RequestId, UserId.FromOrdinal(1), CancellationToken.None);
 
         var signalledState = originalState with
         {
@@ -581,7 +581,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 Signals:
                 [
                     new CompanyBookGovernanceSignalRecord(
-                        Guid.NewGuid(),
+                        UserId.FromOrdinal(1),
                         CompanyId,
                         originalState.Book.BookId,
                         "closed_period",
@@ -591,7 +591,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                         null,
                         DateTimeOffset.UtcNow),
                     new CompanyBookGovernanceSignalRecord(
-                        Guid.NewGuid(),
+                        UserId.FromOrdinal(1),
                         CompanyId,
                         originalState.Book.BookId,
                         "filed_tax",
@@ -679,7 +679,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             }
 
             var created = new CompanyBookGovernanceSignalRecord(
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 companyId,
                 bookId,
                 signalType,
@@ -716,7 +716,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             CancellationToken cancellationToken)
         {
             var draft = new CompanyBookGovernedChangeRequestDraft(
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 preview.Book.CompanyId,
                 preview.Book.BookId,
                 "draft",
@@ -825,7 +825,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 new DateOnly(2026, 4, 14),
                 true),
             new CompanyBookRemeasurementPolicy(
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CompanyId,
                 bookId,
                 "closing",

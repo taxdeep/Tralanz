@@ -1514,7 +1514,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
     private static async Task SeedAccountAsync(
         string connectionString,
         CompanyId companyId,
-        UserId accountId,
+        Guid accountId,
         string code,
         string name,
         string rootType)

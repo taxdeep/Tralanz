@@ -1162,7 +1162,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("reverse_document", request.ActionCode);
             Assert.Equal("draft", request.RequestStatus);
             Assert.Equal("user", request.RequestedByActorType);
-            Assert.Equal(userId, request.RequestedByActorId);
+            Assert.Equal<UserId?>(userId, request.RequestedByActorId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
                 CompanyId.FromOrdinal(1),
@@ -1176,7 +1176,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
             Assert.Equal("submitted", submitResult.Request.RequestStatus);
             Assert.Equal("user", submitResult.Request.SubmittedByActorType);
-            Assert.Equal(userId, submitResult.Request.SubmittedByActorId);
+            Assert.Equal<UserId?>(userId, submitResult.Request.SubmittedByActorId);
             Assert.NotNull(submitResult.Request.SubmittedAt);
 
             var readiness = await reviewRepository.GetReverseRequestApplyReadinessAsync(
@@ -1208,7 +1208,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("execution_request_recorded", executeResult.OutcomeCode);
             Assert.Equal("execution_requested", executeResult.Request.ExecutionStatus);
             Assert.Equal("user", executeResult.Request.ExecutionRequestedByActorType);
-            Assert.Equal(userId, executeResult.Request.ExecutionRequestedByActorId);
+            Assert.Equal<UserId?>(userId, executeResult.Request.ExecutionRequestedByActorId);
             Assert.NotNull(executeResult.Request.ExecutionRequestedAt);
         }
         finally
@@ -4351,7 +4351,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
         Guid journalEntryId,
         Guid lineId,
         int lineNumber,
-        UserId accountId,
+        Guid accountId,
         decimal txDebit,
         decimal txCredit,
         string description,
@@ -5164,7 +5164,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task CleanupAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        UserId accountId,
+        Guid accountId,
         CancellationToken cancellationToken)
     {
         if (accountId == Guid.Empty)

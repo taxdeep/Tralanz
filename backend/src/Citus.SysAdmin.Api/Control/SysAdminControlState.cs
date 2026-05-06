@@ -10,7 +10,7 @@ public sealed class SysAdminControlState
     private readonly SysAdminOperatorSummary _operator;
     private readonly IReadOnlyList<CompanyWorkspaceSummary> _companies;
     private readonly IReadOnlyList<ManagedUserSummary> _users;
-    private Guid? _activeCompanyId;
+    private CompanyId? _activeCompanyId;
     private MaintenanceStateSummary _maintenanceState;
 
     public SysAdminControlState(IOptions<SysAdminControlOptions> options)
@@ -161,7 +161,7 @@ public sealed class SysAdminControlState
         };
     }
 
-    private static Guid? ResolveDefaultActiveCompanyId(Guid? configuredCompanyId, IReadOnlyList<CompanyWorkspaceSummary> companies)
+    private static CompanyId? ResolveDefaultActiveCompanyId(CompanyId? configuredCompanyId, IReadOnlyList<CompanyWorkspaceSummary> companies)
     {
         if (configuredCompanyId.HasValue && companies.Any(company => company.Id == configuredCompanyId.Value))
         {

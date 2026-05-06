@@ -5068,7 +5068,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
 
     private static async Task CleanupAccountAsync(
         PostgresConnectionFactory connectionFactory,
-        UserId accountId,
+        Guid accountId,
         CancellationToken cancellationToken)
     {
         if (accountId == Guid.Empty)
