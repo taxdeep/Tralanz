@@ -2445,7 +2445,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
             $"""
             create table if not exists {SettlementLinesTableName} (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_id uuid not null,
               receipt_line_number integer not null,
               bridge_line_id uuid not null references {BridgeLinesTableName}(id) on delete cascade,
@@ -2464,7 +2464,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               remaining_amount_base numeric(20,6) not null,
               settlement_status text not null,
               blocked_reason_code text null,
-              refreshed_by_user_id uuid not null,
+              refreshed_by_user_id char(7) not null,
               refreshed_at timestamptz not null default now(),
               last_settled_at timestamptz null
             );
@@ -2480,7 +2480,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
             create table if not exists {SettlementBatchesTableName} (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_id uuid not null,
               idempotency_key text not null,
               status text not null,
@@ -2488,7 +2488,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               settled_quantity numeric(20,6) not null,
               settled_amount_base numeric(20,6) not null,
               line_count integer not null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now()
             );
 
@@ -2502,7 +2502,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               add column if not exists journal_entry_display_number text null;
 
             alter table {SettlementBatchesTableName}
-              add column if not exists journal_posted_by_user_id uuid null;
+              add column if not exists journal_posted_by_user_id char(7) null;
 
             alter table {SettlementBatchesTableName}
               add column if not exists journal_posted_at timestamptz null;
@@ -2520,7 +2520,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               add column if not exists open_item_clearing_blocked_reason_code text null;
 
             alter table {SettlementBatchesTableName}
-              add column if not exists open_item_cleared_by_user_id uuid null;
+              add column if not exists open_item_cleared_by_user_id char(7) null;
 
             alter table {SettlementBatchesTableName}
               add column if not exists open_item_cleared_at timestamptz null;
@@ -2529,7 +2529,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               add column if not exists open_item_clearing_refreshed_at timestamptz null;
 
             alter table {SettlementBatchesTableName}
-              add column if not exists open_item_reversed_by_user_id uuid null;
+              add column if not exists open_item_reversed_by_user_id char(7) null;
 
             alter table {SettlementBatchesTableName}
               add column if not exists open_item_reversed_at timestamptz null;
@@ -2551,7 +2551,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
             create table if not exists {SettlementBatchLinesTableName} (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               settlement_batch_id uuid not null references {SettlementBatchesTableName}(id) on delete cascade,
               settlement_line_id uuid not null references {SettlementLinesTableName}(id) on delete restrict,
               bridge_line_id uuid not null references {BridgeLinesTableName}(id) on delete restrict,
@@ -2570,7 +2570,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
 
             create table if not exists {PurchaseVarianceLinesTableName} (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_id uuid not null,
               receipt_line_number integer not null,
               settlement_batch_id uuid not null references {SettlementBatchesTableName}(id) on delete cascade,
@@ -2588,7 +2588,7 @@ public sealed class PostgresReceiptGrIrApSettlementControlStore : IReceiptGrIrAp
               variance_amount_base numeric(20,6) not null,
               variance_status text not null,
               blocked_reason_code text null,
-              refreshed_by_user_id uuid not null,
+              refreshed_by_user_id char(7) not null,
               refreshed_at timestamptz not null default now()
             );
 

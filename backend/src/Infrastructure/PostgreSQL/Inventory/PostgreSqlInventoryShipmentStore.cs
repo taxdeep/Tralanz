@@ -633,7 +633,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
 
                 create table if not exists inventory_outbound_matching_lanes (
                   id uuid primary key,
-                  company_id uuid not null,
+                  company_id char(7) not null,
                   lane_type text not null,
                   source_document_id uuid not null,
                   item_id uuid not null,
@@ -661,7 +661,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
 
                 create table if not exists inventory_outbound_discrepancy_lanes (
                   id uuid primary key,
-                  company_id uuid not null,
+                  company_id char(7) not null,
                   discrepancy_type text not null,
                   source_document_id uuid not null,
                   item_id uuid not null,

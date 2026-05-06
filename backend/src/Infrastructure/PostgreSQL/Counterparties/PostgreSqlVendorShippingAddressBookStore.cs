@@ -17,7 +17,7 @@ public sealed class PostgreSqlVendorShippingAddressBookStore(
         const string sql = """
             create table if not exists vendor_shipping_address_book (
                 id uuid primary key default gen_random_uuid(),
-                company_id uuid not null references companies(id) on delete cascade,
+                company_id char(7) not null references companies(id) on delete cascade,
                 vendor_id uuid not null references vendors(id) on delete cascade,
                 label text,
                 address_line text not null default '',

@@ -33,7 +33,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
             create table if not exists account_login_attempts (
               id uuid primary key default gen_random_uuid(),
               realm text not null,
-              account_id uuid,
+              account_id char(7),
               email_hash text not null,
               remote_ip text,
               user_agent text,
@@ -49,7 +49,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
               id uuid primary key default gen_random_uuid(),
               realm text not null,
               email_hash text not null,
-              account_id uuid,
+              account_id char(7),
               lockout_kind text not null,
               locked_at timestamptz not null default now(),
               locked_until timestamptz,

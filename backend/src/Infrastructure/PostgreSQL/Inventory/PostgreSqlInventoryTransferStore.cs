@@ -345,13 +345,13 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                   add column if not exists submitted_at timestamptz null;
 
                 alter table warehouse_transfers
-                  add column if not exists submitted_by_user_id uuid null;
+                  add column if not exists submitted_by_user_id char(7) null;
 
                 alter table warehouse_transfers
-                  add column if not exists shipped_by_user_id uuid null;
+                  add column if not exists shipped_by_user_id char(7) null;
 
                 alter table warehouse_transfers
-                  add column if not exists received_by_user_id uuid null;
+                  add column if not exists received_by_user_id char(7) null;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
 

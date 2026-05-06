@@ -43,7 +43,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
               status text not null,
               file_path text,
               size_bytes bigint,
-              triggered_by_user_id uuid not null,
+              triggered_by_user_id char(7) not null,
               error_message text,
               constraint platform_database_backups_status_chk
                 check (status in ('running','succeeded','failed'))
@@ -59,7 +59,7 @@ public sealed class PostgresPlatformDatabaseAdminService : IPlatformDatabaseAdmi
               completed_at timestamptz,
               status text not null,
               duration_ms bigint,
-              triggered_by_user_id uuid not null,
+              triggered_by_user_id char(7) not null,
               error_message text,
               constraint platform_database_maintenance_runs_status_chk
                 check (status in ('running','succeeded','failed'))

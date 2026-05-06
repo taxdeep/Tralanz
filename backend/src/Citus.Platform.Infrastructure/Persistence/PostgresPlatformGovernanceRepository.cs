@@ -81,8 +81,8 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists account_mfa_recovery_requests (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
-              requested_by_user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
+              requested_by_user_id char(7) not null references users(id) on delete cascade,
               current_mfa_mode text not null,
               status text not null default 'requested',
               request_reason text not null,
@@ -105,8 +105,8 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists business_session_mfa_challenges (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
-              active_company_id uuid not null,
+              user_id char(7) not null references users(id) on delete cascade,
+              active_company_id char(7) not null,
               membership_id uuid not null,
               role text not null,
               permissions jsonb not null default '[]'::jsonb,
@@ -142,7 +142,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists account_mfa_totp_enrollments (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               status text not null,
               secret_base32 text not null,
               created_at timestamptz not null default now(),
@@ -156,7 +156,7 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists account_verification_codes (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               purpose text not null,
               destination text,
               code_hash text not null,
@@ -202,9 +202,9 @@ public sealed class PostgresPlatformGovernanceRepository(
 
             create table if not exists audit_logs (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid null,
+              company_id char(7) null,
               actor_type text not null,
-              actor_id uuid null,
+              actor_id char(7) null,
               entity_type text not null,
               entity_id uuid not null,
               action text not null,

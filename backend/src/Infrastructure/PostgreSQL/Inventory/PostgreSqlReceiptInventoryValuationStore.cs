@@ -400,7 +400,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
                 $"""
                 create table if not exists {ValuationLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   bill_id uuid not null,
@@ -416,7 +416,7 @@ public sealed class PostgreSqlReceiptInventoryValuationStore : IReceiptInventory
                   unit_cost_base numeric(20, 6) not null,
                   extended_cost_base numeric(20, 6) not null,
                   valuation_source text not null,
-                  valued_by_user_id uuid not null,
+                  valued_by_user_id char(7) not null,
                   valued_at timestamptz not null default now()
                 );
 

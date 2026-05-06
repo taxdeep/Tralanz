@@ -89,7 +89,7 @@ public sealed class PostgreSqlSystemSetupStore : ISystemSetupStore
         command.CommandText =
             """
             create table if not exists user_preferences (
-              user_id uuid primary key,
+              user_id char(7) primary key,
               number_display_mode text not null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now()

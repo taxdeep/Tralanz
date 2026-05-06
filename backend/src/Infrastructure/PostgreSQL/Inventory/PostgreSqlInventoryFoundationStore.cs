@@ -649,13 +649,13 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             command.CommandText =
                 """
                 create table if not exists company_inventory_policies (
-                  company_id uuid primary key references companies(id) on delete cascade,
+                  company_id char(7) primary key references companies(id) on delete cascade,
                   default_costing_method text not null,
                   negative_stock_allowed boolean not null default false,
                   require_writeoff_approval boolean not null default true,
-                  created_by_user_id uuid not null,
+                  created_by_user_id char(7) not null,
                   created_at timestamptz not null default now(),
-                  updated_by_user_id uuid null,
+                  updated_by_user_id char(7) null,
                   updated_at timestamptz null,
                   constraint ck_company_inventory_policies_costing_method
                     check (default_costing_method in ('moving_average', 'fifo'))
@@ -663,7 +663,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_items (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_code text not null,
                   name text not null,
                   description text null,
@@ -753,7 +753,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_warehouses (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   warehouse_code text not null,
                   name text not null,
                   description text null,
@@ -770,7 +770,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists item_warehouse_balances (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_id uuid not null references inventory_items(id) on delete cascade,
                   warehouse_id uuid not null references inventory_warehouses(id) on delete cascade,
                   on_hand_qty numeric(20, 6) not null default 0,
@@ -785,7 +785,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_documents (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   document_type text not null,
                   status text not null,
                   movement_direction text not null,
@@ -797,7 +797,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                   customer_po_number text null,
                   sales_order_id uuid null,
                   memo text null,
-                  created_by_user_id uuid not null,
+                  created_by_user_id char(7) not null,
                   created_at timestamptz not null default now(),
                   posted_at timestamptz null,
                   constraint ck_inventory_documents_document_type
@@ -837,7 +837,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_document_lines (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   document_id uuid not null references inventory_documents(id) on delete cascade,
                   line_no integer not null,
                   item_id uuid not null references inventory_items(id),
@@ -859,7 +859,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_ledger_entries (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_id uuid not null references inventory_items(id),
                   warehouse_id uuid null references inventory_warehouses(id),
                   document_id uuid null references inventory_documents(id),
@@ -899,7 +899,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_cost_layers (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   item_id uuid not null references inventory_items(id),
                   warehouse_id uuid null references inventory_warehouses(id),
                   source_ledger_entry_id uuid null references inventory_ledger_entries(id),
@@ -917,7 +917,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists inventory_layer_consumptions (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   issue_ledger_entry_id uuid not null references inventory_ledger_entries(id) on delete cascade,
                   cost_layer_id uuid not null references inventory_cost_layers(id) on delete cascade,
                   consumed_qty numeric(20, 6) not null,
@@ -930,12 +930,12 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists warehouse_transfers (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   transfer_number text not null,
                   status text not null,
                   source_warehouse_id uuid not null references inventory_warehouses(id),
                   destination_warehouse_id uuid not null references inventory_warehouses(id),
-                  requested_by_user_id uuid not null,
+                  requested_by_user_id char(7) not null,
                   memo text null,
                   created_at timestamptz not null default now(),
                   shipped_at timestamptz null,
@@ -949,7 +949,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists warehouse_transfer_lines (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   transfer_id uuid not null references warehouse_transfers(id) on delete cascade,
                   line_no integer not null,
                   item_id uuid not null references inventory_items(id),
@@ -963,7 +963,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists boms (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   bom_code text not null,
                   output_item_id uuid not null references inventory_items(id),
                   output_qty numeric(20, 6) not null,
@@ -977,7 +977,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
 
                 create table if not exists bom_lines (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   bom_id uuid not null references boms(id) on delete cascade,
                   line_no integer not null,
                   component_item_id uuid not null references inventory_items(id),

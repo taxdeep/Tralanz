@@ -1361,8 +1361,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             );
 
             create table companies (
-              id uuid primary key,
-              entity_number text not null unique,
+              id char(7) primary key,
+              entity_number char(11) not null unique,
               legal_name text not null,
               base_currency_code char(3) not null references currency_catalog(code),
               multi_currency_enabled boolean not null default false,
@@ -1373,8 +1373,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table accounts (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null,
               code text not null,
               name text not null,
               root_type text not null,
@@ -1402,7 +1402,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
         command.CommandText =
             """
             create table company_numbering_sequences (
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               scope_key text not null,
               prefix text not null,
               next_number bigint not null,
@@ -1414,8 +1414,8 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table journal_entries (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null,
               display_number text not null,
               status text not null,
               source_type text not null,
@@ -1433,7 +1433,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               posting_run_id uuid not null,
               idempotency_key text not null,
               posted_at timestamptz not null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now()
             );
 
@@ -1442,7 +1442,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table journal_entry_lines (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               journal_entry_id uuid not null references journal_entries(id) on delete cascade,
               line_number integer not null,
               account_id uuid not null references accounts(id),
@@ -1461,7 +1461,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table ledger_entries (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               journal_entry_id uuid not null references journal_entries(id) on delete cascade,
               journal_entry_line_id uuid not null references journal_entry_lines(id) on delete cascade,
               posting_date date not null,
@@ -1475,7 +1475,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table ap_open_items (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               vendor_id uuid not null,
               source_type text not null,
               source_id uuid not null,
@@ -1494,7 +1494,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table settlement_applications (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               application_type text not null,
               source_type text not null,
               source_id uuid not null,
@@ -1505,7 +1505,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
               settlement_fx_rate numeric(20, 10) null,
               realized_fx_amount numeric(20, 6) null,
               created_at timestamptz not null default now(),
-              created_by_user_id uuid null
+              created_by_user_id char(7) null
             );
             """;
         await command.ExecuteNonQueryAsync();
@@ -1620,7 +1620,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
             """
             create table if not exists bill_lines (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               bill_id uuid not null references bills(id) on delete cascade,
               line_number integer not null,
               expense_account_id uuid not null references accounts(id),
@@ -1715,7 +1715,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table receipts (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_number text not null,
               status text not null,
               vendor_id uuid not null,
@@ -1727,7 +1727,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table receipt_lines (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_id uuid not null references receipts(id) on delete cascade,
               line_number integer not null,
               item_id uuid not null references inventory_items(id),
@@ -1737,7 +1737,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionIntegrationTests
 
             create table bills (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               status text not null,
               document_currency_code text not null,
               base_currency_code text not null,

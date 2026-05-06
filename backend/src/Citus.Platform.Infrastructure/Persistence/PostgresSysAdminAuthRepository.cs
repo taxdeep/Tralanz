@@ -36,7 +36,7 @@ public sealed class PostgresSysAdminAuthRepository(
 
             create table if not exists sysadmin_sessions (
               id uuid primary key default gen_random_uuid(),
-              sysadmin_account_id uuid not null references sysadmin_accounts(id) on delete cascade,
+              sysadmin_account_id char(7) not null references sysadmin_accounts(id) on delete cascade,
               session_token_hash text not null unique,
               expires_at timestamptz not null,
               last_seen_at timestamptz not null default now(),

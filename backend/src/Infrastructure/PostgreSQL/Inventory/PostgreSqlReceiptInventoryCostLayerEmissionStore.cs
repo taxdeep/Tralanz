@@ -702,7 +702,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
 
                 create table if not exists {EmissionLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   valuation_line_id uuid not null,
@@ -717,7 +717,7 @@ public sealed class PostgreSqlReceiptInventoryCostLayerEmissionStore : IReceiptI
                   uom_code text not null,
                   emitted_quantity numeric(20, 6) not null,
                   emitted_cost_base numeric(20, 6) not null,
-                  emitted_by_user_id uuid not null,
+                  emitted_by_user_id char(7) not null,
                   emitted_at timestamptz not null default now()
                 );
 

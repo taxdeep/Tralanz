@@ -177,7 +177,7 @@ public sealed class BusinessNumberingClient(PostgreSqlConnectionFactory connecti
         command.CommandText =
             """
             create table if not exists company_numbering_sequences (
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               scope_key text not null,
               prefix text not null,
               next_number bigint not null,

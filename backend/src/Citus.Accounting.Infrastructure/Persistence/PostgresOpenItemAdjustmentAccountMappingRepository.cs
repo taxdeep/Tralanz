@@ -36,14 +36,14 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         const string sql = """
             create table if not exists open_item_adjustment_account_mappings (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               book_id uuid null,
               open_item_type text not null,
               adjustment_type text not null,
               adjustment_account_id uuid not null,
               is_active boolean not null default true,
-              created_by_user_id uuid null,
-              updated_by_user_id uuid null,
+              created_by_user_id char(7) null,
+              updated_by_user_id char(7) null,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
               deactivated_at timestamptz null
@@ -51,8 +51,8 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
 
             alter table open_item_adjustment_account_mappings
               add column if not exists book_id uuid null,
-              add column if not exists created_by_user_id uuid null,
-              add column if not exists updated_by_user_id uuid null,
+              add column if not exists created_by_user_id char(7) null,
+              add column if not exists updated_by_user_id char(7) null,
               add column if not exists deactivated_at timestamptz null;
 
             do $$

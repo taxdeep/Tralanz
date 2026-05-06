@@ -29,7 +29,7 @@ public sealed class PostgresPlatformAiProviderConfigStore : IPlatformAiProviderC
               temperature numeric(4,2) not null default 0.7,
               api_key_protected text,
               updated_at timestamptz not null default now(),
-              updated_by_user_id uuid,
+              updated_by_user_id char(7),
               constraint platform_ai_provider_config_provider_chk
                 check (provider in ('disabled','openai','anthropic','azure_openai')),
               constraint platform_ai_provider_config_max_tokens_chk

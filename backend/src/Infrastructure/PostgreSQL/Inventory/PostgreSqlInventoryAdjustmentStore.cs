@@ -1644,10 +1644,10 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                   add column if not exists approved_at timestamptz null;
 
                 alter table inventory_documents
-                  add column if not exists approved_by_user_id uuid null;
+                  add column if not exists approved_by_user_id char(7) null;
 
                 alter table inventory_documents
-                  add column if not exists posted_by_user_id uuid null;
+                  add column if not exists posted_by_user_id char(7) null;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
             _schemaEnsured = true;

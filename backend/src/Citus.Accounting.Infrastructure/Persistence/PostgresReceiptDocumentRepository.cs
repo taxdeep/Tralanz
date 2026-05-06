@@ -817,8 +817,8 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
             $"""
             create table if not exists {ReceiptsTableName} (
               id uuid primary key,
-              company_id uuid not null,
-              entity_number text not null,
+              company_id char(7) not null,
+              entity_number char(11) not null,
               receipt_number text not null,
               vendor_id uuid not null,
               warehouse_id uuid not null,
@@ -827,11 +827,11 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
               vendor_reference text null,
               source_reference text null,
               memo text null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now(),
-              updated_by_user_id uuid null,
+              updated_by_user_id char(7) null,
               updated_at timestamptz not null default now(),
-              posted_by_user_id uuid null,
+              posted_by_user_id char(7) null,
               posted_at timestamptz null
             );
 
@@ -846,7 +846,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
 
             create table if not exists {ReceiptLinesTableName} (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               receipt_id uuid not null,
               line_number integer not null,
               item_id uuid not null,

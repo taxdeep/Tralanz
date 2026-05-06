@@ -1082,7 +1082,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
 
                 create table if not exists {ActivationLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   inventory_document_id uuid not null references inventory_documents(id) on delete cascade,
@@ -1091,7 +1091,7 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
                   warehouse_id uuid not null references inventory_warehouses(id) on delete cascade,
                   uom_code text not null,
                   activated_quantity numeric(20, 6) not null,
-                  activated_by_user_id uuid not null,
+                  activated_by_user_id char(7) not null,
                   activated_at timestamptz not null default now()
                 );
 
@@ -1103,10 +1103,10 @@ public sealed class PostgreSqlReceiptInventoryActivationStore : IReceiptInventor
 
                 create table if not exists {ActivationFailuresTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   failure_message text not null,
-                  recorded_by_user_id uuid not null,
+                  recorded_by_user_id char(7) not null,
                   recorded_at timestamptz not null default now()
                 );
 

@@ -40,8 +40,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             create table if not exists business_sessions (
               id uuid primary key default gen_random_uuid(),
               token_hash text not null unique,
-              user_id uuid not null references users(id) on delete cascade,
-              active_company_id uuid not null references companies(id) on delete restrict,
+              user_id char(7) not null references users(id) on delete cascade,
+              active_company_id char(7) not null references companies(id) on delete restrict,
               membership_id uuid not null references company_memberships(id) on delete cascade,
               role text not null,
               permissions jsonb not null default '[]'::jsonb,
@@ -72,8 +72,8 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
             create table if not exists business_session_mfa_challenges (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
-              active_company_id uuid not null references companies(id) on delete restrict,
+              user_id char(7) not null references users(id) on delete cascade,
+              active_company_id char(7) not null references companies(id) on delete restrict,
               membership_id uuid not null references company_memberships(id) on delete cascade,
               role text not null,
               permissions jsonb not null default '[]'::jsonb,
@@ -109,7 +109,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
 
             create table if not exists account_mfa_totp_enrollments (
               id uuid primary key default gen_random_uuid(),
-              user_id uuid not null references users(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               status text not null,
               secret_base32 text not null,
               created_at timestamptz not null default now(),

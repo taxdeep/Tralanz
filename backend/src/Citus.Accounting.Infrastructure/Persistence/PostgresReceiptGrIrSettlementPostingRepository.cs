@@ -123,7 +123,7 @@ public sealed class PostgresReceiptGrIrSettlementPostingRepository : IReceiptGrI
               add column if not exists journal_entry_display_number text null;
 
             alter table receipt_grir_ap_settlement_batches
-              add column if not exists journal_posted_by_user_id uuid null;
+              add column if not exists journal_posted_by_user_id char(7) null;
 
             alter table receipt_grir_ap_settlement_batches
               add column if not exists journal_posted_at timestamptz null;

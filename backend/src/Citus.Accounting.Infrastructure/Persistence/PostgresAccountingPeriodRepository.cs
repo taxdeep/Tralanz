@@ -196,7 +196,7 @@ public sealed class PostgresAccountingPeriodRepository : IAccountingPeriodReposi
         command.CommandText = """
             create table if not exists accounting_periods (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               period_start date not null,
               period_end date not null,
               status text not null default 'open',

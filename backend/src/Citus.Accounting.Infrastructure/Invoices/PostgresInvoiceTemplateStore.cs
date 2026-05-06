@@ -24,7 +24,7 @@ public sealed class PostgresInvoiceTemplateStore : IInvoiceTemplateStore
         const string sql = """
             create table if not exists invoice_templates (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null,
+              company_id char(7) not null,
               name text not null,
               is_default boolean not null default false,
               config jsonb not null,

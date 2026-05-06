@@ -593,13 +593,13 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """
             create table if not exists receipts (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               status text not null
             );
 
             create table if not exists receipt_lines (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               receipt_id uuid not null,
               line_number integer not null,
               item_id uuid not null,
@@ -663,14 +663,14 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """
             create table if not exists bills (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               vendor_id uuid null,
               status text not null
             );
 
             create table if not exists bill_lines (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               bill_id uuid not null,
               line_number integer not null,
               item_id uuid null,
@@ -729,9 +729,9 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             """
             create table audit_logs (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               actor_type text not null,
-              actor_id uuid null,
+              actor_id char(7) null,
               entity_type text not null,
               entity_id uuid not null,
               action text not null,

@@ -49,8 +49,8 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
             -- Sales Receipts ------------------------------------------------
             create table if not exists sales_receipts (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               receipt_number text not null,
               customer_id uuid not null references customers(id) on delete restrict,
               status text not null default 'draft',
@@ -71,10 +71,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               memo text,
               customer_po_number text,
               posted_at timestamptz,
-              created_by_user_id uuid not null references users(id) on delete restrict,
+              created_by_user_id char(7) not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
-              constraint sales_receipts_entity_number_format_chk check (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
               constraint sales_receipts_status_chk check (status in ('draft', 'posted', 'voided', 'reversed')),
               constraint sales_receipts_payment_method_chk check (payment_method in ('cash', 'cheque', 'credit_card', 'wire', 'direct_deposit', 'eft', 'other')),
               constraint sales_receipts_fx_rate_positive_chk check (fx_rate > 0),
@@ -83,7 +82,7 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
 
             create table if not exists sales_receipt_lines (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               sales_receipt_id uuid not null references sales_receipts(id) on delete cascade,
               line_number integer not null,
               revenue_account_id uuid not null references accounts(id) on delete restrict,
@@ -117,8 +116,8 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
             -- Refund Receipts -----------------------------------------------
             create table if not exists refund_receipts (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               refund_number text not null,
               customer_id uuid not null references customers(id) on delete restrict,
               status text not null default 'draft',
@@ -140,10 +139,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               memo text,
               customer_po_number text,
               posted_at timestamptz,
-              created_by_user_id uuid not null references users(id) on delete restrict,
+              created_by_user_id char(7) not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
-              constraint refund_receipts_entity_number_format_chk check (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
               constraint refund_receipts_status_chk check (status in ('draft', 'posted', 'voided', 'reversed')),
               constraint refund_receipts_payment_method_chk check (payment_method in ('cash', 'cheque', 'credit_card', 'wire', 'direct_deposit', 'eft', 'other')),
               constraint refund_receipts_fx_rate_positive_chk check (fx_rate > 0),
@@ -152,7 +150,7 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
 
             create table if not exists refund_receipt_lines (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               refund_receipt_id uuid not null references refund_receipts(id) on delete cascade,
               line_number integer not null,
               revenue_account_id uuid not null references accounts(id) on delete restrict,
@@ -184,8 +182,8 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
             -- Bank Transfers ------------------------------------------------
             create table if not exists bank_transfers (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               transfer_number text not null,
               status text not null default 'draft',
               transfer_date date not null,
@@ -198,10 +196,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               reference_no text,
               memo text,
               posted_at timestamptz,
-              created_by_user_id uuid not null references users(id) on delete restrict,
+              created_by_user_id char(7) not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
-              constraint bank_transfers_entity_number_format_chk check (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
               constraint bank_transfers_status_chk check (status in ('draft', 'posted', 'voided', 'reversed')),
               constraint bank_transfers_amount_positive_chk check (amount > 0),
               constraint bank_transfers_distinct_accounts_chk check (from_account_id <> to_account_id),
@@ -220,8 +217,8 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
             -- Bank Deposits -------------------------------------------------
             create table if not exists bank_deposits (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               deposit_number text not null,
               status text not null default 'draft',
               deposit_date date not null,
@@ -231,10 +228,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               reference_no text,
               memo text,
               posted_at timestamptz,
-              created_by_user_id uuid not null references users(id) on delete restrict,
+              created_by_user_id char(7) not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
-              constraint bank_deposits_entity_number_format_chk check (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
               constraint bank_deposits_status_chk check (status in ('draft', 'posted', 'voided', 'reversed')),
               constraint bank_deposits_total_nonnegative_chk check (total_amount >= 0),
               constraint bank_deposits_unique_company_deposit_number unique (company_id, deposit_number)
@@ -242,7 +238,7 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
 
             create table if not exists bank_deposit_items (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               bank_deposit_id uuid not null references bank_deposits(id) on delete cascade,
               line_number integer not null,
               source_item_kind text not null,
@@ -268,8 +264,8 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
             -- Tax Returns ---------------------------------------------------
             create table if not exists tax_returns (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               return_number text not null,
               status text not null default 'draft',
               tax_regime text not null,
@@ -285,10 +281,9 @@ public sealed class PostgresV1WriteFlowSchemaBootstrap
               regulator_reference_no text,
               memo text,
               posted_at timestamptz,
-              created_by_user_id uuid not null references users(id) on delete restrict,
+              created_by_user_id char(7) not null references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
-              constraint tax_returns_entity_number_format_chk check (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
               constraint tax_returns_status_chk check (status in ('draft', 'posted', 'voided', 'amended')),
               constraint tax_returns_filing_frequency_chk check (filing_frequency in ('monthly', 'quarterly', 'annual')),
               constraint tax_returns_period_chk check (period_end >= period_start),

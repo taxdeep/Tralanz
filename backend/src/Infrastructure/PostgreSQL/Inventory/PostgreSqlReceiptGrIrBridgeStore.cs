@@ -471,7 +471,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
                 $"""
                 create table if not exists {BridgeLinesTableName} (
                   id uuid primary key default gen_random_uuid(),
-                  company_id uuid not null references companies(id) on delete cascade,
+                  company_id char(7) not null references companies(id) on delete cascade,
                   receipt_id uuid not null,
                   receipt_line_number integer not null,
                   valuation_line_id uuid not null,
@@ -488,9 +488,9 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
                   blocked_reason_code text null,
                   journal_entry_id uuid null,
                   journal_entry_display_number text null,
-                  posted_by_user_id uuid null,
+                  posted_by_user_id char(7) null,
                   posted_at timestamptz null,
-                  refreshed_by_user_id uuid not null,
+                  refreshed_by_user_id char(7) not null,
                   refreshed_at timestamptz not null default now()
                 );
 
@@ -501,7 +501,7 @@ public sealed class PostgreSqlReceiptGrIrBridgeStore : IReceiptGrIrBridgeStore
                   add column if not exists journal_entry_display_number text null;
 
                 alter table {BridgeLinesTableName}
-                  add column if not exists posted_by_user_id uuid null;
+                  add column if not exists posted_by_user_id char(7) null;
 
                 alter table {BridgeLinesTableName}
                   add column if not exists posted_at timestamptz null;

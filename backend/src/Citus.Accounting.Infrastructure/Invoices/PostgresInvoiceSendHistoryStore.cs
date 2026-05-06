@@ -17,10 +17,10 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         const string sql = """
             create table if not exists invoice_send_history (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null,
+              company_id char(7) not null,
               invoice_id uuid not null,
               sent_at timestamptz not null default now(),
-              sent_by_user_id uuid not null,
+              sent_by_user_id char(7) not null,
               to_email text not null,
               cc_emails text not null default '',
               bcc_emails text not null default '',

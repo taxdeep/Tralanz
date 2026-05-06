@@ -198,16 +198,16 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               add column if not exists journal_entry_display_number text null;
 
             alter table receipt_grir_bridge_lines
-              add column if not exists posted_by_user_id uuid null;
+              add column if not exists posted_by_user_id char(7) null;
 
             alter table receipt_grir_bridge_lines
               add column if not exists posted_at timestamptz null;
 
             create table if not exists receipt_grir_bridge_posting_batches (
               id uuid primary key,
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               receipt_id uuid not null,
-              entity_number text not null,
+              entity_number char(11) not null,
               display_number text not null,
               status text not null,
               document_date date not null,
@@ -218,9 +218,9 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
               line_count integer not null,
               journal_entry_id uuid null references journal_entries(id) on delete set null,
               journal_entry_display_number text null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now(),
-              posted_by_user_id uuid null,
+              posted_by_user_id char(7) null,
               posted_at timestamptz null,
               updated_at timestamptz not null default now()
             );
@@ -233,7 +233,7 @@ public sealed class PostgresReceiptGrIrPostingRepository : IReceiptGrIrPostingRe
 
             create table if not exists receipt_grir_bridge_posting_batch_lines (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               posting_batch_id uuid not null references receipt_grir_bridge_posting_batches(id) on delete cascade,
               bridge_line_id uuid not null references receipt_grir_bridge_lines(id) on delete cascade,
               inventory_asset_account_id uuid not null references accounts(id),

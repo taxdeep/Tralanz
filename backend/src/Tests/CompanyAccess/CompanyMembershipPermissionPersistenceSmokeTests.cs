@@ -79,7 +79,7 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
 
             create table if not exists audit_logs (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               actor_type text not null,
               actor_id uuid null,
               entity_type text not null,

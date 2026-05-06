@@ -38,7 +38,7 @@ public sealed class PostgresPlatformBusinessPasswordResetService : IPlatformBusi
             create table if not exists account_password_reset_tokens (
               id uuid primary key default gen_random_uuid(),
               realm text not null default 'business',
-              account_id uuid not null,
+              account_id char(7) not null,
               token_hash text not null,
               expires_at timestamptz not null,
               used_at timestamptz,

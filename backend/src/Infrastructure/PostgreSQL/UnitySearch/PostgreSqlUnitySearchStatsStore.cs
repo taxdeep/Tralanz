@@ -250,8 +250,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
         command.CommandText =
             """
             create table if not exists search_recent_queries (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               context text not null,
               query_text text not null,
               used_at_utc timestamptz not null,
@@ -262,8 +262,8 @@ public sealed class PostgreSqlUnitySearchStatsStore(PostgreSqlConnectionFactory 
               on search_recent_queries (company_id, user_id, context, used_at_utc desc);
 
             create table if not exists search_click_stats (
-              company_id uuid not null,
-              user_id uuid not null,
+              company_id char(7) not null,
+              user_id char(7) not null,
               context text not null,
               entity_type text not null,
               source_id uuid not null,

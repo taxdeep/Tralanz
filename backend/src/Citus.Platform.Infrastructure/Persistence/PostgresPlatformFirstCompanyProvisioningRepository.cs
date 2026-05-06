@@ -20,7 +20,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             create extension if not exists pgcrypto;
 
             create table if not exists users (
-              id uuid primary key default gen_random_uuid(),
+              id char(7) primary key,
               email text not null unique,
               username text unique,
               display_name text,
@@ -99,8 +99,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             where code = 'KWD';
 
             create table if not exists companies (
-              id uuid primary key default gen_random_uuid(),
-              entity_number text not null unique,
+              id char(7) primary key,
+              entity_number char(11) not null unique,
               legal_name text not null,
               base_currency_code char(3) not null,
               multi_currency_enabled boolean not null default false,
@@ -153,8 +153,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_memberships (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              user_id uuid not null references users(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
+              user_id char(7) not null references users(id) on delete cascade,
               role text not null,
               is_active boolean not null default true,
               permissions jsonb not null default '[]'::jsonb,
@@ -167,7 +167,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_currencies (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               currency_code char(3) not null references currency_catalog(code) on delete restrict,
               is_enabled boolean not null default true,
               created_at timestamptz not null default now(),
@@ -175,7 +175,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             );
 
             create table if not exists company_settings (
-              company_id uuid primary key references companies(id) on delete cascade,
+              company_id char(7) primary key references companies(id) on delete cascade,
               profile jsonb not null default '{}'::jsonb,
               security jsonb not null default '{}'::jsonb,
               notification jsonb not null default '{}'::jsonb,
@@ -185,8 +185,8 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists accounts (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
-              entity_number text not null unique,
+              company_id char(7) not null references companies(id) on delete cascade,
+              entity_number char(11) not null unique,
               code text not null,
               name text not null,
               root_type text not null,
@@ -205,7 +205,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_books (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               book_code text not null,
               book_name text not null,
               book_role text not null,
@@ -217,7 +217,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               is_adjustment_only boolean not null default false,
               effective_from date not null,
               is_active boolean not null default true,
-              created_by_user_id uuid references users(id) on delete restrict,
+              created_by_user_id char(7) references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now(),
               constraint company_books_unique unique (company_id, book_code)
@@ -225,7 +225,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
 
             create table if not exists company_book_remeasurement_policies (
               id uuid primary key default gen_random_uuid(),
-              company_id uuid not null references companies(id) on delete cascade,
+              company_id char(7) not null references companies(id) on delete cascade,
               company_book_id uuid not null references company_books(id) on delete cascade,
               rate_type text not null default 'closing',
               quote_basis text not null default 'direct',
@@ -235,13 +235,13 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               fx_rounding_policy text not null default 'currency_precision',
               effective_from date not null,
               is_active boolean not null default true,
-              created_by_user_id uuid references users(id) on delete restrict,
+              created_by_user_id char(7) references users(id) on delete restrict,
               created_at timestamptz not null default now(),
               updated_at timestamptz not null default now()
             );
 
             create table if not exists company_chart_template_bindings (
-              company_id uuid primary key references companies(id) on delete cascade,
+              company_id char(7) primary key references companies(id) on delete cascade,
               template_key text not null,
               template_version text not null,
               account_code_length smallint not null,

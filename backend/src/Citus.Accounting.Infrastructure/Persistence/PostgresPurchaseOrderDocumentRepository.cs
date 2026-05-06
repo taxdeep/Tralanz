@@ -2711,8 +2711,8 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             $"""
             create table if not exists {PurchaseOrdersTableName} (
               id uuid primary key,
-              company_id uuid not null,
-              entity_number text not null,
+              company_id char(7) not null,
+              entity_number char(11) not null,
               purchase_order_number text not null,
               vendor_id uuid not null,
               status text not null,
@@ -2720,42 +2720,42 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               expected_date date null,
               vendor_reference text null,
               memo text null,
-              created_by_user_id uuid not null,
+              created_by_user_id char(7) not null,
               created_at timestamptz not null default now(),
-              updated_by_user_id uuid null,
+              updated_by_user_id char(7) null,
               updated_at timestamptz not null default now(),
-              approved_by_user_id uuid null,
+              approved_by_user_id char(7) null,
               approved_at timestamptz null,
-              issued_by_user_id uuid null,
+              issued_by_user_id char(7) null,
               issued_at timestamptz null,
-              closed_by_user_id uuid null,
+              closed_by_user_id char(7) null,
               closed_at timestamptz null,
-              cancelled_by_user_id uuid null,
+              cancelled_by_user_id char(7) null,
               cancelled_at timestamptz null,
-              amendment_started_by_user_id uuid null,
+              amendment_started_by_user_id char(7) null,
               amendment_started_at timestamptz null
             );
 
             alter table {PurchaseOrdersTableName}
-              add column if not exists approved_by_user_id uuid null;
+              add column if not exists approved_by_user_id char(7) null;
 
             alter table {PurchaseOrdersTableName}
               add column if not exists approved_at timestamptz null;
 
             alter table {PurchaseOrdersTableName}
-              add column if not exists closed_by_user_id uuid null;
+              add column if not exists closed_by_user_id char(7) null;
 
             alter table {PurchaseOrdersTableName}
               add column if not exists closed_at timestamptz null;
 
             alter table {PurchaseOrdersTableName}
-              add column if not exists cancelled_by_user_id uuid null;
+              add column if not exists cancelled_by_user_id char(7) null;
 
             alter table {PurchaseOrdersTableName}
               add column if not exists cancelled_at timestamptz null;
 
             alter table {PurchaseOrdersTableName}
-              add column if not exists amendment_started_by_user_id uuid null;
+              add column if not exists amendment_started_by_user_id char(7) null;
 
             alter table {PurchaseOrdersTableName}
               add column if not exists amendment_started_at timestamptz null;
@@ -2771,7 +2771,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
             create table if not exists {PurchaseOrderLinesTableName} (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               purchase_order_id uuid not null,
               line_number integer not null,
               item_id uuid not null,
@@ -2791,7 +2791,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
             create table if not exists {QuantityDiscrepanciesTableName} (
               id uuid primary key,
-              company_id uuid not null,
+              company_id char(7) not null,
               purchase_order_id uuid not null,
               purchase_order_line_number integer not null,
               discrepancy_type text not null,
@@ -2807,16 +2807,16 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
               first_detected_at timestamptz not null,
               last_detected_at timestamptz not null default now(),
               review_note text null,
-              reviewed_by_user_id uuid null,
+              reviewed_by_user_id char(7) null,
               reviewed_at timestamptz null,
-              refreshed_by_user_id uuid not null
+              refreshed_by_user_id char(7) not null
             );
 
             alter table {QuantityDiscrepanciesTableName}
               add column if not exists review_note text null;
 
             alter table {QuantityDiscrepanciesTableName}
-              add column if not exists reviewed_by_user_id uuid null;
+              add column if not exists reviewed_by_user_id char(7) null;
 
             alter table {QuantityDiscrepanciesTableName}
               add column if not exists reviewed_at timestamptz null;

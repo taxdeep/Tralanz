@@ -35,7 +35,7 @@ public sealed class PostgresPlatformSmtpConfigStore : IPlatformSmtpConfigStore
               username text not null default '',
               password_protected text,
               updated_at timestamptz not null default now(),
-              updated_by_user_id uuid,
+              updated_by_user_id char(7),
               constraint platform_smtp_config_provider_chk
                 check (provider in ('disabled','smtp'))
             );
