@@ -4520,7 +4520,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             );
             """;
         command.Parameters.AddWithValue("id", snapshotId);
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);
@@ -4576,7 +4576,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
               and requested_date = @requested_date
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);

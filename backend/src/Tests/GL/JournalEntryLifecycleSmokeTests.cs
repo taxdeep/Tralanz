@@ -377,7 +377,7 @@ public sealed class JournalEntryLifecycleSmokeTests
                 where company_id = @company_id
                   and source_id = @source_id;
                 """;
-            command.Parameters.AddWithValue("company_id", CompanyId);
+            command.Parameters.AddWithValue("company_id", CompanyId.Value);
             command.Parameters.AddWithValue("source_id", fixture.DocumentId);
 
             await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
@@ -640,7 +640,7 @@ public sealed class JournalEntryLifecycleSmokeTests
               and requested_date = @requested_date
             limit 1;
             """;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("quote_currency_code", quoteCurrencyCode);
         command.Parameters.AddWithValue("requested_date", requestedDate);

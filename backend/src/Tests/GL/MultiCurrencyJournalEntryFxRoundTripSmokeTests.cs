@@ -185,7 +185,7 @@ public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
                 select id from journal_entries
                 where company_id = @company_id and source_id = @source_id;
                 """;
-            command.Parameters.AddWithValue("company_id", CompanyId);
+            command.Parameters.AddWithValue("company_id", CompanyId.Value);
             command.Parameters.AddWithValue("source_id", fixture.DocumentId);
             await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
             while (await reader.ReadAsync(CancellationToken.None))
@@ -248,7 +248,7 @@ public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
                   and effective_date = @effective
                 limit 1;
                 """;
-            command.Parameters.AddWithValue("company_id", CompanyId);
+            command.Parameters.AddWithValue("company_id", CompanyId.Value);
             command.Parameters.AddWithValue("base", baseCurrencyCode);
             command.Parameters.AddWithValue("quote", quoteCurrencyCode);
             command.Parameters.AddWithValue("effective", candidate);

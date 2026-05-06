@@ -67,7 +67,7 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
@@ -110,7 +110,7 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", CompanyId);
+        command.Parameters.AddWithValue("company_id", CompanyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
