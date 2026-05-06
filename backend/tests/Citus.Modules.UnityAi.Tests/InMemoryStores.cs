@@ -13,7 +13,7 @@ internal sealed class InMemoryAiJobRunStore : IAiJobRunStore
     public List<AiJobRunRecord> Records { get; } = new();
     public List<(Guid Id, string Status)> Completions { get; } = new();
 
-    public Task<Guid> StartAsync(Guid? companyId, string jobType, string triggerType, Guid? triggeredByUserId,
+    public Task<Guid> StartAsync(CompanyId? companyId, string jobType, string triggerType, UserId? triggeredByUserId,
         DateTimeOffset? sourceWindowStart, DateTimeOffset? sourceWindowEnd, string? inputSummaryJson,
         CancellationToken cancellationToken)
     {
@@ -31,7 +31,10 @@ internal sealed class InMemoryAiJobRunStore : IAiJobRunStore
     }
 
     public Task<IReadOnlyList<AiJobRunRecord>> GetRecentAsync(CompanyId companyId, string? jobType, int limit, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<AiJobRunRecord>>(Records.Where(r => r.CompanyId == companyId).ToList());
+        => Task.FromResult<IReadOnlyList<AiJobRunRecord>>(Records.Where(r => r.CompanyId.Equals(companyId)).ToList());
+
+    public Task<IReadOnlyList<AiJobRunRecord>> GetRecentPlatformAsync(int limit, CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<AiJobRunRecord>>(Records.Take(limit).ToList());
 }
 
 internal sealed class InMemoryAiRequestLogStore : IAiRequestLogStore
@@ -45,7 +48,23 @@ internal sealed class InMemoryAiRequestLogStore : IAiRequestLogStore
     }
 
     public Task<IReadOnlyList<AiRequestLogRecord>> GetRecentAsync(CompanyId companyId, string? taskType, int limit, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<AiRequestLogRecord>>(Records.Where(r => r.CompanyId == companyId).ToList());
+        => Task.FromResult<IReadOnlyList<AiRequestLogRecord>>(Records.Where(r => r.CompanyId.Equals(companyId)).ToList());
+
+    public Task<IReadOnlyList<AiRequestLogRecord>> GetRecentPlatformAsync(int limit, CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<AiRequestLogRecord>>(Records.Take(limit).ToList());
+
+    public Task<AiActivitySummary> GetPlatformSummaryAsync(DateTimeOffset windowStart, CancellationToken cancellationToken)
+        => Task.FromResult(new AiActivitySummary(
+            WindowStart: windowStart,
+            WindowEnd: DateTimeOffset.UtcNow,
+            TotalCalls: 0,
+            SucceededCalls: 0,
+            FailedCalls: 0,
+            TotalInputTokens: 0,
+            TotalOutputTokens: 0,
+            TotalEstimatedCost: 0m,
+            AvgLatencyMs: null,
+            LastCallAt: null));
 }
 
 internal sealed class InMemoryUsageStatStore : IUnitysearchUsageStatStore
@@ -287,7 +306,7 @@ internal sealed class InMemoryActionCenterTaskStore : IActionCenterTaskStore
 
 internal sealed class InMemoryActionCenterTaskEventStore : IActionCenterTaskEventStore
 {
-    public List<(CompanyId CompanyId, Guid TaskId, Guid? UserId, string EventType, DateTimeOffset At)> Events { get; } = new();
+    public List<(CompanyId CompanyId, Guid TaskId, UserId? UserId, string EventType, DateTimeOffset At)> Events { get; } = new();
 
     public Task RecordAsync(CompanyId companyId, Guid taskId, UserId? userId, string eventType, string? metadataJson,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)

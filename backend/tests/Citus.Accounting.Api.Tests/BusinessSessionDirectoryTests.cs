@@ -48,7 +48,7 @@ public sealed class BusinessSessionDirectoryTests
         Assert.False(success);
         Assert.Null(resolution);
         Assert.Equal(
-            "Business user '7bd0e908-cfe7-4f7b-8a0d-f19292e4186d' does not belong to company 'e56df08c-39ae-405b-8ed2-247b97d2f9f6'.",
+            $"Business user '{UserId.Value}' does not belong to company '{OtherCompanyId.Value}'.",
             error);
     }
 

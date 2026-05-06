@@ -49,7 +49,7 @@ public sealed class UnitySearchPickerServiceTests
         // model binder, so the wire format is fine; this test pins the
         // exact shape the client emits today.
         var body = JsonDocument.Parse(captured.LastBody!);
-        Assert.Equal((object?)companyId, (object?)body.RootElement.GetProperty("companyId").GetGuid());
+        Assert.Equal(companyId.Value, body.RootElement.GetProperty("companyId").GetString());
         Assert.Equal("expense.vendor_picker", body.RootElement.GetProperty("context").GetString());
         Assert.Equal("vendor", body.RootElement.GetProperty("entityType").GetString());
         Assert.Equal("amazon", body.RootElement.GetProperty("query").GetString());
@@ -71,7 +71,7 @@ public sealed class UnitySearchPickerServiceTests
         // Should NOT throw — tracking failures are silent.
         await service.RecordUsageAsync(new UnitysearchUsageEvent
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             Context = "ctx",
             EntityType = "vendor",
             EventType = "select",
@@ -87,7 +87,7 @@ public sealed class UnitySearchPickerServiceTests
 
         await service.RecordUsageAsync(new UnitysearchUsageEvent
         {
-            CompanyId = Guid.NewGuid(),
+            CompanyId = CompanyId.FromOrdinal(1),
             Context = "ctx",
             EntityType = "vendor",
             EventType = "no_match",

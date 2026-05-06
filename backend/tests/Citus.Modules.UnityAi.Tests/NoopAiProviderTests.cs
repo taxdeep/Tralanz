@@ -20,7 +20,7 @@ public sealed class NoopAiProviderTests
             ResponseSchemaName: "",
             MaxOutputTokens: null,
             TimeoutMs: null,
-            Context: new UnityAiInvocationContext(CompanyId: Guid.NewGuid(), UserId: null, JobRunId: null));
+            Context: new UnityAiInvocationContext(CompanyId: CompanyId.FromOrdinal(1), UserId: null, JobRunId: null));
 
         var response = await provider.CompleteStructuredAsync(request, CancellationToken.None);
 

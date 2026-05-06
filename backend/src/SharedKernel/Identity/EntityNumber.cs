@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace SharedKernel.Identity;
 
+[JsonConverter(typeof(EntityNumberJsonConverter))]
 public readonly record struct EntityNumber
 {
     public const string Prefix = "EN";

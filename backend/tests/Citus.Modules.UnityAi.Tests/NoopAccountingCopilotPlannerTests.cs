@@ -10,7 +10,7 @@ public sealed class NoopAccountingCopilotPlannerTests
     public async Task NoopPlanner_ReturnsUnsupported_AndDoesNotWrite()
     {
         var planner = new NoopAccountingCopilotPlanner();
-        var input = new AccountingCommandInput(Guid.NewGuid(), Guid.NewGuid(), "test command");
+        var input = new AccountingCommandInput(CompanyId.FromOrdinal(1), UserId.FromOrdinal(1), "test command");
 
         var plan = await planner.ParseCommandAsync(input, CancellationToken.None);
         Assert.Equal("unsupported", plan.Intent);

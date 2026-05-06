@@ -9,8 +9,8 @@ namespace Citus.Modules.UnityAi.Tests;
 
 public sealed class UnitysearchAiRerankingEngineTests
 {
-    private static readonly Guid CompanyA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static readonly Guid UserA = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly CompanyId CompanyA = CompanyId.FromOrdinal(1);
+    private static readonly UserId UserA = UserId.FromOrdinal(1);
 
     [Fact]
     public async Task FrequentSelection_RerankerMovesItemUp()
@@ -83,7 +83,7 @@ public sealed class UnitysearchAiRerankingEngineTests
         var inner = new FakeInnerEngine(BuildResult(Guid.NewGuid()));
         var (engine, _, _, _) = BuildDecorator(inner, learningEnabled: true);
 
-        await engine.RecordClickAsync(CompanyA, UserA, "ctx", "vendor", UserId.FromOrdinal(1), CancellationToken.None);
+        await engine.RecordClickAsync(CompanyA, UserA, "ctx", "vendor", Guid.NewGuid(), CancellationToken.None);
         await engine.ListRecentQueriesAsync(CompanyA, UserA, "ctx", 5, CancellationToken.None);
         await engine.ListRecentSelectionsAsync(CompanyA, UserA, "ctx", 5, CancellationToken.None);
 
