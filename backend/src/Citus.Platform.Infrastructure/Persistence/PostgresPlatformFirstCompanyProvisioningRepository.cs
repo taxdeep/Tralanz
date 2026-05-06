@@ -988,7 +988,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
               @updated_at
             );
             """;
-        command.Parameters.AddWithValue("id", ownerUserId);
+        command.Parameters.AddWithValue("id", ownerUserId.Value);
         command.Parameters.AddWithValue("email", normalized.OwnerEmail);
         command.Parameters.AddWithValue("display_name", normalized.OwnerDisplayName);
         command.Parameters.AddWithValue("password_hash", passwordHasher.HashPassword(normalized.OwnerPassword));
@@ -1134,7 +1134,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             """;
         command.Parameters.AddWithValue("id", membershipId);
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_id", ownerUserId);
+        command.Parameters.AddWithValue("user_id", ownerUserId.Value);
         command.Parameters.AddWithValue("permissions", permissionsJson);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
@@ -1320,7 +1320,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         command.Parameters.AddWithValue("accounting_standard", accountingStandard);
         command.Parameters.AddWithValue("base_currency_code", baseCurrencyCode);
         command.Parameters.AddWithValue("effective_from", effectiveFrom);
-        command.Parameters.AddWithValue("created_by_user_id", ownerUserId);
+        command.Parameters.AddWithValue("created_by_user_id", ownerUserId.Value);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1376,7 +1376,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("company_book_id", companyBookId);
         command.Parameters.AddWithValue("effective_from", effectiveFrom);
-        command.Parameters.AddWithValue("created_by_user_id", ownerUserId);
+        command.Parameters.AddWithValue("created_by_user_id", ownerUserId.Value);
         command.Parameters.AddWithValue("created_at", provisionedAtUtc);
         command.Parameters.AddWithValue("updated_at", provisionedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);

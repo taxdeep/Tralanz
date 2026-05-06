@@ -1204,8 +1204,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             );
             """;
         command.Parameters.AddWithValue("id", auditId ?? Guid.NewGuid());
-        command.Parameters.AddWithValue("actor_id", actorUserId);
-        command.Parameters.AddWithValue("entity_id", actorUserId);
+        command.Parameters.AddWithValue("actor_id", actorUserId.Value);
+        command.Parameters.AddWithValue("entity_id", actorUserId.Value);
         command.Parameters.AddWithValue("action", action);
         configureParameters(command);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1358,8 +1358,8 @@ public sealed partial class PostgresPlatformAccountProfileRepository(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("actor_id", actorUserId);
-        command.Parameters.AddWithValue("entity_id", actorUserId);
+        command.Parameters.AddWithValue("actor_id", actorUserId.Value);
+        command.Parameters.AddWithValue("entity_id", actorUserId.Value);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("request_audit_id", requestAuditId);
         command.Parameters.AddWithValue("provider_key", sendResult.ProviderKey);

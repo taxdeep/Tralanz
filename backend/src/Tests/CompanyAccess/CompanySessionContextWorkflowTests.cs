@@ -117,8 +117,9 @@ public sealed class CompanySessionContextWorkflowTests
 
     private static string BuildEntityNumber()
     {
-        var numeric = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 100_000_000;
-        return $"EN2099{numeric:D8}";
+        // EN + YYYY (4) + 5 base36 = 11 chars total. Base36 5-char range 0-60_466_175.
+        var ordinal = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 60_466_176;
+        return EntityNumber.Create(2099, ordinal).Value;
     }
 
     private static async Task SeedAsync(
@@ -161,8 +162,8 @@ public sealed class CompanySessionContextWorkflowTests
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            insert into users (id, email, username, password_hash, is_active)
-            values (@id, @email, @username, @password_hash, true);
+            insert into users (id, email, username, password_hash, status)
+            values (@id, @email, @username, @password_hash, 'active');
             """;
         command.Parameters.AddWithValue("id", userId.Value);
         command.Parameters.AddWithValue("email", $"{userId.Value}@example.test");

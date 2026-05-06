@@ -539,7 +539,7 @@ public sealed class PostgresSysAdminAuthRepository(
                     updated_at = @updated_at
                 where id = @id;
                 """;
-            updateAccount.Parameters.AddWithValue("id", sysAdminAccountId);
+            updateAccount.Parameters.AddWithValue("id", sysAdminAccountId.Value);
             updateAccount.Parameters.AddWithValue("password_hash", passwordHasher.HashPassword(newPassword));
             updateAccount.Parameters.AddWithValue("updated_at", rotatedAtUtc);
             await updateAccount.ExecuteNonQueryAsync(cancellationToken);
@@ -555,7 +555,7 @@ public sealed class PostgresSysAdminAuthRepository(
                 where sysadmin_account_id = @sysadmin_account_id
                   and revoked_at is null;
                 """;
-            revokeSessions.Parameters.AddWithValue("sysadmin_account_id", sysAdminAccountId);
+            revokeSessions.Parameters.AddWithValue("sysadmin_account_id", sysAdminAccountId.Value);
             await revokeSessions.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -689,7 +689,7 @@ public sealed class PostgresSysAdminAuthRepository(
             where id = @id
             for update;
             """;
-        command.Parameters.AddWithValue("id", sysAdminAccountId);
+        command.Parameters.AddWithValue("id", sysAdminAccountId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

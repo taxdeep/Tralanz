@@ -35,4 +35,13 @@ public static class NpgsqlParameterExtensions
 
     public static NpgsqlParameter AddWithValue(this NpgsqlParameterCollection parameters, string parameterName, EntityNumber? value) =>
         parameters.AddWithValue(parameterName, value.HasValue ? (object?)value.Value.Value ?? DBNull.Value : DBNull.Value);
+
+    public static NpgsqlParameter AddWithValue(this NpgsqlParameterCollection parameters, string parameterName, CompanyId[] values) =>
+        parameters.AddWithValue(parameterName, values.Select(v => v.Value).ToArray());
+
+    public static NpgsqlParameter AddWithValue(this NpgsqlParameterCollection parameters, string parameterName, UserId[] values) =>
+        parameters.AddWithValue(parameterName, values.Select(v => v.Value).ToArray());
+
+    public static NpgsqlParameter AddWithValue(this NpgsqlParameterCollection parameters, string parameterName, EntityNumber[] values) =>
+        parameters.AddWithValue(parameterName, values.Select(v => v.Value).ToArray());
 }

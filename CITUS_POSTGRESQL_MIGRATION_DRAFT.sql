@@ -140,7 +140,7 @@ CREATE TABLE companies (
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT companies_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT companies_account_code_length_chk CHECK (account_code_length BETWEEN 4 AND 6),
   CONSTRAINT companies_status_chk CHECK (status IN ('active', 'inactive', 'suspended', 'archived'))
 );
@@ -635,7 +635,7 @@ CREATE TABLE accounts (
   allow_manual_posting boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT accounts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT accounts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT accounts_root_type_chk CHECK (
     root_type IN ('asset', 'liability', 'equity', 'revenue', 'cost_of_sales', 'expense')
   ),
@@ -657,7 +657,7 @@ CREATE TABLE tax_codes (
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT tax_codes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT tax_codes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT tax_codes_rate_percent_chk CHECK (rate_percent >= 0),
   CONSTRAINT tax_codes_applies_to_chk CHECK (applies_to IN ('sales', 'purchase', 'both')),
   CONSTRAINT tax_codes_recoverability_mode_chk CHECK (
@@ -683,7 +683,7 @@ CREATE TABLE customers (
   currency_locked boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT customers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$')
+  CONSTRAINT customers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$')
 );
 
 CREATE TABLE vendors (
@@ -699,7 +699,7 @@ CREATE TABLE vendors (
   currency_locked boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT vendors_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$')
+  CONSTRAINT vendors_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$')
 );
 
 -- ---------------------------------------------------------------------------
@@ -732,7 +732,7 @@ CREATE TABLE invoices (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT invoices_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT invoices_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT invoices_status_chk CHECK (
     status IN ('draft', 'issued', 'posted', 'partially_paid', 'paid', 'voided', 'reversed')
   ),
@@ -784,7 +784,7 @@ CREATE TABLE credit_notes (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT credit_notes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT credit_notes_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT credit_notes_status_chk CHECK (
     status IN ('draft', 'issued', 'posted', 'partially_applied', 'applied', 'voided', 'reversed')
   ),
@@ -835,7 +835,7 @@ CREATE TABLE bills (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bills_status_chk CHECK (
     status IN ('draft', 'posted', 'partially_paid', 'paid', 'voided', 'reversed')
   ),
@@ -884,7 +884,7 @@ CREATE TABLE vendor_credits (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT vendor_credits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT vendor_credits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT vendor_credits_status_chk CHECK (
     status IN ('draft', 'posted', 'partially_applied', 'applied', 'voided', 'reversed')
   ),
@@ -937,7 +937,7 @@ CREATE TABLE receive_payments (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT receive_payments_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT receive_payments_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT receive_payments_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT receive_payments_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT receive_payments_total_amount_nonnegative_chk CHECK (total_amount >= 0),
@@ -981,7 +981,7 @@ CREATE TABLE customer_deposits (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT customer_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT customer_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT customer_deposits_status_chk CHECK (status IN ('open', 'partially_applied', 'closed', 'voided')),
   CONSTRAINT customer_deposits_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT customer_deposits_amount_positive_chk CHECK (original_amount_tx > 0 AND original_amount_base > 0),
@@ -1023,7 +1023,7 @@ CREATE TABLE pay_bills (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT pay_bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT pay_bills_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT pay_bills_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT pay_bills_fx_rate_positive_chk CHECK (fx_rate > 0),
   CONSTRAINT pay_bills_total_amount_nonnegative_chk CHECK (total_amount >= 0),
@@ -1059,7 +1059,7 @@ CREATE TABLE credit_applications (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT credit_applications_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT credit_applications_total_amount_nonnegative_chk CHECK (total_amount >= 0),
   CONSTRAINT credit_applications_unique_company_application_number UNIQUE (company_id, application_number)
@@ -1095,7 +1095,7 @@ CREATE TABLE vendor_credit_applications (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT vendor_credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT vendor_credit_applications_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT vendor_credit_applications_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT vendor_credit_applications_total_amount_nonnegative_chk CHECK (total_amount >= 0),
   CONSTRAINT vendor_credit_applications_unique_company_application_number UNIQUE (company_id, application_number)
@@ -1135,7 +1135,7 @@ CREATE TABLE manual_journal_documents (
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
   CONSTRAINT manual_journal_documents_entity_number_format_chk CHECK (
-    entity_number ~ '^EN[0-9]{4}[0-9]{8}$'
+    entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'
   ),
   CONSTRAINT manual_journal_documents_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
@@ -1192,7 +1192,7 @@ CREATE TABLE journal_entries (
   reversed_at timestamptz,
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT journal_entries_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT journal_entries_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT journal_entries_status_chk CHECK (status IN ('draft', 'posted', 'voided', 'reversed')),
   CONSTRAINT journal_entries_exchange_rate_positive_chk CHECK (exchange_rate > 0),
   CONSTRAINT journal_entries_unique_idempotency UNIQUE (company_id, idempotency_key),
@@ -1443,7 +1443,7 @@ CREATE TABLE audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id char(7) REFERENCES companies(id) ON DELETE SET NULL,
   actor_type text NOT NULL,
-  actor_id uuid,
+  actor_id char(7),
   entity_type text NOT NULL,
   entity_id uuid NOT NULL,
   action text NOT NULL,
@@ -1843,7 +1843,7 @@ CREATE TABLE sales_receipts (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT sales_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT sales_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT sales_receipts_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -1913,7 +1913,7 @@ CREATE TABLE refund_receipts (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT refund_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT refund_receipts_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT refund_receipts_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -1979,7 +1979,7 @@ CREATE TABLE bank_transfers (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT bank_transfers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bank_transfers_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bank_transfers_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -2028,7 +2028,7 @@ CREATE TABLE bank_deposits (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT bank_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT bank_deposits_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT bank_deposits_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'reversed')
   ),
@@ -2102,7 +2102,7 @@ CREATE TABLE tax_returns (
   created_by_user_id char(7) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   updated_at timestamptz NOT NULL DEFAULT NOW(),
-  CONSTRAINT tax_returns_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[0-9]{8}$'),
+  CONSTRAINT tax_returns_entity_number_format_chk CHECK (entity_number ~ '^EN[0-9]{4}[A-Z0-9]{5}$'),
   CONSTRAINT tax_returns_status_chk CHECK (
     status IN ('draft', 'posted', 'voided', 'amended')
   ),

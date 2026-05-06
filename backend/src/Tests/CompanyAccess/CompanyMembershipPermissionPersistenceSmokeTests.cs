@@ -11,7 +11,7 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
     {
         var companyId = CompanyId.FromOrdinal(1);
         var ownerUserId = UserId.FromOrdinal(1);
-        var targetUserId = UserId.FromOrdinal(1);
+        var targetUserId = UserId.FromOrdinal(2);
         var ownerMembershipId = Guid.NewGuid();
         var targetMembershipId = Guid.NewGuid();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());
@@ -106,10 +106,10 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
               'active'
             );
 
-            insert into users (id, email, username, password_hash, is_active)
+            insert into users (id, email, username, password_hash, status)
             values
-              (@owner_user_id, @owner_email, 'owner.audit', 'hashed-password', true),
-              (@target_user_id, @target_email, 'member.audit', 'hashed-password', true);
+              (@owner_user_id, @owner_email, 'owner.audit', 'hashed-password', 'active'),
+              (@target_user_id, @target_email, 'member.audit', 'hashed-password', 'active');
 
             insert into company_memberships (
               id,
@@ -158,13 +158,13 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
             where id = any(@user_ids);
             """;
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("user_ids", new[] { ownerUserId, targetUserId });
+        command.Parameters.AddWithValue("user_ids", new[] { ownerUserId.Value, targetUserId.Value });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string BuildEntityNumber()
     {
-        var numeric = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 100_000_000;
-        return $"EN2099{numeric:D8}";
+        var ordinal = Math.Abs(BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0)) % 60_466_176;
+        return EntityNumber.Create(2099, ordinal).Value;
     }
 }

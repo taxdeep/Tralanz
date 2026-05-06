@@ -360,7 +360,7 @@ public sealed class PostgreSqlCompanyMembershipPermissionStore : ICompanyMembers
             """;
         auditCommand.Parameters.AddWithValue("id", Guid.NewGuid());
         auditCommand.Parameters.AddWithValue("company_id", companyId.Value);
-        auditCommand.Parameters.AddWithValue("actor_id", actorUserId);
+        auditCommand.Parameters.AddWithValue("actor_id", actorUserId.Value);
         auditCommand.Parameters.AddWithValue("entity_id", membershipId);
         auditCommand.Parameters.AddWithValue("payload", payload);
         await auditCommand.ExecuteNonQueryAsync(cancellationToken);

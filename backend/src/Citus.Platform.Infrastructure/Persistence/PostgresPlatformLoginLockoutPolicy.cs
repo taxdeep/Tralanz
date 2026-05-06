@@ -377,7 +377,7 @@ public sealed class PostgresPlatformLoginLockoutPolicy : IPlatformLoginLockoutPo
                 returning realm, account_id, lockout_kind;
                 """;
             lift.Parameters.AddWithValue("id", lockoutId);
-            lift.Parameters.AddWithValue("sysadmin_id", sysAdminAccountId);
+            lift.Parameters.AddWithValue("sysadmin_id", sysAdminAccountId.Value);
             lift.Parameters.AddWithValue("reason", reason.Trim());
 
             await using var reader = await lift.ExecuteReaderAsync(cancellationToken);
