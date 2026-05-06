@@ -108,7 +108,7 @@ internal static class PostgresNumberingSequences
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+        return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
     private static async Task EnsurePlatformEntityNumberSequenceAsync(

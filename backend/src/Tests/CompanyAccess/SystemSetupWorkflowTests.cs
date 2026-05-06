@@ -10,7 +10,7 @@ public sealed class SystemSetupWorkflowTests
     {
         var store = new StubStore();
         var workflow = new SystemSetupWorkflow(store);
-        var userId = UserId.FromOrdinal(1);
+        var userId = UserId.FromOrdinal(101);
 
         var saved = await workflow.SaveNumberDisplayModeAsync(userId, "dot-comma", CancellationToken.None);
 

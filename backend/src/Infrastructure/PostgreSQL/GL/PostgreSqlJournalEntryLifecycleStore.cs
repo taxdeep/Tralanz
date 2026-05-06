@@ -118,7 +118,7 @@ public sealed class PostgreSqlJournalEntryLifecycleStore : IJournalEntryLifecycl
             companyId,
             $"entity-number:all:{original.EntryDate.Year}",
             $"EN{original.EntryDate.Year}",
-            8,
+            5,
             await FindEntitySeedNumberAsync(connection, transaction, original.EntryDate.Year, cancellationToken),
             cancellationToken);
 

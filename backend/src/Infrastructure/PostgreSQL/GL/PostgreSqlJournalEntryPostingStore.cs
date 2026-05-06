@@ -72,7 +72,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
             draft.CompanyId,
             $"entity-number:all:{draft.JournalDate.Year}",
             $"EN{draft.JournalDate.Year}",
-            8,
+            5,
             await FindEntitySeedNumberAsync(connection, transaction, draft.JournalDate.Year, cancellationToken),
             cancellationToken);
 

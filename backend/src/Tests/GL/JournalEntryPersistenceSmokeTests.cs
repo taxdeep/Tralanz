@@ -149,7 +149,7 @@ public sealed class JournalEntryPersistenceSmokeTests
             return;
         }
 
-        var companyId = CompanyId.FromOrdinal(1);
+        var companyId = CompanyId.FromOrdinal(151);
         var bookId = Guid.NewGuid();
         var signalId = Guid.NewGuid();
         var sourceId = Guid.NewGuid();

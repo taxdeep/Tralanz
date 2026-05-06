@@ -9,9 +9,9 @@ public sealed class CompanyMembershipPermissionPersistenceSmokeTests
     [Fact]
     public async Task SavePermissionsAsync_AppendsMembershipPermissionAuditLog()
     {
-        var companyId = CompanyId.FromOrdinal(1);
-        var ownerUserId = UserId.FromOrdinal(1);
-        var targetUserId = UserId.FromOrdinal(2);
+        var companyId = CompanyId.FromOrdinal(101);
+        var ownerUserId = UserId.FromOrdinal(101);
+        var targetUserId = UserId.FromOrdinal(102);
         var ownerMembershipId = Guid.NewGuid();
         var targetMembershipId = Guid.NewGuid();
         var connectionFactory = new PostgreSqlConnectionFactory(GetConnectionString());

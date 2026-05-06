@@ -4,10 +4,10 @@ namespace Tests.CompanyAccess;
 
 public sealed class CompanyMembershipGovernanceWorkflowTests
 {
-    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(1);
+    private static readonly CompanyId CompanyId = CompanyId.FromOrdinal(101);
     private static readonly Guid MembershipId = Guid.NewGuid();
-    private static readonly UserId AccountId = UserId.FromOrdinal(1);
-    private static readonly UserId SysAdminAccountId = UserId.FromOrdinal(1);
+    private static readonly UserId AccountId = UserId.FromOrdinal(101);
+    private static readonly UserId SysAdminAccountId = UserId.FromOrdinal(101);
 
     [Fact]
     public async Task ChangeRoleFromSysAdminAsync_NormalizesRoleAndDelegatesToCompanyAccessStore()

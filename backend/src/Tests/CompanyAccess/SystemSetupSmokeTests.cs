@@ -8,7 +8,7 @@ namespace Tests.CompanyAccess;
 
 public sealed class SystemSetupSmokeTests
 {
-    private static readonly UserId DemoUserId = UserId.FromOrdinal(1);
+    private static readonly UserId DemoUserId = UserId.FromOrdinal(101);
 
     [Fact]
     public async Task SaveNumberDisplayModeAsync_PersistsUserPreference()

@@ -197,7 +197,7 @@ internal static class PostgreSqlNumberingSequences
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var nextNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{nextNumber.ToString().PadLeft(padding, '0')}";
+        return $"{prefix}{Base36.Encode(nextNumber, padding)}";
     }
 
     private static async Task<string> ReserveEntityNumberAsync(
@@ -224,7 +224,7 @@ internal static class PostgreSqlNumberingSequences
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+        return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
     private static async Task EnsureEntityNumberSeededAsync(
