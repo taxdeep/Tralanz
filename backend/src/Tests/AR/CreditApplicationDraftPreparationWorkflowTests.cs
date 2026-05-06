@@ -143,7 +143,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
             LastPreparation = preparation;
             return Task.FromResult(new CreditApplicationDraftResult(
                 Guid.NewGuid(),
-                "EN202600000001",
+                "EN20260000U",
                 "CA-000001",
                 preparation.DocumentCurrencyCode,
                 preparation.BaseCurrencyCode,

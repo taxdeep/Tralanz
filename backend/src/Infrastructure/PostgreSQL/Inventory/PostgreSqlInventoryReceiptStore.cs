@@ -396,7 +396,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_module", ToDbValue(request.SourceModule));
@@ -404,7 +404,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", ToDbValue(request.SourceDocumentNumber));
                 insertDocumentCommand.Parameters.AddWithValue("counterparty_id", request.VendorId);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", createdAt);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", createdAt);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -479,7 +479,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                         );
                         """;
                     insertLineCommand.Parameters.AddWithValue("id", lineId);
-                    insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     insertLineCommand.Parameters.AddWithValue("document_id", documentId);
                     insertLineCommand.Parameters.AddWithValue("line_no", line.LineNo);
                     insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -547,7 +547,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                         );
                         """;
                     insertLedgerCommand.Parameters.AddWithValue("id", ledgerEntryId);
-                    insertLedgerCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    insertLedgerCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     insertLedgerCommand.Parameters.AddWithValue("item_id", line.ItemId);
                     insertLedgerCommand.Parameters.AddWithValue("warehouse_id", line.WarehouseId);
                     insertLedgerCommand.Parameters.AddWithValue("document_id", documentId);
@@ -599,7 +599,7 @@ public sealed class PostgreSqlInventoryReceiptStore : IInventoryReceiptStore
                         );
                         """;
                     insertCostLayerCommand.Parameters.AddWithValue("id", costLayerId);
-                    insertCostLayerCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    insertCostLayerCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     insertCostLayerCommand.Parameters.AddWithValue("item_id", line.ItemId);
                     insertCostLayerCommand.Parameters.AddWithValue("warehouse_id", line.WarehouseId);
                     insertCostLayerCommand.Parameters.AddWithValue("source_document_id", documentId);

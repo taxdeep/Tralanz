@@ -378,7 +378,7 @@ public sealed class PostgreSqlCompanyBookPolicyStore : ICompanyBookPolicyStore
             );
             """;
         command.Parameters.AddWithValue("id", requestId);
-        command.Parameters.AddWithValue("company_id", preview.Book.CompanyId);
+        command.Parameters.AddWithValue("company_id", preview.Book.CompanyId.Value);
         command.Parameters.AddWithValue("company_book_id", preview.Book.BookId);
         command.Parameters.AddWithValue("requested_action", preview.ChangeImpact.RecommendedPath);
         command.Parameters.AddWithValue("evaluation_basis", preview.ChangeImpact.EvaluationBasis);

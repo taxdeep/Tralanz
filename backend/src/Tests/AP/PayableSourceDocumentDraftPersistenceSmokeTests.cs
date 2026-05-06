@@ -3846,12 +3846,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
-            insert into users (id, email, username, password_hash, is_active)
-            values (@id, @email, @username, @password_hash, true);
+            insert into users (id, email, username, password_hash, status)
+            values (@id, @email, @username, @password_hash, 'active');
             """;
-        insertCommand.Parameters.AddWithValue("id", newUserId);
-        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId:N}@citus.local");
-        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId:N}");
+        insertCommand.Parameters.AddWithValue("id", newUserId.Value);
+        insertCommand.Parameters.AddWithValue("email", $"smoke-{newUserId.Value}@citus.local");
+        insertCommand.Parameters.AddWithValue("username", $"smoke-{newUserId.Value}");
         insertCommand.Parameters.AddWithValue("password_hash", "smoke-hash");
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return (newUserId, true);
@@ -3866,12 +3866,12 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText =
             """
-            insert into users (id, email, username, password_hash, is_active)
-            values (@id, @email, @username, @password_hash, true);
+            insert into users (id, email, username, password_hash, status)
+            values (@id, @email, @username, @password_hash, 'active');
             """;
-        insertCommand.Parameters.AddWithValue("id", newUserId);
-        insertCommand.Parameters.AddWithValue("email", $"smoke-approval-{newUserId:N}@citus.local");
-        insertCommand.Parameters.AddWithValue("username", $"smoke-approval-{newUserId:N}");
+        insertCommand.Parameters.AddWithValue("id", newUserId.Value);
+        insertCommand.Parameters.AddWithValue("email", $"smoke-approval-{newUserId.Value}@citus.local");
+        insertCommand.Parameters.AddWithValue("username", $"smoke-approval-{newUserId.Value}");
         insertCommand.Parameters.AddWithValue("password_hash", "smoke-hash");
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
         return (newUserId, true);
@@ -3884,8 +3884,8 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
         var year = DateTime.UtcNow.Year;
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            var seed = Random.Shared.Next(0, 100_000_000);
-            var candidate = $"EN{year}{seed:00000000}";
+            var seed = Random.Shared.Next(0, 60_466_176);
+            var candidate = EntityNumber.Create(year, seed).Value;
             if (!await EntityNumberExistsAsync(connectionFactory, candidate, cancellationToken))
             {
                 return candidate;

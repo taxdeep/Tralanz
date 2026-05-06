@@ -118,7 +118,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                 {
                     Succeeded = true,
                     CompanyId = CompanyId.FromOrdinal(1),
-                    CompanyEntityNumber = "EN202600000001",
+                    CompanyEntityNumber = "EN20260000U",
                     CompanyName = command.CompanyName,
                     OwnerUserId = UserId.FromOrdinal(1),
                     OwnerEmail = command.OwnerEmail,
@@ -165,7 +165,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
         Assert.NotNull(payload);
         Assert.True(payload!.Succeeded);
         Assert.Equal("Northwind Studio Ltd.", payload.CompanyName);
-        Assert.Equal("EN202600000001", payload.CompanyEntityNumber);
+        Assert.Equal("EN20260000U", payload.CompanyEntityNumber);
         Assert.NotNull(factory.FirstCompanyProvisioningRepository.LastCommand);
         Assert.Equal((object?)FakeSysAdminAuthRepository.ValidSysAdminAccountId, (object?)factory.FirstCompanyProvisioningRepository.LastCommand!.SysAdminAccountId);
         Assert.Equal("owner@example.com", factory.FirstCompanyProvisioningRepository.LastCommand.OwnerEmail);
@@ -345,7 +345,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                 new CompanyStatusGovernanceResult
                 {
                     CompanyId = requestedCompanyId,
-                    EntityNumber = "EN202600000123",
+                    EntityNumber = "EN20260000U",
                     LegalName = "Northwind Studio Ltd.",
                     PreviousStatus = "active",
                     Status = status,
@@ -583,7 +583,7 @@ public sealed class SysAdminNotificationReadinessApiContractTests
                     ActiveMfaRecoveryStatus = "approved",
                     LastMfaResetAtUtc = new DateTimeOffset(2026, 4, 16, 23, 30, 0, TimeSpan.Zero),
                     LastMfaResetReason = "Operator recovery reset",
-                    CompanyCodes = ["EN202600000123"]
+                    CompanyCodes = ["EN20260000U"]
                 }
             ]);
 

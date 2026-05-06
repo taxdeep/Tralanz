@@ -115,12 +115,12 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_type", documentType);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -266,11 +266,11 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -344,9 +344,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                   and company_id = @company_id;
                 """;
             command.Parameters.AddWithValue("id", request.DocumentId);
-            command.Parameters.AddWithValue("company_id", request.CompanyId);
+            command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             command.Parameters.AddWithValue("approved_at", DateTimeOffset.UtcNow);
-            command.Parameters.AddWithValue("approved_by_user_id", request.UserId);
+            command.Parameters.AddWithValue("approved_by_user_id", request.UserId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -492,9 +492,9 @@ public sealed class PostgreSqlInventoryAdjustmentStore : IInventoryAdjustmentSto
                       and company_id = @company_id;
                     """;
                 command.Parameters.AddWithValue("id", request.DocumentId);
-                command.Parameters.AddWithValue("company_id", request.CompanyId);
+                command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 command.Parameters.AddWithValue("posted_at", now);
-                command.Parameters.AddWithValue("posted_by_user_id", request.UserId);
+                command.Parameters.AddWithValue("posted_by_user_id", request.UserId.Value);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 

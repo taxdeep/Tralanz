@@ -128,7 +128,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
                       and company_id = @company_id;
                     """;
                 updateBomCommand.Parameters.AddWithValue("id", bomId);
-                updateBomCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                updateBomCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 updateBomCommand.Parameters.AddWithValue("bom_code", request.BomCode.Trim().ToUpperInvariant());
                 updateBomCommand.Parameters.AddWithValue("output_item_id", request.OutputItemId);
                 updateBomCommand.Parameters.AddWithValue("output_qty", decimal.Round(request.OutputQuantity, 6, MidpointRounding.AwayFromZero));
@@ -164,7 +164,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
                     );
                     """;
                 insertBomCommand.Parameters.AddWithValue("id", bomId);
-                insertBomCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertBomCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertBomCommand.Parameters.AddWithValue("bom_code", request.BomCode.Trim().ToUpperInvariant());
                 insertBomCommand.Parameters.AddWithValue("output_item_id", request.OutputItemId);
                 insertBomCommand.Parameters.AddWithValue("output_qty", decimal.Round(request.OutputQuantity, 6, MidpointRounding.AwayFromZero));
@@ -213,7 +213,7 @@ public sealed class PostgreSqlInventoryManufacturingStore : IInventoryManufactur
                       @memo
                     );
                     """;
-                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("bom_id", bomId);
                 insertLineCommand.Parameters.AddWithValue("line_no", component.LineNo);
                 insertLineCommand.Parameters.AddWithValue("component_item_id", component.ComponentItemId);

@@ -358,11 +358,11 @@ public sealed class PostgresBankTransferDocumentRepository : IBankTransferDocume
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("transfer_number", transferNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
         }
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         command.Parameters.AddWithValue("transfer_date", draft.TransferDate);
         command.Parameters.AddWithValue("from_account_id", draft.FromAccountId);
         command.Parameters.AddWithValue("from_currency_code", draft.FromCurrencyCode.Trim().ToUpperInvariant());

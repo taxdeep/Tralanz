@@ -143,7 +143,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
             LastPreparation = preparation;
             return Task.FromResult(new VendorCreditApplicationDraftResult(
                 Guid.NewGuid(),
-                "EN202600000001",
+                "EN20260000U",
                 "VCA-000001",
                 preparation.DocumentCurrencyCode,
                 preparation.BaseCurrencyCode,

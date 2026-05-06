@@ -70,7 +70,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             order by a.code, a.name;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -155,7 +155,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
             order by a.code, a.name;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue("date_from", query.DateFrom);
         command.Parameters.AddWithValue("date_to", query.DateTo);
 
@@ -241,7 +241,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                          order by a.code, a.name;
                          """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -393,7 +393,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
               oi.display_number asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -547,7 +547,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
               oi.display_number asc;
             """);
 
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -630,7 +630,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("from_date", fromMonthStart);
             command.Parameters.AddWithValue("to_date", asOfMonthStart.AddMonths(1).AddDays(-1));
 
@@ -700,7 +700,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
             command.Parameters.AddWithValue("forecast_from", asOfMonthStart.AddMonths(1));
             command.Parameters.AddWithValue("forecast_to", forecastWindowEnd);
@@ -797,7 +797,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                  group by 1
                  order by 1;
                 """);
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("from_date", windowStart);
             command.Parameters.AddWithValue("to_date", windowEnd);
 
@@ -906,7 +906,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("from_date", fromMonthStart);
             command.Parameters.AddWithValue("to_date", asOfMonthStart.AddMonths(1).AddDays(-1));
 
@@ -975,7 +975,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
              order by 1;
             """))
         {
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("as_of_date", query.AsOfDate);
             command.Parameters.AddWithValue("forecast_from", asOfMonthStart.AddMonths(1));
             command.Parameters.AddWithValue("forecast_to", forecastWindowEnd);
@@ -1082,7 +1082,7 @@ public sealed class PostgresAccountingReportRepository : IAccountingReportReposi
                  group by 1
                  order by 1;
                 """);
-            command.Parameters.AddWithValue("company_id", query.CompanyId);
+            command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
             command.Parameters.AddWithValue("from_date", windowStart);
             command.Parameters.AddWithValue("to_date", windowEnd);
 

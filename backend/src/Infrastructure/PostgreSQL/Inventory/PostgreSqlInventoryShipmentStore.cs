@@ -488,7 +488,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_module", ToDbValue(request.SourceModule));
@@ -499,7 +499,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                 insertDocumentCommand.Parameters.AddWithValue("tracking_number", ToDbValue(request.TrackingNumber));
                 insertDocumentCommand.Parameters.AddWithValue("shipping_slip_number", ToDbValue(request.ShippingSlipNumber));
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", createdAt);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", createdAt);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -553,7 +553,7 @@ public sealed class PostgreSqlInventoryShipmentStore : IInventoryShipmentStore
                     );
                     """;
                 insertLineCommand.Parameters.AddWithValue("id", lineId);
-                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("document_id", documentId);
                 insertLineCommand.Parameters.AddWithValue("line_no", line.LineNo);
                 insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);

@@ -57,7 +57,7 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         await using var connection = await _connections.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         command.Parameters.AddWithValue("invoice_id", draft.InvoiceId);
         command.Parameters.AddWithValue("sent_by", draft.SentByUserId);
         command.Parameters.AddWithValue("to_email", draft.ToEmail);

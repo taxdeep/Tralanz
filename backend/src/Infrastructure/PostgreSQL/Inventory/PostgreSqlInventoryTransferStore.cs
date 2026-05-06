@@ -134,7 +134,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                           and company_id = @company_id;
                         """;
                     updateTransferCommand.Parameters.AddWithValue("id", transferId);
-                    updateTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                    updateTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                     updateTransferCommand.Parameters.AddWithValue("source_warehouse_id", request.SourceWarehouseId);
                     updateTransferCommand.Parameters.AddWithValue("destination_warehouse_id", request.DestinationWarehouseId);
                     updateTransferCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
@@ -185,11 +185,11 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                     );
                     """;
                 insertTransferCommand.Parameters.AddWithValue("id", transferId);
-                insertTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertTransferCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertTransferCommand.Parameters.AddWithValue("transfer_number", transferNumber);
                 insertTransferCommand.Parameters.AddWithValue("source_warehouse_id", request.SourceWarehouseId);
                 insertTransferCommand.Parameters.AddWithValue("destination_warehouse_id", request.DestinationWarehouseId);
-                insertTransferCommand.Parameters.AddWithValue("requested_by_user_id", request.UserId);
+                insertTransferCommand.Parameters.AddWithValue("requested_by_user_id", request.UserId.Value);
                 insertTransferCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
                 insertTransferCommand.Parameters.AddWithValue("created_at", createdAt);
                 await insertTransferCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -224,7 +224,7 @@ public sealed class PostgreSqlInventoryTransferStore : IInventoryTransferStore
                       @memo
                     );
                     """;
-                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("transfer_id", transferId);
                 insertLineCommand.Parameters.AddWithValue("line_no", line.LineNo);
                 insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);

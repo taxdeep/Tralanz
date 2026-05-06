@@ -400,7 +400,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                 where company_id = @company_id
                   and receipt_id = @receipt_id;
                 """;
-            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             deleteLineCommand.Parameters.AddWithValue("receipt_id", documentId);
             await deleteLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -441,7 +441,7 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("receipt_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -574,15 +574,15 @@ public sealed class PostgresReceiptDocumentRepository : IReceiptDocumentReposito
         bool includeIdentity)
     {
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("receipt_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
         }
 
-        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId);
+        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId.Value);
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);
         command.Parameters.AddWithValue("warehouse_id", draft.WarehouseId);
         command.Parameters.AddWithValue("status", ReceiptDocumentStatuses.Draft);

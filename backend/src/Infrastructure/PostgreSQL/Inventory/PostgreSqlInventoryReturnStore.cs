@@ -121,14 +121,14 @@ public sealed class PostgreSqlInventoryReturnStore : IInventoryReturnStore
                     );
                     """;
                 insertDocumentCommand.Parameters.AddWithValue("id", documentId);
-                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                insertDocumentCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("document_number", documentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("posting_date", request.PostingDate);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_id", request.ShipmentDocumentId);
                 insertDocumentCommand.Parameters.AddWithValue("source_document_number", handoff.ShipmentDocumentNumber);
                 insertDocumentCommand.Parameters.AddWithValue("counterparty_id", request.CustomerId);
                 insertDocumentCommand.Parameters.AddWithValue("memo", ToDbValue(request.Memo));
-                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId);
+                insertDocumentCommand.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
                 insertDocumentCommand.Parameters.AddWithValue("created_at", now);
                 insertDocumentCommand.Parameters.AddWithValue("posted_at", now);
                 await insertDocumentCommand.ExecuteNonQueryAsync(cancellationToken);

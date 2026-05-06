@@ -141,7 +141,7 @@ public sealed class ReceivePaymentDraftPreparationWorkflowTests
             LastPreparation = preparation;
             return Task.FromResult(new ReceivePaymentDraftResult(
                 Guid.NewGuid(),
-                "EN202600000001",
+                "EN20260000U",
                 "RCP-000001",
                 preparation.DocumentCurrencyCode,
                 preparation.BaseCurrencyCode,

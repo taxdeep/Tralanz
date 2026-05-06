@@ -168,7 +168,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                          """))
         {
             entryCommand.Parameters.AddWithValue("id", journalEntryId);
-            entryCommand.Parameters.AddWithValue("company_id", context.CompanyId);
+            entryCommand.Parameters.AddWithValue("company_id", context.CompanyId.Value);
             entryCommand.Parameters.AddWithValue("entity_number", entityNumber);
             entryCommand.Parameters.AddWithValue("display_number", displayNumber);
             entryCommand.Parameters.AddWithValue("source_type", draft.SourceType);
@@ -190,7 +190,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
             entryCommand.Parameters.AddWithValue("posting_run_id", Guid.NewGuid());
             entryCommand.Parameters.AddWithValue("idempotency_key", idempotencyKey);
             entryCommand.Parameters.AddWithValue("posted_at", postedAt);
-            entryCommand.Parameters.AddWithValue("created_by_user_id", context.UserId);
+            entryCommand.Parameters.AddWithValue("created_by_user_id", context.UserId.Value);
             await entryCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -239,7 +239,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                              """))
             {
                 lineCommand.Parameters.AddWithValue("id", journalEntryLineId);
-                lineCommand.Parameters.AddWithValue("company_id", context.CompanyId);
+                lineCommand.Parameters.AddWithValue("company_id", context.CompanyId.Value);
                 lineCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
                 lineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
                 lineCommand.Parameters.AddWithValue("account_id", line.AccountId);
@@ -308,7 +308,7 @@ public sealed class PostgresJournalEntryWriter : IJournalEntryWriter
                 """);
 
             ledgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            ledgerCommand.Parameters.AddWithValue("company_id", context.CompanyId);
+            ledgerCommand.Parameters.AddWithValue("company_id", context.CompanyId.Value);
             ledgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
             ledgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
             ledgerCommand.Parameters.AddWithValue("posting_date", postingDate);

@@ -430,7 +430,7 @@ public sealed class PostgreSqlUnitySearchProjectionStore(
               @version
             );
             """;
-        command.Parameters.AddWithValue("company_id", document.CompanyId);
+        command.Parameters.AddWithValue("company_id", document.CompanyId.Value);
         command.Parameters.AddWithValue("entity_type", document.EntityType);
         command.Parameters.AddWithValue("source_id", document.SourceId);
         command.Parameters.AddWithValue("group_key", document.GroupKey);

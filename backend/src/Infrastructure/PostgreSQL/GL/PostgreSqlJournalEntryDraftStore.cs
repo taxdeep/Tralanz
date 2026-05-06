@@ -138,7 +138,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
                 where company_id = @company_id
                   and manual_journal_document_id = @document_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             deleteCommand.Parameters.AddWithValue("document_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -175,7 +175,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("manual_journal_document_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("account_id", line.Account!.AccountId);
@@ -204,7 +204,7 @@ public sealed class PostgreSqlJournalEntryDraftStore : IJournalEntryDraftStore
         bool includeIdentity = true)
     {
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);

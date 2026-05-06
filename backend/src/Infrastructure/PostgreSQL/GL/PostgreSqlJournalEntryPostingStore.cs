@@ -139,7 +139,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 );
                 """;
             insertEntryCommand.Parameters.AddWithValue("id", journalEntryId);
-            insertEntryCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertEntryCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertEntryCommand.Parameters.AddWithValue("entity_number", entityNumber);
             insertEntryCommand.Parameters.AddWithValue("display_number", journalDisplayNumber);
             insertEntryCommand.Parameters.AddWithValue("source_id", draft.DocumentId.Value);
@@ -212,7 +212,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                     );
                     """;
                 insertLineCommand.Parameters.AddWithValue("id", journalEntryLineId);
-                insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+                insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
                 insertLineCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
                 insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
                 insertLineCommand.Parameters.AddWithValue("account_id", line.Account!.AccountId);
@@ -258,7 +258,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 );
                 """;
             insertLedgerCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLedgerCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLedgerCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLedgerCommand.Parameters.AddWithValue("journal_entry_id", journalEntryId);
             insertLedgerCommand.Parameters.AddWithValue("journal_entry_line_id", journalEntryLineId);
             insertLedgerCommand.Parameters.AddWithValue("posting_date", draft.JournalDate);
@@ -286,7 +286,7 @@ public sealed class PostgreSqlJournalEntryPostingStore : IJournalEntryPostingSto
                 """;
             updateSourceCommand.Parameters.AddWithValue("posted_at", postedAt);
             updateSourceCommand.Parameters.AddWithValue("id", draft.DocumentId.Value);
-            updateSourceCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            updateSourceCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             var affectedRows = await updateSourceCommand.ExecuteNonQueryAsync(cancellationToken);
             if (affectedRows != 1)
             {

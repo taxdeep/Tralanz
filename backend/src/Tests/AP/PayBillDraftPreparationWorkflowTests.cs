@@ -141,7 +141,7 @@ public sealed class PayBillDraftPreparationWorkflowTests
             LastPreparation = preparation;
             return Task.FromResult(new PayBillDraftResult(
                 Guid.NewGuid(),
-                "EN202600000001",
+                "EN20260000U",
                 "PB-000001",
                 preparation.DocumentCurrencyCode,
                 preparation.BaseCurrencyCode,

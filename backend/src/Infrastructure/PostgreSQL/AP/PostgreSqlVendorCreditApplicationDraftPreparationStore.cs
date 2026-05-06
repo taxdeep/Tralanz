@@ -411,7 +411,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
             );
             """;
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId);
+        command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId.Value);
         command.Parameters.AddWithValue("entity_number", entityNumber);
         command.Parameters.AddWithValue("application_number", applicationNumber);
         command.Parameters.AddWithValue("vendor_id", preparation.Context.VendorId);
@@ -421,7 +421,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
         command.Parameters.AddWithValue("total_amount", totalAmount);
         command.Parameters.AddWithValue("memo",
             string.IsNullOrWhiteSpace(preparation.Context.Memo) ? (object)DBNull.Value : preparation.Context.Memo.Trim());
-        command.Parameters.AddWithValue("created_by_user_id", preparation.Context.UserId);
+        command.Parameters.AddWithValue("created_by_user_id", preparation.Context.UserId.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -457,7 +457,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
                   @applied_amount_tx
                 );
                 """;
-            command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId);
+            command.Parameters.AddWithValue("company_id", preparation.Context.CompanyId.Value);
             command.Parameters.AddWithValue("vendor_credit_application_id", documentId);
             command.Parameters.AddWithValue("line_number", index + 1);
             command.Parameters.AddWithValue("source_vendor_credit_ap_open_item_id", line.SourceVendorCreditOpenItemId);

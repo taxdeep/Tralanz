@@ -19,7 +19,7 @@ public sealed class PostgreSqlReportUsageEventStore(PostgreSqlConnectionFactory 
                 @company_id, @user_id, @report_key, @event_type, @date_range_key,
                 @filters_json::jsonb, @source_route, @metadata_json::jsonb);
             """;
-        command.Parameters.AddWithValue("company_id", input.CompanyId);
+        command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)input.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("report_key", input.ReportKey);
         command.Parameters.AddWithValue("event_type", input.EventType);
@@ -82,7 +82,7 @@ public sealed class PostgreSqlReportUsageStatStore(PostgreSqlConnectionFactory c
                 common_date_range_key = COALESCE(EXCLUDED.common_date_range_key, report_usage_stats.common_date_range_key),
                 updated_at = EXCLUDED.updated_at;
             """;
-        command.Parameters.AddWithValue("company_id", input.CompanyId);
+        command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
         command.Parameters.AddWithValue("scope_type", scopeType);
         command.Parameters.AddWithValue("user_id", (object?)userId ?? DBNull.Value);
         command.Parameters.AddWithValue("report_key", input.ReportKey);
@@ -197,7 +197,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
                 updated_at = EXCLUDED.updated_at;
             """;
         command.Parameters.AddWithValue("id", record.Id == Guid.Empty ? Guid.NewGuid() : record.Id);
-        command.Parameters.AddWithValue("company_id", record.CompanyId);
+        command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("widget_key", record.WidgetKey);
         command.Parameters.AddWithValue("title", (object?)record.Title ?? DBNull.Value);
@@ -289,7 +289,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
                 @accepted_at, @dismissed_at, @snoozed_until, @created_at, @updated_at);
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", record.CompanyId);
+        command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("widget_key", record.WidgetKey);
         command.Parameters.AddWithValue("title", record.Title);
@@ -425,7 +425,7 @@ public sealed class PostgreSqlActionCenterTaskStore(PostgreSqlConnectionFactory 
                 @completed_at, @dismissed_at, @snoozed_until);
             """;
         command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("company_id", record.CompanyId);
+        command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
         command.Parameters.AddWithValue("assigned_user_id", (object?)record.AssignedUserId ?? DBNull.Value);
         command.Parameters.AddWithValue("task_type", record.TaskType);
         command.Parameters.AddWithValue("source_engine", record.SourceEngine);

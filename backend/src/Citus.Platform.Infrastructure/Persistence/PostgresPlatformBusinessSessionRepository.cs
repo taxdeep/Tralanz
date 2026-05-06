@@ -866,7 +866,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             """;
         command.Parameters.AddWithValue("token_hash", tokenHash);
         command.Parameters.AddWithValue("user_id", userId.Value);
-        command.Parameters.AddWithValue("active_company_id", membership.CompanyId);
+        command.Parameters.AddWithValue("active_company_id", membership.CompanyId.Value);
         command.Parameters.AddWithValue("membership_id", membership.MembershipId);
         command.Parameters.AddWithValue("role", membership.Role);
         command.Parameters.AddWithValue("permissions", membership.PermissionsJson);
@@ -896,7 +896,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             where id = @session_id;
             """;
         command.Parameters.AddWithValue("session_id", sessionId);
-        command.Parameters.AddWithValue("active_company_id", membership.CompanyId);
+        command.Parameters.AddWithValue("active_company_id", membership.CompanyId.Value);
         command.Parameters.AddWithValue("membership_id", membership.MembershipId);
         command.Parameters.AddWithValue("role", membership.Role);
         command.Parameters.AddWithValue("permissions", membership.PermissionsJson);
@@ -1032,7 +1032,7 @@ public sealed class PostgresPlatformBusinessSessionRepository(
             """;
         command.Parameters.AddWithValue("id", challengeId);
         command.Parameters.AddWithValue("user_id", userId.Value);
-        command.Parameters.AddWithValue("active_company_id", membership.CompanyId);
+        command.Parameters.AddWithValue("active_company_id", membership.CompanyId.Value);
         command.Parameters.AddWithValue("membership_id", membership.MembershipId);
         command.Parameters.AddWithValue("role", membership.Role);
         command.Parameters.AddWithValue("permissions", membership.PermissionsJson);

@@ -159,7 +159,7 @@ public sealed class PostgreSqlUnitySearchQueryService(PostgreSqlConnectionFactor
               primary_text asc
             limit @take;
             """;
-        command.Parameters.AddWithValue("company_id", query.CompanyId);
+        command.Parameters.AddWithValue("company_id", query.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", query.UserId?.Value ?? string.Empty);
         command.Parameters.AddWithValue("context", query.Context);
         command.Parameters.AddWithValue("entity_types", policy.EntityTypes.ToArray());

@@ -39,7 +39,7 @@ public sealed class PostgresFxRevaluationApplyRepository : IFxRevaluationApplyRe
                          limit 1;
                          """))
         {
-            existingCommand.Parameters.AddWithValue("company_id", document.CompanyId);
+            existingCommand.Parameters.AddWithValue("company_id", document.CompanyId.Value);
             existingCommand.Parameters.AddWithValue("batch_id", document.Id);
 
             var appliedAt = await existingCommand.ExecuteScalarAsync(cancellationToken);
@@ -71,7 +71,7 @@ public sealed class PostgresFxRevaluationApplyRepository : IFxRevaluationApplyRe
                 """);
 
             updateOpenItemCommand.Parameters.AddWithValue("open_amount_base", line.RevaluedAmountBase);
-            updateOpenItemCommand.Parameters.AddWithValue("company_id", document.CompanyId);
+            updateOpenItemCommand.Parameters.AddWithValue("company_id", document.CompanyId.Value);
             updateOpenItemCommand.Parameters.AddWithValue("target_open_item_id", line.TargetOpenItemId);
             updateOpenItemCommand.Parameters.AddWithValue("party_id", line.PartyId);
 
@@ -93,7 +93,7 @@ public sealed class PostgresFxRevaluationApplyRepository : IFxRevaluationApplyRe
               and applied_at is null;
             """);
 
-        applyMarkerCommand.Parameters.AddWithValue("company_id", document.CompanyId);
+        applyMarkerCommand.Parameters.AddWithValue("company_id", document.CompanyId.Value);
         applyMarkerCommand.Parameters.AddWithValue("batch_id", document.Id);
         await applyMarkerCommand.ExecuteNonQueryAsync(cancellationToken);
     }

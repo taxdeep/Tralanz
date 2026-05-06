@@ -9,7 +9,7 @@ public sealed class TrialBalanceReportProjectionTests
     {
         var row = TrialBalanceAccountBalance.Create(
             Guid.NewGuid(),
-            "EN202600000001",
+            "EN20260000U",
             "1000",
             "Cash",
             "asset",
@@ -31,7 +31,7 @@ public sealed class TrialBalanceReportProjectionTests
     {
         var row = TrialBalanceAccountBalance.Create(
             Guid.NewGuid(),
-            "EN202600000002",
+            "EN20260000U",
             "3000",
             "Capital",
             "equity",
@@ -58,7 +58,7 @@ public sealed class TrialBalanceReportProjectionTests
             [
                 TrialBalanceAccountBalance.Create(
                     Guid.NewGuid(),
-                    "EN202600000003",
+                    "EN20260000U",
                     "1000",
                     "Cash",
                     "asset",
@@ -69,7 +69,7 @@ public sealed class TrialBalanceReportProjectionTests
                     postedCreditTotal: 0m),
                 TrialBalanceAccountBalance.Create(
                     Guid.NewGuid(),
-                    "EN202600000004",
+                    "EN20260000U",
                     "2000",
                     "Accounts Payable",
                     "liability",
@@ -80,7 +80,7 @@ public sealed class TrialBalanceReportProjectionTests
                     postedCreditTotal: 50m),
                 TrialBalanceAccountBalance.Create(
                     Guid.NewGuid(),
-                    "EN202600000005",
+                    "EN20260000U",
                     "9999",
                     "Unused",
                     "expense",

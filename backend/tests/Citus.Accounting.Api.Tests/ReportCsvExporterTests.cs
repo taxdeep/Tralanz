@@ -23,7 +23,7 @@ public sealed class ReportCsvExporterTests
                 new TrialBalanceAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000101",
+                    EntityNumber = "EN20260000U",
                     Code = "1010",
                     Name = "Cash",
                     RootType = "asset",
@@ -69,7 +69,7 @@ public sealed class ReportCsvExporterTests
                 new IncomeStatementAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000201",
+                    EntityNumber = "EN20260000U",
                     Code = "4000",
                     Name = "Service Revenue",
                     RootType = "revenue",
@@ -86,7 +86,7 @@ public sealed class ReportCsvExporterTests
                 new IncomeStatementAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000202",
+                    EntityNumber = "EN20260000U",
                     Code = "6100",
                     Name = "Office Expense",
                     RootType = "expense",
@@ -130,7 +130,7 @@ public sealed class ReportCsvExporterTests
                 new BalanceSheetAccountSummary
                 {
                     AccountId = Guid.NewGuid(),
-                    EntityNumber = "EN202600000301",
+                    EntityNumber = "EN20260000U",
                     Code = "1010",
                     Name = "Cash",
                     RootType = "asset",
@@ -190,7 +190,7 @@ public sealed class ReportCsvExporterTests
                 new ArAgingCustomerSummary
                 {
                     CustomerId = customerId,
-                    CustomerEntityNumber = "EN202600000401",
+                    CustomerEntityNumber = "EN20260000U",
                     CustomerDisplayName = "Acme Retail",
                     CustomerIsActive = true,
                     OpenItemCount = 1,
@@ -205,7 +205,7 @@ public sealed class ReportCsvExporterTests
                 {
                     OpenItemId = Guid.NewGuid(),
                     CustomerId = customerId,
-                    CustomerEntityNumber = "EN202600000401",
+                    CustomerEntityNumber = "EN20260000U",
                     CustomerDisplayName = "Acme Retail",
                     CustomerIsActive = true,
                     SourceType = "invoice",
@@ -258,7 +258,7 @@ public sealed class ReportCsvExporterTests
                 new ApAgingVendorSummary
                 {
                     VendorId = vendorId,
-                    VendorEntityNumber = "EN202600000501",
+                    VendorEntityNumber = "EN20260000U",
                     VendorDisplayName = "North Harbor Supply",
                     VendorIsActive = true,
                     OpenItemCount = 1,
@@ -274,7 +274,7 @@ public sealed class ReportCsvExporterTests
                 {
                     OpenItemId = Guid.NewGuid(),
                     VendorId = vendorId,
-                    VendorEntityNumber = "EN202600000501",
+                    VendorEntityNumber = "EN20260000U",
                     VendorDisplayName = "North Harbor Supply",
                     VendorIsActive = true,
                     SourceType = "bill",

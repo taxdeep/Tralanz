@@ -417,7 +417,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
                 where company_id = @company_id
                   and vendor_credit_id = @document_id;
                 """;
-            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            deleteCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             deleteCommand.Parameters.AddWithValue("document_id", documentId);
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -458,7 +458,7 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("vendor_credit_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("expense_account_id", line.ExpenseAccountId);
@@ -517,12 +517,12 @@ public sealed class PostgresVendorCreditDocumentRepository : IVendorCreditDocume
         var totalAmount = Round6(subtotalAmount + taxAmount);
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("vendor_credit_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
         }
 
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);

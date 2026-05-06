@@ -420,11 +420,11 @@ public sealed class PostgresTaxReturnDocumentRepository : ITaxReturnDocumentRepo
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("return_number", returnNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
         }
 
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         command.Parameters.AddWithValue("tax_regime", draft.TaxRegime.Trim());
         command.Parameters.AddWithValue("filing_frequency", draft.FilingFrequency.Trim().ToLowerInvariant());
         command.Parameters.AddWithValue("period_start", draft.PeriodStart);

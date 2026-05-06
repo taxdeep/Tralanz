@@ -700,7 +700,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 where company_id = @company_id
                   and purchase_order_id = @purchase_order_id;
                 """;
-            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            deleteLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             deleteLineCommand.Parameters.AddWithValue("purchase_order_id", documentId);
             await deleteLineCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -739,7 +739,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 );
                 """;
             insertLineCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId);
+            insertLineCommand.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
             insertLineCommand.Parameters.AddWithValue("purchase_order_id", documentId);
             insertLineCommand.Parameters.AddWithValue("line_number", line.LineNumber);
             insertLineCommand.Parameters.AddWithValue("item_id", line.ItemId);
@@ -2642,15 +2642,15 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         bool includeIdentity)
     {
         command.Parameters.AddWithValue("id", documentId);
-        command.Parameters.AddWithValue("company_id", draft.CompanyId);
+        command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         if (includeIdentity)
         {
             command.Parameters.AddWithValue("entity_number", entityNumber);
             command.Parameters.AddWithValue("purchase_order_number", displayNumber);
-            command.Parameters.AddWithValue("created_by_user_id", draft.UserId);
+            command.Parameters.AddWithValue("created_by_user_id", draft.UserId.Value);
         }
 
-        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId);
+        command.Parameters.AddWithValue("updated_by_user_id", draft.UserId.Value);
         command.Parameters.AddWithValue("vendor_id", draft.VendorId);
         command.Parameters.AddWithValue("status", PurchaseOrderDocumentStatuses.Draft);
         command.Parameters.AddWithValue("order_date", draft.OrderDate);

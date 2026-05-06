@@ -21,7 +21,7 @@ public sealed class PostgreSqlUnitysearchEventStore(PostgreSqlConnectionFactory 
                 @event_type, @selected_entity_id, @rank_position, @result_count, @source_route,
                 @anchor_context, @anchor_entity_type, @anchor_entity_id, @metadata_json::jsonb);
             """;
-        command.Parameters.AddWithValue("company_id", input.CompanyId);
+        command.Parameters.AddWithValue("company_id", input.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)input.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("session_id", (object?)input.SessionId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", input.Context);
@@ -429,7 +429,7 @@ public sealed class PostgreSqlUnitysearchRankingHintStore(PostgreSqlConnectionFa
             ON CONFLICT DO NOTHING;
             """;
         command.Parameters.AddWithValue("id", record.Id == Guid.Empty ? Guid.NewGuid() : record.Id);
-        command.Parameters.AddWithValue("company_id", record.CompanyId);
+        command.Parameters.AddWithValue("company_id", record.CompanyId.Value);
         command.Parameters.AddWithValue("user_id", (object?)record.UserId ?? DBNull.Value);
         command.Parameters.AddWithValue("context", record.Context);
         command.Parameters.AddWithValue("entity_type", record.EntityType);

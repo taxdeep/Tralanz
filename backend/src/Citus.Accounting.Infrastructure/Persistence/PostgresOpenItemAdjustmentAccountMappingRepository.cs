@@ -303,7 +303,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
                            and existing.is_active = true;
                          """))
         {
-            deactivateCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+            deactivateCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             deactivateCommand.Parameters.AddWithValue("book_id", request.BookId.HasValue ? request.BookId.Value : DBNull.Value);
             deactivateCommand.Parameters.AddWithValue("open_item_type", openItemType);
             deactivateCommand.Parameters.AddWithValue("adjustment_type", adjustmentType);
@@ -367,7 +367,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             """);
 
         command.Parameters.AddWithValue("mapping_id", mappingId);
-        command.Parameters.AddWithValue("company_id", request.CompanyId);
+        command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
         command.Parameters.AddWithValue("book_id", request.BookId.HasValue ? request.BookId.Value : DBNull.Value);
         command.Parameters.AddWithValue("open_item_type", openItemType);
         command.Parameters.AddWithValue("adjustment_type", adjustmentType);

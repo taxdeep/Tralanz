@@ -104,11 +104,11 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       updated_by_user_id = excluded.updated_by_user_id,
                       updated_at = excluded.updated_at;
                 """;
-            command.Parameters.AddWithValue("company_id", request.CompanyId);
+            command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             command.Parameters.AddWithValue("default_costing_method", FormatCostingMethod(request.DefaultCostingMethod));
             command.Parameters.AddWithValue("negative_stock_allowed", request.NegativeStockAllowed);
             command.Parameters.AddWithValue("require_writeoff_approval", request.RequireWriteOffApproval);
-            command.Parameters.AddWithValue("user_id", request.UserId);
+            command.Parameters.AddWithValue("user_id", request.UserId.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -170,7 +170,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       and company_id = @company_id;
                     """;
                 updateCommand.Parameters.AddWithValue("item_id", request.ItemId.Value);
-                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 updateCommand.Parameters.AddWithValue("item_code", normalizedCode);
                 updateCommand.Parameters.AddWithValue("name", normalizedName);
                 updateCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -279,7 +279,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", itemId);
-            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             insertCommand.Parameters.AddWithValue("item_code", normalizedCode);
             insertCommand.Parameters.AddWithValue("name", normalizedName);
             insertCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -490,7 +490,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                       and company_id = @company_id;
                     """;
                 updateCommand.Parameters.AddWithValue("warehouse_id", request.WarehouseId.Value);
-                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+                updateCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
                 updateCommand.Parameters.AddWithValue("warehouse_code", normalizedCode);
                 updateCommand.Parameters.AddWithValue("name", normalizedName);
                 updateCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -531,7 +531,7 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
                 );
                 """;
             insertCommand.Parameters.AddWithValue("id", warehouseId);
-            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId);
+            insertCommand.Parameters.AddWithValue("company_id", request.CompanyId.Value);
             insertCommand.Parameters.AddWithValue("warehouse_code", normalizedCode);
             insertCommand.Parameters.AddWithValue("name", normalizedName);
             insertCommand.Parameters.AddWithValue("description", normalizedDescription);
@@ -1170,11 +1170,11 @@ public sealed class PostgreSqlInventoryFoundationStore : IInventoryFoundationSto
             on conflict (company_id)
             do nothing;
             """;
-        command.Parameters.AddWithValue("company_id", request.CompanyId);
+        command.Parameters.AddWithValue("company_id", request.CompanyId.Value);
         command.Parameters.AddWithValue("default_costing_method", FormatCostingMethod(request.DefaultCostingMethod));
         command.Parameters.AddWithValue("negative_stock_allowed", request.NegativeStockAllowed);
         command.Parameters.AddWithValue("require_writeoff_approval", request.RequireWriteOffApproval);
-        command.Parameters.AddWithValue("created_by_user_id", request.UserId);
+        command.Parameters.AddWithValue("created_by_user_id", request.UserId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
