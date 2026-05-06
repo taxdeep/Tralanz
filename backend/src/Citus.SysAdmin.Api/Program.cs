@@ -568,7 +568,7 @@ control.MapGet(
     });
 
 control.MapGet(
-    "/accounts/{accountId:guid}/mfa-recovery-history",
+    "/accounts/{accountId}/mfa-recovery-history",
     async (
         UserId accountId,
         IPlatformGovernanceRepository governanceRepository,
@@ -597,7 +597,7 @@ control.MapGet(
     });
 
 control.MapGet(
-    "/accounts/{accountId:guid}/mfa-timeline",
+    "/accounts/{accountId}/mfa-timeline",
     async (
         UserId accountId,
         IPlatformGovernanceRepository governanceRepository,
@@ -609,7 +609,7 @@ control.MapGet(
     });
 
 control.MapGet(
-    "/companies/{companyId:guid}/memberships",
+    "/companies/{companyId}/memberships",
     async (
         CompanyId companyId,
         ICompanyMembershipPermissionStore membershipStore,
@@ -667,7 +667,7 @@ control.MapGet(
     });
 
 control.MapPut(
-    "/active-company/{companyId:guid}",
+    "/active-company/{companyId}",
     async (CompanyId companyId, HttpContext httpContext, SysAdminControlState state, IPlatformRuntimeStateRepository runtimeRepository, CancellationToken cancellationToken) =>
     {
         if (!state.TrySetActiveCompany(companyId, ToOperatorSummary(GetAuthenticatedSession(httpContext)), out var context))
@@ -751,7 +751,7 @@ control.MapPost(
     });
 
 control.MapPut(
-    "/companies/{companyId:guid}/status",
+    "/companies/{companyId}/status",
     async (
         CompanyId companyId,
         HttpContext httpContext,
@@ -785,7 +785,7 @@ control.MapPut(
     });
 
 control.MapPut(
-    "/accounts/{accountId:guid}/status",
+    "/accounts/{accountId}/status",
     async (
         UserId accountId,
         HttpContext httpContext,
@@ -820,7 +820,7 @@ control.MapPut(
     });
 
 control.MapPost(
-    "/accounts/{accountId:guid}/password-reset-requests",
+    "/accounts/{accountId}/password-reset-requests",
     async (
         UserId accountId,
         HttpContext httpContext,
@@ -860,7 +860,7 @@ control.MapPost(
     });
 
 control.MapPost(
-    "/accounts/{accountId:guid}/mfa-reset",
+    "/accounts/{accountId}/mfa-reset",
     async (
         UserId accountId,
         HttpContext httpContext,
@@ -960,7 +960,7 @@ control.MapPost(
     });
 
 control.MapPut(
-    "/companies/{companyId:guid}/memberships/{membershipId:guid}/role",
+    "/companies/{companyId}/memberships/{membershipId:guid}/role",
     async (
         CompanyId companyId,
         Guid membershipId,

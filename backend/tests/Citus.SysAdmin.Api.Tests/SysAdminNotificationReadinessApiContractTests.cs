@@ -176,10 +176,10 @@ public sealed class SysAdminNotificationReadinessApiContractTests
     }
 
     [Theory]
-    [InlineData("1001", 4, "1001")]
-    [InlineData("1001", 5, "10010")]
-    [InlineData("1001", 6, "100100")]
-    [InlineData("3000", 5, "30000")]
+    [InlineData("10010", 4, "1001")]
+    [InlineData("10010", 5, "10010")]
+    [InlineData("10010", 6, "100100")]
+    [InlineData("30000", 5, "30000")]
     public void FirstCompanyTemplateAccountCodes_AreRightPadded_ToSelectedLength(
         string canonicalCode,
         int accountCodeLength,
