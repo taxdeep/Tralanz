@@ -59,7 +59,7 @@ public sealed class PostgresInvoiceSendHistoryStore : IInvoiceSendHistoryStore
         command.CommandText = sql;
         command.Parameters.AddWithValue("company_id", draft.CompanyId.Value);
         command.Parameters.AddWithValue("invoice_id", draft.InvoiceId);
-        command.Parameters.AddWithValue("sent_by", draft.SentByUserId);
+        command.Parameters.AddWithValue("sent_by", draft.SentByUserId.Value);
         command.Parameters.AddWithValue("to_email", draft.ToEmail);
         command.Parameters.AddWithValue("cc", draft.CcEmails ?? string.Empty);
         command.Parameters.AddWithValue("bcc", draft.BccEmails ?? string.Empty);

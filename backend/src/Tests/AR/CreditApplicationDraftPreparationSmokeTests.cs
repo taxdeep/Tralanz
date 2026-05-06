@@ -200,14 +200,14 @@ public sealed class CreditApplicationDraftPreparationSmokeTests
               email,
               username,
               password_hash,
-              is_active
+              status
             )
             values (
               @id,
               @email,
               @username,
               @password_hash,
-              true
+              'active'
             );
             """;
         insertCommand.Parameters.AddWithValue("id", newUserId.Value);

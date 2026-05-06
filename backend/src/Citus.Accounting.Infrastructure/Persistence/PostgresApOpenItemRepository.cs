@@ -335,7 +335,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
             command.Parameters.AddWithValue("id", requestId);
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("actor_type", request.RequestedByActorType);
-            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
             command.Parameters.AddWithValue("entity_type", "open_item_adjustment_request");
             command.Parameters.AddWithValue("entity_id", requestId);
             command.Parameters.AddWithValue("action", "open_item_adjustment_requested");
@@ -1576,7 +1576,7 @@ public sealed class PostgresApOpenItemRepository : IApOpenItemRepository
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_type", "open_item_adjustment_request");
         command.Parameters.AddWithValue("entity_id", requestId);
         command.Parameters.AddWithValue("action", action);

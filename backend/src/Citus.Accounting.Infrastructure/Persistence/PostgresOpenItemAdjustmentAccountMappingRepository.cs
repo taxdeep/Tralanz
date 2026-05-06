@@ -435,7 +435,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         {
             command.Parameters.AddWithValue("company_id", companyId.Value);
             command.Parameters.AddWithValue("mapping_id", mappingId);
-            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+            command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
 
             if (await command.ExecuteScalarAsync(cancellationToken) is null)
             {
@@ -737,7 +737,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
         command.Parameters.AddWithValue("actor_type", actorId.HasValue ? "user" : "system");
-        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? actorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", actorId.HasValue ? (object)actorId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", mappingId);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("payload", JsonSerializer.Serialize(payload, JsonOptions));

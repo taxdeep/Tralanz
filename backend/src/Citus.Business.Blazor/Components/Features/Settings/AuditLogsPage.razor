@@ -101,7 +101,7 @@
                         </td>
                         <td>
                             <div class="text-sm">@(row.ActorDisplay ?? FormatActorFallback(row))</div>
-                            <div class="text-fg-subtle text-xs">@row.ActorType@(row.ActorId.HasValue ? $" · {FormatGuidShort(row.ActorId.Value)}" : "")</div>
+                            <div class="text-fg-subtle text-xs">@row.ActorType@(row.ActorId.HasValue ? $" · {row.ActorId.Value.Value}" : "")</div>
                         </td>
                         <td>
                             @if (!string.IsNullOrWhiteSpace(row.PayloadJson) && row.PayloadJson != "{}")
@@ -208,7 +208,7 @@
         row.ActorType switch
         {
             "sysadmin" => "platform admin",
-            "user" => row.ActorId.HasValue ? $"user {FormatGuidShort(row.ActorId.Value)}" : "user (unknown)",
+            "user" => row.ActorId.HasValue ? $"user {row.ActorId.Value.Value}" : "user (unknown)",
             _ => row.ActorType,
         };
 

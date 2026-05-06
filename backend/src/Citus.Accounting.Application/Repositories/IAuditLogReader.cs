@@ -29,9 +29,9 @@ public sealed record AuditLogQuery(
 
 public sealed record AuditLogEntry(
     Guid Id,
-    Guid? CompanyId,
+    CompanyId? CompanyId,
     string ActorType,
-    Guid? ActorId,
+    UserId? ActorId,
     string? ActorDisplay,
     string EntityType,
     Guid EntityId,

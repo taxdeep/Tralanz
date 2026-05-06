@@ -284,7 +284,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
                 reader.GetGuid(reader.GetOrdinal("entity_id")),
                 reader.GetString(reader.GetOrdinal("action")),
                 reader.GetString(reader.GetOrdinal("actor_type")),
-                reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+                reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
                 reader.IsDBNull(reader.GetOrdinal("from_status")) ? null : reader.GetString(reader.GetOrdinal("from_status")),
                 reader.IsDBNull(reader.GetOrdinal("to_status")) ? null : reader.GetString(reader.GetOrdinal("to_status")),
                 reader.IsDBNull(reader.GetOrdinal("entity_number")) ? null : reader.GetString(reader.GetOrdinal("entity_number")),
@@ -2137,7 +2137,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
 
         return new ApprovalRequestTransitionEvent(
             reader.GetString(reader.GetOrdinal("actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             reader.IsDBNull(reader.GetOrdinal("request_status")) ? null : reader.GetString(reader.GetOrdinal("request_status")),
             reader.IsDBNull(reader.GetOrdinal("approval_status")) ? null : reader.GetString(reader.GetOrdinal("approval_status")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")));
@@ -2213,7 +2213,7 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
             reader.IsDBNull(reader.GetOrdinal("request_status")) ? "draft" : reader.GetString(reader.GetOrdinal("request_status")),
             reader.IsDBNull(reader.GetOrdinal("approval_status")) ? "pending" : reader.GetString(reader.GetOrdinal("approval_status")),
             reader.GetString(reader.GetOrdinal("actor_type")),
-            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : reader.GetGuid(reader.GetOrdinal("actor_id")),
+            reader.IsDBNull(reader.GetOrdinal("actor_id")) ? null : (UserId?)UserId.Parse(reader.GetString(reader.GetOrdinal("actor_id"))),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
             reader.IsDBNull(reader.GetOrdinal("reason")) ? null : reader.GetString(reader.GetOrdinal("reason")));
 
@@ -2906,13 +2906,13 @@ public sealed class PostgresPurchaseOrderDocumentRepository : IPurchaseOrderDocu
         string RequestStatus,
         string ApprovalStatus,
         string ActorType,
-        Guid? ActorId,
+        UserId? ActorId,
         DateTimeOffset CreatedAt,
         string? Reason);
 
     private sealed record ApprovalRequestTransitionEvent(
         string ActorType,
-        Guid? ActorId,
+        UserId? ActorId,
         string? RequestStatus,
         string? ApprovalStatus,
         DateTimeOffset CreatedAt);
