@@ -1445,7 +1445,7 @@ CREATE TABLE audit_logs (
   actor_type text NOT NULL,
   actor_id char(7),
   entity_type text NOT NULL,
-  entity_id uuid NOT NULL,
+  entity_id text NOT NULL,
   action text NOT NULL,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT NOW()

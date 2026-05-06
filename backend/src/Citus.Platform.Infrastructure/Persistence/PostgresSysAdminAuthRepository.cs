@@ -228,7 +228,7 @@ public sealed class PostgresSysAdminAuthRepository(
                   @updated_at
                 );
                 """;
-            insertCommand.Parameters.AddWithValue("id", accountId);
+            insertCommand.Parameters.AddWithValue("id", accountId.Value);
             insertCommand.Parameters.AddWithValue("email", normalizedEmail);
             insertCommand.Parameters.AddWithValue("display_name", normalizedDisplayName);
             insertCommand.Parameters.AddWithValue("password_hash", passwordHasher.HashPassword(password));
