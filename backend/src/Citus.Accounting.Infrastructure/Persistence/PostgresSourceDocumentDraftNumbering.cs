@@ -312,7 +312,9 @@ internal static class PostgresSourceDocumentDraftNumbering
         command.Parameters.AddWithValue("seed_number", seedNumber);
 
         var issuedNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? seedNumber);
-        return $"{prefix}{issuedNumber.ToString().PadLeft(padding, '0')}";
+        // EntityNumber format: EN + YYYY + 5 base36 chars (11 chars total).
+        // The `padding` parameter is the base36 width (typically 5).
+        return $"{prefix}{Base36.Encode(issuedNumber, padding)}";
     }
 
     private static async Task EnsurePlatformEntityNumberSequenceAsync(
