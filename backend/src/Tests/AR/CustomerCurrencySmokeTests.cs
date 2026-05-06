@@ -27,7 +27,7 @@ public sealed class CustomerCurrencySmokeTests
             var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.ChangeDefaultCurrencyAsync(
                 CustomerId,
                 "CAD",
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CancellationToken.None));
 
             Assert.Contains("locked", error.Message, StringComparison.OrdinalIgnoreCase);

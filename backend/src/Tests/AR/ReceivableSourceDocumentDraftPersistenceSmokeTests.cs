@@ -1162,7 +1162,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("reverse_document", request.ActionCode);
             Assert.Equal("draft", request.RequestStatus);
             Assert.Equal("user", request.RequestedByActorType);
-            Assert.Equal<UserId?>(userId, request.RequestedByActorId);
+            Assert.Equal((object?)userId, (object?)request.RequestedByActorId);
 
             var submitResult = await reviewRepository.SubmitReverseRequestAsync(
                 CompanyId.FromOrdinal(1),
@@ -1176,7 +1176,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("submitted", submitResult!.OutcomeCode);
             Assert.Equal("submitted", submitResult.Request.RequestStatus);
             Assert.Equal("user", submitResult.Request.SubmittedByActorType);
-            Assert.Equal<UserId?>(userId, submitResult.Request.SubmittedByActorId);
+            Assert.Equal((object?)userId, (object?)submitResult.Request.SubmittedByActorId);
             Assert.NotNull(submitResult.Request.SubmittedAt);
 
             var readiness = await reviewRepository.GetReverseRequestApplyReadinessAsync(
@@ -1208,7 +1208,7 @@ public sealed class ReceivableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("execution_request_recorded", executeResult.OutcomeCode);
             Assert.Equal("execution_requested", executeResult.Request.ExecutionStatus);
             Assert.Equal("user", executeResult.Request.ExecutionRequestedByActorType);
-            Assert.Equal<UserId?>(userId, executeResult.Request.ExecutionRequestedByActorId);
+            Assert.Equal((object?)userId, (object?)executeResult.Request.ExecutionRequestedByActorId);
             Assert.NotNull(executeResult.Request.ExecutionRequestedAt);
         }
         finally

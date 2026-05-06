@@ -26,7 +26,7 @@ public sealed class CompanyMembershipGovernanceWorkflowTests
         Assert.Equal("owner", result.Role);
         Assert.Equal("owner", store.SavedRole);
         Assert.Equal("Promote controller to owner.", store.SavedReason);
-        Assert.Equal(SysAdminAccountId, store.SavedSysAdminAccountId);
+        Assert.Equal((object?)SysAdminAccountId, (object?)store.SavedSysAdminAccountId);
     }
 
     [Fact]

@@ -32,7 +32,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
         var result = await workflow.PrepareDraftAsync(
             new VendorCreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 VendorId,
                 new DateOnly(2026, 4, 14),
                 null,
@@ -56,7 +56,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new VendorCreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 VendorId,
                 new DateOnly(2026, 4, 14),
                 "EUR",
@@ -89,7 +89,7 @@ public sealed class VendorCreditApplicationDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new VendorCreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 VendorId,
                 new DateOnly(2026, 4, 14),
                 null,

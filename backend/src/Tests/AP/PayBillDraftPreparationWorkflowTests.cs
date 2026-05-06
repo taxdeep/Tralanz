@@ -31,7 +31,7 @@ public sealed class PayBillDraftPreparationWorkflowTests
         var result = await workflow.PrepareDraftAsync(
             new PayBillDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 VendorId,
                 Guid.NewGuid(),
                 new DateOnly(2026, 4, 14),
@@ -59,7 +59,7 @@ public sealed class PayBillDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new PayBillDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 VendorId,
                 Guid.NewGuid(),
                 new DateOnly(2026, 4, 14),
@@ -91,7 +91,7 @@ public sealed class PayBillDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new PayBillDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 VendorId,
                 Guid.NewGuid(),
                 new DateOnly(2026, 4, 14),

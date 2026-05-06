@@ -8,8 +8,8 @@ namespace Infrastructure.PostgreSQL.UnityAi;
 public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connections) : IAiJobRunStore
 {
     public async Task<Guid> StartAsync(
-        Guid? companyId, string jobType, string triggerType,
-        Guid? triggeredByUserId,
+        CompanyId? companyId, string jobType, string triggerType,
+        UserId? triggeredByUserId,
         DateTimeOffset? sourceWindowStart, DateTimeOffset? sourceWindowEnd,
         string? inputSummaryJson,
         CancellationToken cancellationToken)
@@ -106,11 +106,11 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
         {
             items.Add(new AiJobRunRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobType: reader.GetString(2),
                 Status: reader.GetString(3),
                 TriggerType: reader.GetString(4),
-                TriggeredByUserId: reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                TriggeredByUserId: reader.IsDBNull(5) ? null : UserId.Parse(reader.GetString(5)),
                 StartedAt: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                 FinishedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                 SourceWindowStart: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
@@ -147,11 +147,11 @@ public sealed class PostgreSqlAiJobRunStore(PostgreSqlConnectionFactory connecti
         {
             items.Add(new AiJobRunRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobType: reader.GetString(2),
                 Status: reader.GetString(3),
                 TriggerType: reader.GetString(4),
-                TriggeredByUserId: reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                TriggeredByUserId: reader.IsDBNull(5) ? null : UserId.Parse(reader.GetString(5)),
                 StartedAt: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                 FinishedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                 SourceWindowStart: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
@@ -246,7 +246,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
         {
             items.Add(new AiRequestLogRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobRunId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
                 TaskType: reader.GetString(3),
                 Provider: reader.IsDBNull(4) ? null : reader.GetString(4),
@@ -291,7 +291,7 @@ public sealed class PostgreSqlAiRequestLogStore(PostgreSqlConnectionFactory conn
         {
             items.Add(new AiRequestLogRecord(
                 Id: reader.GetGuid(0),
-                CompanyId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                CompanyId: reader.IsDBNull(1) ? null : CompanyId.Parse(reader.GetString(1)),
                 JobRunId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
                 TaskType: reader.GetString(3),
                 Provider: reader.IsDBNull(4) ? null : reader.GetString(4),

@@ -49,7 +49,7 @@ public sealed class UnitySearchPickerServiceTests
         // model binder, so the wire format is fine; this test pins the
         // exact shape the client emits today.
         var body = JsonDocument.Parse(captured.LastBody!);
-        Assert.Equal(companyId, body.RootElement.GetProperty("companyId").GetGuid());
+        Assert.Equal((object?)companyId, (object?)body.RootElement.GetProperty("companyId").GetGuid());
         Assert.Equal("expense.vendor_picker", body.RootElement.GetProperty("context").GetString());
         Assert.Equal("vendor", body.RootElement.GetProperty("entityType").GetString());
         Assert.Equal("amazon", body.RootElement.GetProperty("query").GetString());

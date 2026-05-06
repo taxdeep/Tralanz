@@ -16,7 +16,7 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
         var result = await workflow.EnableCurrencyAsync(
             CompanyId,
             "cad",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Equal("CAD", store.EnabledCurrencyCode);
@@ -35,7 +35,7 @@ public sealed class CompanyCurrencyGovernanceWorkflowTests
         var result = await workflow.EnableCurrencyAsync(
             CompanyId,
             "usd",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Null(store.EnabledCurrencyCode);

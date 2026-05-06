@@ -862,7 +862,7 @@ public sealed class PayableSourceDocumentDraftPersistenceSmokeTests
             Assert.Equal("cancelled", cancelResult!.OutcomeCode);
             Assert.Equal("cancelled", cancelResult.Request.RequestStatus);
             Assert.Equal("user", cancelResult.Request.CancelledByActorType);
-            Assert.Equal(userId, cancelResult.Request.CancelledByActorId);
+            Assert.Equal((object?)userId, (object?)cancelResult.Request.CancelledByActorId);
             Assert.NotNull(cancelResult.Request.CancelledAt);
         }
         finally

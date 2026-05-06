@@ -32,7 +32,7 @@ public sealed class CompanySessionContextWorkflowTests
             var context = await workflow.GetAsync(userId, secondCompanyId, CancellationToken.None);
 
             Assert.NotNull(context);
-            Assert.Equal(userId, context!.User.Id);
+            Assert.Equal((object?)userId, (object?)context!.User.Id);
             Assert.Equal("alice.session", context.User.DisplayName);
             Assert.Equal(secondCompanyId, context.ActiveCompany.Id);
             Assert.Equal(secondEntityNumber, context.ActiveCompany.CompanyCode);

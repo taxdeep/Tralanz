@@ -23,7 +23,7 @@ public sealed class SysAdminControlStateTests
     [Fact]
     public void GetContext_UsesConfiguredActiveCompany()
     {
-        var companyId = Guid.Parse("f0d92d91-6074-4ddd-af3f-c350ddca3217");
+        var companyId = CompanyId.FromOrdinal(1);
         var state = CreateState(
             new SysAdminControlOptions
             {
@@ -43,7 +43,7 @@ public sealed class SysAdminControlStateTests
 
         var context = state.GetContext();
 
-        Assert.Equal(companyId, context.ActiveCompany.CompanyId);
+        Assert.Equal((object?)companyId, (object?)context.ActiveCompany.CompanyId);
         Assert.Equal("ALPHA", context.ActiveCompany.CompanyCode);
         Assert.Equal("Alpha Manufacturing", context.ActiveCompany.CompanyName);
         Assert.False(context.ActiveCompany.IsSystemScope);
@@ -52,8 +52,8 @@ public sealed class SysAdminControlStateTests
     [Fact]
     public void TrySetActiveCompany_SwitchesCompanyWhenManaged()
     {
-        var alphaId = Guid.Parse("2ba38bd2-5643-465b-ac1d-f28fa50089de");
-        var betaId = Guid.Parse("c55297cd-ca45-4530-a1e5-d1671b0a3f7b");
+        var alphaId = CompanyId.FromOrdinal(1);
+        var betaId = CompanyId.FromOrdinal(2);
         var state = CreateState(
             new SysAdminControlOptions
             {

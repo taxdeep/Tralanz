@@ -164,7 +164,7 @@ public sealed class PostgreSqlDashboardUserWidgetStore(PostgreSqlConnectionFacto
             items.Add(new DashboardUserWidgetRecord(
                 Id: reader.GetGuid(0),
                 CompanyId: CompanyId.Parse(reader.GetString(1)),
-                UserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
+                UserId: reader.IsDBNull(2) ? null : UserId.Parse(reader.GetString(2)),
                 WidgetKey: reader.GetString(3),
                 Title: reader.IsDBNull(4) ? null : reader.GetString(4),
                 ConfigJson: reader.IsDBNull(5) ? null : reader.GetString(5),
@@ -343,7 +343,7 @@ public sealed class PostgreSqlDashboardWidgetSuggestionStore(PostgreSqlConnectio
     private static DashboardWidgetSuggestionRecord Map(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
         CompanyId: CompanyId.Parse(reader.GetString(1)),
-        UserId: reader.IsDBNull(2) ? null : reader.GetGuid(2),
+        UserId: reader.IsDBNull(2) ? null : UserId.Parse(reader.GetString(2)),
         WidgetKey: reader.GetString(3),
         Title: reader.GetString(4),
         Reason: reader.GetString(5),

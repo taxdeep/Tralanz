@@ -223,7 +223,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             new DateOnly(2026, 3, 31),
             "2026-Q1 close",
             "Controller approved close lock.",
-            Guid.Parse("a45f1b27-3fb3-4493-8f7f-1e894f144f8a"),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Equal("closed_period", result.Signal.SignalType);
@@ -239,7 +239,7 @@ public sealed class CompanyBookPolicyWorkflowTests
     {
         var seedState = CreateState(hasCompanyPostedHistory: true, hasBookSpecificRevaluationHistory: false);
         var existingSignal = new CompanyBookGovernanceSignalRecord(
-            UserId.FromOrdinal(1),
+            Guid.NewGuid(),
             CompanyId,
             seedState.Book.BookId,
             "reported_statement",
@@ -331,7 +331,7 @@ public sealed class CompanyBookPolicyWorkflowTests
 
         var result = await workflow.PrepareGovernedChangeRequestDraftAsync(
             CompanyId,
-            Guid.Parse("2f27875f-af35-42fb-86a6-f36f3a8ea7b9"),
+            UserId.FromOrdinal(1),
             state.Book.BookId,
             new DateOnly(2026, 4, 14),
             new DateOnly(2026, 5, 1),
@@ -415,7 +415,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var result = await workflow.SubmitGovernedChangeRequestDraftAsync(
             CompanyId,
             draft.RequestId,
-            Guid.Parse("fe935bb9-7f6c-4fb4-a238-b663c70ddcb3"),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Equal("submitted", result.Status);
@@ -453,7 +453,7 @@ public sealed class CompanyBookPolicyWorkflowTests
         var result = await workflow.CancelGovernedChangeRequestDraftAsync(
             CompanyId,
             draft.RequestId,
-            Guid.Parse("4dfc65ec-533d-4874-9e6c-d2df9530e16b"),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.Equal("cancelled", result.Status);
@@ -581,7 +581,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                 Signals:
                 [
                     new CompanyBookGovernanceSignalRecord(
-                        UserId.FromOrdinal(1),
+                        Guid.NewGuid(),
                         CompanyId,
                         originalState.Book.BookId,
                         "closed_period",
@@ -591,7 +591,7 @@ public sealed class CompanyBookPolicyWorkflowTests
                         null,
                         DateTimeOffset.UtcNow),
                     new CompanyBookGovernanceSignalRecord(
-                        UserId.FromOrdinal(1),
+                        Guid.NewGuid(),
                         CompanyId,
                         originalState.Book.BookId,
                         "filed_tax",
@@ -679,7 +679,7 @@ public sealed class CompanyBookPolicyWorkflowTests
             }
 
             var created = new CompanyBookGovernanceSignalRecord(
-                UserId.FromOrdinal(1),
+                Guid.NewGuid(),
                 companyId,
                 bookId,
                 signalType,

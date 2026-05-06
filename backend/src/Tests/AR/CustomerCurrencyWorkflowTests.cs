@@ -18,7 +18,7 @@ public sealed class CustomerCurrencyWorkflowTests
         var result = await workflow.ChangeDefaultCurrencyAsync(
             CustomerId,
             "cad",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None);
 
         Assert.True(result.CurrencyChanged);
@@ -36,7 +36,7 @@ public sealed class CustomerCurrencyWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.ChangeDefaultCurrencyAsync(
             CustomerId,
             "eur",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None));
 
         Assert.Contains("not enabled", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -51,7 +51,7 @@ public sealed class CustomerCurrencyWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.ChangeDefaultCurrencyAsync(
             CustomerId,
             "cad",
-            Guid.NewGuid(),
+            UserId.FromOrdinal(1),
             CancellationToken.None));
 
         Assert.Contains("locked", error.Message, StringComparison.OrdinalIgnoreCase);

@@ -566,7 +566,7 @@ public sealed class PostgreSqlPurchaseOrderThreeQuantityTruthTests
             {
                 Assert.Equal(saved.DocumentId, entry.PurchaseOrderId);
                 Assert.Equal("user", entry.ActorType);
-                Assert.Equal(userId, entry.ActorId);
+                Assert.Equal((object?)userId, (object?)entry.ActorId);
                 Assert.Equal(saved.EntityNumber, entry.EntityNumber);
                 Assert.Equal(saved.DisplayNumber, entry.DisplayNumber);
             });

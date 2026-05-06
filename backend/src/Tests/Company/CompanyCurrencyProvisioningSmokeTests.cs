@@ -19,7 +19,7 @@ public sealed class CompanyCurrencyProvisioningSmokeTests
 
         try
         {
-            var result = await workflow.EnableCurrencyAsync(CompanyId, currencyCode, Guid.NewGuid(), CancellationToken.None);
+            var result = await workflow.EnableCurrencyAsync(CompanyId, currencyCode, UserId.FromOrdinal(1), CancellationToken.None);
 
             Assert.True(result.Profile.IsCurrencyEnabled(currencyCode));
             Assert.Contains(result.ProvisionedControlAccounts, account => account.SystemRole == "accounts_receivable:CAD");

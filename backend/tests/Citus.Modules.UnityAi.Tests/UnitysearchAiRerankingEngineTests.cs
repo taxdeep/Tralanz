@@ -83,7 +83,7 @@ public sealed class UnitysearchAiRerankingEngineTests
         var inner = new FakeInnerEngine(BuildResult(Guid.NewGuid()));
         var (engine, _, _, _) = BuildDecorator(inner, learningEnabled: true);
 
-        await engine.RecordClickAsync(CompanyA, UserA, "ctx", "vendor", Guid.NewGuid(), CancellationToken.None);
+        await engine.RecordClickAsync(CompanyA, UserA, "ctx", "vendor", UserId.FromOrdinal(1), CancellationToken.None);
         await engine.ListRecentQueriesAsync(CompanyA, UserA, "ctx", 5, CancellationToken.None);
         await engine.ListRecentSelectionsAsync(CompanyA, UserA, "ctx", 5, CancellationToken.None);
 

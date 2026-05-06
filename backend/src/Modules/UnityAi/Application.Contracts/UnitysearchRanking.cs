@@ -24,7 +24,7 @@ public sealed record UnitysearchRankingAnchor(
 
 public sealed record UnitysearchRankingRequest(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string Context,
     string EntityType,
     string? Query,

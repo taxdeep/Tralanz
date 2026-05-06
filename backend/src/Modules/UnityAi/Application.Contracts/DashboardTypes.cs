@@ -3,7 +3,7 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 public sealed record DashboardUserWidgetRecord(
     Guid Id,
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string WidgetKey,
     string? Title,
     string? ConfigJson,
@@ -16,7 +16,7 @@ public sealed record DashboardUserWidgetRecord(
 public sealed record DashboardWidgetSuggestionRecord(
     Guid Id,
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string WidgetKey,
     string Title,
     string Reason,

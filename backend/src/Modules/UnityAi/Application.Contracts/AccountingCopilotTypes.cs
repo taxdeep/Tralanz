@@ -2,7 +2,7 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record AccountingCommandInput(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string Utterance,
     string? Locale = null);
 

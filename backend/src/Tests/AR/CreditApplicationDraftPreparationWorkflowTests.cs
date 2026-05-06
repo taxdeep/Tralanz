@@ -32,7 +32,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         var result = await workflow.PrepareDraftAsync(
             new CreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CustomerId,
                 new DateOnly(2026, 4, 14),
                 null,
@@ -56,7 +56,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new CreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CustomerId,
                 new DateOnly(2026, 4, 14),
                 "EUR",
@@ -89,7 +89,7 @@ public sealed class CreditApplicationDraftPreparationWorkflowTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.PrepareDraftAsync(
             new CreditApplicationDraftContext(
                 CompanyId,
-                Guid.NewGuid(),
+                UserId.FromOrdinal(1),
                 CustomerId,
                 new DateOnly(2026, 4, 14),
                 null,

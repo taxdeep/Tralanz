@@ -2,7 +2,7 @@ namespace Citus.Modules.UnityAi.Application.Contracts;
 
 public sealed record UnitysearchEventInput(
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string? SessionId,
     string Context,
     string EntityType,
@@ -22,7 +22,7 @@ public sealed record UnitysearchUsageStatRecord(
     Guid Id,
     CompanyId CompanyId,
     string ScopeType,
-    Guid? UserId,
+    UserId? UserId,
     string Context,
     string EntityType,
     Guid EntityId,
@@ -39,7 +39,7 @@ public sealed record UnitysearchPairStatRecord(
     Guid Id,
     CompanyId CompanyId,
     string ScopeType,
-    Guid? UserId,
+    UserId? UserId,
     string SourceContext,
     string AnchorEntityType,
     Guid AnchorEntityId,
@@ -55,7 +55,7 @@ public sealed record UnitysearchPairStatRecord(
 public sealed record UnitysearchRankingHintRecord(
     Guid Id,
     CompanyId CompanyId,
-    Guid? UserId,
+    UserId? UserId,
     string Context,
     string EntityType,
     Guid EntityId,
