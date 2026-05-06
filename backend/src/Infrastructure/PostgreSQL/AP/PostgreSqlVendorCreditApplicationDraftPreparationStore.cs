@@ -181,7 +181,7 @@ public sealed class PostgreSqlVendorCreditApplicationDraftPreparationStore : IVe
             preparation.Context.CompanyId,
             $"entity-number:vendor-credit-application:{year}",
             $"EN{year}",
-            8,
+            5,
             entityNumberSeed,
             cancellationToken);
 

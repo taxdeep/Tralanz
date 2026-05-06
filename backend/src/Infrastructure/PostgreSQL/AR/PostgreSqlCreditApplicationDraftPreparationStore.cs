@@ -181,7 +181,7 @@ public sealed class PostgreSqlCreditApplicationDraftPreparationStore : ICreditAp
             preparation.Context.CompanyId,
             $"entity-number:credit-application:{year}",
             $"EN{year}",
-            8,
+            5,
             entityNumberSeed,
             cancellationToken);
 

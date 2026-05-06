@@ -477,7 +477,7 @@ public sealed class PostgreSqlCompanyCurrencyProvisioningStore : ICompanyCurrenc
         CancellationToken cancellationToken)
     {
         var nextNumber = await FindEntitySeedNumberAsync(connection, transaction, year, cancellationToken);
-        return $"EN{year}{nextNumber.ToString().PadLeft(8, '0')}";
+        return $"EN{year}{Base36.Encode(nextNumber, 5)}";
     }
 
     private static async Task<long> FindEntitySeedNumberAsync(

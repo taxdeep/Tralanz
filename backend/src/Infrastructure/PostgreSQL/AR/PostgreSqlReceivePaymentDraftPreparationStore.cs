@@ -120,7 +120,7 @@ public sealed class PostgreSqlReceivePaymentDraftPreparationStore : IReceivePaym
             preparation.Context.CompanyId,
             $"entity-number:receive-payment:{year}",
             $"EN{year}",
-            8,
+            5,
             entityNumberSeed,
             cancellationToken);
 

@@ -1614,6 +1614,6 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             """;
         command.Parameters.AddWithValue("entity_year", year);
         var sequenceNumber = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 1L);
-        return $"EN{year}{sequenceNumber.ToString().PadLeft(8, '0')}";
+        return $"EN{year}{Base36.Encode(sequenceNumber, 5)}";
     }
 }

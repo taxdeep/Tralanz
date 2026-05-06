@@ -120,7 +120,7 @@ public sealed class PostgreSqlPayBillDraftPreparationStore : IPayBillDraftPrepar
             preparation.Context.CompanyId,
             $"entity-number:pay-bill:{year}",
             $"EN{year}",
-            8,
+            5,
             entityNumberSeed,
             cancellationToken);
 

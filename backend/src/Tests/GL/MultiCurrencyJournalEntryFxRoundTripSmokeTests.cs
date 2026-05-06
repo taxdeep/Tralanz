@@ -150,10 +150,11 @@ public sealed class MultiCurrencyJournalEntryFxRoundTripSmokeTests
         {
             command.CommandText =
                 """
-                select tx_debit, tx_credit, debit, credit
-                from ledger_entries
-                where journal_entry_id = @id
-                order by line_number;
+                select le.tx_debit, le.tx_credit, le.debit, le.credit
+                from ledger_entries le
+                join journal_entry_lines jel on jel.id = le.journal_entry_line_id
+                where le.journal_entry_id = @id
+                order by jel.line_number;
                 """;
             command.Parameters.AddWithValue("id", journalEntryId);
 
