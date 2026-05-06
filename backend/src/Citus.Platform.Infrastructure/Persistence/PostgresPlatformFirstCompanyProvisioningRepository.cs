@@ -1516,7 +1516,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
         command.Parameters.AddWithValue("mandatory_system_roles", mandatorySystemRolesJson);
         command.Parameters.AddWithValue(
             "applied_by_sysadmin_account_id",
-            normalized.SysAdminAccountId.HasValue ? normalized.SysAdminAccountId.Value : DBNull.Value);
+            normalized.SysAdminAccountId.HasValue ? (object)normalized.SysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("applied_at", provisionedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1583,7 +1583,7 @@ public sealed class PostgresPlatformFirstCompanyProvisioningRepository(
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", companyId.Value);
         command.Parameters.AddWithValue("payload", payload);
         await command.ExecuteNonQueryAsync(cancellationToken);

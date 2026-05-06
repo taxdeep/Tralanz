@@ -1038,7 +1038,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             command.Parameters.AddWithValue("reviewed_at", reviewedAtUtc);
             command.Parameters.AddWithValue(
                 "reviewed_by_sysadmin_account_id",
-                sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+                sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -1143,7 +1143,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             command.Parameters.AddWithValue("executed_at", executedAtUtc);
             command.Parameters.AddWithValue(
                 "executed_by_sysadmin_account_id",
-                sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+                sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -2045,7 +2045,7 @@ public sealed class PostgresPlatformGovernanceRepository(
             );
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", accountId);
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("request_audit_id", requestAuditId);

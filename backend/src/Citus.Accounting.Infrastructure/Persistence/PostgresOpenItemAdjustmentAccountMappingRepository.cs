@@ -307,7 +307,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
             deactivateCommand.Parameters.AddWithValue("book_id", request.BookId.HasValue ? request.BookId.Value : DBNull.Value);
             deactivateCommand.Parameters.AddWithValue("open_item_type", openItemType);
             deactivateCommand.Parameters.AddWithValue("adjustment_type", adjustmentType);
-            deactivateCommand.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? request.ActorId.Value : DBNull.Value);
+            deactivateCommand.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? (object)request.ActorId.Value.Value : DBNull.Value);
             await deactivateCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -372,7 +372,7 @@ public sealed class PostgresOpenItemAdjustmentAccountMappingRepository(
         command.Parameters.AddWithValue("open_item_type", openItemType);
         command.Parameters.AddWithValue("adjustment_type", adjustmentType);
         command.Parameters.AddWithValue("adjustment_account_id", request.AdjustmentAccountId);
-        command.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? request.ActorId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", request.ActorId.HasValue ? (object)request.ActorId.Value.Value : DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

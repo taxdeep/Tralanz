@@ -219,7 +219,7 @@ public sealed class PostgreSqlCompanyMembershipGovernanceStore(
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("company_id", companyId.Value);
-        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? sysAdminAccountId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("actor_id", sysAdminAccountId.HasValue ? (object)sysAdminAccountId.Value.Value : DBNull.Value);
         command.Parameters.AddWithValue("entity_id", membershipId);
         command.Parameters.AddWithValue("payload", payload);
         await command.ExecuteNonQueryAsync(cancellationToken);
